@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="0; url=/auth/login">
+    <title>UC-1 Pro - Redirecting to Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            width: 100%;
+            max-width: 400px;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .login-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .logo {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 15px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .login-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .login-header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .login-body {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e8ed;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .remember-me {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .remember-me input {
+            margin-right: 8px;
+        }
+
+        .remember-me label {
+            font-size: 14px;
+            color: #666;
+            cursor: pointer;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-bottom: 15px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-sso {
+            background: #f7f9fc;
+            color: #333;
+            border: 2px solid #e1e8ed;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-sso:hover {
+            background: white;
+            border-color: #667eea;
+        }
+
+        .divider {
+            text-align: center;
+            margin: 20px 0;
+            position: relative;
+        }
+
+        .divider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #e1e8ed;
+        }
+
+        .divider span {
+            background: white;
+            padding: 0 15px;
+            position: relative;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .services {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e1e8ed;
+        }
+
+        .service-link {
+            padding: 10px;
+            text-align: center;
+            background: #f7f9fc;
+            border-radius: 10px;
+            text-decoration: none;
+            color: #666;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .service-link:hover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .success-message {
+            background: #efe;
+            color: #3c3;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .info-message {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <div class="logo">
+                <img src="/the-colonel-logo.png" alt="The Colonel" />
+            </div>
+            <h1>UC-1 Pro</h1>
+            <p>Enterprise AI Infrastructure</p>
+        </div>
+        
+        <div class="login-body">
+            <div id="error-message" class="error-message"></div>
+            <div id="success-message" class="success-message"></div>
+            <div id="info-message" class="info-message"></div>
+            
+            <!-- Primary SSO Button -->
+            <a href="#" class="btn btn-primary" onclick="loginWithAuthentik(); return false;" style="margin-bottom: 20px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" style="margin-right: 8px;">
+                    <path fill="white" d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
+                </svg>
+                Sign in with Unicorn Commander
+            </a>
+
+            <div class="divider">
+                <span>or continue with</span>
+            </div>
+
+            <!-- Social Login Options -->
+            <div style="margin-bottom: 15px;">
+                <a href="#" class="btn btn-sso" onclick="loginWithGoogle(); return false;" style="margin-bottom: 10px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Continue with Google
+                </a>
+
+                <a href="#" class="btn btn-sso" onclick="loginWithGitHub(); return false;" style="margin-bottom: 10px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24">
+                        <path fill="currentColor" d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    Continue with GitHub
+                </a>
+
+                <a href="#" class="btn btn-sso" onclick="loginWithMicrosoft(); return false;" style="margin-bottom: 10px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24">
+                        <path fill="#f25022" d="M11.4 11.4H0V0h11.4v11.4z"/>
+                        <path fill="#7fba00" d="M24 11.4H12.6V0H24v11.4z"/>
+                        <path fill="#00a4ef" d="M11.4 24H0V12.6h11.4V24z"/>
+                        <path fill="#ffb900" d="M24 24H12.6V12.6H24V24z"/>
+                    </svg>
+                    Continue with Microsoft
+                </a>
+            </div>
+
+            <!-- Sign Up Link -->
+            <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e1e8ed;">
+                <p style="color: #666; font-size: 14px;">
+                    Don't have an account?
+                    <a href="/signup" style="color: #667eea; text-decoration: none; font-weight: 600;">Sign up</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Detect protocol and host dynamically
+        const CURRENT_PROTOCOL = window.location.protocol;
+        const CURRENT_HOST = window.location.hostname;
+        const CURRENT_PORT = window.location.port;
+        
+        // Determine if we're behind a reverse proxy
+        const IS_REVERSE_PROXY = (CURRENT_PROTOCOL === 'https:') || 
+                                  (CURRENT_HOST.includes('.tech') || CURRENT_HOST.includes('.com'));
+        
+        // Set URLs based on access method
+        let AUTHENTIK_URL;
+        let DASHBOARD_URL;
+        let BASE_URL;
+        let CHAT_URL;
+        let SEARCH_URL;
+        
+        if (IS_REVERSE_PROXY) {
+            // Behind reverse proxy - use subdomains
+            if (CURRENT_HOST === 'unicorncommander.ai' || CURRENT_HOST.includes('unicorncommander.ai')) {
+                // Main Ops Center at unicorncommander.ai
+                BASE_URL = `${CURRENT_PROTOCOL}//${CURRENT_HOST}`;
+                DASHBOARD_URL = `${BASE_URL}/admin`;
+
+                // Services as subdomains
+                AUTHENTIK_URL = `${CURRENT_PROTOCOL}//auth.unicorncommander.ai`;
+                CHAT_URL = `${CURRENT_PROTOCOL}//chat.unicorncommander.ai`;
+                SEARCH_URL = `${CURRENT_PROTOCOL}//search.unicorncommander.ai`;
+            } else if (CURRENT_HOST === 'yoda.unicorncommander.ai' || CURRENT_HOST.includes('yoda.unicorncommander.ai')) {
+                // Legacy yoda subdomain support
+                BASE_URL = `${CURRENT_PROTOCOL}//yoda.unicorncommander.ai`;
+                DASHBOARD_URL = `${BASE_URL}/admin`;
+
+                // Services as subdomains of yoda
+                AUTHENTIK_URL = `${CURRENT_PROTOCOL}//auth.yoda.unicorncommander.ai`;
+                CHAT_URL = `${CURRENT_PROTOCOL}//chat.yoda.unicorncommander.ai`;
+                SEARCH_URL = `${CURRENT_PROTOCOL}//search.yoda.unicorncommander.ai`;
+            } else {
+                // Fallback for other domains
+                BASE_URL = `${CURRENT_PROTOCOL}//${CURRENT_HOST}`;
+                DASHBOARD_URL = `${BASE_URL}/admin`;
+                // Still try to use auth subdomain for authentication
+                AUTHENTIK_URL = `${CURRENT_PROTOCOL}//auth.${CURRENT_HOST.split('.').slice(-2).join('.')}`;
+                CHAT_URL = `${BASE_URL}/chat`;
+                SEARCH_URL = `${BASE_URL}/search`;
+            }
+        } else {
+            // Direct IP access
+            AUTHENTIK_URL = `http://${CURRENT_HOST}:9005`;
+            CHAT_URL = `http://${CURRENT_HOST}:8080`;
+            SEARCH_URL = `http://${CURRENT_HOST}:8888`;
+            BASE_URL = CURRENT_PORT && CURRENT_PORT !== '80' ? `http://${CURRENT_HOST}:${CURRENT_PORT}` : `http://${CURRENT_HOST}`;
+            DASHBOARD_URL = `${BASE_URL}/admin`;
+        }
+        
+        // Check if user is already authenticated
+        function checkAuth() {
+            // Check for session cookie or token
+            const token = localStorage.getItem('auth_token');
+            const sessionCookie = document.cookie.includes('session_token');
+            
+            if (token || sessionCookie) {
+                // Redirect to main Ops Center page if authenticated
+                // All authenticated users see the public Ops Center first
+                window.location.href = '/';
+            }
+        }
+        
+        // Primary Authentik SSO Login
+        function loginWithAuthentik() {
+            // Redirect to Authentik's branded login flow
+            // This handles username/password and any configured social providers
+            window.location.href = '/auth/login';
+        }
+
+        // Social Login - Redirect to Authentik with provider hint
+        function loginWithGoogle() {
+            // Redirect to Authentik's Google OAuth source
+            const returnUrl = encodeURIComponent(`${BASE_URL}/auth/callback`);
+            const googleUrl = `${AUTHENTIK_URL}/source/oauth/login/google/?next=${returnUrl}`;
+            console.log('Redirecting to Google login:', googleUrl);
+            window.location.href = googleUrl;
+        }
+
+        function loginWithGitHub() {
+            // Redirect to Authentik's GitHub OAuth source
+            const returnUrl = encodeURIComponent(`${BASE_URL}/auth/callback`);
+            const githubUrl = `${AUTHENTIK_URL}/source/oauth/login/github/?next=${returnUrl}`;
+            console.log('Redirecting to GitHub login:', githubUrl);
+            window.location.href = githubUrl;
+        }
+
+        function loginWithMicrosoft() {
+            // Redirect to Authentik's Microsoft OAuth source
+            const returnUrl = encodeURIComponent(`${BASE_URL}/auth/callback`);
+            const microsoftUrl = `${AUTHENTIK_URL}/source/oauth/login/microsoft/?next=${returnUrl}`;
+            console.log('Redirecting to Microsoft login:', microsoftUrl);
+            window.location.href = microsoftUrl;
+        }
+        
+        // Show message
+        function showMessage(type, message) {
+            const errorEl = document.getElementById('error-message');
+            const successEl = document.getElementById('success-message');
+            const infoEl = document.getElementById('info-message');
+            
+            // Hide all messages first
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+            infoEl.style.display = 'none';
+            
+            // Show the appropriate message
+            if (type === 'error') {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+            } else if (type === 'success') {
+                successEl.textContent = message;
+                successEl.style.display = 'block';
+            } else if (type === 'info') {
+                infoEl.textContent = message;
+                infoEl.style.display = 'block';
+            }
+        }
+        
+        // Update service links with actual host
+        document.addEventListener('DOMContentLoaded', () => {
+            // Update service links based on access method
+            document.querySelectorAll('.service-link').forEach(link => {
+                const service = link.getAttribute('data-service');
+                switch(service) {
+                    case 'chat':
+                        link.href = CHAT_URL;
+                        break;
+                    case 'ops':
+                        link.href = DASHBOARD_URL;
+                        break;
+                    case 'search':
+                        link.href = SEARCH_URL;
+                        break;
+                }
+            });
+            
+            // Check authentication on load
+            checkAuth();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billing Settings - UC-1 Pro</title>
+    <link rel="icon" type="image/png" href="the-colonel-logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a0033 0%, #220044 25%, #0a1929 50%, #3a0e5a 75%, #1a0033 100%);
+            background-size: 400% 400%;
+            animation: galaxyShift 20s ease infinite;
+            min-height: 100vh;
+            color: white;
+        }
+
+        @keyframes galaxyShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Header */
+        .header {
+            position: sticky;
+            top: 0;
+            background: rgba(26, 0, 51, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background-image: url('the-colonel-logo.png');
+            background-size: cover;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+
+        .title {
+            font-family: 'Space Grotesk', monospace;
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 50%, #ffd700 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav-btn {
+            padding: 0.5rem 1.25rem;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.2);
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        /* Cards */
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+            font-family: 'Space Grotesk', sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        /* Subscription Card */
+        .subscription-card {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+        }
+
+        .tier-badge {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #1a0033;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3);
+        }
+
+        .tier-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .detail-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+        }
+
+        .detail-value {
+            color: white;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* Button Group */
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Space Grotesk', sans-serif;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #1a0033;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 215, 0, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+        }
+
+        /* Payment Method Card */
+        .payment-method {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .payment-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .payment-icon {
+            width: 50px;
+            height: 35px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .payment-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .payment-brand {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .payment-last4 {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+        }
+
+        /* Invoice Table */
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .invoice-table th,
+        .invoice-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .invoice-table th {
+            color: rgba(255, 255, 255, 0.7);
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .invoice-table tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        /* Status Badge */
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status-paid {
+            background: rgba(16, 185, 129, 0.2);
+            color: #86efac;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-pending {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fcd34d;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #ffd700;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Alert */
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .alert-info {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            color: #93c5fd;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #86efac;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+
+        .alert.hidden {
+            display: none;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, #1a0033 0%, #220044 100%);
+            max-width: 500px;
+            width: 90%;
+            padding: 2.5rem;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 80px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        .modal-body {
+            margin-bottom: 2rem;
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.6;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 1rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+            }
+
+            .card-header {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+
+            .tier-details {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .payment-method {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+
+            .invoice-table {
+                font-size: 0.9rem;
+            }
+
+            .invoice-table th,
+            .invoice-table td {
+                padding: 0.75rem 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <div class="logo"></div>
+                <h1 class="title">Billing & Settings</h1>
+            </div>
+            <div class="nav-buttons">
+                <a href="/index.html" class="nav-btn">← Dashboard</a>
+                <a href="/subscription.html" class="nav-btn">📊 Subscription</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Alert Container -->
+        <div id="alert-container"></div>
+
+        <!-- Current Subscription Card -->
+        <div class="card subscription-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <span>💎</span>
+                    Current Subscription
+                </h2>
+                <div class="tier-badge" id="tier-badge">Loading...</div>
+            </div>
+
+            <div class="tier-details">
+                <div class="detail-item">
+                    <div class="detail-label">Status</div>
+                    <div class="detail-value" id="subscription-status">Active</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Next Billing Date</div>
+                    <div class="detail-value" id="next-billing-date">Loading...</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Monthly Cost</div>
+                    <div class="detail-value" id="monthly-cost">$0.00</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">API Calls Used</div>
+                    <div class="detail-value" id="api-calls-used">0 / 0</div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="openUpgradeModal()">
+                    ⬆️ Upgrade Plan
+                </button>
+                <button class="btn btn-secondary" onclick="openCustomerPortal()">
+                    ⚙️ Manage in Stripe
+                </button>
+                <button class="btn btn-danger" onclick="openCancelModal()">
+                    ❌ Cancel Subscription
+                </button>
+            </div>
+        </div>
+
+        <!-- Payment Method Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <span>💳</span>
+                    Payment Method
+                </h2>
+                <button class="btn btn-secondary" onclick="openCustomerPortal()">
+                    Update Payment Method
+                </button>
+            </div>
+
+            <div id="payment-method-container">
+                <div class="spinner"></div>
+            </div>
+        </div>
+
+        <!-- Billing History Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <span>📄</span>
+                    Billing History
+                </h2>
+            </div>
+
+            <div id="billing-history-container">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cancel Confirmation Modal -->
+    <div class="modal" id="cancel-modal">
+        <div class="modal-content">
+            <h2 class="modal-header">Cancel Subscription?</h2>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel your subscription?</p>
+                <p style="margin-top: 1rem;">
+                    Your subscription will remain active until the end of your current billing period.
+                    You'll lose access to premium features after that.
+                </p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeCancelModal()" style="flex: 1;">
+                    Keep Subscription
+                </button>
+                <button class="btn btn-danger" onclick="confirmCancel()" style="flex: 1;">
+                    Yes, Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upgrade Modal -->
+    <div class="modal" id="upgrade-modal">
+        <div class="modal-content">
+            <h2 class="modal-header">Upgrade Your Plan</h2>
+            <div class="modal-body">
+                <p>Choose a plan to upgrade to:</p>
+                <div id="upgrade-options" style="margin-top: 1.5rem;">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeUpgradeModal()" style="width: 100%;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/billing.js"></script>
+    <script>
+        let subscriptionData = null;
+        let csrfToken = null;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            await fetchCsrfToken();
+            await checkAuthentication();
+            await loadSubscriptionData();
+            await loadPaymentMethod();
+            await loadBillingHistory();
+        });
+
+        // Fetch CSRF token
+        async function fetchCsrfToken() {
+            try {
+                const response = await fetch('/api/v1/auth/csrf-token', {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    csrfToken = data.csrf_token;
+                }
+            } catch (error) {
+                console.error('Failed to fetch CSRF token:', error);
+            }
+        }
+
+        // Check authentication
+        async function checkAuthentication() {
+            try {
+                const response = await fetch('/api/v1/auth/me', {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    window.location.href = '/login.html';
+                }
+            } catch (error) {
+                console.error('Authentication check failed:', error);
+                window.location.href = '/login.html';
+            }
+        }
+
+        // Load subscription data
+        async function loadSubscriptionData() {
+            try {
+                const response = await fetch('/api/v1/subscriptions/my-access', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    subscriptionData = await response.json();
+                    updateSubscriptionDisplay();
+                }
+            } catch (error) {
+                console.error('Failed to load subscription:', error);
+                showAlert('Failed to load subscription data', 'error');
+            }
+        }
+
+        // Update subscription display
+        function updateSubscriptionDisplay() {
+            if (!subscriptionData) return;
+
+            const plan = subscriptionData.plan;
+            const usage = subscriptionData.usage;
+
+            // Update tier badge
+            document.getElementById('tier-badge').textContent =
+                plan.name.charAt(0).toUpperCase() + plan.name.slice(1);
+
+            // Update monthly cost
+            const prices = {
+                trial: 1.00,
+                starter: 19.00,
+                professional: 49.00,
+                enterprise: 99.00
+            };
+            document.getElementById('monthly-cost').textContent =
+                `$${(prices[plan.name] || 0).toFixed(2)}`;
+
+            // Update usage
+            const used = usage.api_calls_used || 0;
+            const limit = usage.api_calls_limit || plan.api_calls_limit || 0;
+            document.getElementById('api-calls-used').textContent =
+                limit === -1 ? `${used.toLocaleString()} (Unlimited)` : `${used.toLocaleString()} / ${limit.toLocaleString()}`;
+
+            // Update next billing date
+            const now = new Date();
+            const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+            document.getElementById('next-billing-date').textContent =
+                nextMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        // Load payment method
+        async function loadPaymentMethod() {
+            const container = document.getElementById('payment-method-container');
+
+            try {
+                // In production, fetch from Stripe Customer Portal API
+                // For now, show a placeholder
+                container.innerHTML = `
+                    <div class="alert alert-info">
+                        ℹ️ To view and manage your payment methods, click "Update Payment Method" to access the Stripe Customer Portal.
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load payment method:', error);
+                container.innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ Failed to load payment method information.
+                    </div>
+                `;
+            }
+        }
+
+        // Load billing history
+        async function loadBillingHistory() {
+            const container = document.getElementById('billing-history-container');
+
+            try {
+                // In production, fetch invoice history from backend
+                // For now, show empty state
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📄</div>
+                        <p>No invoices yet</p>
+                        <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+                            Your billing history will appear here once payments are processed.
+                        </p>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load billing history:', error);
+                container.innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ Failed to load billing history.
+                    </div>
+                `;
+            }
+        }
+
+        // Open Stripe Customer Portal
+        async function openCustomerPortal() {
+            showAlert('Redirecting to Stripe Customer Portal...', 'info');
+
+            try {
+                const response = await fetch('/api/v1/billing/customer-portal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        return_url: window.location.href
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.portal_url) {
+                    window.location.href = data.portal_url;
+                } else {
+                    throw new Error(data.detail || 'Failed to open customer portal');
+                }
+            } catch (error) {
+                console.error('Portal error:', error);
+                showAlert('Failed to open customer portal. Please try again.', 'error');
+            }
+        }
+
+        // Open upgrade modal
+        async function openUpgradeModal() {
+            const modal = document.getElementById('upgrade-modal');
+            const optionsContainer = document.getElementById('upgrade-options');
+
+            try {
+                // Fetch available plans from API
+                const response = await fetch('/api/v1/subscriptions/plans', {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch plans');
+                }
+
+                const data = await response.json();
+                const plans = data.plans || [];
+
+                // Filter to only show upgrade options (exclude current tier and trial)
+                const currentTier = subscriptionData?.plan?.name || 'trial';
+                const tierOrder = ['trial', 'starter', 'professional', 'enterprise'];
+                const currentIndex = tierOrder.indexOf(currentTier);
+
+                const upgradeOptions = plans.filter(plan => {
+                    const planIndex = tierOrder.indexOf(plan.name);
+                    return planIndex > currentIndex;
+                });
+
+                if (upgradeOptions.length === 0) {
+                    optionsContainer.innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.6);">You are already on the highest tier!</p>';
+                } else {
+                    optionsContainer.innerHTML = upgradeOptions.map(plan => `
+                        <button class="btn btn-primary" onclick="upgradeTo('${plan.name}')" style="width: 100%; margin-bottom: 1rem;">
+                            Upgrade to ${plan.display_name} - $${plan.price_monthly.toFixed(0)}/month
+                        </button>
+                    `).join('');
+                }
+
+                modal.classList.add('active');
+            } catch (error) {
+                console.error('Failed to load upgrade options:', error);
+                optionsContainer.innerHTML = '<p style="text-align: center; color: #fca5a5;">Failed to load upgrade options. Please try again.</p>';
+                modal.classList.add('active');
+            }
+        }
+
+        function closeUpgradeModal() {
+            document.getElementById('upgrade-modal').classList.remove('active');
+        }
+
+        // Upgrade to tier
+        async function upgradeTo(tierName) {
+            closeUpgradeModal();
+            showAlert('Redirecting to upgrade checkout...', 'info');
+
+            try {
+                const response = await fetch('/api/v1/billing/subscriptions/checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        tier: tierName,
+                        success_url: window.location.href + '?upgrade=success',
+                        cancel_url: window.location.href + '?upgrade=canceled'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                } else {
+                    throw new Error(data.detail || 'Failed to create checkout session');
+                }
+            } catch (error) {
+                console.error('Upgrade error:', error);
+                showAlert('Failed to initiate upgrade. Please try again.', 'error');
+            }
+        }
+
+        // Open cancel modal
+        function openCancelModal() {
+            document.getElementById('cancel-modal').classList.add('active');
+        }
+
+        function closeCancelModal() {
+            document.getElementById('cancel-modal').classList.remove('active');
+        }
+
+        // Confirm cancellation
+        async function confirmCancel() {
+            closeCancelModal();
+            showAlert('Processing cancellation...', 'info');
+
+            try {
+                const response = await fetch('/api/v1/billing/subscriptions/cancel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    showAlert('Subscription canceled successfully. You\'ll have access until the end of your billing period.', 'success');
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to cancel subscription');
+                }
+            } catch (error) {
+                console.error('Cancellation error:', error);
+                showAlert('Failed to cancel subscription. Please try again or contact support.', 'error');
+            }
+        }
+
+        // Show alert
+        function showAlert(message, type = 'info') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+
+            const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            alert.innerHTML = `${icon} ${message}`;
+
+            container.innerHTML = '';
+            container.appendChild(alert);
+
+            setTimeout(() => {
+                alert.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Check URL params for success/error messages
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('upgrade') === 'success') {
+            showAlert('Upgrade successful! Your plan has been updated.', 'success');
+        } else if (urlParams.get('upgrade') === 'canceled') {
+            showAlert('Upgrade canceled.', 'error');
+        }
+    </script>
+</body>
+</html>

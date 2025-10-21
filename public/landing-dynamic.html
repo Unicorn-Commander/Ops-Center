@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading...</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style id="dynamic-theme">
+        /* Default styles - will be replaced by dynamic configuration */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .loading-initial {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 50%, #F59E0B 100%);
+        }
+        
+        .loading-content {
+            text-align: center;
+            color: white;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+            margin: 0 auto 1.5rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="loading-initial">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p style="font-size: 1.2rem; font-weight: 600;">Loading Configuration...</p>
+        </div>
+    </div>
+    
+    <script>
+        // Global configuration object
+        let landingConfig = null;
+        let servicesStatus = {};
+        
+        // Check if using subdomain or direct IP
+        const IS_SUBDOMAIN = window.location.hostname.includes('.magicunicorn.tech');
+        const BASE_URL = IS_SUBDOMAIN ? '' : ':8084';
+        
+        // Apply dynamic theme
+        function applyTheme(config) {
+            const theme = config.theme;
+            const colors = theme.custom_colors;
+            const animations = config.animations;
+            
+            const css = `
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    background: ${colors.background_gradient};
+                    min-height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    ${animations.gradient_animation ? `
+                    animation: gradientShift 15s ease infinite;
+                    background-size: 200% 200%;
+                    ` : ''}
+                }
+                
+                ${animations.gradient_animation ? `
+                @keyframes gradientShift {
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
+                }
+                ` : ''}
+                
+                .header {
+                    background: rgba(255, 255, 255, 0.98);
+                    backdrop-filter: blur(20px);
+                    padding: 1rem 2rem;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    box-shadow: 0 4px 30px rgba(0,0,0,0.1);
+                    border-bottom: 2px solid ${colors.primary}33;
+                }
+                
+                .logo-section {
+                    display: flex;
+                    align-items: center;
+                    gap: 1.5rem;
+                }
+                
+                .logo {
+                    width: 60px;
+                    height: 60px;
+                    border-radius: 12px;
+                    overflow: hidden;
+                    box-shadow: 0 4px 12px ${colors.primary}4D;
+                    ${animations.hover_effects ? `
+                    transition: transform 0.3s ease;
+                    ` : ''}
+                }
+                
+                ${animations.hover_effects ? `
+                .logo:hover {
+                    transform: scale(1.05) rotate(5deg);
+                }
+                ` : ''}
+                
+                .logo img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                }
+                
+                .logo-emoji {
+                    width: 60px;
+                    height: 60px;
+                    background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary});
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 32px;
+                    box-shadow: 0 4px 12px ${colors.primary}4D;
+                }
+                
+                .brand h1 {
+                    font-size: 1.75rem;
+                    font-weight: 700;
+                    background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary}, ${colors.accent});
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                }
+                
+                .brand .subtitle {
+                    font-size: 0.95rem;
+                    color: #6B7280;
+                    font-weight: 500;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                }
+                
+                .user-menu {
+                    display: flex;
+                    align-items: center;
+                    gap: 1rem;
+                }
+                
+                .user-info {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    padding: 0.5rem 1.25rem;
+                    background: linear-gradient(135deg, ${colors.primary}1A, ${colors.secondary}1A);
+                    border-radius: 50px;
+                    border: 1px solid ${colors.primary}33;
+                }
+                
+                .user-avatar {
+                    width: 36px;
+                    height: 36px;
+                    background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary});
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: 600;
+                    font-size: 1.1rem;
+                    box-shadow: 0 2px 8px ${colors.primary}4D;
+                }
+                
+                .logout-btn {
+                    padding: 0.6rem 1.25rem;
+                    background: linear-gradient(135deg, #EF4444, #DC2626);
+                    color: white;
+                    border: none;
+                    border-radius: 50px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    ${animations.hover_effects ? `
+                    transition: all 0.3s ease;
+                    ` : ''}
+                    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.3);
+                }
+                
+                ${animations.hover_effects ? `
+                .logout-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+                }
+                ` : ''}
+                
+                .container {
+                    flex: 1;
+                    padding: 2.5rem;
+                    max-width: 1400px;
+                    width: 100%;
+                    margin: 0 auto;
+                }
+                
+                .welcome-section {
+                    background: rgba(255, 255, 255, 0.98);
+                    backdrop-filter: blur(20px);
+                    border-radius: 20px;
+                    padding: 2.5rem;
+                    margin-bottom: 2rem;
+                    box-shadow: 0 8px 40px rgba(0,0,0,0.1);
+                    border: 1px solid ${colors.primary}1A;
+                    position: relative;
+                    overflow: hidden;
+                }
+                
+                .welcome-section::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    height: 4px;
+                    background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary}, ${colors.accent});
+                    ${animations.gradient_animation ? `
+                    animation: gradientSlide 3s ease infinite;
+                    ` : ''}
+                }
+                
+                ${animations.gradient_animation ? `
+                @keyframes gradientSlide {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(100%); }
+                }
+                ` : ''}
+                
+                .welcome-section h2 {
+                    color: #1F2937;
+                    margin-bottom: 1rem;
+                    font-size: 2rem;
+                    font-weight: 700;
+                }
+                
+                .welcome-section p {
+                    color: #6B7280;
+                    line-height: 1.7;
+                    font-size: 1.1rem;
+                }
+                
+                .service-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                    gap: 1.75rem;
+                    margin-bottom: 2rem;
+                }
+                
+                .service-card {
+                    background: rgba(255, 255, 255, 0.98);
+                    backdrop-filter: blur(20px);
+                    border-radius: 16px;
+                    padding: 1.75rem;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+                    border: 1px solid ${colors.primary}1A;
+                    ${animations.hover_effects ? `
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    cursor: pointer;
+                    ` : ''}
+                    position: relative;
+                    overflow: hidden;
+                }
+                
+                .service-card::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: linear-gradient(135deg, ${colors.primary}0D, ${colors.secondary}0D);
+                    opacity: 0;
+                    ${animations.hover_effects ? `
+                    transition: opacity 0.3s ease;
+                    ` : ''}
+                }
+                
+                ${animations.hover_effects ? `
+                .service-card:hover::before {
+                    opacity: 1;
+                }
+                
+                .service-card:hover {
+                    transform: translateY(-8px) scale(1.02);
+                    box-shadow: 0 12px 40px ${colors.primary}33;
+                    border-color: ${colors.primary}4D;
+                }
+                ` : ''}
+                
+                .service-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 1rem;
+                    margin-bottom: 1.25rem;
+                    position: relative;
+                    z-index: 1;
+                }
+                
+                .service-icon {
+                    width: 56px;
+                    height: 56px;
+                    background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary});
+                    border-radius: 14px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-size: 28px;
+                    box-shadow: 0 4px 15px ${colors.primary}4D;
+                    overflow: hidden;
+                    ${animations.hover_effects ? `
+                    transition: transform 0.3s ease;
+                    ` : ''}
+                }
+                
+                .service-logo {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: 14px;
+                    overflow: hidden;
+                    box-shadow: 0 4px 15px ${colors.primary}4D;
+                    ${animations.hover_effects ? `
+                    transition: transform 0.3s ease;
+                    ` : ''}
+                }
+                
+                .service-logo img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                }
+                
+                ${animations.hover_effects ? `
+                .service-card:hover .service-icon,
+                .service-card:hover .service-logo {
+                    transform: rotate(10deg) scale(1.1);
+                }
+                ` : ''}
+                
+                .service-title {
+                    flex: 1;
+                }
+                
+                .service-title h3 {
+                    color: #1F2937;
+                    margin-bottom: 0.25rem;
+                    font-weight: 600;
+                    font-size: 1.25rem;
+                }
+                
+                .service-status {
+                    padding: 0.35rem 1rem;
+                    border-radius: 50px;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                
+                .status-online {
+                    background: linear-gradient(135deg, #10B981, #059669);
+                    color: white;
+                    box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+                }
+                
+                .status-offline {
+                    background: linear-gradient(135deg, #EF4444, #DC2626);
+                    color: white;
+                    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.3);
+                }
+                
+                .service-description {
+                    color: #6B7280;
+                    margin-bottom: 1.25rem;
+                    line-height: 1.6;
+                    position: relative;
+                    z-index: 1;
+                }
+                
+                .service-action {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    padding: 0.75rem 1.5rem;
+                    background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary});
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 50px;
+                    font-weight: 600;
+                    ${animations.hover_effects ? `
+                    transition: all 0.3s ease;
+                    ` : ''}
+                    box-shadow: 0 4px 15px ${colors.primary}4D;
+                    position: relative;
+                    z-index: 1;
+                }
+                
+                ${animations.hover_effects ? `
+                .service-action:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 25px ${colors.primary}66;
+                }
+                ` : ''}
+                
+                .admin-section {
+                    background: linear-gradient(135deg, ${colors.accent}1A, ${colors.accent}26);
+                    backdrop-filter: blur(20px);
+                    border: 2px solid ${colors.accent}4D;
+                    border-radius: 20px;
+                    padding: 2rem;
+                    text-align: center;
+                    box-shadow: 0 8px 40px ${colors.accent}26;
+                    position: relative;
+                    overflow: hidden;
+                }
+                
+                .admin-section h3 {
+                    color: #1F2937;
+                    margin-bottom: 0.75rem;
+                    font-size: 1.5rem;
+                    font-weight: 700;
+                }
+                
+                .admin-section p {
+                    color: #6B7280;
+                    margin-bottom: 1.5rem;
+                    font-size: 1.05rem;
+                }
+                
+                .admin-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    padding: 1rem 2.5rem;
+                    background: linear-gradient(135deg, ${colors.accent}, ${colors.accent}CC);
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 50px;
+                    font-weight: 700;
+                    font-size: 1.1rem;
+                    ${animations.hover_effects ? `
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    ` : ''}
+                    box-shadow: 0 6px 25px ${colors.accent}4D;
+                    position: relative;
+                    z-index: 1;
+                }
+                
+                ${animations.hover_effects ? `
+                .admin-btn:hover {
+                    transform: translateY(-3px) scale(1.05);
+                    box-shadow: 0 10px 40px ${colors.accent}66;
+                }
+                ` : ''}
+                
+                .loading {
+                    text-align: center;
+                    padding: 3rem;
+                    color: white;
+                }
+                
+                ${animations.loading_spinner ? `
+                .spinner {
+                    border: 4px solid rgba(255,255,255,0.2);
+                    border-top: 4px solid white;
+                    border-radius: 50%;
+                    width: 50px;
+                    height: 50px;
+                    animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+                    margin: 0 auto 1.5rem;
+                }
+                
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                ` : ''}
+                
+                .loading p {
+                    font-size: 1.2rem;
+                    font-weight: 600;
+                    text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                }
+                
+                /* Responsive design */
+                @media (max-width: 768px) {
+                    .header {
+                        flex-direction: column;
+                        gap: 1rem;
+                        text-align: center;
+                    }
+                    
+                    .logo-section {
+                        flex-direction: column;
+                    }
+                    
+                    .service-grid {
+                        grid-template-columns: 1fr;
+                    }
+                }
+            `;
+            
+            document.getElementById('dynamic-theme').innerHTML = css;
+        }
+        
+        // Render the landing page
+        function renderLandingPage(config) {
+            const branding = config.branding;
+            const welcome = config.welcome;
+            const services = [...config.services, ...config.custom_links]
+                .filter(s => s.enabled)
+                .sort((a, b) => a.order - b.order);
+            const adminSection = config.admin_section;
+            
+            // Build HTML
+            let html = `
+                <div class="header">
+                    <div class="logo-section">
+                        ${branding.logo_url ? 
+                            `<div class="logo">
+                                <img src="${branding.logo_url}" alt="${branding.company_name}" 
+                                     onerror="this.parentElement.className='logo-emoji'; this.parentElement.innerHTML='${branding.emoji || '🦄'}'">
+                            </div>` :
+                            `<div class="logo-emoji">${branding.emoji || '🦄'}</div>`
+                        }
+                        <div class="brand">
+                            <h1>${branding.company_name}</h1>
+                            <div class="subtitle">
+                                ${branding.show_emoji ? `<span>${branding.emoji || '🦄'}</span>` : ''}
+                                ${branding.company_subtitle}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="user-menu">
+                        <div class="user-info">
+                            <div class="user-avatar" id="userAvatar">U</div>
+                            <span id="userName" style="font-weight: 600; color: #4B5563;">Loading...</span>
+                        </div>
+                        <button class="logout-btn" onclick="logout()">Logout</button>
+                    </div>
+                </div>
+                
+                <div class="container" id="content">
+                    <div class="welcome-section">
+                        <h2>${welcome.show_emoji ? '🦄 ' : ''}${welcome.title}</h2>
+                        <p>${welcome.description}</p>
+                    </div>
+                    
+                    <div class="service-grid">
+            `;
+            
+            // Add service cards
+            for (const service of services) {
+                const isOnline = servicesStatus[service.id] || false;
+                const statusClass = isOnline ? 'status-online' : 'status-offline';
+                const statusText = isOnline ? 'Online' : 'Offline';
+                
+                let actionHtml = '';
+                if (service.custom_url) {
+                    // Custom URL provided
+                    actionHtml = `<a href="${service.custom_url}" class="service-action" target="_blank">Launch Service →</a>`;
+                } else if (service.url === 'auto' && !service.apiOnly) {
+                    // Auto-generate URL based on deployment
+                    let serviceUrl;
+                    if (IS_SUBDOMAIN) {
+                        // When accessed via subdomain, use proper subdomain URLs
+                        const baseDomain = window.location.hostname.replace(/^[^.]+\./, '');
+                        if (service.id === 'chat') {
+                            serviceUrl = `https://chat.${baseDomain}`;
+                        } else if (service.id === 'search') {
+                            serviceUrl = `https://search.${baseDomain}`;
+                        } else {
+                            // For other services, construct subdomain if available
+                            serviceUrl = `https://${service.id}.${baseDomain}`;
+                        }
+                    } else {
+                        // Local access - use hostname with port
+                        serviceUrl = `http://${window.location.hostname}:${service.port}`;
+                    }
+                    actionHtml = `<a href="${serviceUrl}" class="service-action" target="_blank">Launch Service →</a>`;
+                } else if (service.apiOnly) {
+                    actionHtml = `<span style="color: #9CA3AF; font-size: 0.95rem; font-weight: 500;">🔌 API Service</span>`;
+                }
+                
+                html += `
+                    <div class="service-card">
+                        <div class="service-header">
+                            ${service.logo_url ? 
+                                `<div class="service-logo">
+                                    <img src="${service.logo_url}" alt="${service.name}" 
+                                         onerror="this.parentElement.className='service-icon'; this.parentElement.innerHTML='${service.icon || '🔧'}'">
+                                </div>` :
+                                `<div class="service-icon">${service.icon || '🔧'}</div>`
+                            }
+                            <div class="service-title">
+                                <h3>${service.name}</h3>
+                            </div>
+                            ${!service.hide_status ? `<span class="service-status ${statusClass}">${statusText}</span>` : ''}
+                        </div>
+                        <p class="service-description">${service.description}</p>
+                        ${actionHtml}
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            
+            // Add admin section if enabled
+            if (adminSection.enabled) {
+                html += `
+                    <div class="admin-section">
+                        <h3>${adminSection.title}</h3>
+                        <p>${adminSection.description}</p>
+                        <a href="/admin" class="admin-btn">
+                            ${adminSection.button_emoji ? `<span>${adminSection.button_emoji}</span>` : ''}
+                            ${adminSection.button_text}
+                        </a>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            
+            document.getElementById('app').className = '';
+            document.getElementById('app').innerHTML = html;
+            document.title = branding.company_name || 'Operations Center';
+        }
+        
+        // Load user info
+        async function loadUserInfo() {
+            try {
+                const response = await fetch(`${BASE_URL}/auth/user`);
+                if (response.ok) {
+                    const data = await response.json();
+                    const user = data.user;
+                    document.getElementById('userName').textContent = user.name || user.username || 'User';
+                    document.getElementById('userAvatar').textContent = (user.name || user.username || 'U')[0].toUpperCase();
+                } else {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.get('error') === 'authentication_failed') {
+                        console.error('Authentication failed');
+                        setTimeout(() => {
+                            window.location.href = '/auth/login';
+                        }, 1000);
+                    } else {
+                        window.location.href = '/auth/login';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load user info:', error);
+                document.getElementById('userName').textContent = 'Guest';
+            }
+        }
+        
+        // Check service status
+        async function checkServicesStatus() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/v1/services`);
+                if (response.ok) {
+                    const data = await response.json();
+                    const statusMap = {};
+                    
+                    for (const service of data.services) {
+                        // Map by common identifiers
+                        const name = service.name.toLowerCase();
+                        if (name.includes('chat') || name.includes('webui')) {
+                            statusMap['chat'] = service.status === 'running';
+                        } else if (name.includes('search') || name.includes('searxng') || name.includes('center-deep')) {
+                            statusMap['search'] = service.status === 'running';
+                        } else if (name.includes('vllm')) {
+                            statusMap['vllm'] = service.status === 'running';
+                        } else if (name.includes('whisper')) {
+                            statusMap['whisperx'] = service.status === 'running';
+                        } else if (name.includes('kokoro') || name.includes('tts')) {
+                            statusMap['kokoro'] = service.status === 'running';
+                        } else if (name.includes('qdrant')) {
+                            statusMap['qdrant'] = service.status === 'running';
+                        }
+                    }
+                    
+                    servicesStatus = statusMap;
+                }
+            } catch (error) {
+                console.error('Failed to check services status:', error);
+            }
+        }
+        
+        // Load configuration
+        async function loadConfiguration() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/v1/landing/config`);
+                if (response.ok) {
+                    landingConfig = await response.json();
+                    applyTheme(landingConfig);
+                    await checkServicesStatus();
+                    renderLandingPage(landingConfig);
+                    await loadUserInfo();
+                } else {
+                    console.error('Failed to load configuration');
+                    // Use default config as fallback
+                    window.location.href = '/index.html';
+                }
+            } catch (error) {
+                console.error('Failed to load configuration:', error);
+                // Fallback to static page
+                window.location.href = '/index.html';
+            }
+        }
+        
+        // Logout function
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                window.location.href = `${BASE_URL}/auth/logout`;
+            }
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadConfiguration();
+        });
+    </script>
+</body>
+</html>

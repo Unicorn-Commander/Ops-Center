@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Direct routing to ops-center backend
+  ops-center-direct:
+    image: uc-1-pro-ops-center
+    container_name: ops-center-direct
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./backend:/app
+      - ./public:/app/public
+    environment:
+      - EXTERNAL_HOST=unicorncommander.ai
+      - OAUTH_CLIENT_ID=ops-center
+      - OPS_CENTER_OAUTH_CLIENT_SECRET=REMOVED
+      - KEYCLOAK_URL=http://uchub-keycloak:8080
+      - KEYCLOAK_REALM=uchub
+      - KEYCLOAK_ADMIN_USER=admin
+      - KEYCLOAK_ADMIN_PASSWORD=REMOVED-KEYCLOAK_ADMIN_PASSWORD
+      - SESSION_SECRET_KEY=REMOVED-SESSION_SECRET_KEY
+      # Stripe Configuration
+      - SREMOVED
+      - STRIPE_SECRET_KEY=sREMOVED
+      - STRIPE_API_KEY=sREMOVED
+      - STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
+      - STRIPE_SUCCESS_URL=https://unicorncommander.ai/signup-flow.html?success=true
+      - STRIPE_CANCEL_URL=https://unicorncommander.ai/signup-flow.html?canceled=true
+      # Lago Configuration
+      - LAGO_API_URL=http://unicorn-lago-api:3000
+      - LAGO_PUBLIC_URL=https://billing-api.unicorncommander.ai
+      - LREMOVED
+      # Redis for sessions
+      - REDIS_URL=redis://unicorn-lago-redis:6379/0
+    networks:
+      - web
+      - unicorn-network
+      - uchub-network
+    labels:
+      - "traefik.enable=true"
+      # Main HTTPS route
+      - "traefik.http.routers.ops-center.rule=Host(`unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center.entrypoints=https"
+      - "traefik.http.routers.ops-center.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center.service=ops-center-svc"
+      - "traefik.http.services.ops-center-svc.loadbalancer.server.port=8084"
+      # HTTP to HTTPS redirect
+      - "traefik.http.routers.ops-center-http.rule=Host(`unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-http.entrypoints=http"
+      - "traefik.http.routers.ops-center-http.middlewares=https-redirect"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+
+networks:
+  web:
+    external: true
+  unicorn-network:
+    external: true
+  uchub-network:
+    external: true

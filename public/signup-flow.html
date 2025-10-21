@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - UC-1 Pro Operations Center</title>
+    <link rel="icon" type="image/png" href="the-colonel-logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a0033 0%, #220044 25%, #0a1929 50%, #3a0e5a 75%, #1a0033 100%);
+            background-size: 400% 400%;
+            animation: galaxyShift 20s ease infinite;
+            min-height: 100vh;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        @keyframes galaxyShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        /* Card */
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 3rem;
+            box-shadow: 0 20px 80px rgba(0, 0, 0, 0.3);
+            margin-bottom: 2rem;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            background-image: url('the-colonel-logo.png');
+            background-size: cover;
+            border-radius: 20px;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+        }
+
+        .header h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        /* Progress Steps */
+        .progress-steps {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 3rem;
+            padding: 0 2rem;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            opacity: 1;
+        }
+
+        .step.completed {
+            opacity: 0.8;
+        }
+
+        .step-number {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            transition: all 0.3s ease;
+        }
+
+        .step.active .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: transparent;
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+        }
+
+        .step.completed .step-number {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-color: transparent;
+        }
+
+        .step-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .step.active .step-label {
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Sections */
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Tier Cards Grid */
+        .tier-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .tier-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            text-align: center;
+        }
+
+        .tier-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(255, 215, 0, 0.5);
+            box-shadow: 0 20px 60px rgba(255, 215, 0, 0.2);
+        }
+
+        .tier-card.selected {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+            box-shadow: 0 20px 60px rgba(255, 215, 0, 0.3);
+            transform: translateY(-4px) scale(1.02);
+        }
+
+        .tier-card.selected::after {
+            content: '✓ SELECTED';
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            color: #1a0033;
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
+        }
+
+        .tier-card.popular::before {
+            content: '🌟 MOST POPULAR';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #1a0033;
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+        }
+
+        .tier-name {
+            font-size: 1.75rem;
+            font-weight: 700;
+            font-family: 'Space Grotesk', sans-serif;
+            color: white;
+            margin-bottom: 0.5rem;
+        }
+
+        .tier-price {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.25rem;
+        }
+
+        .tier-period {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tier-features {
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+            text-align: left;
+        }
+
+        .tier-features li {
+            padding: 0.5rem 0;
+            color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.95rem;
+        }
+
+        .tier-features li::before {
+            content: '✓';
+            color: #10b981;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.95rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
+        .form-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Space Grotesk', sans-serif;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #1a0033;
+            width: 100%;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px rgba(255, 215, 0, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-back {
+            margin-bottom: 1.5rem;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.95rem;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #86efac;
+        }
+
+        .alert-info {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            color: #93c5fd;
+        }
+
+        .alert.hidden {
+            display: none;
+        }
+
+        /* Payment Summary */
+        .payment-summary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .payment-summary h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #ffd700;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .summary-row:last-child {
+            border-bottom: none;
+            padding-top: 1rem;
+            margin-top: 0.5rem;
+            border-top: 2px solid rgba(255, 255, 255, 0.2);
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .summary-label {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .summary-value {
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #ffd700;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Links */
+        .link {
+            color: #ffd700;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .link:hover {
+            color: #ffed4e;
+            text-decoration: underline;
+        }
+
+        .text-center {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .card {
+                padding: 2rem 1.5rem;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .progress-steps {
+                gap: 1rem;
+                padding: 0;
+            }
+
+            .step-label {
+                font-size: 0.8rem;
+            }
+
+            .tier-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tier-price {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <!-- Header -->
+            <div class="header">
+                <div class="logo"></div>
+                <h1>Join UC-1 Pro</h1>
+                <p>Choose your plan and get started today</p>
+            </div>
+
+            <!-- Progress Steps -->
+            <div class="progress-steps">
+                <div class="step active" id="step-indicator-1">
+                    <div class="step-number">1</div>
+                    <div class="step-label">Select Plan</div>
+                </div>
+                <div class="step" id="step-indicator-2">
+                    <div class="step-number">2</div>
+                    <div class="step-label">Payment</div>
+                </div>
+                <div class="step" id="step-indicator-3">
+                    <div class="step-number">3</div>
+                    <div class="step-label">Complete</div>
+                </div>
+            </div>
+
+            <!-- Alert Container -->
+            <div id="alert-container"></div>
+
+            <!-- Step 1: Select Plan -->
+            <div class="section active" id="step-1">
+                <h2 style="text-align: center; margin-bottom: 2rem; font-size: 1.75rem;">Choose Your Subscription Tier</h2>
+
+                <div class="tier-grid">
+                    <!-- Trial Tier -->
+                    <div class="tier-card" onclick="selectTier('trial', 1.00, 'Trial - 7 days for $1')" id="tier-trial">
+                        <div class="tier-name">Trial</div>
+                        <div class="tier-price">$1</div>
+                        <div class="tier-period">/7 days</div>
+                        <ul class="tier-features">
+                            <li>7-day trial period</li>
+                            <li>700 API calls (100/day)</li>
+                            <li>Open-WebUI access</li>
+                            <li>Center-Deep search</li>
+                            <li>Basic AI models</li>
+                            <li>BYOK support</li>
+                        </ul>
+                    </div>
+
+                    <!-- Starter Tier -->
+                    <div class="tier-card" onclick="selectTier('starter', 19.00, 'Starter - $19/month')" id="tier-starter">
+                        <div class="tier-name">Starter</div>
+                        <div class="tier-price">$19</div>
+                        <div class="tier-period">/month</div>
+                        <ul class="tier-features">
+                            <li>10,000 API calls/month</li>
+                            <li>BYOK support</li>
+                            <li>Center-Deep search</li>
+                            <li>Basic AI models</li>
+                            <li>Email support</li>
+                        </ul>
+                    </div>
+
+                    <!-- Professional Tier (Popular) -->
+                    <div class="tier-card popular" onclick="selectTier('professional', 49.00, 'Professional - $49/month')" id="tier-professional">
+                        <div class="tier-name">Professional</div>
+                        <div class="tier-price">$49</div>
+                        <div class="tier-period">/month</div>
+                        <ul class="tier-features">
+                            <li>100,000 API calls/month</li>
+                            <li>BYOK support</li>
+                            <li>All AI models</li>
+                            <li>TTS & STT access</li>
+                            <li>Priority support</li>
+                            <li>Advanced features</li>
+                        </ul>
+                    </div>
+
+                    <!-- Enterprise Tier -->
+                    <div class="tier-card" onclick="selectTier('enterprise', 99.00, 'Enterprise - $99/month')" id="tier-enterprise">
+                        <div class="tier-name">Enterprise</div>
+                        <div class="tier-price">$99</div>
+                        <div class="tier-period">/month</div>
+                        <ul class="tier-features">
+                            <li>Unlimited API calls</li>
+                            <li>BYOK support</li>
+                            <li>Team management (5 seats)</li>
+                            <li>All services</li>
+                            <li>24/7 support</li>
+                            <li>Custom integrations</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="text-center">
+                    Already have an account? <a href="/login.html" class="link">Sign In</a>
+                </div>
+            </div>
+
+            <!-- Step 2: Payment -->
+            <div class="section" id="step-2">
+                <button class="btn btn-secondary btn-back" onclick="goToStep(1)">← Back to Plans</button>
+
+                <h2 style="text-align: center; margin-bottom: 2rem; font-size: 1.75rem;">Complete Your Purchase</h2>
+
+                <!-- Payment Summary -->
+                <div class="payment-summary">
+                    <h3>Order Summary</h3>
+                    <div class="summary-row">
+                        <span class="summary-label">Plan:</span>
+                        <span class="summary-value" id="summary-plan">Professional</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Billing Cycle:</span>
+                        <span class="summary-value" id="summary-cycle">Monthly</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Total:</span>
+                        <span class="summary-value" id="summary-total">$49.00</span>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    ℹ️ You'll be redirected to Stripe Checkout to complete your payment securely.
+                </div>
+
+                <button class="btn btn-primary" onclick="initiateCheckout()" id="checkout-btn">
+                    Continue to Payment →
+                </button>
+
+                <div class="text-center" style="font-size: 0.9rem;">
+                    Secure payment powered by <strong>Stripe</strong><br>
+                    Your payment information is encrypted and secure.
+                </div>
+            </div>
+
+            <!-- Step 3: Processing -->
+            <div class="section" id="step-3">
+                <div style="text-align: center;">
+                    <div class="spinner"></div>
+                    <h2 style="margin-top: 1rem;">Processing your subscription...</h2>
+                    <p style="color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem;">
+                        Please wait while we set up your account.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/billing.js"></script>
+    <script>
+        // State management
+        let selectedTierName = null;
+        let selectedTierPrice = 0;
+        let selectedTierLabel = '';
+        let csrfToken = null;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            // CRITICAL: Check authentication FIRST before showing anything
+            const isAuthenticated = await checkAuthentication();
+
+            if (!isAuthenticated) {
+                // Not authenticated - redirect to SSO login
+                showAlert('Please sign in to continue with your subscription', 'info');
+                setTimeout(() => {
+                    window.location.href = '/auth/login';
+                }, 1500);
+                return; // Stop here - don't load plans
+            }
+
+            // User is authenticated - proceed with normal flow
+            await fetchCsrfToken();
+            checkReturnFromStripe();
+            checkPreSelectedPlan();
+        });
+
+        // Fetch CSRF token
+        async function fetchCsrfToken() {
+            try {
+                const response = await fetch('/api/v1/auth/csrf-token', {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    csrfToken = data.csrf_token;
+                }
+            } catch (error) {
+                console.error('Failed to fetch CSRF token:', error);
+            }
+        }
+
+        // Select tier
+        function selectTier(tierName, price, label) {
+            selectedTierName = tierName;
+            selectedTierPrice = price;
+            selectedTierLabel = label;
+
+            // Update UI
+            document.querySelectorAll('.tier-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            document.getElementById(`tier-${tierName}`).classList.add('selected');
+
+            // Update summary
+            document.getElementById('summary-plan').textContent = label;
+            document.getElementById('summary-total').textContent = `$${price.toFixed(2)}`;
+            document.getElementById('summary-cycle').textContent =
+                tierName === 'trial' ? '7 days' : 'Monthly';
+
+            // Move to payment step
+            setTimeout(() => goToStep(2), 300);
+        }
+
+        // Navigate to step
+        function goToStep(stepNumber) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Show target section
+            document.getElementById(`step-${stepNumber}`).classList.add('active');
+
+            // Update step indicators
+            for (let i = 1; i <= 3; i++) {
+                const indicator = document.getElementById(`step-indicator-${i}`);
+                indicator.classList.remove('active', 'completed');
+
+                if (i < stepNumber) {
+                    indicator.classList.add('completed');
+                } else if (i === stepNumber) {
+                    indicator.classList.add('active');
+                }
+            }
+        }
+
+        // Check if user is authenticated
+        async function checkAuthentication() {
+            try {
+                const response = await fetch('/api/v1/auth/session', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    // Check if we have a valid user in the session
+                    return data && data.user && data.user.email;
+                }
+                return false;
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                return false;
+            }
+        }
+
+        // Initiate Stripe Checkout (user is already authenticated at this point)
+        async function initiateCheckout() {
+            if (!selectedTierName) {
+                showAlert('Please select a plan first', 'error');
+                goToStep(1);
+                return;
+            }
+
+            // User must be authenticated to reach this point (auth check happens on page load)
+            // Proceed directly with creating Stripe checkout session
+            // Show loading
+            const btn = document.getElementById('checkout-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div style="display: inline-block; width: 20px; height: 20px; border: 2px solid #1a0033; border-top: 2px solid transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div> Processing...';
+
+            try {
+                const response = await fetch('/api/v1/billing/subscriptions/checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        tier_id: selectedTierName,  // Fixed: was "tier", should be "tier_id"
+                        billing_cycle: "monthly"     // Added: required field
+                    })
+                });
+
+                if (!response.ok) {
+                    // Handle error responses
+                    const errorData = await response.json();
+                    console.error('Checkout API error:', errorData);
+
+                    // Extract meaningful error message
+                    let errorMessage = 'Failed to create checkout session. Please try again.';
+                    if (errorData.detail) {
+                        if (typeof errorData.detail === 'string') {
+                            errorMessage = errorData.detail;
+                        } else if (Array.isArray(errorData.detail)) {
+                            // Pydantic validation errors
+                            errorMessage = errorData.detail.map(err => err.msg).join(', ');
+                        } else if (typeof errorData.detail === 'object') {
+                            errorMessage = JSON.stringify(errorData.detail);
+                        }
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+
+                if (data.checkout_url) {
+                    // Redirect to Stripe Checkout
+                    window.location.href = data.checkout_url;
+                } else {
+                    throw new Error('No checkout URL received from server');
+                }
+            } catch (error) {
+                console.error('Checkout error:', error);
+                // Better error display - extract actual message
+                let displayMessage = 'Failed to initiate checkout. Please try again.';
+                if (error.message) {
+                    displayMessage = error.message;
+                } else if (typeof error === 'object') {
+                    displayMessage = JSON.stringify(error);
+                }
+                showAlert(displayMessage, 'error');
+                btn.disabled = false;
+                btn.innerHTML = 'Continue to Payment →';
+            }
+        }
+
+        // Check for pre-selected plan from plans.html
+        async function checkPreSelectedPlan() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const plan = urlParams.get('plan');
+
+            if (plan) {
+                // Map plan names to tiers
+                const planMap = {
+                    'trial': { name: 'trial', price: 1.00, label: 'Trial - $1/week' },
+                    'starter': { name: 'starter', price: 19.00, label: 'Starter - $19/month' },
+                    'professional': { name: 'professional', price: 49.00, label: 'Professional - $49/month' },
+                    'enterprise': { name: 'enterprise', price: 99.00, label: 'Enterprise - $99/month' }
+                };
+
+                const selectedPlan = planMap[plan.toLowerCase()];
+                if (selectedPlan) {
+                    // Save plan to session storage FIRST
+                    sessionStorage.setItem('selectedPlan', selectedPlan.name);
+                    sessionStorage.setItem('selectedPlanPrice', selectedPlan.price);
+                    sessionStorage.setItem('selectedPlanLabel', selectedPlan.label);
+
+                    // Check authentication IMMEDIATELY
+                    const isAuthenticated = await checkAuthentication();
+
+                    if (!isAuthenticated) {
+                        // User not authenticated - redirect to registration BEFORE showing plan
+                        showAlert('Please create an account or sign in to continue with your selected plan', 'info');
+
+                        setTimeout(() => {
+                            // Redirect to authentication with registration flow
+                            window.location.href = 'https://auth.unicorncommander.ai/realms/master/protocol/openid-connect/registrations?client_id=ops-center&response_type=code&scope=openid email profile&redirect_uri=' + encodeURIComponent(window.location.origin + '/auth/callback?return_to=/signup-flow.html');
+                        }, 2000);
+                        return;
+                    }
+
+                    // User IS authenticated - show the plan
+                    selectTier(selectedPlan.name, selectedPlan.price, selectedPlan.label);
+
+                    // Highlight the plan card
+                    const card = document.getElementById(`tier-${selectedPlan.name}`);
+                    if (card) {
+                        card.classList.add('selected');
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+
+                    // Show alert
+                    showAlert(`✓ ${selectedPlan.label} plan selected! Review details and proceed to payment.`, 'success');
+                }
+            } else {
+                // No plan in URL - check if we have one saved from auth redirect
+                const savedPlan = sessionStorage.getItem('selectedPlan');
+                const savedPrice = sessionStorage.getItem('selectedPlanPrice');
+                const savedLabel = sessionStorage.getItem('selectedPlanLabel');
+
+                if (savedPlan && savedPrice && savedLabel) {
+                    // Restore the plan after authentication
+                    selectTier(savedPlan, parseFloat(savedPrice), savedLabel);
+
+                    const card = document.getElementById(`tier-${savedPlan}`);
+                    if (card) {
+                        card.classList.add('selected');
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+
+                    showAlert(`✓ ${savedLabel} plan selected! Review details and proceed to payment.`, 'success');
+                }
+            }
+        }
+
+        // Check if returning from Stripe
+        function checkReturnFromStripe() {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            if (urlParams.get('success') === 'true') {
+                goToStep(3);
+                showAlert('Payment successful! Setting up your account...', 'success');
+
+                // Redirect to dashboard after a delay
+                setTimeout(() => {
+                    window.location.href = '/index.html';
+                }, 3000);
+            } else if (urlParams.get('canceled') === 'true') {
+                showAlert('Payment was canceled. Please try again or choose a different plan.', 'error');
+                goToStep(1);
+            }
+        }
+
+        // Show alert
+        function showAlert(message, type = 'info') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+
+            const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            alert.innerHTML = `${icon} ${message}`;
+
+            container.innerHTML = '';
+            container.appendChild(alert);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                alert.classList.add('hidden');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

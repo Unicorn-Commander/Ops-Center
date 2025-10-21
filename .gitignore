@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+venv/
+
+# Build outputs
+dist/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Data files (may contain sensitive info)
+data/
+backend.log
+dev.log
+vite.logNVIDIA-Linux-x86_64-*.run

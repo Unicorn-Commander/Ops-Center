@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unicorn Commander PRO - Your AI Infrastructure Command Center</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Inter:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0a;
+            min-height: 100vh;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Animated Galaxy Background */
+        .galaxy-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background: linear-gradient(135deg, #1a0033 0%, #220044 25%, #0a1929 50%, #3a0e5a 75%, #1a0033 100%);
+            background-size: 400% 400%;
+            animation: galaxyShift 20s ease infinite;
+        }
+
+        @keyframes galaxyShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Neural Network Animation */
+        .neural-network {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        .neural-node {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: radial-gradient(circle, #00ffff 0%, transparent 70%);
+            border-radius: 50%;
+            animation: pulse 4s infinite;
+        }
+
+        .neural-connection {
+            position: absolute;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #00ffff, transparent);
+            animation: connectionFlow 3s infinite;
+            opacity: 0.5;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.5); opacity: 1; }
+        }
+
+        @keyframes connectionFlow {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* Main Content Layer */
+        .content-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header with The Colonel branding */
+        .header {
+            background: linear-gradient(135deg, rgba(76, 29, 149, 0.9) 0%, rgba(37, 99, 235, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            padding: 1.5rem 3rem;
+            box-shadow: 0 4px 30px rgba(138, 43, 226, 0.3);
+            border-bottom: 1px solid rgba(138, 43, 226, 0.2);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+        
+        .colonel-logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+            animation: logoGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes logoGlow {
+            0%, 100% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.5); }
+            50% { box-shadow: 0 0 50px rgba(255, 215, 0, 0.8); }
+        }
+        
+        .brand {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .brand h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.8rem;
+            font-weight: 900;
+            background: linear-gradient(to right, #ffd700, #ffed4e, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            animation: shimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .brand .tagline {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.9);
+            margin-top: 0.25rem;
+            letter-spacing: 1px;
+        }
+        
+        /* Main content area */
+        .main-content {
+            flex: 1;
+            padding: 3rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        /* Search Section */
+        .search-section {
+            margin-bottom: 3rem;
+            text-align: center;
+        }
+        
+        .search-container {
+            max-width: 700px;
+            margin: 0 auto;
+            position: relative;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 1.25rem 1.5rem;
+            padding-right: 60px;
+            font-size: 1.125rem;
+            border: 2px solid rgba(138, 43, 226, 0.3);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            color: white;
+            box-shadow: 0 20px 40px rgba(138, 43, 226, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            border-color: rgba(138, 43, 226, 0.6);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px rgba(138, 43, 226, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .search-box::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .search-button {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+            border: none;
+            border-radius: 12px;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .search-button:hover {
+            transform: translateY(-50%) scale(1.05);
+            box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+        }
+        
+        .powered-by-search {
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.6);
+            font-style: italic;
+        }
+        
+        /* Service Cards Grid */
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .service-card {
+            border-radius: 20px;
+            padding: 1.5rem;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            min-height: 180px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .service-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            animation: rotate 10s linear infinite;
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .service-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 30px 60px rgba(138, 43, 226, 0.4);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .service-card:hover::before {
+            opacity: 1;
+        }
+        
+        /* Individual card colors */
+        .card-openwebui {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(37, 99, 235, 0.8) 100%);
+        }
+        
+        .card-centerdeep {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.8) 0%, rgba(5, 150, 105, 0.8) 100%);
+        }
+        
+        .card-orator {
+            background: linear-gradient(135deg, rgba(236, 72, 153, 0.8) 0%, rgba(219, 39, 119, 0.8) 100%);
+        }
+        
+        .card-bolt {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.8) 0%, rgba(124, 58, 237, 0.8) 100%);
+        }
+
+        .card-docs {
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.8) 0%, rgba(249, 115, 22, 0.8) 100%);
+        }
+
+        .card-grafana {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
+        }
+
+        .card-portainer {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.8) 0%, rgba(22, 163, 74, 0.8) 100%);
+        }
+        
+        .service-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        
+        .service-icon {
+            width: 56px;
+            height: 56px;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Custom icon styles */
+        .icon-centerdeep {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: bold;
+            font-family: 'Orbitron', monospace;
+        }
+
+        .icon-orator {
+            position: relative;
+        }
+
+        .icon-orator::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #fff, transparent);
+            animation: voiceWave 1s ease-in-out infinite;
+        }
+
+        @keyframes voiceWave {
+            0%, 100% { width: 20px; opacity: 0.5; }
+            50% { width: 30px; opacity: 1; }
+        }
+        
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: statusPulse 2s infinite;
+        }
+        
+        .status-online {
+            background: #10B981;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
+        }
+        
+        .status-offline {
+            background: #EF4444;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+        }
+        
+        @keyframes statusPulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.3);
+                opacity: 0.6;
+            }
+        }
+        
+        .service-content {
+            flex: 1;
+            z-index: 1;
+        }
+        
+        .service-title {
+            font-size: 1.375rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            font-family: 'Orbitron', monospace;
+            letter-spacing: 1px;
+        }
+        
+        .service-description {
+            font-size: 0.925rem;
+            color: rgba(255, 255, 255, 0.85);
+            line-height: 1.6;
+        }
+        
+        /* Footer */
+        .footer {
+            background: linear-gradient(135deg, rgba(31, 41, 55, 0.9) 0%, rgba(17, 24, 39, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            padding: 2rem 3rem;
+            margin-top: auto;
+            box-shadow: 0 -4px 30px rgba(138, 43, 226, 0.2);
+            border-top: 1px solid rgba(138, 43, 226, 0.2);
+        }
+        
+        .footer-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+        
+        .footer-brand {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .footer-brand a {
+            color: #ffd700;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+        
+        .footer-brand a:hover {
+            color: #ffed4e;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+        
+        .admin-button {
+            background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+            color: #1a0033;
+            padding: 0.875rem 2.5rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: 'Orbitron', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 10px 30px rgba(255, 215, 0, 0.3);
+        }
+        
+        .admin-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(255, 215, 0, 0.5);
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .header {
+                padding: 1rem 1.5rem;
+            }
+            
+            .colonel-logo {
+                width: 50px;
+                height: 50px;
+                font-size: 24px;
+            }
+            
+            .brand h1 {
+                font-size: 1.3rem;
+            }
+            
+            .main-content {
+                padding: 2rem 1.5rem;
+            }
+            
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .footer {
+                padding: 1.5rem;
+            }
+            
+            .footer-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Animated Galaxy Background -->
+    <div class="galaxy-background"></div>
+    
+    <!-- Neural Network Animation -->
+    <div class="neural-network" id="neuralNetwork"></div>
+
+    <!-- Main Content Wrapper -->
+    <div class="content-wrapper">
+        <!-- Header with The Colonel -->
+        <div class="header">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="colonel-logo">🎖️</div>
+                    <div class="brand">
+                        <h1>Unicorn Commander PRO</h1>
+                        <div class="tagline">The Colonel's AI Infrastructure Command Center</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Search Section -->
+            <div class="search-section">
+                <div class="search-container">
+                    <form id="searchForm" onsubmit="performSearch(event)">
+                        <input 
+                            type="text" 
+                            id="searchInput"
+                            class="search-box" 
+                            placeholder="Search with Center-Deep AI-powered search..."
+                            autofocus
+                        >
+                        <button type="submit" class="search-button">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width: 24px; height: 24px; color: white;">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </button>
+                    </form>
+                    <div class="powered-by-search">Powered by Center-Deep Advanced AI Search Platform</div>
+                </div>
+            </div>
+
+            <!-- Service Cards -->
+            <div class="services-grid">
+                <!-- Open-WebUI Card -->
+                <a href="http://0.0.0.0:8080" class="service-card card-openwebui" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon">💬</div>
+                        <div class="service-status">
+                            <span class="status-dot status-online"></span>
+                            <span>Online</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Open-WebUI</div>
+                        <div class="service-description">Advanced AI chat interface with multi-model support and RAG capabilities</div>
+                    </div>
+                </a>
+
+                <!-- Center-Deep Card -->
+                <a href="http://0.0.0.0:8888" class="service-card card-centerdeep" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon">
+                            <span class="icon-centerdeep">CD</span>
+                        </div>
+                        <div class="service-status">
+                            <span class="status-dot status-online"></span>
+                            <span>Online</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Center-Deep Search</div>
+                        <div class="service-description">AI-powered search platform with advanced tool servers</div>
+                    </div>
+                </a>
+
+                <!-- Unicorn Orator Card -->
+                <a href="http://0.0.0.0:8085" class="service-card card-orator" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon icon-orator">🎙️</div>
+                        <div class="service-status">
+                            <span class="status-dot status-offline"></span>
+                            <span>Offline</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Unicorn Orator</div>
+                        <div class="service-description">Voice synthesis and speech processing with Kokoro TTS & WhisperX</div>
+                    </div>
+                </a>
+
+                <!-- Bolt.DIY Card -->
+                <a href="http://0.0.0.0:5173" class="service-card card-bolt" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon">⚡</div>
+                        <div class="service-status">
+                            <span class="status-dot status-offline"></span>
+                            <span>Offline</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Bolt.DIY</div>
+                        <div class="service-description">AI-powered development environment for rapid prototyping</div>
+                    </div>
+                </a>
+
+                <!-- Documentation Card -->
+                <a href="http://0.0.0.0:8081" class="service-card card-docs" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon">📚</div>
+                        <div class="service-status">
+                            <span class="status-dot status-offline"></span>
+                            <span>Offline</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Documentation</div>
+                        <div class="service-description">Comprehensive user guides and API documentation</div>
+                    </div>
+                </a>
+
+                <!-- Grafana Card -->
+                <a href="http://0.0.0.0:3000" class="service-card card-grafana" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon">📊</div>
+                        <div class="service-status">
+                            <span class="status-dot status-offline"></span>
+                            <span>Offline</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Grafana Monitoring</div>
+                        <div class="service-description">Real-time system metrics and performance dashboards</div>
+                    </div>
+                </a>
+
+                <!-- Portainer Card -->
+                <a href="http://0.0.0.0:9000" class="service-card card-portainer" target="_blank">
+                    <div class="service-header">
+                        <div class="service-icon">🐳</div>
+                        <div class="service-status">
+                            <span class="status-dot status-offline"></span>
+                            <span>Offline</span>
+                        </div>
+                    </div>
+                    <div class="service-content">
+                        <div class="service-title">Portainer</div>
+                        <div class="service-description">Docker container management and orchestration interface</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <div class="footer-brand">
+                        Powered by <a href="https://magicunicorn.tech" target="_blank">Magic Unicorn Technology</a>
+                    </div>
+                    <div class="footer-date" style="color: rgba(255, 255, 255, 0.6); font-size: 0.75rem; margin-top: 0.25rem;">
+                        August 24, 2025
+                    </div>
+                </div>
+                <a href="/admin" class="admin-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width: 20px; height: 20px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Admin Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Create neural network animation
+        function createNeuralNetwork() {
+            const network = document.getElementById('neuralNetwork');
+            const nodeCount = 20;
+            const nodes = [];
+            
+            // Create nodes
+            for (let i = 0; i < nodeCount; i++) {
+                const node = document.createElement('div');
+                node.className = 'neural-node';
+                node.style.left = Math.random() * 100 + '%';
+                node.style.top = Math.random() * 100 + '%';
+                node.style.animationDelay = Math.random() * 4 + 's';
+                network.appendChild(node);
+                nodes.push(node);
+            }
+            
+            // Create connections
+            for (let i = 0; i < nodeCount / 2; i++) {
+                const connection = document.createElement('div');
+                connection.className = 'neural-connection';
+                connection.style.left = Math.random() * 100 + '%';
+                connection.style.top = Math.random() * 100 + '%';
+                connection.style.width = Math.random() * 200 + 100 + 'px';
+                connection.style.transform = `rotate(${Math.random() * 360}deg)`;
+                connection.style.animationDelay = Math.random() * 3 + 's';
+                network.appendChild(connection);
+            }
+        }
+
+        // Initialize neural network on load
+        window.addEventListener('DOMContentLoaded', function() {
+            createNeuralNetwork();
+            document.getElementById('searchInput').focus();
+        });
+
+        // Handle search form submission
+        function performSearch(event) {
+            event.preventDefault();
+            const searchQuery = document.getElementById('searchInput').value;
+            if (searchQuery.trim()) {
+                window.open(`http://0.0.0.0:8888/search?q=${encodeURIComponent(searchQuery)}`, '_blank');
+            }
+        }
+
+        // Check service status
+        async function checkServiceStatus() {
+            const services = [
+                { url: 'http://0.0.0.0:8080/health', card: '.card-openwebui' },
+                { url: 'http://0.0.0.0:8888/', card: '.card-centerdeep' },
+                { url: 'http://0.0.0.0:8085/', card: '.card-orator' },
+                { url: 'http://0.0.0.0:5173/', card: '.card-bolt' },
+                { url: 'http://0.0.0.0:8081/', card: '.card-docs' },
+                { url: 'http://0.0.0.0:3000/', card: '.card-grafana' },
+                { url: 'http://0.0.0.0:9000/', card: '.card-portainer' }
+            ];
+
+            for (const service of services) {
+                try {
+                    const response = await fetch(service.url, { 
+                        method: 'HEAD', 
+                        mode: 'no-cors',
+                        cache: 'no-cache'
+                    });
+                    updateServiceStatus(service.card, true);
+                } catch (error) {
+                    updateServiceStatus(service.card, false);
+                }
+            }
+        }
+
+        function updateServiceStatus(cardSelector, isOnline) {
+            const card = document.querySelector(cardSelector);
+            if (card) {
+                const statusDot = card.querySelector('.status-dot');
+                const statusText = card.querySelector('.service-status span:last-child');
+                
+                if (statusDot) {
+                    statusDot.className = `status-dot ${isOnline ? 'status-online' : 'status-offline'}`;
+                }
+                if (statusText) {
+                    statusText.textContent = isOnline ? 'Online' : 'Offline';
+                }
+            }
+        }
+
+        // Check status on load and periodically
+        checkServiceStatus();
+        setInterval(checkServiceStatus, 30000);
+    </script>
+</body>
+</html>
