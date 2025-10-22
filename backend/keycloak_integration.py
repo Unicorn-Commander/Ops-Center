@@ -36,11 +36,11 @@ async def get_admin_token() -> str:
         if datetime.now() < _admin_token_cache["expires_at"]:
             return _admin_token_cache["token"]
 
-    # Request new token
+    # Request new token from master realm (admin user exists in master, not uchub)
     try:
         async with httpx.AsyncClient(verify=False) as client:
             response = await client.post(
-                f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token",
+                f"{KEYCLOAK_URL}/realms/master/protocol/openid-connect/token",
                 data={
                     "grant_type": "password",
                     "client_id": KEYCLOAK_CLIENT_ID,

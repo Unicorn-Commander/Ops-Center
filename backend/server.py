@@ -68,6 +68,8 @@ from tier_check_middleware import router as tier_check_router
 from subscription_api import router as subscription_router
 from stripe_api import router as stripe_router
 from billing_api import router as billing_router
+from local_user_api import router as local_user_router
+from org_api import router as org_router
 from redis_session import redis_session_manager
 
 # Keycloak SSO integration
@@ -321,6 +323,14 @@ logger.info("Stripe payment API endpoints registered at /api/v1/billing")
 app.include_router(billing_router)
 logger.info("Lago billing/invoice API endpoints registered at /api/v1/billing")
 
+# Register Local User Management endpoints
+app.include_router(local_user_router)
+logger.info("Local User Management API endpoints registered at /api/v1/local-users")
+
+# Register Organization Management endpoints
+app.include_router(org_router)
+logger.info("Organization Management API endpoints registered at /api/v1/org")
+
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 
 # Root redirect must be defined early to take precedence
@@ -332,21 +342,28 @@ async def root_redirect(request: Request):
     if session_token and session_token in sessions:
         print("User authenticated, serving React app")
         # Serve the React app for authenticated users
-        if os.path.exists("dist/index.html"):
+        if os.path.exists("public/index.html"):
+            response = FileResponse("public/index.html")
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+        elif os.path.exists("dist/index.html"):
             response = FileResponse("dist/index.html")
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             return response
-        elif os.path.exists("../dist/index.html"):
-            response = FileResponse("../dist/index.html")
+        elif os.path.exists("../public/index.html"):
+            response = FileResponse("../public/index.html")
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             return response
         else:
-            # Fallback to admin if React app not found
-            return RedirectResponse(url="/admin", status_code=302)
+            # Fallback: redirect to signup if frontend not found
+            print("ERROR: React app not found at public/index.html or dist/index.html")
+            return RedirectResponse(url="/auth/login", status_code=302)
     else:
         print("User not authenticated, serving registration page (signup.html)")
         # Serve the registration page with manual form + OAuth options
@@ -4414,19 +4431,25 @@ async def serve_admin(request: Request, path: str = ""):
     """Serve the React admin app for all /admin routes"""
     # Check if user is authenticated via session cookie
     session_token = request.cookies.get("session_token")
-    
+
     # If authenticated via OAuth, create a bridge to the React app
     if session_token and session_token in sessions:
         # User is authenticated, serve the admin page
         # The React app will need to call /api/v1/auth/me to get user info
-        if os.path.exists("dist/index.html"):
+        if os.path.exists("public/index.html"):
+            response = FileResponse("public/index.html")
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+        elif os.path.exists("dist/index.html"):
             response = FileResponse("dist/index.html")
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             return response
-        elif os.path.exists("../dist/index.html"):
-            response = FileResponse("../dist/index.html")
+        elif os.path.exists("../public/index.html"):
+            response = FileResponse("../public/index.html")
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -4434,7 +4457,7 @@ async def serve_admin(request: Request, path: str = ""):
     else:
         # Not authenticated, redirect to OAuth login
         return RedirectResponse(url="/auth/login", status_code=302)
-    
+
     raise HTTPException(status_code=404, detail="Admin interface not found")
 
 # Serve the React app for all non-API routes
