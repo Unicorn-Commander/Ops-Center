@@ -59,6 +59,10 @@ def validate_username(username: str) -> None:
     """
     Validate username meets security requirements.
 
+    SECURITY: Strengthened to prevent command injection attacks.
+    Only allows alphanumeric characters, underscores, and hyphens.
+    Username must be 1-32 characters.
+
     Args:
         username: Username to validate
 
@@ -69,14 +73,22 @@ def validate_username(username: str) -> None:
     if not username:
         raise ValidationError("Username cannot be empty")
 
-    if len(username) > 32:
-        raise ValidationError("Username too long (max 32 characters)")
+    if len(username) < 1 or len(username) > 32:
+        raise ValidationError("Username must be 1-32 characters")
 
+    # SECURITY FIX: Strict validation to prevent command injection
+    # Only allow lowercase letters, digits, underscore, hyphen
+    # Must start with letter or underscore
     if not VALID_USERNAME_PATTERN.match(username):
         raise ValidationError(
             "Username must start with lowercase letter or underscore, "
             "followed by lowercase letters, digits, underscores or hyphens"
         )
+
+    # SECURITY: Additional check for dangerous patterns
+    dangerous_chars = [';', '|', '&', '$', '`', '>', '<', '\n', '\r', '(', ')', '{', '}', '[', ']', '"', "'", '\\']
+    if any(char in username for char in dangerous_chars):
+        raise ValidationError("Username contains invalid characters")
 
     if username in PROTECTED_USERS:
         raise SecurityError(f"Cannot perform operations on protected user: {username}")
@@ -192,10 +204,14 @@ def create_user(
     except KeyError:
         pass  # User doesn't exist, proceed
 
-    # Validate shell
-    valid_shells = ['/bin/bash', '/bin/sh', '/bin/zsh', '/bin/dash', '/usr/bin/fish']
+    # SECURITY FIX: Validate shell - whitelist approach to prevent command injection
+    valid_shells = ['/bin/bash', '/bin/sh', '/bin/zsh', '/bin/dash', '/usr/bin/fish', '/usr/bin/zsh']
     if shell not in valid_shells:
         raise ValidationError(f"Invalid shell: {shell}. Must be one of {valid_shells}")
+
+    # SECURITY: Additional validation - shell must be an absolute path
+    if not shell.startswith('/'):
+        raise ValidationError("Shell must be an absolute path")
 
     # Build useradd command
     cmd = ['sudo', 'useradd']
@@ -243,6 +259,9 @@ def delete_user(username: str, remove_home: bool = False) -> bool:
     """
     Delete a Linux user.
 
+    SECURITY FIX: Added file locking to prevent race conditions (TOCTOU).
+    Multiple deletion requests for the same user are now handled safely.
+
     Args:
         username: Username to delete
         remove_home: Also remove home directory
@@ -255,38 +274,121 @@ def delete_user(username: str, remove_home: bool = False) -> bool:
         SecurityError: If operation violates security policy
         SystemError: If user deletion fails
     """
+    import fcntl
+
     validate_username(username)
 
-    # Check if user exists
+    # SECURITY FIX: Use file locking to prevent race conditions
+    # This prevents Time-of-Check-Time-of-Use (TOCTOU) vulnerabilities
+    lock_file_path = f"/tmp/user_delete_{username}.lock"
+
     try:
-        pwd.getpwnam(username)
-    except KeyError:
-        raise ValidationError(f"User does not exist: {username}")
+        # Create lock file
+        lock_file = open(lock_file_path, 'w')
 
-    # Build userdel command
-    cmd = ['sudo', 'userdel']
+        try:
+            # Acquire exclusive lock (blocks if another process has lock)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
 
-    if remove_home:
-        cmd.append('-r')
+            # SECURITY FIX: Recheck user exists AFTER acquiring lock
+            # This prevents race condition where user was deleted between initial check and deletion
+            try:
+                user_info = pwd.getpwnam(username)
+            except KeyError:
+                raise ValidationError(f"User does not exist: {username}")
 
-    cmd.append(username)
+            # Double-check it's not a system user
+            if user_info.pw_uid < MIN_UID:
+                raise SecurityError(f"Cannot delete system user: {username} (UID {user_info.pw_uid})")
 
-    # Execute user deletion
-    returncode, stdout, stderr = run_command(cmd)
-    if returncode != 0:
-        raise SystemError(f"Failed to delete user: {stderr}")
+            # Build userdel command
+            cmd = ['sudo', 'userdel']
 
-    logger.info(f"Successfully deleted user: {username}")
-    return True
+            if remove_home:
+                cmd.append('-r')
+
+            cmd.append(username)
+
+            # Execute user deletion
+            returncode, stdout, stderr = run_command(cmd)
+            if returncode != 0:
+                # User may have been deleted by another process - check if that's the case
+                try:
+                    pwd.getpwnam(username)
+                    # User still exists, so deletion actually failed
+                    raise SystemError(f"Failed to delete user: {stderr}")
+                except KeyError:
+                    # User no longer exists - deletion succeeded (idempotent behavior)
+                    logger.info(f"User {username} was already deleted (idempotent)")
+                    return True
+
+            logger.info(f"Successfully deleted user: {username}")
+            return True
+
+        finally:
+            # Release lock
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+
+    finally:
+        # Clean up lock file
+        try:
+            import os
+            os.unlink(lock_file_path)
+        except:
+            pass
+
+
+def validate_password(password: str) -> None:
+    """
+    Validate password meets security requirements.
+
+    SECURITY FIX: Strengthened password requirements from 8 to 12 characters.
+    Requires uppercase, lowercase, digit, and special character.
+    Checks against common weak passwords.
+
+    Args:
+        password: Password to validate
+
+    Raises:
+        ValidationError: If password doesn't meet requirements
+    """
+    if not password:
+        raise ValidationError("Password cannot be empty")
+
+    # SECURITY FIX: Increased minimum length from 8 to 12
+    if len(password) < 12:
+        raise ValidationError("Password must be at least 12 characters")
+
+    # Check complexity requirements
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
+
+    if not (has_upper and has_lower and has_digit and has_special):
+        raise ValidationError(
+            "Password must contain: uppercase letter, lowercase letter, digit, and special character"
+        )
+
+    # Check against common passwords (basic check)
+    common_passwords = [
+        "Password123!", "Admin123!", "Welcome123!", "Qwerty123!",
+        "Passw0rd!", "P@ssw0rd", "12345678!", "Abc123!@#"
+    ]
+    if password in common_passwords:
+        raise ValidationError("Password is too common. Please choose a stronger password.")
 
 
 def set_password(username: str, password: str) -> bool:
     """
     Set password for a Linux user.
 
+    SECURITY FIX: Now validates password strength before setting.
+
     Args:
         username: Username
-        password: New password
+        password: New password (min 12 chars with complexity)
 
     Returns:
         True if successful
@@ -297,9 +399,7 @@ def set_password(username: str, password: str) -> bool:
         SystemError: If password change fails
     """
     validate_username(username)
-
-    if not password or len(password) < 8:
-        raise ValidationError("Password must be at least 8 characters")
+    validate_password(password)  # SECURITY FIX: Added password validation
 
     # Check if user exists
     try:
@@ -621,28 +721,138 @@ def list_users(include_system: bool = False) -> List[Dict[str, any]]:
     return users
 
 
+def get_statistics() -> Dict[str, any]:
+    """
+    Get statistics about local users.
+
+    NEW FEATURE: Provides system-wide user statistics.
+
+    Returns:
+        Dict with user statistics including:
+        - total_users: Total number of non-system users
+        - sudo_users: Number of users with sudo privileges
+        - system_users: Number of system users (UID < 1000)
+        - users_by_shell: Count by shell type
+        - total_home_size: Total size of all home directories
+        - uid_range: Min and max UID values
+    """
+    all_users = []
+    system_users = []
+
+    # Get all users
+    for user in pwd.getpwall():
+        if user.pw_uid < MIN_UID:
+            system_users.append(user)
+        elif user.pw_name not in PROTECTED_USERS:
+            try:
+                all_users.append(get_user_info(user.pw_name))
+            except:
+                pass
+
+    # Calculate statistics
+    sudo_count = sum(1 for u in all_users if u.get('has_sudo', False))
+
+    # Count by shell
+    shells = {}
+    for user in all_users:
+        shell = user.get('shell', 'unknown')
+        shells[shell] = shells.get(shell, 0) + 1
+
+    # Total home directory size
+    total_home_size = sum(u.get('home_size_bytes', 0) for u in all_users)
+
+    # UID range
+    uids = [u.get('uid') for u in all_users if u.get('uid')]
+    uid_min = min(uids) if uids else None
+    uid_max = max(uids) if uids else None
+
+    return {
+        "total_users": len(all_users),
+        "sudo_users": sudo_count,
+        "system_users": len(system_users),
+        "users_by_shell": shells,
+        "total_home_size_bytes": total_home_size,
+        "total_home_size_gb": round(total_home_size / (1024**3), 2) if total_home_size > 0 else 0,
+        "uid_range": {
+            "min": uid_min,
+            "max": uid_max
+        }
+    }
+
+
 def generate_key_fingerprint(ssh_key: str) -> str:
     """
-    Generate a fingerprint for an SSH key.
+    Generate a SHA256 fingerprint for an SSH key.
+
+    SECURITY FIX: Changed from MD5 to SHA256 for fingerprints.
+    MD5 is cryptographically broken and should not be used.
+
+    Uses ssh-keygen command for secure fingerprint generation.
 
     Args:
         ssh_key: SSH public key
 
     Returns:
-        MD5 fingerprint of the key
+        SHA256 fingerprint of the key (format: SHA256:base64string)
+
+    Raises:
+        ValidationError: If key is invalid or fingerprint generation fails
     """
+    import tempfile
     import hashlib
     import base64
 
+    # SECURITY FIX: Use ssh-keygen with SHA256 instead of MD5
+    # This matches OpenSSH's default fingerprint format
+    try:
+        # Create temporary file for the key
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pub') as temp_key:
+            temp_key.write(ssh_key.strip())
+            temp_key_path = temp_key.name
+
+        try:
+            # Use ssh-keygen to generate SHA256 fingerprint
+            # -lf: read from file
+            # -E sha256: use SHA256 hash algorithm
+            returncode, stdout, stderr = run_command(
+                ['ssh-keygen', '-lf', temp_key_path, '-E', 'sha256']
+            )
+
+            if returncode == 0 and stdout:
+                # Output format: "2048 SHA256:base64string comment (RSA)"
+                # Extract the SHA256:base64string part
+                parts = stdout.strip().split()
+                for part in parts:
+                    if part.startswith('SHA256:'):
+                        return part
+
+                # Fallback: return first fingerprint-like string
+                if len(parts) >= 2:
+                    return parts[1]
+
+        finally:
+            # Clean up temporary file
+            import os
+            try:
+                os.unlink(temp_key_path)
+            except:
+                pass
+
+    except Exception as e:
+        logger.warning(f"ssh-keygen fingerprint generation failed: {e}")
+
+    # SECURITY FIX: Fallback to SHA256 hash (not MD5)
+    # Only used if ssh-keygen fails
     try:
         parts = ssh_key.strip().split()
         if len(parts) >= 2:
             key_data = base64.b64decode(parts[1])
-            fingerprint = hashlib.md5(key_data).hexdigest()
-            # Format as xx:xx:xx:...
-            return ':'.join(fingerprint[i:i+2] for i in range(0, len(fingerprint), 2))
+            fingerprint = hashlib.sha256(key_data).digest()
+            # Format as SHA256:base64
+            return 'SHA256:' + base64.b64encode(fingerprint).decode('ascii').rstrip('=')
     except:
         pass
 
-    # Fallback: hash the entire key
-    return hashlib.md5(ssh_key.encode()).hexdigest()[:16]
+    # Last resort: SHA256 hash of entire key
+    fingerprint = hashlib.sha256(ssh_key.encode()).digest()
+    return 'SHA256:' + base64.b64encode(fingerprint).decode('ascii').rstrip('=')[:32]

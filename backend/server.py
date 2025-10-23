@@ -74,6 +74,9 @@ from firewall_api import router as firewall_router
 from cloudflare_api import router as cloudflare_router
 from migration_api import router as migration_router
 from credential_api import router as credential_router
+from keycloak_status_api import router as keycloak_status_router
+from litellm_routing_api import router as litellm_routing_router
+from local_users_api import router as admin_local_users_router
 from redis_session import redis_session_manager
 
 # Keycloak SSO integration
@@ -355,6 +358,16 @@ logger.info("Migration API endpoints registered at /api/v1/migration")
 # Epic 1.6/1.7: Service Credential Management
 app.include_router(credential_router)
 logger.info("Credential management API endpoints registered at /api/v1/credentials")
+
+# Keycloak Status API
+app.include_router(keycloak_status_router)
+logger.info("Keycloak status API endpoints registered at /api/v1/system/keycloak")
+
+# LiteLLM Routing and Provider Management API
+app.include_router(admin_local_users_router)
+logger.info("Admin Local User Management API endpoints registered at /api/v1/admin/system/local-users")
+app.include_router(litellm_routing_router)
+logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 

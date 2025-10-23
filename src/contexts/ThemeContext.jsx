@@ -77,6 +77,34 @@ const themes = {
       error: 'text-rose-400',
       info: 'text-sky-400'
     }
+  },
+  galaxy: {
+    name: 'Unicorn Galaxy',
+    id: 'galaxy',
+    primary: 'purple-600',
+    accent: 'yellow-400',
+    background: 'galaxy-bg', // Custom CSS class for animated gradient
+    sidebar: 'glass-card backdrop-blur-xl border-r border-white/10',
+    card: 'glass-card backdrop-blur-md border border-white/10 shadow-2xl card-glow',
+    button: 'bg-gradient-to-r from-purple-600 via-violet-600 to-purple-600 hover:from-purple-700 hover:via-violet-700 hover:to-purple-700 text-white shadow-lg shadow-purple-500/30',
+    text: {
+      primary: 'text-white',
+      secondary: 'text-white/70',
+      accent: 'text-yellow-400',
+      logo: 'gold-text font-space' // Custom CSS class for gold gradient
+    },
+    status: {
+      success: 'text-emerald-400',
+      warning: 'text-amber-400',
+      error: 'text-rose-400',
+      info: 'text-sky-400'
+    },
+    // Galaxy-specific properties
+    useBackgroundEffects: true, // Flag to enable BackgroundEffects component
+    fonts: {
+      body: 'font-poppins',
+      display: 'font-space'
+    }
   }
 };
 

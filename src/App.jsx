@@ -38,9 +38,11 @@ const OrganizationBilling = lazy(() => import('./pages/organization/Organization
 // Services pages (lazy loaded)
 const Brigade = lazy(() => import('./pages/Brigade'));
 const LLMManagement = lazy(() => import('./pages/LLMManagement'));
+const LiteLLMManagement = lazy(() => import('./pages/LiteLLMManagement'));
 
 // Platform pages (lazy loaded)
 const EmailSettings = lazy(() => import('./pages/EmailSettings'));
+const CredentialsManagement = lazy(() => import('./pages/settings/CredentialsManagement'));
 
 // System pages (lazy loaded)
 const AIModelManagement = lazy(() => import('./pages/AIModelManagement'));
@@ -51,9 +53,11 @@ const AdvancedAnalytics = lazy(() => import('./pages/AdvancedAnalytics'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
+const LocalUsers = lazy(() => import('./pages/LocalUsers'));
+const LocalUserManagement = lazy(() => import('./pages/LocalUserManagement'));
 const PermissionManagement = lazy(() => import('./pages/PermissionManagement'));
 const UsageMetrics = lazy(() => import('./pages/UsageMetrics'));
-const Network = lazy(() => import('./pages/Network'));
+const Network = lazy(() => import('./pages/NetworkTabbed'));
 const StorageBackup = lazy(() => import('./pages/StorageBackup'));
 const Security = lazy(() => import('./pages/Security'));
 const Authentication = lazy(() => import('./pages/Authentication'));
@@ -61,6 +65,10 @@ const Extensions = lazy(() => import('./pages/Extensions'));
 const Logs = lazy(() => import('./pages/Logs'));
 const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
 const Settings = lazy(() => import('./pages/Settings'));
+
+// Infrastructure pages (lazy loaded)
+const CloudflareDNS = lazy(() => import('./pages/network/CloudflareDNS'));
+const MigrationWizard = lazy(() => import('./pages/migration/MigrationWizard'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -238,11 +246,13 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   <Route path="brigade" element={<Brigade />} />
                   <Route path="llm-management" element={<LLMManagement />} />
+                  <Route path="litellm-providers" element={<LiteLLMManagement />} />
 
                   {/* ============================================================ */}
                   {/* PLATFORM SECTION - Platform configuration */}
                   {/* ============================================================ */}
                   <Route path="platform/email-settings" element={<EmailSettings />} />
+                  <Route path="platform/credentials" element={<CredentialsManagement />} />
 
                   {/* ============================================================ */}
                   {/* SYSTEM SECTION - Platform administration */}
@@ -255,6 +265,8 @@ function AppRoutes() {
                   <Route path="system/billing" element={<BillingDashboard />} />
                   <Route path="system/users" element={<UserManagement />} />
                   <Route path="system/users/:userId" element={<UserDetail />} />
+                  <Route path="system/local-users" element={<LocalUsers />} />
+                  <Route path="system/local-user-management" element={<LocalUserManagement />} />
                   <Route path="system/permissions" element={<PermissionManagement />} />
                   <Route path="system/usage-metrics" element={<UsageMetrics />} />
                   <Route path="system/network" element={<Network />} />
@@ -265,6 +277,12 @@ function AppRoutes() {
                   <Route path="system/logs" element={<Logs />} />
                   <Route path="system/landing" element={<LandingCustomization />} />
                   <Route path="system/settings" element={<Settings />} />
+
+                  {/* ============================================================ */}
+                  {/* INFRASTRUCTURE SECTION - Network & DNS */}
+                  {/* ============================================================ */}
+                  <Route path="infrastructure/cloudflare" element={<CloudflareDNS />} />
+                  <Route path="infrastructure/migration" element={<MigrationWizard />} />
 
                   {/* ============================================================ */}
                   {/* LEGACY ROUTES - Backwards compatibility (DEPRECATED) */}

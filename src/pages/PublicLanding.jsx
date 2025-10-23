@@ -47,7 +47,8 @@ export default function PublicLanding() {
   const themeDisplayNames = {
     dark: { name: 'Professional Dark', icon: MoonIcon },
     light: { name: 'Professional Light', icon: SunIcon },
-    unicorn: { name: 'Magic Unicorn', icon: PaintBrushIcon }
+    unicorn: { name: 'Magic Unicorn', icon: PaintBrushIcon },
+    galaxy: { name: 'Unicorn Galaxy', icon: GlobeAltIcon }
   };
 
   // Service tier mapping
@@ -755,9 +756,13 @@ export default function PublicLanding() {
                                 className="w-full h-full object-contain"
                               />
                             </div>
-                          ) : (
+                          ) : service.icon ? (
                             <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
                               <service.icon className="h-12 w-12 text-white" />
+                            </div>
+                          ) : (
+                            <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
+                              <ServerIcon className="h-12 w-12 text-white/50" />
                             </div>
                           )}
                         </div>
@@ -887,9 +892,13 @@ export default function PublicLanding() {
                                   className="w-full h-full object-contain"
                                 />
                               </div>
-                            ) : (
+                            ) : service.icon ? (
                               <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
                                 <service.icon className="h-12 w-12 text-white" />
+                              </div>
+                            ) : (
+                              <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
+                                <ServerIcon className="h-12 w-12 text-white/50" />
                               </div>
                             )}
                           </div>

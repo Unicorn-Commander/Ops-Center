@@ -253,6 +253,22 @@ export const routes = {
         description: 'Keycloak/SSO configuration, identity providers',
         icon: 'KeyIcon'
       },
+      localUsers: {
+        path: '/admin/system/local-user-management',
+        component: 'LocalUserManagement',
+        roles: ['admin'],
+        name: 'Local Users',
+        description: 'Linux system user management, SSH keys, sudo permissions',
+        icon: 'UsersIcon'
+      },
+      litellm: {
+        path: '/admin/litellm-providers',
+        component: 'LiteLLMManagement',
+        roles: ['admin'],
+        name: 'LLM Providers',
+        description: 'Multi-provider LLM routing, cost optimization, BYOK',
+        icon: 'SparklesIcon'
+      },
       extensions: {
         path: '/admin/system/extensions',
         component: 'Extensions',
