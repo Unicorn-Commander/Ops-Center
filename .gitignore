@@ -27,3 +27,27 @@ data/
 backend.log
 dev.log
 vite.logNVIDIA-Linux-x86_64-*.run
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Build artifacts
+public/assets/
+dist/
+build/
+
+# Environment
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

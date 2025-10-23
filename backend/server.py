@@ -70,6 +70,10 @@ from stripe_api import router as stripe_router
 from billing_api import router as billing_router
 from local_user_api import router as local_user_router
 from org_api import router as org_router
+from firewall_api import router as firewall_router
+from cloudflare_api import router as cloudflare_router
+from migration_api import router as migration_router
+from credential_api import router as credential_router
 from redis_session import redis_session_manager
 
 # Keycloak SSO integration
@@ -91,7 +95,12 @@ EXTERNAL_HOST = os.environ.get("EXTERNAL_HOST", "192.168.1.135")
 EXTERNAL_PROTOCOL = os.environ.get("EXTERNAL_PROTOCOL", "http")
 OAUTH_CLIENT_ID = "ops-center"
 OAUTH_CLIENT_SECRET = os.environ.get("OPS_CENTER_OAUTH_CLIENT_SECRET", "REMOVED")
-OAUTH_REDIRECT_URI = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}:8084/auth/callback"
+# When using HTTPS (via Traefik), don't include port since Traefik handles the mapping
+# When using HTTP (local dev), include port :8084
+if EXTERNAL_PROTOCOL == "https":
+    OAUTH_REDIRECT_URI = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}/auth/callback"
+else:
+    OAUTH_REDIRECT_URI = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}:8084/auth/callback"
 
 # Session storage - Redis-backed with 2-hour TTL
 # Configuration: REDIS_HOST=unicorn-lago-redis, REDIS_PORT=6379, SESSION_TTL=7200
@@ -330,6 +339,22 @@ logger.info("Local User Management API endpoints registered at /api/v1/local-use
 # Register Organization Management endpoints
 app.include_router(org_router)
 logger.info("Organization Management API endpoints registered at /api/v1/org")
+
+# Register Firewall Management endpoints
+app.include_router(firewall_router)
+logger.info("Firewall Management API endpoints registered at /api/v1/network/firewall")
+
+# Register Cloudflare DNS API endpoints
+app.include_router(cloudflare_router)
+logger.info("Cloudflare DNS API endpoints registered at /api/v1/cloudflare")
+
+# Epic 1.7: NameCheap Migration Wizard
+app.include_router(migration_router)
+logger.info("Migration API endpoints registered at /api/v1/migration")
+
+# Epic 1.6/1.7: Service Credential Management
+app.include_router(credential_router)
+logger.info("Credential management API endpoints registered at /api/v1/credentials")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 

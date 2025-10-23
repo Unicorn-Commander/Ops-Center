@@ -12,6 +12,7 @@ services:
       - ./public:/app/public
     environment:
       - EXTERNAL_HOST=unicorncommander.ai
+      - EXTERNAL_PROTOCOL=https
       - OAUTH_CLIENT_ID=ops-center
       - OPS_CENTER_OAUTH_CLIENT_SECRET=REMOVED
       - KEYCLOAK_URL=http://uchub-keycloak:8080
@@ -32,23 +33,25 @@ services:
       - LREMOVED
       # Redis for sessions
       - REDIS_URL=redis://unicorn-lago-redis:6379/0
+      # Credential Encryption Key (Fernet)
+      - EREMOVED
     networks:
       - web
       - unicorn-network
       - uchub-network
     labels:
       - "traefik.enable=true"
-      # Main HTTPS route
+      # Main HTTPS route (Cloudflare → Traefik via HTTPS)
       - "traefik.http.routers.ops-center.rule=Host(`unicorncommander.ai`)"
       - "traefik.http.routers.ops-center.entrypoints=https"
       - "traefik.http.routers.ops-center.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center.service=ops-center-svc"
       - "traefik.http.services.ops-center-svc.loadbalancer.server.port=8084"
-      # HTTP to HTTPS redirect
+      # HTTP route (for health checks and fallback)
       - "traefik.http.routers.ops-center-http.rule=Host(`unicorncommander.ai`)"
       - "traefik.http.routers.ops-center-http.entrypoints=http"
-      - "traefik.http.routers.ops-center-http.middlewares=https-redirect"
-      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.ops-center-http.service=ops-center-svc"
+      # Note: No redirect middleware - Cloudflare handles HTTP→HTTPS redirect
 
 networks:
   web:

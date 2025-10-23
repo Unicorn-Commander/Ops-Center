@@ -151,19 +151,37 @@
 
 ## Section 5: Organizations
 
-### 5.1 Organization Management 🟡
-**Status**: FUNCTIONAL BUT NEEDS POLISH
+### 5.1 Organization Management ✅ (BACKEND COMPLETE)
+**Status**: BACKEND COMPLETE (Oct 22, 2025) - Frontend functional but needs polish
 **Route**: `/admin/organization/*`
-**Files**:
+
+**Backend API** (NEW - Oct 22, 2025):
+- ✅ `backend/org_api.py` (579 lines) - Complete REST API
+- ✅ `/api/v1/org/roles` - List available roles
+- ✅ `/api/v1/org/{org_id}/members` - List members
+- ✅ `/api/v1/org/{org_id}/members` (POST) - Add member
+- ✅ `/api/v1/org/{org_id}/members/{user_id}/role` (PUT) - Update role
+- ✅ `/api/v1/org/{org_id}/members/{user_id}` (DELETE) - Remove member
+- ✅ `/api/v1/org/{org_id}/stats` - Organization statistics
+- ✅ `/api/v1/org/{org_id}/billing` - Billing information
+- ✅ `/api/v1/org/{org_id}/settings` - Settings management (GET/PUT)
+- ✅ Role-based access control (owner, billing_admin, member)
+- ✅ Last owner protection
+- ✅ Integrated with org_manager.py
+
+**Frontend Files**:
 - `OrganizationTeam.jsx` - Team members
 - `OrganizationRoles.jsx` - Role management
 - `OrganizationSettings.jsx` - Org settings
 - `OrganizationBilling.jsx` - Org billing
+
 **Features**:
 - ✅ Create organization (fixed)
 - ✅ Team member management
 - ✅ Role assignment
-**Needs**:
+- ✅ Backend API fully tested and operational
+
+**Needs** (Frontend only):
 - Test multi-org scenarios
 - Improve team invitation flow
 - Add org switching in header

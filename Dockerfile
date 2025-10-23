@@ -38,6 +38,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/*.py ./
 COPY backend/models ./models
+COPY backend/database ./database
+COPY backend/services ./services
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini ./alembic.ini
 
 # Copy built React app from frontend stage
 COPY --from=frontend-build /app/dist ./dist
