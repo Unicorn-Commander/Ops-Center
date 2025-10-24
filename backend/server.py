@@ -81,6 +81,10 @@ from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from redis_session import redis_session_manager
 
+# Email Notification System (Epic 2.3)
+from email_scheduler import EmailScheduler
+from email_notification_api import router as notification_router
+
 # Storage & Backup Management
 from storage_backup_api import router as storage_backup_router
 from restic_api_endpoints import router as restic_backup_router
@@ -303,6 +307,15 @@ async def startup_event():
             if not os.environ.get("RATE_LIMIT_FAIL_OPEN", "true").lower() == "true":
                 raise
 
+    # Start email scheduler (Epic 2.3)
+    try:
+        email_scheduler = EmailScheduler()
+        await email_scheduler.start()
+        logger.info("Email scheduler started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start email scheduler: {e}")
+        # Don't block startup if email fails
+
     # Start backup scheduler (TODO: Install apscheduler in container first)
     # try:
     #     backup_scheduler.start()
@@ -428,6 +441,10 @@ app.include_router(storage_backup_router)
 logger.info("Storage & Backup API endpoints registered at /api/v1/storage and /api/v1/backups")
 app.include_router(restic_backup_router)
 logger.info("Restic Backup API endpoints registered at /api/v1/backups/restic")
+
+# Email Notification API (Epic 2.3)
+app.include_router(notification_router)
+logger.info("Email Notification API endpoints registered at /api/v1/notifications")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 

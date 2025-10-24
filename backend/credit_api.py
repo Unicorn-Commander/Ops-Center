@@ -28,6 +28,10 @@ from openrouter_automation import openrouter_manager, OpenRouterError
 from usage_metering import usage_meter
 from coupon_system import coupon_manager, CouponError
 from audit_logger import audit_logger
+from email_notifications import EmailNotificationService
+
+# Email notification service
+email_service = EmailNotificationService()
 
 # Import authentication dependencies (assuming these exist in your codebase)
 try:
@@ -617,6 +621,21 @@ async def redeem_coupon(
             user_id=current_user["user_id"],
             metadata=request.metadata
         )
+
+        # Send coupon redemption confirmation email (don't fail if email fails)
+        try:
+            # Get updated balance after redemption
+            balance = await credit_manager.get_balance(current_user["user_id"])
+            await email_service.send_coupon_redemption_confirmation(
+                user_id=current_user["user_id"],
+                coupon_code=request.code,
+                credits_added=redemption["credits_awarded"],
+                new_balance=balance["credits_remaining"]
+            )
+            logger.info(f"Coupon redemption confirmation sent to user {current_user['user_id']}")
+        except Exception as e:
+            logger.error(f"Failed to send coupon confirmation email: {e}")
+
         return CouponRedemption(**redemption)
     except CouponError as e:
         raise HTTPException(status_code=400, detail=str(e))

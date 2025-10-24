@@ -18,10 +18,14 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from audit_logger import audit_logger
+from email_notifications import EmailNotificationService
 
 # Logging setup
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Email notification service
+email_service = EmailNotificationService()
 
 
 class CreditError(Exception):
@@ -193,6 +197,13 @@ class CreditManager:
                 status="success"
             )
 
+        # Send welcome email (don't fail transaction if email fails)
+        try:
+            await email_service.send_welcome_email(user_id, tier)
+            logger.info(f"Welcome email sent to user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to send welcome email to user {user_id}: {e}")
+
         return await self.get_balance(user_id)
 
     async def allocate_credits(
@@ -363,11 +374,19 @@ class CreditManager:
                     "amount": float(amount),
                     "service": service,
                     "model": model,
-                    "new_balance": float(new_balance),
+                    "new_balance": float(new_credits_remaining),
                     "cost_breakdown": cost_breakdown
                 },
                 status="success"
             )
+
+        # Send low balance alert if credits are running low (don't fail transaction if email fails)
+        if new_credits_remaining < Decimal("100.00") and new_credits_remaining > Decimal("0.00"):
+            try:
+                await email_service.send_low_balance_alert(user_id, new_credits_remaining)
+                logger.info(f"Low balance alert sent to user {user_id} (balance: {new_credits_remaining})")
+            except Exception as e:
+                logger.error(f"Failed to send low balance alert to user {user_id}: {e}")
 
         return await self.get_balance(user_id)
 
@@ -574,12 +593,19 @@ class CreditManager:
                 resource_id=user_id,
                 details={
                     "new_allocation": float(new_allocation),
-                    "new_balance": float(new_balance),
+                    "new_balance": float(new_credits_remaining),
                     "tier": new_tier,
                     "next_reset": next_reset.isoformat()
                 },
                 status="success"
             )
+
+        # Send monthly reset notification (don't fail transaction if email fails)
+        try:
+            await email_service.send_monthly_reset_notification(user_id, new_credits_remaining)
+            logger.info(f"Monthly reset notification sent to user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to send monthly reset notification to user {user_id}: {e}")
 
         return await self.get_balance(user_id)
 

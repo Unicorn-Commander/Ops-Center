@@ -163,6 +163,36 @@ async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch specific user by Keycloak user ID
+    """
+    try:
+        token = await get_admin_token()
+
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.get(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0
+            )
+
+            if response.status_code == 200:
+                user = response.json()
+                logger.info(f"Found user by ID: {user_id}")
+                return user
+            elif response.status_code == 404:
+                logger.warning(f"No user found with ID: {user_id}")
+                return None
+            else:
+                logger.error(f"Failed to fetch user {user_id}: {response.status_code}")
+                return None
+
+    except Exception as e:
+        logger.error(f"Error fetching user by ID: {e}")
+        return None
+
+
 async def update_user_attributes(email: str, attributes: Dict[str, List[str]]) -> bool:
     """
     Update user attributes in Keycloak
@@ -510,3 +540,38 @@ async def set_user_password(user_id: str, password: str, temporary: bool = False
     except Exception as e:
         logger.error(f"Error setting user password: {e}")
         return False
+
+
+async def get_current_user_id() -> Optional[str]:
+    """
+    Get the current authenticated user's Keycloak ID from request context.
+
+    This function is designed to be used as a FastAPI dependency:
+
+    Example:
+        @router.get("/me")
+        async def get_me(user_id: str = Depends(get_current_user_id)):
+            return {"user_id": user_id}
+
+    Note: This is a placeholder implementation. In production, you should:
+    1. Use FastAPI's Security dependencies (OAuth2PasswordBearer)
+    2. Validate JWT tokens from request headers
+    3. Extract user_id from token claims
+
+    For now, this returns None to indicate the feature needs proper OAuth2 integration.
+
+    Returns:
+        Keycloak user ID of authenticated user, or None if not authenticated
+    """
+    # TODO: Implement proper JWT token validation and user ID extraction
+    # This requires:
+    # 1. Extract Authorization header from FastAPI Request
+    # 2. Validate JWT token against Keycloak public keys
+    # 3. Parse token claims to get user_id (sub claim)
+    # 4. Return user_id
+
+    logger.warning(
+        "get_current_user_id() called but not fully implemented. "
+        "This needs OAuth2 token validation. Returning None."
+    )
+    return None

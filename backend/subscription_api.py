@@ -29,6 +29,10 @@ from lago_integration import (
     get_invoices
 )
 
+# Email notification service (Epic 2.3)
+from email_notifications import EmailNotificationService
+email_service = EmailNotificationService()
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscriptions"])
 
@@ -321,6 +325,18 @@ async def upgrade_subscription(request: Request):
 
         logger.info(f"Created subscription {new_subscription.get('lago_id')} for org {org_id}")
 
+        # Send tier upgrade email (don't fail if email fails)
+        try:
+            old_tier = current_subscription.get("plan_code", "").split("_")[0] if current_subscription else "trial"
+            await email_service.send_tier_upgrade_notification(
+                user_id=user.get("id"),
+                old_tier=old_tier,
+                new_tier=target_tier
+            )
+            logger.info(f"Tier upgrade email sent to user {user.get('id')}")
+        except Exception as e:
+            logger.error(f"Failed to send tier upgrade email: {e}")
+
         return {
             "success": True,
             "subscription": new_subscription,
@@ -375,6 +391,18 @@ async def change_subscription(request: Request):
 
         # Create new subscription
         new_subscription = await create_subscription(org_id, lago_plan_code)
+
+        # Send tier change email (don't fail if email fails)
+        try:
+            old_tier = current_subscription.get("plan_code", "").split("_")[0]
+            await email_service.send_tier_upgrade_notification(
+                user_id=user.get("id"),
+                old_tier=old_tier,
+                new_tier=target_tier
+            )
+            logger.info(f"Tier change email sent to user {user.get('id')}")
+        except Exception as e:
+            logger.error(f"Failed to send tier change email: {e}")
 
         return {
             "success": True,
