@@ -42,7 +42,8 @@ class SubscriptionPlan(BaseModel):
     priority_support: bool = False
     team_seats: int = 1
     is_active: bool = True
-    stripe_price_id: Optional[str] = None
+    stripe_price_id: Optional[str] = None  # Monthly Stripe price ID
+    stripe_annual_price_id: Optional[str] = None  # Annual Stripe price ID
 
 class ServiceAccessConfig(BaseModel):
     """Service access configuration"""
@@ -62,6 +63,7 @@ DEFAULT_PLANS = [
         name="trial",
         display_name="Trial",
         price_monthly=1.00,
+        price_yearly=52.00,
         features=[
             "7-day trial period",
             "Access to Open-WebUI",
@@ -73,7 +75,8 @@ DEFAULT_PLANS = [
         services=[ServiceType.OPS_CENTER, ServiceType.CHAT, ServiceType.SEARCH],
         api_calls_limit=700,  # 100/day * 7 days
         byok_enabled=True,
-        stripe_price_id="price_1SI0FHDzk9HqAZnHbUgvaidP"
+        stripe_price_id="price_1SI0FHDzk9HqAZnHbUgvaidP",  # Monthly
+        stripe_annual_price_id="price_1SI0FHDzk9HqAZnHbUgvaidP"  # Weekly trial only (no annual)
     ),
     SubscriptionPlan(
         id="starter",
@@ -91,7 +94,8 @@ DEFAULT_PLANS = [
         services=[ServiceType.OPS_CENTER, ServiceType.CHAT, ServiceType.SEARCH],
         api_calls_limit=1000,
         byok_enabled=True,
-        stripe_price_id="price_1SI0FHDzk9HqAZnHAsMKY9tS"
+        stripe_price_id="price_1SI0FHDzk9HqAZnHAsMKY9tS",  # Monthly
+        stripe_annual_price_id="price_1SI0FHDzk9HqAZnHAsMKY9tS"  # TODO: Create annual price in Stripe
     ),
     SubscriptionPlan(
         id="professional",
@@ -121,7 +125,8 @@ DEFAULT_PLANS = [
         api_calls_limit=10000,
         byok_enabled=True,
         priority_support=True,
-        stripe_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk"
+        stripe_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk",  # Monthly
+        stripe_annual_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk"  # TODO: Create annual price in Stripe
     ),
     SubscriptionPlan(
         id="founders-friend",
@@ -153,7 +158,9 @@ DEFAULT_PLANS = [
         ],
         api_calls_limit=10000,
         byok_enabled=True,
-        priority_support=True
+        priority_support=True,
+        stripe_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk",  # Same as Professional (monthly)
+        stripe_annual_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk"  # TODO: Create annual price in Stripe
     ),
     SubscriptionPlan(
         id="enterprise",
@@ -185,7 +192,8 @@ DEFAULT_PLANS = [
         byok_enabled=True,
         priority_support=True,
         team_seats=10,
-        stripe_price_id="price_1SI0FIDzk9HqAZnHZFRzBjgP"
+        stripe_price_id="price_1SI0FIDzk9HqAZnHZFRzBjgP",  # Monthly
+        stripe_annual_price_id="price_1SI0FIDzk9HqAZnHZFRzBjgP"  # TODO: Create annual price in Stripe
     )
 ]
 

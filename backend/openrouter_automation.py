@@ -14,11 +14,12 @@ import httpx
 import os
 import logging
 from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from cryptography.fernet import Fernet
 import base64
 from audit_logger import audit_logger
+from openrouter_client import OpenRouterClient, OpenRouterAPIError, OpenRouterAuthError
 
 # Logging setup
 logger = logging.getLogger(__name__)
@@ -63,9 +64,12 @@ class OpenRouterManager:
 
     def __init__(self):
         self.db_pool: Optional[asyncpg.Pool] = None
-        self.http_client: Optional[httpx.AsyncClient] = None
+        self.api_client: Optional[OpenRouterClient] = None
         self._encryption_key = self._get_or_create_encryption_key()
         self.fernet = Fernet(self._encryption_key)
+        self._models_cache: Optional[Dict[str, Any]] = None
+        self._models_cache_time: Optional[datetime] = None
+        self._models_cache_ttl = timedelta(hours=1)  # Cache models for 1 hour
 
     def _get_or_create_encryption_key(self) -> bytes:
         """Get or create Fernet encryption key"""
@@ -88,7 +92,7 @@ class OpenRouterManager:
         return key
 
     async def initialize(self):
-        """Initialize database connection pool and HTTP client"""
+        """Initialize database connection pool and OpenRouter API client"""
         if not self.db_pool:
             try:
                 self.db_pool = await asyncpg.create_pool(
@@ -105,21 +109,20 @@ class OpenRouterManager:
                 logger.error(f"Failed to initialize database pool: {e}")
                 raise
 
-        if not self.http_client:
-            self.http_client = httpx.AsyncClient(
-                timeout=30.0,
-                headers={"HTTP-Referer": "https://unicorncommander.ai"}
-            )
+        if not self.api_client:
+            self.api_client = OpenRouterClient()
+            await self.api_client.initialize()
+            logger.info("OpenRouter API client initialized")
 
     async def close(self):
-        """Close database connection pool and HTTP client"""
+        """Close database connection pool and API client"""
         if self.db_pool:
             await self.db_pool.close()
             self.db_pool = None
 
-        if self.http_client:
-            await self.http_client.aclose()
-            self.http_client = None
+        if self.api_client:
+            await self.api_client.close()
+            self.api_client = None
 
         logger.info("OpenRouterManager closed")
 
@@ -166,19 +169,17 @@ class OpenRouterManager:
                 await conn.execute(
                     """
                     INSERT INTO openrouter_accounts (
-                        user_id, openrouter_key, openrouter_email,
-                        account_id, free_credits_remaining, is_active
+                        user_id, openrouter_api_key_encrypted,
+                        openrouter_account_id, free_credits
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    VALUES ($1, $2, $3, $4)
                     ON CONFLICT (user_id) DO UPDATE
-                    SET openrouter_key = EXCLUDED.openrouter_key,
-                        openrouter_email = EXCLUDED.openrouter_email,
-                        account_id = EXCLUDED.account_id,
-                        is_active = EXCLUDED.is_active,
+                    SET openrouter_api_key_encrypted = EXCLUDED.openrouter_api_key_encrypted,
+                        openrouter_account_id = EXCLUDED.openrouter_account_id,
                         updated_at = CURRENT_TIMESTAMP
                     """,
-                    user_id, encrypted_key, user_email or account_info.get("email"),
-                    account_info.get("id"), Decimal("0.00"), True
+                    user_id, encrypted_key,
+                    account_info.get("label", user_email), Decimal("0.00")
                 )
 
                 # Audit log
@@ -215,8 +216,8 @@ class OpenRouterManager:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT user_id, openrouter_email, account_id,
-                       free_credits_remaining, is_active,
+                SELECT user_id, openrouter_account_id,
+                       free_credits,
                        last_synced, created_at, updated_at
                 FROM openrouter_accounts
                 WHERE user_id = $1
@@ -229,10 +230,8 @@ class OpenRouterManager:
 
             return {
                 "user_id": row["user_id"],
-                "email": row["openrouter_email"],
-                "account_id": row["account_id"],
-                "free_credits_remaining": row["free_credits_remaining"],
-                "is_active": row["is_active"],
+                "account_id": row["openrouter_account_id"],
+                "free_credits": float(row["free_credits"]) if row["free_credits"] else 0.0,
                 "last_synced": row["last_synced"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"]
@@ -254,29 +253,44 @@ class OpenRouterManager:
         # Get API key
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT openrouter_key FROM openrouter_accounts WHERE user_id = $1",
+                "SELECT openrouter_api_key_encrypted FROM openrouter_accounts WHERE user_id = $1",
                 user_id
             )
 
         if not row:
             raise OpenRouterError(f"No OpenRouter account for user {user_id}")
 
-        api_key = self.decrypt_key(row["openrouter_key"])
+        api_key = self.decrypt_key(row["openrouter_api_key_encrypted"])
 
         # Query OpenRouter API for credit balance
         try:
-            credits_info = await self._get_credits_balance(api_key)
-            free_credits = Decimal(str(credits_info.get("free_credits", 0)))
+            if not self.api_client:
+                await self.initialize()
+
+            key_info = await self.api_client.get_key_info(api_key)
+
+            # Extract credit information
+            limit = key_info.get("limit")  # Can be null for unlimited
+            limit_remaining = key_info.get("limit_remaining", 0)
+
+            # Convert to Decimal
+            free_credits = Decimal(str(limit_remaining)) if limit_remaining else Decimal("0.00")
+
+            logger.info(f"OpenRouter key info for {user_id}: limit={limit}, remaining={limit_remaining}")
+
+        except OpenRouterAuthError as e:
+            logger.error(f"Authentication failed for {user_id}: {e}")
+            raise OpenRouterError(f"Invalid OpenRouter API key: {e}")
         except Exception as e:
             logger.error(f"Failed to sync free credits for {user_id}: {e}")
-            return Decimal("0.00")
+            raise OpenRouterError(f"Failed to sync credits: {e}")
 
         # Update database
         async with self.db_pool.acquire() as conn:
             await conn.execute(
                 """
                 UPDATE openrouter_accounts
-                SET free_credits_remaining = $1,
+                SET free_credits = $1,
                     last_synced = CURRENT_TIMESTAMP
                 WHERE user_id = $2
                 """,
@@ -312,7 +326,7 @@ class OpenRouterManager:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT openrouter_key, is_active
+                SELECT openrouter_api_key_encrypted
                 FROM openrouter_accounts
                 WHERE user_id = $1
                 """,
@@ -322,93 +336,170 @@ class OpenRouterManager:
         if not row:
             raise OpenRouterError(f"No OpenRouter account for user {user_id}")
 
-        if not row["is_active"]:
-            raise OpenRouterError(f"OpenRouter account inactive for user {user_id}")
+        api_key = self.decrypt_key(row["openrouter_api_key_encrypted"])
 
-        api_key = self.decrypt_key(row["openrouter_key"])
-
-        # Make request to OpenRouter
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "HTTP-Referer": "https://unicorncommander.ai",
-            "X-Title": "UC-Cloud Ops Center"
-        }
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            **kwargs
-        }
+        # Make request using OpenRouter API client
+        if not self.api_client:
+            await self.initialize()
 
         try:
-            response = await self.http_client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload
+            return await self.api_client.chat_completion(
+                model=model,
+                messages=messages,
+                api_key=api_key,
+                **kwargs
             )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"OpenRouter request failed: {e}")
             raise OpenRouterError(f"OpenRouter API error: {e}")
 
+    async def detect_free_models(self) -> List[str]:
+        """
+        Get list of free models from OpenRouter API.
+
+        Returns:
+            List of free model IDs (with :free suffix)
+
+        Note:
+            Results are cached for 1 hour to reduce API calls
+        """
+        # Check cache
+        if self._models_cache and self._models_cache_time:
+            if datetime.now() - self._models_cache_time < self._models_cache_ttl:
+                logger.debug("Returning cached free models")
+                return self._models_cache.get("free_models", [])
+
+        # Fetch fresh data from API
+        if not self.api_client:
+            await self.initialize()
+
+        try:
+            # Use a system API key if available, or skip auth check
+            # (OpenRouter's /models endpoint may be public)
+            system_key = os.getenv("OPENROUTER_SYSTEM_KEY")
+            models = await self.api_client.get_models(api_key=system_key)
+
+            # Filter for free models (pricing.prompt == "0")
+            free_models = []
+            for model in models:
+                model_id = model.get("id", "")
+                pricing = model.get("pricing", {})
+
+                # Check if prompt and completion costs are both 0
+                prompt_cost = float(pricing.get("prompt", 1))
+                completion_cost = float(pricing.get("completion", 1))
+
+                if prompt_cost == 0 and completion_cost == 0:
+                    free_models.append(model_id)
+
+            # Update cache
+            self._models_cache = {
+                "free_models": free_models,
+                "all_models": models
+            }
+            self._models_cache_time = datetime.now()
+
+            logger.info(f"Discovered {len(free_models)} free models from OpenRouter")
+            return free_models
+
+        except Exception as e:
+            logger.error(f"Failed to fetch free models: {e}")
+            # Return empty list on error (fail gracefully)
+            return []
+
     def detect_free_model(self, model: str) -> bool:
         """
-        Detect if a model is on the free tier.
+        Detect if a model is on the free tier (synchronous check).
 
         Args:
             model: Model name (e.g., "meta-llama/llama-3.1-8b-instruct:free")
 
         Returns:
             True if model is free tier
+
+        Note:
+            This is a pattern-based check. For authoritative results,
+            use detect_free_models() which queries the API.
         """
         model_lower = model.lower()
 
-        # Check for :free suffix
+        # Check for :free suffix (most reliable indicator)
         if ":free" in model_lower:
             return True
 
-        # Check for free model patterns
+        # Check for known free model patterns
         for pattern in self.FREE_MODEL_PATTERNS:
             if pattern in model_lower:
                 return True
 
         return False
 
-    def calculate_markup(
+    async def calculate_markup(
         self,
+        user_id: str,
         model: str,
         provider_cost: Decimal
-    ) -> Tuple[Decimal, Decimal]:
+    ) -> Tuple[Decimal, Decimal, str]:
         """
-        Calculate platform markup for a model.
+        Calculate platform markup for a model based on user's subscription tier.
 
         Args:
+            user_id: Keycloak user ID
             model: Model name
             provider_cost: Cost from OpenRouter provider
 
         Returns:
-            (markup_amount, total_cost)
+            (markup_amount, total_cost, markup_reason)
+
+        Markup Strategy:
+        - Free models: 0% markup (always)
+        - Paid models:
+          - Trial: 15% markup
+          - Starter: 10% markup
+          - Professional: 5% markup
+          - Enterprise: 0% markup
         """
         # Free models have no markup
         if self.detect_free_model(model):
-            return (Decimal("0.00"), Decimal("0.00"))
+            return (Decimal("0.00"), Decimal("0.00"), "free_model")
 
-        # Determine markup tier
-        if provider_cost == 0:
-            tier = "free"
-        elif provider_cost < Decimal("0.001"):
-            tier = "budget"
-        elif provider_cost < Decimal("0.01"):
-            tier = "standard"
-        else:
-            tier = "premium"
+        # Get user's subscription tier from Keycloak
+        try:
+            if not self.db_pool:
+                await self.initialize()
 
-        markup_rate = self.MARKUP_RATES[tier]
+            # Query Keycloak integration for user subscription
+            # (This assumes keycloak_integration.py has get_user_attributes method)
+            from keycloak_integration import keycloak_service
+
+            user_attrs = await keycloak_service.get_user_attributes(user_id)
+            subscription_tier = user_attrs.get("subscription_tier", "trial").lower()
+
+        except Exception as e:
+            logger.warning(f"Failed to get subscription tier for {user_id}: {e}. Using 'trial'")
+            subscription_tier = "trial"
+
+        # Determine markup rate by subscription tier
+        tier_markup_rates = {
+            "trial": Decimal("0.15"),         # 15% markup
+            "starter": Decimal("0.10"),       # 10% markup
+            "professional": Decimal("0.05"),  # 5% markup
+            "enterprise": Decimal("0.00")     # 0% markup
+        }
+
+        markup_rate = tier_markup_rates.get(subscription_tier, Decimal("0.15"))
         markup_amount = provider_cost * markup_rate
         total_cost = provider_cost + markup_amount
 
-        return (markup_amount, total_cost)
+        markup_reason = f"{subscription_tier}_tier_{int(markup_rate * 100)}pct"
+
+        logger.debug(
+            f"Markup calculation for {user_id}: "
+            f"tier={subscription_tier}, model={model}, "
+            f"provider_cost={provider_cost}, markup={markup_amount}, total={total_cost}"
+        )
+
+        return (markup_amount, total_cost, markup_reason)
 
     async def delete_account(self, user_id: str):
         """
@@ -438,48 +529,14 @@ class OpenRouterManager:
 
     async def _verify_api_key(self, api_key: str) -> Dict[str, Any]:
         """Verify OpenRouter API key and get account info"""
-        if not self.http_client:
+        if not self.api_client:
             await self.initialize()
 
-        headers = {
-            "Authorization": f"Bearer {api_key}"
-        }
-
         try:
-            response = await self.http_client.get(
-                "https://openrouter.ai/api/v1/auth/key",
-                headers=headers
-            )
-            response.raise_for_status()
-            return response.json().get("data", {})
-        except httpx.HTTPError as e:
+            key_info = await self.api_client.get_key_info(api_key)
+            return key_info
+        except OpenRouterAuthError as e:
             raise OpenRouterError(f"API key verification failed: {e}")
-
-    async def _get_credits_balance(self, api_key: str) -> Dict[str, Any]:
-        """Get credit balance from OpenRouter API"""
-        if not self.http_client:
-            await self.initialize()
-
-        headers = {
-            "Authorization": f"Bearer {api_key}"
-        }
-
-        try:
-            response = await self.http_client.get(
-                "https://openrouter.ai/api/v1/auth/key",
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json().get("data", {})
-
-            # OpenRouter returns credits in "usage" field
-            return {
-                "free_credits": data.get("limit", 0),
-                "used_credits": data.get("usage", 0)
-            }
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to get credits balance: {e}")
-            return {"free_credits": 0, "used_credits": 0}
 
 
 # Global instance

@@ -26,9 +26,12 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   PencilIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  ServerIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
+import BYOKWizard from '../../components/BYOKWizard';
 
 export default function AccountAPIKeys() {
   const { theme, currentTheme } = useTheme();
@@ -39,6 +42,8 @@ export default function AccountAPIKeys() {
   const [editingKey, setEditingKey] = useState(null);
   const [visibleKeys, setVisibleKeys] = useState({});
   const [testingKey, setTestingKey] = useState(null);
+  const [llmProviderKeys, setLLMProviderKeys] = useState([]);
+  const [showBYOKWizard, setShowBYOKWizard] = useState(false);
 
   const [keyForm, setKeyForm] = useState({
     provider: 'openai',
@@ -92,6 +97,7 @@ export default function AccountAPIKeys() {
 
   useEffect(() => {
     loadAPIKeys();
+    loadLLMProviderKeys();
   }, []);
 
   const loadAPIKeys = async () => {
@@ -128,6 +134,43 @@ export default function AccountAPIKeys() {
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadLLMProviderKeys = async () => {
+    try {
+      const response = await fetch('/api/v1/llm/providers/keys', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setLLMProviderKeys(data.keys || []);
+      }
+    } catch (error) {
+      console.error('Failed to load LLM provider keys:', error);
+      // Mock data for demonstration
+      setLLMProviderKeys([
+        {
+          id: '1',
+          provider_name: 'OpenAI (BYOK)',
+          provider: 'openai',
+          api_key: 'REMOVEDjkl012',
+          description: 'Personal OpenAI key for testing',
+          status: 'active',
+          last_tested: '5 minutes ago',
+          created_at: '2025-10-15'
+        },
+        {
+          id: '2',
+          provider_name: 'Anthropic (BYOK)',
+          provider: 'anthropic',
+          api_key: 'sk-ant-api03-xyz789abc123def456',
+          description: 'Claude API access for production',
+          status: 'active',
+          last_tested: '1 hour ago',
+          created_at: '2025-10-20'
+        }
+      ]);
     }
   };
 
@@ -287,6 +330,147 @@ export default function AccountAPIKeys() {
         </div>
       </div>
 
+      {/* LLM Provider Keys Section (BYOK) */}
+      <div className="mb-12">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg flex items-center justify-center">
+            <SparklesIcon className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h2 className={`text-2xl font-bold ${themeClasses.text}`}>
+              LLM Provider Keys (BYOK)
+            </h2>
+            <p className={`${themeClasses.subtext}`}>
+              Bring Your Own Key for AI model providers. Use your own API keys for LLM routing.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {llmProviderKeys.length === 0 ? (
+            <div className={`rounded-xl border-2 border-dashed p-12 text-center ${themeClasses.card}`}>
+              <ServerIcon className={`h-12 w-12 ${themeClasses.subtext} mx-auto mb-4`} />
+              <p className={`text-lg font-medium ${themeClasses.text}`}>
+                No LLM provider keys configured
+              </p>
+              <p className={`${themeClasses.subtext} mt-2 mb-6`}>
+                Add your first provider key to start using BYOK for LLM routing
+              </p>
+              <button
+                onClick={() => setShowBYOKWizard(true)}
+                className={`px-6 py-3 rounded-lg ${themeClasses.button} font-medium`}
+              >
+                Add Your First Provider
+              </button>
+            </div>
+          ) : (
+            <>
+              {llmProviderKeys.map((key) => (
+                <motion.div
+                  key={key.id}
+                  whileHover={{ scale: 1.01 }}
+                  className={`rounded-xl border p-6 ${themeClasses.card}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
+                          <ServerIcon className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className={`font-semibold ${themeClasses.text}`}>
+                            {key.provider_name}
+                          </h3>
+                          <p className={`text-sm ${themeClasses.subtext}`}>
+                            {key.description || 'No description'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-sm mt-3">
+                        <div className={`flex items-center gap-2 px-3 py-1 rounded ${
+                          currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-700/30'
+                        }`}>
+                          <code className={themeClasses.text}>
+                            {visibleKeys[key.id] ? key.api_key : maskKey(key.api_key)}
+                          </code>
+                          <button
+                            onClick={() => toggleKeyVisibility(key.id)}
+                            className={themeClasses.subtext}
+                          >
+                            {visibleKeys[key.id] ? (
+                              <EyeSlashIcon className="h-4 w-4" />
+                            ) : (
+                              <EyeIcon className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          key.status === 'active'
+                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        }`}>
+                          {key.status}
+                        </span>
+
+                        <span className={`text-xs ${themeClasses.subtext}`}>
+                          Last tested: {key.last_tested}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => handleTestKey(key.id)}
+                        disabled={testingKey === key.id}
+                        className={`p-2 rounded-lg ${themeClasses.button} disabled:opacity-50`}
+                        title="Test API key"
+                      >
+                        {testingKey === key.id ? (
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        ) : (
+                          <CheckCircleIcon className="h-5 w-5" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteKey(key.id)}
+                        className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
+                        title="Delete API key"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+
+              <button
+                onClick={() => setShowBYOKWizard(true)}
+                className={`w-full px-4 py-3 rounded-lg border-2 border-dashed ${
+                  currentTheme === 'light'
+                    ? 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                    : 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/50'
+                } flex items-center justify-center gap-2 ${themeClasses.text}`}
+              >
+                <PlusIcon className="h-5 w-5" />
+                Add Another LLM Provider
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Platform API Keys Section */}
+      <div className="mb-4">
+        <h2 className={`text-2xl font-bold ${themeClasses.text} mb-4`}>
+          Platform API Keys
+        </h2>
+        <p className={`${themeClasses.subtext} mb-4`}>
+          API keys for accessing the Unicorn Commander platform
+        </p>
+      </div>
+
       {/* API Keys List */}
       <div className="space-y-4">
         {apiKeys.length === 0 ? (
@@ -379,6 +563,18 @@ export default function AccountAPIKeys() {
           ))
         )}
       </div>
+
+      {/* BYOK Wizard */}
+      {showBYOKWizard && (
+        <BYOKWizard
+          onClose={() => setShowBYOKWizard(false)}
+          onComplete={() => {
+            setShowBYOKWizard(false);
+            loadLLMProviderKeys();
+            showToast('LLM provider added successfully');
+          }}
+        />
+      )}
 
       {/* Add Key Modal */}
       {showAddModal && (

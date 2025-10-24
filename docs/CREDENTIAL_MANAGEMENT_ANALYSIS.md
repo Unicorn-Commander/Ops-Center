@@ -247,7 +247,7 @@ async def get_byok_stats(request: Request):
 
 ```bash
 # === Cloudflare DNS Management (Epic 1.6) ===
-CLOUDFLARE_API_TOKEN=REMOVED
+CLOUDFLARE_API_TOKEN=<CLOUDFLARE_API_TOKEN_REDACTED>
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_BASE_URL=https://api.cloudflare.com/client/v4
 

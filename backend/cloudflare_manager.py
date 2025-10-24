@@ -984,7 +984,7 @@ if __name__ == "__main__":
     print("=" * 70)
 
     # Production API token from architecture spec
-    API_TOKEN = "REMOVED"
+    API_TOKEN = "<CLOUDFLARE_API_TOKEN_REDACTED>"
 
     try:
         # Initialize manager

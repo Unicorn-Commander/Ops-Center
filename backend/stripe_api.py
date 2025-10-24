@@ -8,6 +8,8 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 import logging
 from datetime import datetime
+import os
+import stripe
 
 from stripe_integration import stripe_integration
 from keycloak_integration import get_user_by_email, get_user_tier_info
@@ -152,15 +154,21 @@ async def create_checkout_session(
             if not customer:
                 raise HTTPException(status_code=500, detail="Failed to create customer")
 
-        # Get the appropriate price ID
-        # These should be set by setup_stripe_products.py
-        price_id = plan.stripe_price_id
-
-        if not price_id:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Stripe price ID not configured for tier: {request.tier_id}"
-            )
+        # Get the appropriate price ID based on billing cycle
+        if request.billing_cycle == "yearly":
+            price_id = plan.stripe_annual_price_id
+            if not price_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Annual Stripe price ID not configured for tier: {request.tier_id}"
+                )
+        else:
+            price_id = plan.stripe_price_id
+            if not price_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Monthly Stripe price ID not configured for tier: {request.tier_id}"
+                )
 
         # Create checkout session
         checkout_url = await stripe_integration.create_checkout_session(
@@ -410,13 +418,21 @@ async def upgrade_subscription(
                 detail="No active subscription found. Please create a new subscription."
             )
 
-        # Get new price ID
-        new_price_id = plan.stripe_price_id
-        if not new_price_id:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Price ID not configured for tier: {request.new_tier_id}"
-            )
+        # Get new price ID based on billing cycle
+        if request.billing_cycle == "yearly":
+            new_price_id = plan.stripe_annual_price_id
+            if not new_price_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Annual price ID not configured for tier: {request.new_tier_id}"
+                )
+        else:
+            new_price_id = plan.stripe_price_id
+            if not new_price_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Monthly price ID not configured for tier: {request.new_tier_id}"
+                )
 
         # Update subscription
         subscription_id = active_subs[0]['id']
@@ -488,3 +504,250 @@ async def stripe_webhook(
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/webhooks/stripe/checkout", response_model=WebhookResponse)
+async def stripe_checkout_webhook(request: Request):
+    """
+    Handle Stripe checkout.session.completed webhook
+
+    This is called by Stripe when a payment is successful.
+    We need to:
+    1. Verify webhook signature
+    2. Extract checkout session data
+    3. Create Lago customer (if doesn't exist)
+    4. Create Lago subscription
+    5. Update Keycloak user tier
+
+    This endpoint is exempt from authentication - Stripe calls it directly.
+    """
+    try:
+        payload = await request.body()
+        sig_header = request.headers.get('stripe-signature')
+
+        # Get webhook secret from environment
+        webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+        if not webhook_secret:
+            logger.error("STRIPE_WEBHOOK_SECRET not configured")
+            raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+        # Verify webhook signature
+        import stripe
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, webhook_secret
+            )
+        except ValueError as e:
+            # Invalid payload
+            logger.error(f"Invalid webhook payload: {e}")
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        except stripe.error.SignatureVerificationError as e:
+            # Invalid signature
+            logger.error(f"Invalid webhook signature: {e}")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+        # Handle the event
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+
+            # Extract metadata
+            tier_id = session['metadata'].get('tier_id') or session['metadata'].get('tier_name')
+            billing_cycle = session['metadata'].get('billing_cycle', 'monthly')
+            user_email = session['metadata'].get('user_email') or session.get('customer_email')
+
+            if not user_email:
+                logger.error("No user email found in checkout session")
+                return WebhookResponse(
+                    status="error",
+                    message="No user email found"
+                )
+
+            logger.info(f"Processing checkout completion for {user_email}, tier: {tier_id}")
+
+            # Get Keycloak user
+            try:
+                from keycloak_integration import get_user_by_email, set_subscription_tier
+                user = await get_user_by_email(user_email)
+                if not user:
+                    logger.error(f"User not found in Keycloak: {user_email}")
+                    return WebhookResponse(
+                        status="error",
+                        message="User not found"
+                    )
+
+                user_id = user['id']
+            except Exception as e:
+                logger.error(f"Failed to get Keycloak user: {e}")
+                return WebhookResponse(
+                    status="error",
+                    message=f"Failed to get user: {str(e)}"
+                )
+
+            # Create or get Lago customer
+            try:
+                lago_customer = await create_lago_customer_if_not_exists(
+                    user_email=user_email,
+                    user_id=user_id
+                )
+            except Exception as e:
+                logger.error(f"Failed to create Lago customer: {e}")
+                return WebhookResponse(
+                    status="error",
+                    message=f"Failed to create Lago customer: {str(e)}"
+                )
+
+            # Create Lago subscription
+            try:
+                plan = subscription_manager.get_plan(tier_id)
+                if not plan:
+                    logger.error(f"Invalid tier_id: {tier_id}")
+                    return WebhookResponse(
+                        status="error",
+                        message=f"Invalid plan: {tier_id}"
+                    )
+
+                # Map tier_id to Lago plan code (they use same naming)
+                lago_plan_code = tier_id  # trial, starter, professional, enterprise
+
+                lago_subscription = await create_lago_subscription(
+                    customer_id=user_email,  # Lago uses email as external_id
+                    plan_code=lago_plan_code,
+                    billing_cycle=billing_cycle
+                )
+
+                logger.info(f"Created Lago subscription: {lago_subscription.get('lago_id')}")
+            except Exception as e:
+                logger.error(f"Failed to create Lago subscription: {e}")
+                return WebhookResponse(
+                    status="error",
+                    message=f"Failed to create subscription: {str(e)}"
+                )
+
+            # Update Keycloak user tier
+            try:
+                await set_subscription_tier(user_id, tier_id)
+                logger.info(f"Updated Keycloak tier for {user_email} to {tier_id}")
+            except Exception as e:
+                logger.error(f"Failed to update Keycloak tier: {e}")
+                # Don't fail the webhook - subscription was created
+
+            # Log to audit
+            try:
+                from audit_logger import audit_logger
+                audit_logger.log_event(
+                    event_type="subscription.created",
+                    user_id=user_id,
+                    details={
+                        "tier": tier_id,
+                        "billing_cycle": billing_cycle,
+                        "stripe_session_id": session['id'],
+                        "lago_subscription_id": lago_subscription.get('lago_id')
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Audit logging failed: {e}")
+
+            return WebhookResponse(
+                status="success",
+                message=f"Subscription created for {user_email}"
+            )
+
+        # Other event types can be handled here
+        return WebhookResponse(
+            status="ignored",
+            message=f"Event type {event['type']} not handled"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def create_lago_customer_if_not_exists(user_email: str, user_id: str):
+    """Create Lago customer if it doesn't exist"""
+    import httpx
+
+    lago_api_url = os.environ.get("LAGO_API_URL", "http://unicorn-lago-api:3000")
+    lago_api_key = os.environ.get("LAGO_API_KEY")
+
+    if not lago_api_key:
+        raise Exception("LAGO_API_KEY not configured")
+
+    # Check if customer exists
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{lago_api_url}/api/v1/customers/{user_email}",
+                headers={"Authorization": f"Bearer {lago_api_key}"},
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                logger.info(f"Lago customer already exists: {user_email}")
+                return response.json()['customer']
+    except Exception as e:
+        logger.debug(f"Customer lookup failed (expected if new): {e}")
+
+    # Create customer
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{lago_api_url}/api/v1/customers",
+            headers={
+                "Authorization": f"Bearer {lago_api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "customer": {
+                    "external_id": user_email,
+                    "name": user_email,
+                    "email": user_email,
+                    "metadata": {
+                        "keycloak_id": user_id
+                    }
+                }
+            },
+            timeout=10.0
+        )
+
+        if response.status_code in [200, 201]:
+            logger.info(f"Created Lago customer: {user_email}")
+            return response.json()['customer']
+        else:
+            logger.error(f"Failed to create Lago customer: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to create customer: {response.text}")
+
+
+async def create_lago_subscription(customer_id: str, plan_code: str, billing_cycle: str):
+    """Create Lago subscription"""
+    import httpx
+
+    lago_api_url = os.environ.get("LAGO_API_URL", "http://unicorn-lago-api:3000")
+    lago_api_key = os.environ.get("LAGO_API_KEY")
+
+    if not lago_api_key:
+        raise Exception("LAGO_API_KEY not configured")
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{lago_api_url}/api/v1/subscriptions",
+            headers={
+                "Authorization": f"Bearer {lago_api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "subscription": {
+                    "external_customer_id": customer_id,
+                    "plan_code": plan_code,
+                    "billing_time": "calendar"
+                }
+            },
+            timeout=10.0
+        )
+
+        if response.status_code in [200, 201]:
+            logger.info(f"Created Lago subscription for {customer_id}: {plan_code}")
+            return response.json()['subscription']
+        else:
+            logger.error(f"Failed to create Lago subscription: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to create subscription: {response.text}")

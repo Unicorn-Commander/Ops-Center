@@ -338,7 +338,7 @@ class TestSecretEncryption:
     def test_cloudflare_token_encryption(self):
         """Test encryption of Cloudflare API token"""
         manager = SecretManager()
-        token = "REMOVED"
+        token = "<CLOUDFLARE_API_TOKEN_REDACTED>"
 
         encrypted = manager.encrypt_secret(token, secret_type="cloudflare_api_token")
         decrypted = manager.decrypt_secret(encrypted["encrypted_value"])

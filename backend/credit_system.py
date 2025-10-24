@@ -162,14 +162,12 @@ class CreditManager:
             await conn.execute(
                 """
                 INSERT INTO user_credits (
-                    user_id, credits_remaining, credits_allocated,
-                     last_reset
+                    user_id, credits_remaining, credits_allocated, tier, monthly_cap, last_reset
                 )
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (user_id) DO NOTHING
                 """,
-                user_id, allocated, allocated, Decimal("0.00"),
-                Decimal("0.00"), last_reset
+                user_id, allocated, allocated, tier, allocated, last_reset
             )
 
             # Log allocation transaction

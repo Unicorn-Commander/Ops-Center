@@ -463,7 +463,7 @@ if __name__ == "__main__":
 
     # Test 1: Encrypt a secret
     print("\n1. Encrypting Cloudflare API token:")
-    test_token = "REMOVED"
+    test_token = "<CLOUDFLARE_API_TOKEN_REDACTED>"
     encrypted = manager.encrypt_secret(
         secret=test_token,
         secret_type=SecretType.CLOUDFLARE_API_TOKEN,

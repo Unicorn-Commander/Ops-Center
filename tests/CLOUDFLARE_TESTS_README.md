@@ -81,7 +81,7 @@ Unit tests use mocked Cloudflare responses by default. No API token required.
 export CLOUDFLARE_API_TOKEN="your_token_here"
 
 # Production token (READ-ONLY recommended for testing)
-export CLOUDFLARE_API_TOKEN="REMOVED"
+export CLOUDFLARE_API_TOKEN="<CLOUDFLARE_API_TOKEN_REDACTED>"
 ```
 
 **Get API Token**:

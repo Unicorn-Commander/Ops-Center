@@ -16,7 +16,7 @@ from keycloak_integration import update_user_attributes, get_user_by_email
 logger = logging.getLogger(__name__)
 
 # Initialize Stripe
-STRIPE_API_KEY = os.getenv("STRIPE_API_KEY", "")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Redirect back to signup-flow page after payment (success or cancel)
 STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://unicorncommander.ai/signup-flow.html?success=true")
@@ -25,14 +25,14 @@ LAGO_API_URL = os.getenv("LAGO_API_URL", "http://lago-api:3000")
 LAGO_API_KEY = os.getenv("LAGO_API_KEY", "")
 
 # Configure Stripe
-stripe.api_key = STRIPE_API_KEY
+stripe.api_key = STRIPE_SECRET_KEY
 
 
 class StripeIntegration:
     """Handles all Stripe payment operations"""
 
     def __init__(self):
-        self.api_key = STRIPE_API_KEY
+        self.api_key = STRIPE_SECRET_KEY
         self.webhook_secret = STRIPE_WEBHOOK_SECRET
         stripe.api_key = self.api_key
 
@@ -118,11 +118,14 @@ class StripeIntegration:
                 cancel_url=STRIPE_CANCEL_URL,
                 metadata={
                     'customer_email': customer_email,
+                    'user_email': customer_email,  # Duplicate for webhook compatibility
+                    'tier_id': tier_name,  # Use tier_id for consistency
                     'tier_name': tier_name,
                     'billing_cycle': billing_cycle
                 },
                 subscription_data={
                     'metadata': {
+                        'tier_id': tier_name,
                         'tier_name': tier_name,
                         'billing_cycle': billing_cycle
                     }

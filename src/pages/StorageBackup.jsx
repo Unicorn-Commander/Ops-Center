@@ -16,10 +16,18 @@ import {
   CheckCircleIcon,
   InformationCircleIcon,
   CalendarIcon,
-  ArchiveBoxIcon
+  ArchiveBoxIcon,
+  CloudIcon,
+  ShieldCheckIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import { getTooltip } from '../data/tooltipContent';
 import HelpTooltip from '../components/HelpTooltip';
+import CronBuilder from '../components/CronBuilder';
+import BackupRestoreModal from '../components/BackupRestoreModal';
+import CloudBackupSetup from '../components/CloudBackupSetup';
+import BackupVerification from '../components/BackupVerification';
+import StorageOptimizer from '../components/StorageOptimizer';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -50,7 +58,10 @@ export default function StorageBackup() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState(null);
+  const [cloudConfig, setCloudConfig] = useState(null);
   const [backupConfig, setBackupConfig] = useState({
     schedule: '0 2 * * *',
     retention_days: 7,
@@ -58,138 +69,30 @@ export default function StorageBackup() {
     backup_enabled: true
   });
 
-  // Mock data - will be replaced with API calls
-  const [mockStorageData] = useState({
-    total_space: 1000 * 1024 * 1024 * 1024, // 1TB
-    used_space: 350 * 1024 * 1024 * 1024,   // 350GB
-    free_space: 650 * 1024 * 1024 * 1024,   // 650GB
-    volumes: [
-      {
-        name: 'vllm_models',
-        path: '/home/ucadmin/UC-1-Pro/volumes/vllm_models',
-        size: 38.7 * 1024 * 1024 * 1024, // 38.7GB
-        type: 'AI Models',
-        health: 'healthy',
-        last_accessed: '2025-01-28T10:30:00Z'
-      },
-      {
-        name: 'embedding_models',
-        path: '/home/ucadmin/UC-1-Pro/volumes/embedding_models',
-        size: 2.1 * 1024 * 1024 * 1024, // 2.1GB
-        type: 'AI Models',
-        health: 'healthy',
-        last_accessed: '2025-01-28T09:15:00Z'
-      },
-      {
-        name: 'whisperx_models',
-        path: '/home/ucadmin/UC-1-Pro/volumes/whisperx_models',
-        size: 5.2 * 1024 * 1024 * 1024, // 5.2GB
-        type: 'AI Models',
-        health: 'healthy',
-        last_accessed: '2025-01-28T08:45:00Z'
-      },
-      {
-        name: 'kokoro_models',
-        path: '/home/ucadmin/UC-1-Pro/volumes/kokoro_models',
-        size: 180 * 1024 * 1024, // 180MB
-        type: 'AI Models',
-        health: 'healthy',
-        last_accessed: '2025-01-28T07:20:00Z'
-      },
-      {
-        name: 'postgres_data',
-        path: '/var/lib/postgresql/data',
-        size: 1.5 * 1024 * 1024 * 1024, // 1.5GB
-        type: 'Database',
-        health: 'healthy',
-        last_accessed: '2025-01-28T10:35:00Z'
-      },
-      {
-        name: 'redis_data',
-        path: '/var/lib/redis',
-        size: 200 * 1024 * 1024, // 200MB
-        type: 'Cache',
-        health: 'healthy',
-        last_accessed: '2025-01-28T10:35:00Z',
-        can_delete: false,
-        reason: 'Required by running service'
-      },
-      {
-        name: 'qdrant_data',
-        path: '/var/lib/qdrant',
-        size: 850 * 1024 * 1024, // 850MB
-        type: 'Vector Database',
-        health: 'healthy',
-        last_accessed: '2025-01-28T10:30:00Z',
-        can_delete: false,
-        reason: 'Contains vector embeddings'
-      },
-      {
-        name: 'backup_temp',
-        path: '/home/ucadmin/UC-1-Pro/temp/backup',
-        size: 2.3 * 1024 * 1024 * 1024, // 2.3GB
-        type: 'Temporary',
-        health: 'healthy',
-        last_accessed: '2025-01-27T14:20:00Z',
-        can_delete: true,
-        reason: 'Safe to delete - temporary backup files'
-      }
-    ]
-  });
-
-  const [mockBackupData] = useState({
-    backup_enabled: true,
-    schedule: '0 2 * * *', // 2 AM daily
-    last_backup: '2025-01-28T02:00:00Z',
-    next_backup: '2025-01-29T02:00:00Z',
-    backup_location: '/home/ucadmin/UC-1-Pro/backups',
-    retention_days: 7,
-    backups: [
-      {
-        id: 'backup-20250128-020000',
-        timestamp: '2025-01-28T02:00:00Z',
-        size: 45.8 * 1024 * 1024 * 1024, // 45.8GB
-        type: 'Full',
-        status: 'completed',
-        duration: '23m 45s',
-        files_count: 15420
-      },
-      {
-        id: 'backup-20250127-020000',
-        timestamp: '2025-01-27T02:00:00Z',
-        size: 44.2 * 1024 * 1024 * 1024, // 44.2GB
-        type: 'Full',
-        status: 'completed',
-        duration: '22m 18s',
-        files_count: 15018
-      },
-      {
-        id: 'backup-20250126-020000',
-        timestamp: '2025-01-26T02:00:00Z',
-        size: 43.9 * 1024 * 1024 * 1024, // 43.9GB
-        type: 'Full',
-        status: 'completed',
-        duration: '21m 52s',
-        files_count: 14895
-      }
-    ]
-  });
-
   useEffect(() => {
-    loadStorageData();
-    loadBackupData();
+    loadData();
   }, []);
+
+  const loadData = async () => {
+    await Promise.all([loadStorageData(), loadBackupData(), loadCloudConfig()]);
+  };
 
   const loadStorageData = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/storage');
+      const response = await fetch('/api/v1/storage/info');
+      if (!response.ok) throw new Error('Failed to fetch storage data');
       const data = await response.json();
       setStorageData(data);
     } catch (error) {
       console.error('Failed to load storage data:', error);
-      // Fallback to mock data if API fails
-      setStorageData(mockStorageData);
+      // Fallback to mock data for development
+      setStorageData({
+        total_space: 1000 * 1024 * 1024 * 1024,
+        used_space: 350 * 1024 * 1024 * 1024,
+        free_space: 650 * 1024 * 1024 * 1024,
+        volumes: []
+      });
     } finally {
       setLoading(false);
     }
@@ -197,72 +100,84 @@ export default function StorageBackup() {
 
   const loadBackupData = async () => {
     try {
-      const response = await fetch('/api/v1/backup/status');
+      const response = await fetch('/api/v1/backups');
+      if (!response.ok) throw new Error('Failed to fetch backup data');
       const data = await response.json();
       setBackupData(data);
-      
-      // Update backup config form state with actual data
-      setBackupConfig({
-        schedule: data.schedule || '0 2 * * *',
-        retention_days: data.retention_days || 7,
-        backup_location: data.backup_location || '/home/ucadmin/UC-1-Pro/backups',
-        backup_enabled: data.backup_enabled !== undefined ? data.backup_enabled : true
-      });
+
+      if (data.config) {
+        setBackupConfig(data.config);
+      }
     } catch (error) {
       console.error('Failed to load backup data:', error);
-      // Fallback to mock data if API fails
-      setBackupData(mockBackupData);
+      // Fallback for development
+      setBackupData({
+        backup_enabled: true,
+        schedule: '0 2 * * *',
+        last_backup: new Date().toISOString(),
+        next_backup: new Date(Date.now() + 86400000).toISOString(),
+        retention_days: 7,
+        backups: []
+      });
+    }
+  };
+
+  const loadCloudConfig = async () => {
+    try {
+      const response = await fetch('/api/v1/backups/cloud-config');
+      if (response.ok) {
+        const data = await response.json();
+        setCloudConfig(data);
+      }
+    } catch (error) {
+      console.error('Failed to load cloud config:', error);
     }
   };
 
   const refreshData = async () => {
     setRefreshing(true);
-    await Promise.all([loadStorageData(), loadBackupData()]);
+    await loadData();
     setRefreshing(false);
   };
 
   const handleCreateBackup = async () => {
     try {
-      const response = await fetch('/api/v1/backup/create', {
+      const response = await fetch('/api/v1/backups/create', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ backup_type: 'manual' }),
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log('Backup created:', result.backup_id);
-        // Refresh backup data after creation
         await loadBackupData();
+        alert('Backup created successfully!');
       } else {
-        console.error('Failed to create backup');
+        throw new Error('Failed to create backup');
       }
     } catch (error) {
       console.error('Error creating backup:', error);
-    } finally {
-      setShowBackupModal(false);
+      alert('Failed to create backup: ' + error.message);
     }
   };
 
-  const handleRestoreBackup = async (backupId) => {
+  const handleRestoreBackup = async (backupId, options) => {
     try {
-      const response = await fetch(`/api/v1/backup/${backupId}/restore`, {
+      const response = await fetch(`/api/v1/backups/${backupId}/restore`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options),
       });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Backup restored:', result);
-        alert(`Backup ${backupId} restored successfully to ${result.restore_path}`);
-      } else {
-        console.error('Failed to restore backup');
-        alert('Failed to restore backup');
-      }
+
+      if (!response.ok) throw new Error('Failed to restore backup');
+
+      const result = await response.json();
+      console.log('Backup restored:', result);
+      return result;
     } catch (error) {
       console.error('Error restoring backup:', error);
-      alert('Error restoring backup');
+      throw error;
     }
   };
 
@@ -272,48 +187,116 @@ export default function StorageBackup() {
     }
 
     try {
-      const response = await fetch(`/api/v1/backup/${backupId}`, {
+      const response = await fetch(`/api/v1/backups/${backupId}`, {
         method: 'DELETE',
       });
-      
+
       if (response.ok) {
         console.log('Backup deleted:', backupId);
-        // Refresh backup data after deletion
         await loadBackupData();
+        alert('Backup deleted successfully');
       } else {
-        console.error('Failed to delete backup');
-        alert('Failed to delete backup');
+        throw new Error('Failed to delete backup');
       }
     } catch (error) {
       console.error('Error deleting backup:', error);
-      alert('Error deleting backup');
+      alert('Failed to delete backup: ' + error.message);
     }
   };
 
-  const handleSaveBackupConfig = async () => {
+  const handleSaveBackupConfig = async (config) => {
     try {
-      const response = await fetch('/api/v1/backup/config', {
+      const response = await fetch('/api/v1/backups/config', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(backupConfig),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log('Backup configuration saved:', result);
-        // Refresh backup data to show updated config
         await loadBackupData();
+        setShowScheduleModal(false);
+        alert('Backup configuration saved successfully!');
       } else {
-        console.error('Failed to save backup configuration');
-        alert('Failed to save backup configuration');
+        throw new Error('Failed to save configuration');
       }
     } catch (error) {
       console.error('Error saving backup configuration:', error);
-      alert('Error saving backup configuration');
-    } finally {
-      setShowScheduleModal(false);
+      alert('Failed to save configuration: ' + error.message);
+    }
+  };
+
+  const handleSaveCloudConfig = async (config) => {
+    try {
+      const response = await fetch('/api/v1/backups/cloud-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+
+      if (response.ok) {
+        await loadCloudConfig();
+        alert('Cloud backup configuration saved successfully!');
+      } else {
+        throw new Error('Failed to save cloud configuration');
+      }
+    } catch (error) {
+      console.error('Error saving cloud config:', error);
+      alert('Failed to save cloud configuration: ' + error.message);
+    }
+  };
+
+  const handleTestCloudConnection = async (config) => {
+    try {
+      const response = await fetch('/api/v1/backups/cloud-config/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  const handleVerifyBackup = async (backupId) => {
+    try {
+      const response = await fetch(`/api/v1/backups/${backupId}/verify`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) throw new Error('Verification failed');
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Verification error:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  };
+
+  const handleCleanup = async (items) => {
+    try {
+      const response = await fetch('/api/v1/storage/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+
+      if (!response.ok) throw new Error('Cleanup failed');
+
+      const result = await response.json();
+      await loadStorageData();
+      return result;
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      throw error;
     }
   };
 
@@ -356,7 +339,7 @@ export default function StorageBackup() {
   }
 
   return (
-    <motion.div 
+    <motion.div
       className="space-y-6"
       variants={containerVariants}
       initial="hidden"
@@ -372,7 +355,7 @@ export default function StorageBackup() {
             Monitor storage usage, manage volumes, and configure backups
           </p>
         </div>
-        
+
         <button
           onClick={refreshData}
           disabled={refreshing}
@@ -385,53 +368,37 @@ export default function StorageBackup() {
 
       {/* Tab Navigation */}
       <motion.div variants={itemVariants} className="border-b dark:border-gray-700">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('storage')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'storage'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <ServerIcon className="h-5 w-5" />
-              Storage Overview
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('volumes')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'volumes'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <FolderIcon className="h-5 w-5" />
-              Volume Management
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'backup'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <ArchiveBoxIcon className="h-5 w-5" />
-              Backup & Recovery
-            </div>
-          </button>
+        <nav className="-mb-px flex space-x-8 overflow-x-auto">
+          {[
+            { id: 'storage', label: 'Storage Overview', icon: ServerIcon },
+            { id: 'volumes', label: 'Volume Management', icon: FolderIcon },
+            { id: 'backup', label: 'Backup & Recovery', icon: ArchiveBoxIcon },
+            { id: 'schedule', label: 'Backup Scheduling', icon: CalendarIcon },
+            { id: 'cloud', label: 'Cloud Backup', icon: CloudIcon },
+            { id: 'verification', label: 'Verification', icon: ShieldCheckIcon },
+            { id: 'optimizer', label: 'Storage Optimizer', icon: SparklesIcon }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <tab.icon className="h-5 w-5" />
+                {tab.label}
+              </div>
+            </button>
+          ))}
         </nav>
       </motion.div>
 
       {/* Storage Overview Tab */}
       {activeTab === 'storage' && (
         <>
-          {/* Storage Summary Cards */}
           <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
@@ -476,42 +443,38 @@ export default function StorageBackup() {
             </div>
           </motion.div>
 
-          {/* Storage Usage Chart */}
           <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Storage Usage</h2>
-            
-            {/* Progress bar */}
             <div className="mb-4">
               <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
                 <span>Used: {formatBytes(storageData.used_space)}</span>
                 <span>Free: {formatBytes(storageData.free_space)}</span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
-                <div 
-                  className="bg-blue-600 h-4 rounded-full" 
-                  style={{ 
-                    width: `${(storageData.used_space / storageData.total_space) * 100}%` 
-                  }}
+                <div
+                  className="bg-blue-600 h-4 rounded-full"
+                  style={{ width: `${(storageData.used_space / storageData.total_space) * 100}%` }}
                 ></div>
               </div>
             </div>
 
-            {/* Storage breakdown by type */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-              {Object.entries(
-                storageData.volumes.reduce((acc, volume) => {
-                  acc[volume.type] = (acc[volume.type] || 0) + volume.size;
-                  return acc;
-                }, {})
-              ).map(([type, size]) => (
-                <div key={type} className="text-center">
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {formatBytes(size)}
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{type}</p>
-                </div>
-              ))}
-            </div>
+            {storageData.volumes && storageData.volumes.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                {Object.entries(
+                  storageData.volumes.reduce((acc, volume) => {
+                    acc[volume.type] = (acc[volume.type] || 0) + volume.size;
+                    return acc;
+                  }, {})
+                ).map(([type, size]) => (
+                  <div key={type} className="text-center">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {formatBytes(size)}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{type}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
         </>
       )}
@@ -527,108 +490,62 @@ export default function StorageBackup() {
           </div>
 
           <div className="p-6 space-y-4">
-            {storageData.volumes.map((volume) => {
-              const HealthIcon = getHealthIcon(volume.health);
-              return (
-                <div
-                  key={volume.name}
-                  className="border dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <FolderIcon className="h-6 w-6 text-blue-500" />
-                        <div>
-                          <h3 className="font-medium text-gray-900 dark:text-white">{volume.name}</h3>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{volume.path}</p>
+            {storageData.volumes && storageData.volumes.length > 0 ? (
+              storageData.volumes.map((volume) => {
+                const HealthIcon = getHealthIcon(volume.health);
+                return (
+                  <div
+                    key={volume.name}
+                    className="border dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <FolderIcon className="h-6 w-6 text-blue-500" />
+                          <div>
+                            <h3 className="font-medium text-gray-900 dark:text-white">{volume.name}</h3>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{volume.path}</p>
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Size:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {formatBytes(volume.size)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Type:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {volume.type}
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="text-gray-600 dark:text-gray-400">Health:</span>
-                          <HealthIcon className={`ml-2 h-4 w-4 ${getHealthColor(volume.health)}`} />
-                          <span className={`ml-1 font-medium capitalize ${getHealthColor(volume.health)}`}>
-                            {volume.health}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-gray-600 dark:text-gray-400">Last Access:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {formatDate(volume.last_accessed)}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-3 flex items-center gap-2">
-                        <span className="text-gray-600 dark:text-gray-400 text-sm">Mount Point:</span>
-                        <code className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded font-mono">
-                          {volume.path}
-                        </code>
-                        <HelpTooltip 
-                          title={getTooltip('storage', 'mountPoint').title}
-                          content={getTooltip('storage', 'mountPoint').content}
-                          position="top"
-                        />
-                      </div>
-                      
-                      {/* Volume Actions/Status */}
-                      <div className="mt-3 pt-3 border-t dark:border-gray-600">
-                        {!volume.can_delete ? (
-                          <div className="flex items-center gap-2 text-sm">
-                            <ExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />
-                            <span className="text-yellow-700 dark:text-yellow-300">
-                              Cannot delete: {volume.reason}
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Size:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {formatBytes(volume.size)}
                             </span>
-                            <HelpTooltip 
-                              title={getTooltip('storage', 'volumeInUse').title}
-                              content={getTooltip('storage', 'volumeInUse').content}
-                              position="top"
-                            />
                           </div>
-                        ) : (
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-sm">
-                              <CheckCircleIcon className="h-4 w-4 text-green-500" />
-                              <span className="text-green-700 dark:text-green-300">
-                                Safe to manage: {volume.reason}
-                              </span>
-                            </div>
-                            <div className="flex gap-2">
-                              <button className="px-3 py-1 text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800 rounded">
-                                Backup
-                              </button>
-                              <button className="px-3 py-1 text-xs bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800 rounded">
-                                Delete
-                              </button>
-                            </div>
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {volume.type}
+                            </span>
                           </div>
-                        )}
+                          <div className="flex items-center">
+                            <span className="text-gray-600 dark:text-gray-400">Health:</span>
+                            <HealthIcon className={`ml-2 h-4 w-4 ${getHealthColor(volume.health)}`} />
+                            <span className={`ml-1 font-medium capitalize ${getHealthColor(volume.health)}`}>
+                              {volume.health}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Last Access:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {formatDate(volume.last_accessed)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <button className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
-                        <InformationCircleIcon className="h-4 w-4" />
-                        Details
-                      </button>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <FolderIcon className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                <p>No volumes found</p>
+              </div>
+            )}
           </div>
         </motion.div>
       )}
@@ -636,7 +553,6 @@ export default function StorageBackup() {
       {/* Backup & Recovery Tab */}
       {activeTab === 'backup' && (
         <>
-          {/* Backup Status Cards */}
           <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
@@ -687,7 +603,6 @@ export default function StorageBackup() {
             </div>
           </motion.div>
 
-          {/* Backup Actions */}
           <motion.div variants={itemVariants} className="flex gap-4">
             <button
               onClick={handleCreateBackup}
@@ -705,132 +620,6 @@ export default function StorageBackup() {
             </button>
           </motion.div>
 
-          {/* Backup Configuration Modal */}
-          {showScheduleModal && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-            >
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
-              >
-                <div className="p-6">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                      Backup Configuration
-                    </h2>
-                    <button
-                      onClick={() => setShowScheduleModal(false)}
-                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  <div className="space-y-6">
-                    {/* Backup Schedule */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Backup Schedule (Cron Format)
-                        </label>
-                        <HelpTooltip 
-                          title={getTooltip('settings', 'backupSchedule').title}
-                          content={getTooltip('settings', 'backupSchedule').content}
-                          position="right"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={backupConfig.schedule}
-                        onChange={(e) => setBackupConfig({...backupConfig, schedule: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                        placeholder="0 2 * * * (Daily at 2 AM)"
-                      />
-                      <p className="mt-1 text-sm text-gray-500">
-                        Examples: "0 2 * * *" (Daily at 2 AM), "0 2 * * 0" (Weekly on Sunday at 2 AM)
-                        <br />Format: minute hour day month weekday
-                      </p>
-                    </div>
-
-                    {/* Retention Days */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Retention Days
-                        </label>
-                        <HelpTooltip 
-                          title="Backup Retention"
-                          content="Number of days to keep backup files before automatic deletion. Longer retention provides more recovery options but uses more storage."
-                          position="right"
-                        />
-                      </div>
-                      <input
-                        type="number"
-                        value={backupConfig.retention_days}
-                        onChange={(e) => setBackupConfig({...backupConfig, retention_days: parseInt(e.target.value)})}
-                        min="1"
-                        max="365"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                      />
-                      <p className="mt-1 text-sm text-gray-500">
-                        Number of days to keep backups before automatic deletion
-                      </p>
-                    </div>
-
-                    {/* Backup Location */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Backup Location
-                      </label>
-                      <input
-                        type="text"
-                        value={backupConfig.backup_location}
-                        onChange={(e) => setBackupConfig({...backupConfig, backup_location: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-
-                    {/* Enable/Disable Backups */}
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="backup-enabled"
-                        checked={backupConfig.backup_enabled}
-                        onChange={(e) => setBackupConfig({...backupConfig, backup_enabled: e.target.checked})}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="backup-enabled" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Enable automatic backups
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-3 mt-8">
-                    <button
-                      onClick={() => setShowScheduleModal(false)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500 rounded-md"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveBackupConfig}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
-                    >
-                      Save Configuration
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-
-          {/* Backup History */}
           <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-lg shadow">
             <div className="p-6 border-b dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Backup History</h2>
@@ -840,79 +629,200 @@ export default function StorageBackup() {
             </div>
 
             <div className="p-6 space-y-4">
-              {backupData.backups.map((backup) => (
-                <div
-                  key={backup.id}
-                  className="border dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <ArchiveBoxIcon className="h-6 w-6 text-green-500" />
-                        <div>
-                          <h3 className="font-medium text-gray-900 dark:text-white">{backup.id}</h3>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {formatDate(backup.timestamp)}
-                          </p>
+              {backupData.backups && backupData.backups.length > 0 ? (
+                backupData.backups.map((backup) => (
+                  <div
+                    key={backup.id}
+                    className="border dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <ArchiveBoxIcon className="h-6 w-6 text-green-500" />
+                          <div>
+                            <h3 className="font-medium text-gray-900 dark:text-white">{backup.id}</h3>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              {formatDate(backup.timestamp)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Size:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {formatBytes(backup.size)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {backup.type}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Duration:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {backup.duration}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 dark:text-gray-400">Files:</span>
+                            <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                              {backup.files_count?.toLocaleString() || 'N/A'}
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <CheckCircleIcon className="h-4 w-4 text-green-500 mr-1" />
+                            <span className="font-medium text-green-600 dark:text-green-400 capitalize">
+                              {backup.status}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Size:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {formatBytes(backup.size)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Type:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {backup.type}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Duration:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {backup.duration}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Files:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {backup.files_count.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <CheckCircleIcon className="h-4 w-4 text-green-500 mr-1" />
-                          <span className="font-medium text-green-600 dark:text-green-400 capitalize">
-                            {backup.status}
-                          </span>
-                        </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedBackup(backup);
+                            setShowRestoreModal(true);
+                          }}
+                          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1"
+                        >
+                          <CloudArrowDownIcon className="h-4 w-4" />
+                          Restore
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBackup(backup.id)}
+                          className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-1"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          Delete
+                        </button>
                       </div>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleRestoreBackup(backup.id)}
-                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1"
-                      >
-                        <CloudArrowDownIcon className="h-4 w-4" />
-                        Restore
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteBackup(backup.id)}
-                        className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-1"
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                        Delete
-                      </button>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  <ArchiveBoxIcon className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <p>No backups found</p>
                 </div>
-              ))}
+              )}
             </div>
           </motion.div>
         </>
+      )}
+
+      {/* Backup Scheduling Tab */}
+      {activeTab === 'schedule' && (
+        <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
+            Backup Schedule Configuration
+          </h2>
+
+          <div className="space-y-6">
+            <CronBuilder
+              value={backupConfig.schedule}
+              onChange={(cron) => setBackupConfig({ ...backupConfig, schedule: cron })}
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Retention Days
+              </label>
+              <input
+                type="number"
+                value={backupConfig.retention_days}
+                onChange={(e) => setBackupConfig({ ...backupConfig, retention_days: parseInt(e.target.value) })}
+                min="1"
+                max="365"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                Number of days to keep backups before automatic deletion
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Backup Location
+              </label>
+              <input
+                type="text"
+                value={backupConfig.backup_location}
+                onChange={(e) => setBackupConfig({ ...backupConfig, backup_location: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="backup-enabled"
+                checked={backupConfig.backup_enabled}
+                onChange={(e) => setBackupConfig({ ...backupConfig, backup_enabled: e.target.checked })}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="backup-enabled" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                Enable automatic backups
+              </label>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t dark:border-gray-700">
+              <button
+                onClick={() => handleSaveBackupConfig(backupConfig)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Save Configuration
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Cloud Backup Tab */}
+      {activeTab === 'cloud' && (
+        <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <CloudBackupSetup
+            existingConfig={cloudConfig}
+            onSave={handleSaveCloudConfig}
+            onTest={handleTestCloudConnection}
+          />
+        </motion.div>
+      )}
+
+      {/* Verification Tab */}
+      {activeTab === 'verification' && (
+        <motion.div variants={itemVariants}>
+          <BackupVerification
+            backups={backupData.backups || []}
+            onVerify={handleVerifyBackup}
+          />
+        </motion.div>
+      )}
+
+      {/* Storage Optimizer Tab */}
+      {activeTab === 'optimizer' && (
+        <motion.div variants={itemVariants}>
+          <StorageOptimizer
+            storageData={storageData}
+            onCleanup={handleCleanup}
+          />
+        </motion.div>
+      )}
+
+      {/* Restore Modal */}
+      {showRestoreModal && selectedBackup && (
+        <BackupRestoreModal
+          isOpen={showRestoreModal}
+          onClose={() => {
+            setShowRestoreModal(false);
+            setSelectedBackup(null);
+          }}
+          backup={selectedBackup}
+          onRestore={handleRestoreBackup}
+        />
       )}
     </motion.div>
   );

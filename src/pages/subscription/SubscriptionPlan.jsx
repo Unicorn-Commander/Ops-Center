@@ -116,12 +116,21 @@ const availablePlans = [
 export default function SubscriptionPlan() {
   const { theme } = useTheme();
   const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [subscription, setSubscription] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     loadSubscription();
+
+    // Check for canceled checkout
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('canceled') === 'true') {
+      setError('Checkout was canceled. Please try again when you\'re ready.');
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const loadSubscription = async () => {
@@ -144,23 +153,49 @@ export default function SubscriptionPlan() {
   };
 
   const handleUpgrade = async (targetTier) => {
+    setCheckoutLoading(true);
+    setError(null);
+
     try {
-      const res = await fetch('/api/v1/subscriptions/upgrade', {
+      // Find the plan object for the target tier
+      const plan = availablePlans.find(p => p.tier === targetTier);
+      if (!plan) {
+        throw new Error('Invalid plan selected');
+      }
+
+      // Call the correct billing checkout endpoint
+      const res = await fetch('/api/v1/billing/subscriptions/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_tier: targetTier })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          tier_id: plan.tier,
+          billing_cycle: 'monthly',
+          success_url: window.location.origin + '/admin/subscription/success?session_id={CHECKOUT_SESSION_ID}',
+          cancel_url: window.location.origin + '/admin/subscription/plan?canceled=true'
+        })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.checkout_url) {
-          window.location.href = data.checkout_url;
-        } else {
-          await loadSubscription();
-        }
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to create checkout session (${res.status})`);
+      }
+
+      const data = await res.json();
+
+      // Redirect to Stripe Checkout
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+      } else {
+        throw new Error('No checkout URL returned from server');
       }
     } catch (error) {
-      console.error('Error upgrading:', error);
+      console.error('Checkout error:', error);
+      setError(error.message || 'Failed to initiate checkout. Please try again.');
+      setCheckoutLoading(false);
     }
   };
 
@@ -219,6 +254,17 @@ export default function SubscriptionPlan() {
 
   return (
     <div className="space-y-6">
+      {/* Checkout Loading Overlay */}
+      {checkoutLoading && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className={`${theme.card} p-8 rounded-xl text-center`}>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+            <p className={`text-lg font-semibold ${theme.text.primary}`}>Redirecting to Stripe Checkout...</p>
+            <p className={`text-sm ${theme.text.secondary} mt-2`}>Please wait while we prepare your payment</p>
+          </div>
+        </div>
+      )}
+
       {/* Current Subscription Card */}
       <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
         <div className="flex items-center justify-between mb-6">
@@ -396,23 +442,26 @@ export default function SubscriptionPlan() {
                 ) : subscription && getTierLevel(plan.tier) > getTierLevel(subscription.tier) ? (
                   <button
                     onClick={() => handleUpgrade(plan.tier)}
-                    className={`w-full ${theme.button} rounded-lg py-2 text-sm font-medium`}
+                    disabled={checkoutLoading}
+                    className={`w-full ${theme.button} rounded-lg py-2 text-sm font-medium ${checkoutLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    Upgrade
+                    {checkoutLoading ? 'Processing...' : 'Upgrade'}
                   </button>
                 ) : subscription ? (
                   <button
                     onClick={() => handleDowngrade(plan.tier)}
-                    className="w-full border border-slate-600 text-slate-300 hover:bg-slate-700 rounded-lg py-2 text-sm font-medium transition-colors"
+                    disabled={checkoutLoading}
+                    className={`w-full border border-slate-600 text-slate-300 hover:bg-slate-700 rounded-lg py-2 text-sm font-medium transition-colors ${checkoutLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Downgrade
                   </button>
                 ) : (
                   <button
                     onClick={() => handleUpgrade(plan.tier)}
-                    className={`w-full ${theme.button} rounded-lg py-2 text-sm font-medium`}
+                    disabled={checkoutLoading}
+                    className={`w-full ${theme.button} rounded-lg py-2 text-sm font-medium ${checkoutLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    Select Plan
+                    {checkoutLoading ? 'Processing...' : 'Select Plan'}
                   </button>
                 )}
               </div>

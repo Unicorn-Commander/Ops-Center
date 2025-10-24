@@ -6,6 +6,8 @@ services:
     image: uc-1-pro-ops-center
     container_name: ops-center-direct
     restart: unless-stopped
+    ports:
+      - "8084:8084"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./backend:/app
@@ -24,7 +26,7 @@ services:
       - SREMOVED
       - STRIPE_SECRET_KEY=sREMOVED
       - STRIPE_API_KEY=sREMOVED
-      - STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
+      - SREMOVED
       - STRIPE_SUCCESS_URL=https://unicorncommander.ai/signup-flow.html?success=true
       - STRIPE_CANCEL_URL=https://unicorncommander.ai/signup-flow.html?canceled=true
       # Lago Configuration
@@ -33,6 +35,12 @@ services:
       - LREMOVED
       # Redis for sessions
       - REDIS_URL=redis://unicorn-lago-redis:6379/0
+      # PostgreSQL Database
+      - POSTGRES_HOST=unicorn-postgresql
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=unicorn
+      - POSTGRES_PASSWORD=REMOVED
+      - POSTGRES_DB=unicorn_db
       # Credential Encryption Key (Fernet)
       - EREMOVED
     networks:

@@ -119,6 +119,31 @@ export const routes = {
           status: 'planned'
         }
       }
+    },
+
+    // Credits & Usage submenu
+    credits: {
+      section: 'Credits & Usage',
+      icon: 'CurrencyDollarIcon',
+      roles: ['admin', 'power_user', 'user', 'viewer'], // All can view their credits
+      children: {
+        dashboard: {
+          path: '/admin/credits',
+          component: 'CreditDashboard',
+          roles: ['admin', 'power_user', 'user', 'viewer'],
+          name: 'Credit Dashboard',
+          description: 'View credit balance, usage metrics, and transaction history',
+          status: 'active'
+        },
+        tiers: {
+          path: '/admin/credits/tiers',
+          component: 'TierComparison',
+          roles: ['admin', 'power_user', 'user', 'viewer'],
+          name: 'Pricing Tiers',
+          description: 'Compare subscription tiers and pricing',
+          status: 'active'
+        }
+      }
     }
   },
 
@@ -229,6 +254,60 @@ export const routes = {
         description: 'Network configuration, firewall rules',
         icon: 'WifiIcon'
       },
+      cloudflare: {
+        path: '/admin/infrastructure/cloudflare',
+        component: 'CloudflareDNS',
+        roles: ['admin'],
+        name: 'Cloudflare DNS',
+        description: 'DNS management, zone configuration, record management',
+        icon: 'GlobeAltIcon'
+      },
+      traefik: {
+        section: 'Traefik',
+        icon: 'ServerIcon',
+        children: {
+          dashboard: {
+            path: '/admin/traefik/dashboard',
+            component: 'TraefikDashboard',
+            roles: ['admin'],
+            name: 'Dashboard',
+            description: 'Reverse proxy configuration and monitoring',
+            icon: 'ChartBarIcon'
+          },
+          routes: {
+            path: '/admin/traefik/routes',
+            component: 'TraefikRoutes',
+            roles: ['admin'],
+            name: 'Routes',
+            description: 'Manage routing rules and domains',
+            icon: 'GlobeAltIcon'
+          },
+          services: {
+            path: '/admin/traefik/services',
+            component: 'TraefikServices',
+            roles: ['admin'],
+            name: 'Services',
+            description: 'Backend service management',
+            icon: 'ServerIcon'
+          },
+          ssl: {
+            path: '/admin/traefik/ssl',
+            component: 'TraefikSSL',
+            roles: ['admin'],
+            name: 'SSL Certificates',
+            description: 'Manage SSL/TLS certificates',
+            icon: 'LockClosedIcon'
+          },
+          metrics: {
+            path: '/admin/traefik/metrics',
+            component: 'TraefikMetrics',
+            roles: ['admin'],
+            name: 'Metrics',
+            description: 'Traffic metrics and analytics',
+            icon: 'ChartBarIcon'
+          }
+        }
+      },
       storage: {
         path: '/admin/system/storage',
         component: 'StorageBackup',
@@ -269,6 +348,14 @@ export const routes = {
         description: 'Multi-provider LLM routing, cost optimization, BYOK',
         icon: 'SparklesIcon'
       },
+      llmUsage: {
+        path: '/admin/llm/usage',
+        component: 'LLMUsage',
+        roles: ['admin', 'power_user', 'user', 'viewer'],
+        name: 'LLM Usage',
+        description: 'LLM API usage analytics and cost tracking',
+        icon: 'ChartBarIcon'
+      },
       extensions: {
         path: '/admin/system/extensions',
         component: 'Extensions',
@@ -300,6 +387,14 @@ export const routes = {
         name: 'Email Settings',
         description: 'Configure email providers for notifications',
         icon: 'EnvelopeIcon'
+      },
+      platformSettings: {
+        path: '/admin/platform/settings',
+        component: 'PlatformSettings',
+        roles: ['admin'],
+        name: 'Platform Settings',
+        description: 'Manage API keys, secrets, and integration credentials',
+        icon: 'CogIcon'
       }
     }
   },

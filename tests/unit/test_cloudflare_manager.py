@@ -313,7 +313,7 @@ def manager():
 @pytest.fixture
 def valid_api_token():
     """Valid Cloudflare API token"""
-    return "REMOVED"
+    return "<CLOUDFLARE_API_TOKEN_REDACTED>"
 
 @pytest.fixture
 def invalid_api_token():

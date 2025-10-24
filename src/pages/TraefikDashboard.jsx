@@ -1,0 +1,404 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Container,
+  Grid,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  Chip,
+  IconButton,
+  Alert,
+  Skeleton,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Divider
+} from '@mui/material';
+import {
+  ServerIcon,
+  GlobeAltIcon,
+  LockClosedIcon,
+  ChartBarIcon,
+  PlusIcon,
+  ArrowPathIcon,
+  DocumentTextIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ClockIcon
+} from '@heroicons/react/24/outline';
+import { useNavigate } from 'react-router-dom';
+
+const TraefikDashboard = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [dashboardData, setDashboardData] = useState({
+    summary: {
+      totalRoutes: 0,
+      activeServices: 0,
+      sslCertificates: 0,
+      requestRate: 0
+    },
+    health: {
+      status: 'unknown',
+      lastCheck: null
+    },
+    recentActivity: [],
+    certificates: {
+      valid: 0,
+      expiringSoon: 0,
+      expired: 0
+    }
+  });
+
+  useEffect(() => {
+    loadDashboardData();
+    const interval = setInterval(loadDashboardData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const response = await fetch('/api/v1/traefik/dashboard', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to load dashboard data');
+
+      const data = await response.json();
+      setDashboardData(data);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getHealthColor = (status) => {
+    switch (status) {
+      case 'healthy': return 'success';
+      case 'degraded': return 'warning';
+      case 'unhealthy': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const SummaryCard = ({ title, value, icon: Icon, color, onClick }) => (
+    <Card
+      sx={{
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.2s',
+        '&:hover': onClick ? { transform: 'translateY(-4px)', boxShadow: 6 } : {}
+      }}
+      onClick={onClick}
+    >
+      <CardContent>
+        <Box display="flex" alignItems="center" justifyContent="space-between">
+          <Box>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              {title}
+            </Typography>
+            <Typography variant="h3" component="div">
+              {loading ? <Skeleton width={80} /> : value}
+            </Typography>
+          </Box>
+          <Box
+            sx={{
+              bgcolor: `${color}.lighter`,
+              borderRadius: '50%',
+              p: 2,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Icon style={{ width: 32, height: 32, color: `var(--${color}-main)` }} />
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+
+  const ActivityItem = ({ activity }) => (
+    <ListItem>
+      <ListItemIcon>
+        {activity.type === 'create' && <PlusIcon style={{ width: 20, height: 20, color: 'green' }} />}
+        {activity.type === 'update' && <ArrowPathIcon style={{ width: 20, height: 20, color: 'blue' }} />}
+        {activity.type === 'delete' && <ExclamationTriangleIcon style={{ width: 20, height: 20, color: 'red' }} />}
+      </ListItemIcon>
+      <ListItemText
+        primary={activity.description}
+        secondary={new Date(activity.timestamp).toLocaleString()}
+      />
+    </ListItem>
+  );
+
+  return (
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* Header */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+        <Box>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Traefik Dashboard
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Reverse proxy configuration and monitoring
+          </Typography>
+        </Box>
+        <Box display="flex" gap={2}>
+          <Button
+            variant="outlined"
+            startIcon={<ArrowPathIcon style={{ width: 20, height: 20 }} />}
+            onClick={loadDashboardData}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<PlusIcon style={{ width: 20, height: 20 }} />}
+            onClick={() => navigate('/admin/traefik/routes?action=new')}
+          >
+            Add Route
+          </Button>
+        </Box>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Summary Cards */}
+      <Grid container spacing={3} mb={4}>
+        <Grid item xs={12} sm={6} md={3}>
+          <SummaryCard
+            title="Total Routes"
+            value={dashboardData.summary.totalRoutes}
+            icon={GlobeAltIcon}
+            color="primary"
+            onClick={() => navigate('/admin/traefik/routes')}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <SummaryCard
+            title="Active Services"
+            value={dashboardData.summary.activeServices}
+            icon={ServerIcon}
+            color="info"
+            onClick={() => navigate('/admin/traefik/services')}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <SummaryCard
+            title="SSL Certificates"
+            value={dashboardData.summary.sslCertificates}
+            icon={LockClosedIcon}
+            color="success"
+            onClick={() => navigate('/admin/traefik/ssl')}
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <SummaryCard
+            title="Requests/sec"
+            value={dashboardData.summary.requestRate.toFixed(1)}
+            icon={ChartBarIcon}
+            color="warning"
+            onClick={() => navigate('/admin/traefik/metrics')}
+          />
+        </Grid>
+      </Grid>
+
+      <Grid container spacing={3}>
+        {/* Health Status */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                System Health
+              </Typography>
+              <Box display="flex" alignItems="center" gap={2} mt={2}>
+                <Chip
+                  label={dashboardData.health.status.toUpperCase()}
+                  color={getHealthColor(dashboardData.health.status)}
+                  icon={<CheckCircleIcon style={{ width: 16, height: 16 }} />}
+                />
+                {dashboardData.health.lastCheck && (
+                  <Typography variant="body2" color="text.secondary">
+                    Last checked: {new Date(dashboardData.health.lastCheck).toLocaleString()}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box mt={3}>
+                <Typography variant="subtitle2" gutterBottom>
+                  SSL Certificates
+                </Typography>
+                <Grid container spacing={2} mt={1}>
+                  <Grid item xs={4}>
+                    <Box textAlign="center">
+                      <Typography variant="h4" color="success.main">
+                        {dashboardData.certificates.valid}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Valid
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Box textAlign="center">
+                      <Typography variant="h4" color="warning.main">
+                        {dashboardData.certificates.expiringSoon}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Expiring Soon
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Box textAlign="center">
+                      <Typography variant="h4" color="error.main">
+                        {dashboardData.certificates.expired}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Expired
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Box mt={3} display="flex" gap={2}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                  onClick={() => navigate('/admin/traefik/ssl')}
+                >
+                  View Certificates
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                  startIcon={<DocumentTextIcon style={{ width: 16, height: 16 }} />}
+                  onClick={() => navigate('/admin/logs')}
+                >
+                  View Logs
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Recent Activity */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Recent Activity
+              </Typography>
+
+              {loading ? (
+                <Box>
+                  {[1, 2, 3, 4].map((i) => (
+                    <Box key={i} mb={2}>
+                      <Skeleton variant="text" width="80%" />
+                      <Skeleton variant="text" width="40%" />
+                    </Box>
+                  ))}
+                </Box>
+              ) : dashboardData.recentActivity.length > 0 ? (
+                <List>
+                  {dashboardData.recentActivity.slice(0, 5).map((activity, index) => (
+                    <React.Fragment key={activity.id}>
+                      <ActivityItem activity={activity} />
+                      {index < dashboardData.recentActivity.length - 1 && <Divider />}
+                    </React.Fragment>
+                  ))}
+                </List>
+              ) : (
+                <Box textAlign="center" py={4}>
+                  <ClockIcon style={{ width: 48, height: 48, color: '#ccc', margin: '0 auto' }} />
+                  <Typography variant="body2" color="text.secondary" mt={2}>
+                    No recent activity
+                  </Typography>
+                </Box>
+              )}
+
+              {dashboardData.recentActivity.length > 5 && (
+                <Box mt={2} textAlign="center">
+                  <Button size="small" onClick={() => navigate('/admin/logs')}>
+                    View All Activity
+                  </Button>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Quick Actions */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Quick Actions
+              </Typography>
+              <Grid container spacing={2} mt={1}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    startIcon={<PlusIcon style={{ width: 20, height: 20 }} />}
+                    onClick={() => navigate('/admin/traefik/routes?action=new')}
+                  >
+                    Add Route
+                  </Button>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    startIcon={<ServerIcon style={{ width: 20, height: 20 }} />}
+                    onClick={() => navigate('/admin/traefik/services?action=discover')}
+                  >
+                    Discover Services
+                  </Button>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    startIcon={<LockClosedIcon style={{ width: 20, height: 20 }} />}
+                    onClick={() => navigate('/admin/traefik/ssl?action=renew')}
+                  >
+                    Renew Certificates
+                  </Button>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    startIcon={<ChartBarIcon style={{ width: 20, height: 20 }} />}
+                    onClick={() => navigate('/admin/traefik/metrics')}
+                  >
+                    View Metrics
+                  </Button>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    </Container>
+  );
+};
+
+export default TraefikDashboard;

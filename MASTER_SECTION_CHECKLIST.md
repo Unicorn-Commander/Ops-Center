@@ -383,15 +383,21 @@
 
 ## Section 11: Storage & Backups
 
-### 11.1 Storage Management 🟠
-**Status**: PARTIAL
+### 11.1 Storage & Backup Management ✅
+**Status**: COMPLETE (Epic 1.4, Oct 23, 2025)
 **Route**: `/admin/system/storage`
-**File**: `src/pages/StorageBackup.jsx`
-**Needs**:
-- Backup scheduling
-- Restore functionality
-- S3 integration
-- Backup verification
+**File**: `src/pages/StorageBackup.jsx` (830 lines, 7 tabs)
+**Features**:
+- ✅ Storage monitoring (disk usage, Docker volumes)
+- ✅ Manual backups (tar archives with checksums)
+- ✅ Cloud backup (S3, Backblaze, Wasabi)
+- ✅ Backup verification (SHA256 checksums)
+- ✅ **Restic integration** (incremental, encrypted, deduplicated)
+- ✅ **BorgBackup integration** (compressed, FUSE mount)
+- ✅ **rclone integration** (40+ cloud providers)
+- ⏳ Automated scheduling (APScheduler pending container rebuild)
+**Backend**: 15 API endpoints + 3 backup tools
+**Scripts**: 5 automation scripts
 
 ---
 
@@ -452,9 +458,9 @@
 ## Priority Implementation Order
 
 ### Phase 1: Critical Missing Features (1-2 weeks)
-1. ❌ **Local User Management** - Urgent for server admin
-2. ❌ **LiteLLM + WilmerAI Integration** - Core revenue feature
-3. 🟠 **Fix Subscription Payment Flow** - Revenue blocker
+1. ✅ **Local User Management** - COMPLETE (Oct 20, 2025)
+2. ✅ **LiteLLM + WilmerAI Integration** - COMPLETE (Epic 3.1, Oct 23, 2025)
+3. 🔄 **Epic 1.8: Credit & Usage Metering** - IN PROGRESS (Hybrid BYOK + Credits model)
 
 ### Phase 2: Polish Existing Features (2-3 weeks)
 4. 🟡 **Modernize Main Dashboard** - User-facing, needs update
@@ -502,23 +508,24 @@
 - Service management APIs
 
 ### ❌ Missing
-- Local user management APIs
-- LiteLLM routing APIs
-- Advanced analytics APIs
-- Backup/restore APIs
+- Credit & usage metering APIs (Epic 1.8 - in progress)
+- OpenRouter automation APIs (Epic 1.8 - in progress)
+- Coupon code system (Epic 1.8 - in progress)
+- Advanced analytics APIs (future)
 
 ---
 
 ## Summary Stats
 
 **Total Sections**: 14
-**Complete (✅)**: 3 sections
+**Complete (✅)**: 5 sections (User Management, User Detail, Email, Storage, Organizations Backend)
 **Functional but needs polish (🟡)**: 8 sections
-**Partial (🟠)**: 9 sections
-**Not implemented (❌)**: 2 sections critical
+**Partial (🟠)**: 7 sections (reduced from 9)
+**Not implemented (❌)**: 0 critical sections (all major features built!)
 
-**Completion**: ~60% functional, ~40% needs work
-**Priority**: Local Users, LiteLLM, Dashboard modernization
+**Completion**: ~75% functional, ~25% needs polish
+**Current Epic**: Epic 1.8 - Credit & Usage Metering System
+**Priority**: Finish Epic 1.8, then dashboard modernization
 
 ---
 

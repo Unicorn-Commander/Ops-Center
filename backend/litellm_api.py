@@ -26,6 +26,7 @@ import stripe
 
 from litellm_credit_system import CreditSystem, POWER_LEVELS
 from byok_manager import BYOKManager
+from usage_metering import usage_meter
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,27 @@ async def chat_completions(
         else:
             new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
+
+        # Track usage event (Epic 1.8: Usage Metering)
+        try:
+            await usage_meter.track_usage(
+                user_id=user_id,
+                service="litellm",
+                model=provider_used,
+                tokens=tokens_used,
+                cost=actual_cost,
+                is_free=(user_tier == 'free' and actual_cost == 0),
+                metadata={
+                    'power_level': power_level,
+                    'task_type': request.task_type,
+                    'privacy_required': request.privacy_required,
+                    'provider': provider_used,
+                    'transaction_id': transaction_id
+                }
+            )
+        except Exception as usage_error:
+            # Log error but don't fail the request
+            logger.error(f"Failed to track usage: {usage_error}")
 
         # Add custom headers to response
         response_data['_metadata'] = {

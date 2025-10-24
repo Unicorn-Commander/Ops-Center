@@ -292,7 +292,7 @@ Priority: CRITICAL
 Location: /home/muut/Production/UC-Cloud/services/ops-center/.env.auth
 
 Issues:
-1. CLOUDFLARE_API_TOKEN=REMOVED (EXPOSED)
+1. CLOUDFLARE_API_TOKEN=<CLOUDFLARE_API_TOKEN_REDACTED> (EXPOSED)
 2. NAMECHEAP_API_KEY=REMOVED (EXPOSED)
 3. Credentials in .env.auth are in git history
 

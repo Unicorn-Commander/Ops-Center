@@ -519,7 +519,7 @@ CREATE INDEX idx_service_credentials_updated ON service_credentials(updated_at);
 
 ```bash
 # Lines 4-27: Cloudflare configuration
-CLOUDFLARE_API_TOKEN=REMOVED
+CLOUDFLARE_API_TOKEN=<CLOUDFLARE_API_TOKEN_REDACTED>
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_BASE_URL=https://api.cloudflare.com/client/v4
 

@@ -70,7 +70,7 @@ POST /api/v1/credentials
 {
   "service": "cloudflare",
   "credential_type": "api_token",
-  "value": "REMOVED",
+  "value": "<CLOUDFLARE_API_TOKEN_REDACTED>",
   "metadata": {
     "description": "Production Cloudflare API token",
     "environment": "production"

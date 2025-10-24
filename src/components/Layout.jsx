@@ -50,7 +50,8 @@ import {
   RectangleStackIcon,
   MagnifyingGlassIcon,
   SparklesIcon,
-  EnvelopeIcon
+  EnvelopeIcon,
+  GlobeAltIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
@@ -86,7 +87,8 @@ const iconMap = {
   RectangleStackIcon,
   MagnifyingGlassIcon,
   SparklesIcon,
-  EnvelopeIcon
+  EnvelopeIcon,
+  GlobeAltIcon
 };
 
 export default function Layout({ children }) {
@@ -277,6 +279,65 @@ export default function Layout({ children }) {
                         icon={iconMap.CubeIcon}
                         indent={true}
                       />
+                      <NavigationItem
+                        name="LLM Providers"
+                        href="/admin/litellm-providers"
+                        icon={iconMap.SparklesIcon}
+                        indent={true}
+                      />
+                      <NavigationItem
+                        name="LLM Usage"
+                        href="/admin/llm/usage"
+                        icon={iconMap.ChartBarIcon}
+                        indent={true}
+                      />
+                      <NavigationItem
+                        name="Cloudflare DNS"
+                        href="/admin/infrastructure/cloudflare"
+                        icon={iconMap.GlobeAltIcon}
+                        indent={true}
+                      />
+                      <NavigationItem
+                        name="Traefik"
+                        icon={iconMap.ServerIcon}
+                      >
+                        <NavigationItem
+                          name="Dashboard"
+                          href="/admin/traefik/dashboard"
+                          icon={iconMap.ChartBarIcon}
+                          indent={true}
+                        />
+                        <NavigationItem
+                          name="Routes"
+                          href="/admin/traefik/routes"
+                          icon={iconMap.GlobeAltIcon}
+                          indent={true}
+                        />
+                        <NavigationItem
+                          name="Services"
+                          href="/admin/traefik/services"
+                          icon={iconMap.ServerIcon}
+                          indent={true}
+                        />
+                        <NavigationItem
+                          name="SSL Certificates"
+                          href="/admin/traefik/ssl"
+                          icon={iconMap.LockClosedIcon}
+                          indent={true}
+                        />
+                        <NavigationItem
+                          name="Metrics"
+                          href="/admin/traefik/metrics"
+                          icon={iconMap.ChartBarIcon}
+                          indent={true}
+                        />
+                      </NavigationItem>
+                      <NavigationItem
+                        name="Local Users"
+                        href="/admin/system/local-user-management"
+                        icon={iconMap.UsersIcon}
+                        indent={true}
+                      />
                     </NavigationSection>
                   </>
                 )}
@@ -358,6 +419,12 @@ export default function Layout({ children }) {
                       onToggle={() => toggleSection('billingUsage')}
                     >
                       <NavigationItem
+                        name="Credits & Tiers"
+                        href="/admin/credits"
+                        icon={iconMap.CreditCardIcon}
+                        indent={true}
+                      />
+                      <NavigationItem
                         name="Billing Dashboard"
                         href="/admin/system/billing"
                         icon={iconMap.CurrencyDollarIcon}
@@ -432,6 +499,12 @@ export default function Layout({ children }) {
                         name="Email Settings"
                         href="/admin/platform/email-settings"
                         icon={iconMap.EnvelopeIcon}
+                        indent={true}
+                      />
+                      <NavigationItem
+                        name="Platform Settings"
+                        href="/admin/platform/settings"
+                        icon={iconMap.CogIcon}
                         indent={true}
                       />
                     </NavigationSection>
