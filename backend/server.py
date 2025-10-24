@@ -68,6 +68,7 @@ from tier_check_middleware import router as tier_check_router
 from subscription_api import router as subscription_router
 from stripe_api import router as stripe_router
 from billing_api import router as billing_router
+from credit_api import router as credit_router
 from local_user_api import router as local_user_router
 from org_api import router as org_router
 from firewall_api import router as firewall_router
@@ -77,7 +78,21 @@ from credential_api import router as credential_router
 from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
 from local_users_api import router as admin_local_users_router
+from platform_settings_api import router as platform_settings_router
 from redis_session import redis_session_manager
+
+# Storage & Backup Management
+from storage_backup_api import router as storage_backup_router
+from restic_api_endpoints import router as restic_backup_router
+# from backup_scheduler import backup_scheduler  # TODO: Install apscheduler in container first
+
+# Traefik management APIs
+from traefik_api import router as traefik_router
+from traefik_routes_api import router as traefik_routes_router
+from traefik_services_api import router as traefik_services_router
+from traefik_ssl_manager import router as traefik_ssl_router
+from traefik_metrics_api import router as traefik_metrics_router
+from traefik_middlewares_api import router as traefik_middlewares_router
 
 # Keycloak SSO integration
 try:
@@ -245,7 +260,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/auth/csrf-token",  # CSRF token endpoint must be accessible
         "/api/v1/webhooks/lago",  # Lago webhooks
         "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
-        "/api/v1/tier-check/health"  # Health checks
+        "/api/v1/tier-check/health",  # Health checks
+        "/api/v1/traefik"  # Traefik API (Epic 1.3) - REST API, not form submissions
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -287,6 +303,13 @@ async def startup_event():
             if not os.environ.get("RATE_LIMIT_FAIL_OPEN", "true").lower() == "true":
                 raise
 
+    # Start backup scheduler (TODO: Install apscheduler in container first)
+    # try:
+    #     backup_scheduler.start()
+    #     logger.info("Backup scheduler started successfully")
+    # except Exception as e:
+    #     logger.error(f"Failed to start backup scheduler: {e}")
+
 # Shutdown event handler
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -297,6 +320,13 @@ async def shutdown_event():
             logger.info("Rate limiter closed")
         except Exception as e:
             logger.error(f"Error closing rate limiter: {e}")
+
+    # Stop backup scheduler (TODO: Install apscheduler in container first)
+    # try:
+    #     backup_scheduler.stop()
+    #     logger.info("Backup scheduler stopped")
+    # except Exception as e:
+    #     logger.error(f"Error stopping backup scheduler: {e}")
 
 # Register audit logs router
 if AUDIT_ENABLED:
@@ -335,6 +365,10 @@ logger.info("Stripe payment API endpoints registered at /api/v1/billing")
 app.include_router(billing_router)
 logger.info("Lago billing/invoice API endpoints registered at /api/v1/billing")
 
+# Epic 1.8: Credit & Usage Metering System
+app.include_router(credit_router)
+logger.info("Credit & Usage Metering API endpoints registered at /api/v1/credits")
+
 # Register Local User Management endpoints
 app.include_router(local_user_router)
 logger.info("Local User Management API endpoints registered at /api/v1/local-users")
@@ -368,6 +402,32 @@ app.include_router(admin_local_users_router)
 logger.info("Admin Local User Management API endpoints registered at /api/v1/admin/system/local-users")
 app.include_router(litellm_routing_router)
 logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
+
+# Platform Settings API
+app.include_router(platform_settings_router)
+logger.info("Platform Settings API endpoints registered at /api/v1/platform")
+
+# Traefik Configuration Management APIs (Epic 1.3)
+app.include_router(traefik_router)
+logger.info("Traefik Comprehensive API endpoints registered at /api/v1/traefik (Epic 1.3)")
+
+# Legacy Traefik APIs (keep for backward compatibility)
+app.include_router(traefik_routes_router)
+logger.info("Traefik Routes API endpoints registered at /api/v1/traefik/routes")
+app.include_router(traefik_services_router)
+logger.info("Traefik Services API endpoints registered at /api/v1/traefik/services")
+app.include_router(traefik_ssl_router)
+logger.info("Traefik SSL Management API endpoints registered at /api/v1/traefik/ssl")
+app.include_router(traefik_metrics_router)
+logger.info("Traefik Metrics API endpoints registered at /api/v1/traefik/metrics")
+app.include_router(traefik_middlewares_router)
+logger.info("Traefik Middlewares API endpoints registered at /api/v1/traefik/middlewares")
+
+# Storage & Backup Management
+app.include_router(storage_backup_router)
+logger.info("Storage & Backup API endpoints registered at /api/v1/storage and /api/v1/backups")
+app.include_router(restic_backup_router)
+logger.info("Restic Backup API endpoints registered at /api/v1/backups/restic")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 

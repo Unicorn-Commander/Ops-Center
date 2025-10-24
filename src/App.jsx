@@ -39,9 +39,11 @@ const OrganizationBilling = lazy(() => import('./pages/organization/Organization
 const Brigade = lazy(() => import('./pages/Brigade'));
 const LLMManagement = lazy(() => import('./pages/LLMManagement'));
 const LiteLLMManagement = lazy(() => import('./pages/LiteLLMManagement'));
+const LLMUsage = lazy(() => import('./pages/LLMUsage'));
 
 // Platform pages (lazy loaded)
 const EmailSettings = lazy(() => import('./pages/EmailSettings'));
+const PlatformSettings = lazy(() => import('./pages/PlatformSettings'));
 const CredentialsManagement = lazy(() => import('./pages/settings/CredentialsManagement'));
 
 // System pages (lazy loaded)
@@ -69,6 +71,18 @@ const Settings = lazy(() => import('./pages/Settings'));
 // Infrastructure pages (lazy loaded)
 const CloudflareDNS = lazy(() => import('./pages/network/CloudflareDNS'));
 const MigrationWizard = lazy(() => import('./pages/migration/MigrationWizard'));
+
+// Traefik pages (lazy loaded)
+const TraefikDashboard = lazy(() => import('./pages/TraefikDashboard'));
+const TraefikRoutes = lazy(() => import('./pages/TraefikRoutes'));
+const TraefikServices = lazy(() => import('./pages/TraefikServices'));
+const TraefikSSL = lazy(() => import('./pages/TraefikSSL'));
+const TraefikMetrics = lazy(() => import('./pages/TraefikMetrics'));
+const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
+
+// Credit & Usage pages (lazy loaded)
+const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
+const TierComparison = lazy(() => import('./pages/TierComparison'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -247,11 +261,13 @@ function AppRoutes() {
                   <Route path="brigade" element={<Brigade />} />
                   <Route path="llm-management" element={<LLMManagement />} />
                   <Route path="litellm-providers" element={<LiteLLMManagement />} />
+                  <Route path="llm/usage" element={<LLMUsage />} />
 
                   {/* ============================================================ */}
                   {/* PLATFORM SECTION - Platform configuration */}
                   {/* ============================================================ */}
                   <Route path="platform/email-settings" element={<EmailSettings />} />
+                  <Route path="platform/settings" element={<PlatformSettings />} />
                   <Route path="platform/credentials" element={<CredentialsManagement />} />
 
                   {/* ============================================================ */}
@@ -283,6 +299,24 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   <Route path="infrastructure/cloudflare" element={<CloudflareDNS />} />
                   <Route path="infrastructure/migration" element={<MigrationWizard />} />
+
+                  {/* ============================================================ */}
+                  {/* TRAEFIK SECTION - Reverse Proxy Management */}
+                  {/* ============================================================ */}
+                  <Route path="traefik/dashboard" element={<TraefikDashboard />} />
+                  <Route path="traefik/routes" element={<TraefikRoutes />} />
+                  <Route path="traefik/services" element={<TraefikServices />} />
+                  <Route path="traefik/ssl" element={<TraefikSSL />} />
+                  <Route path="traefik/metrics" element={<TraefikMetrics />} />
+
+                  {/* System Traefik Config - Comprehensive management */}
+                  <Route path="system/traefik" element={<TraefikConfig />} />
+
+                  {/* ============================================================ */}
+                  {/* CREDITS & USAGE SECTION - Credit metering system */}
+                  {/* ============================================================ */}
+                  <Route path="credits" element={<CreditDashboard />} />
+                  <Route path="credits/tiers" element={<TierComparison />} />
 
                   {/* ============================================================ */}
                   {/* LEGACY ROUTES - Backwards compatibility (DEPRECATED) */}
