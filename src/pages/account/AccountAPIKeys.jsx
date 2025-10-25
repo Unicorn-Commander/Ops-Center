@@ -8,11 +8,11 @@
  * - Test key validation
  *
  * API Endpoints:
- * - GET /api/v1/auth/byok/keys - List all API keys
- * - POST /api/v1/auth/byok/keys - Add new API key
- * - PUT /api/v1/auth/byok/keys/{key_id} - Update API key
- * - DELETE /api/v1/auth/byok/keys/{key_id} - Delete API key
- * - POST /api/v1/auth/byok/keys/{key_id}/test - Test API key validity
+ * - GET /api/v1/byok/keys - List all API keys
+ * - POST /api/v1/byok/keys - Add new API key
+ * - PUT /api/v1/byok/keys/{key_id} - Update API key
+ * - DELETE /api/v1/byok/keys/{key_id} - Delete API key
+ * - POST /api/v1/byok/keys/{key_id}/test - Test API key validity
  */
 
 import React, { useState, useEffect } from 'react';
@@ -102,7 +102,7 @@ export default function AccountAPIKeys() {
 
   const loadAPIKeys = async () => {
     try {
-      const response = await fetch('/api/v1/auth/byok/keys');
+      const response = await fetch('/api/v1/byok/keys');
       if (response.ok) {
         const data = await response.json();
         setApiKeys(data.keys || []);
@@ -187,7 +187,7 @@ export default function AccountAPIKeys() {
     e.preventDefault();
 
     try {
-      const response = await fetch('/api/v1/auth/byok/keys', {
+      const response = await fetch('/api/v1/byok/keys', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -218,7 +218,7 @@ export default function AccountAPIKeys() {
     }
 
     try {
-      const response = await fetch(`/api/v1/auth/byok/keys/${keyId}`, {
+      const response = await fetch(`/api/v1/byok/keys/${keyId}`, {
         method: 'DELETE'
       });
 
@@ -239,7 +239,7 @@ export default function AccountAPIKeys() {
     setTestingKey(keyId);
 
     try {
-      const response = await fetch(`/api/v1/auth/byok/keys/${keyId}/test`, {
+      const response = await fetch(`/api/v1/byok/keys/${keyId}/test`, {
         method: 'POST'
       });
 
