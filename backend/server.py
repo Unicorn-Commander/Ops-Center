@@ -121,6 +121,9 @@ from traefik_ssl_manager import router as traefik_ssl_router
 from traefik_metrics_api import router as traefik_metrics_router
 from traefik_middlewares_api import router as traefik_middlewares_router
 
+# Brigade Integration API (H23)
+from brigade_api import router as brigade_router
+
 # System Metrics & Analytics (Epic 2.5)
 from system_metrics_api import router as system_metrics_router
 from metrics_collector import MetricsCollector
@@ -509,6 +512,10 @@ app.include_router(traefik_metrics_router)
 logger.info("Traefik Metrics API endpoints registered at /api/v1/traefik/metrics")
 app.include_router(traefik_middlewares_router)
 logger.info("Traefik Middlewares API endpoints registered at /api/v1/traefik/middlewares")
+
+# Brigade Integration API (H23)
+app.include_router(brigade_router)
+logger.info("Brigade Proxy API endpoints registered at /api/v1/brigade (H23)")
 
 # Storage & Backup Management
 app.include_router(storage_backup_router)
