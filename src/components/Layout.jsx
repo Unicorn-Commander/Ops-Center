@@ -216,27 +216,6 @@ export default function Layout({ children }) {
           sidebarCollapsed ? 'md:w-20' : 'md:w-64'
         }`}>
           <div className={`flex flex-col flex-grow pt-5 pb-4 overflow-y-auto overflow-x-hidden ${themeClasses.sidebar}`}>
-            {/* Collapse/Expand Button */}
-            <button
-              onClick={toggleSidebar}
-              className={`
-                absolute top-5 ${sidebarCollapsed ? 'left-5' : 'right-5'}
-                z-50 p-2 rounded-lg transition-all duration-200
-                ${currentTheme === 'unicorn'
-                  ? 'bg-purple-500/20 text-purple-200 hover:bg-purple-500/30'
-                  : currentTheme === 'light'
-                  ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-                }
-              `}
-              title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-            >
-              {sidebarCollapsed ? (
-                <ChevronDoubleRightIcon className="h-5 w-5" />
-              ) : (
-                <ChevronDoubleLeftIcon className="h-5 w-5" />
-              )}
-            </button>
             {/* Brand Header */}
             <div className={`flex flex-col items-center flex-shrink-0 mb-8 transition-all duration-300 ${
               sidebarCollapsed ? 'px-2' : 'px-4'
@@ -281,7 +260,36 @@ export default function Layout({ children }) {
                 </>
               )}
             </div>
-            <div className="mt-8 flex flex-col flex-1">
+
+            {/* Collapse/Expand Button - Positioned after brand header */}
+            <div className="px-4 mb-4">
+              <button
+                onClick={toggleSidebar}
+                className={`
+                  w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2 rounded-lg transition-all duration-200
+                  ${currentTheme === 'unicorn'
+                    ? 'bg-purple-500/20 text-purple-200 hover:bg-purple-500/30'
+                    : currentTheme === 'light'
+                    ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                  }
+                `}
+                title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+              >
+                {!sidebarCollapsed && (
+                  <span className="text-xs font-semibold uppercase tracking-wider">
+                    Collapse
+                  </span>
+                )}
+                {sidebarCollapsed ? (
+                  <ChevronDoubleRightIcon className="h-5 w-5" />
+                ) : (
+                  <ChevronDoubleLeftIcon className="h-5 w-5" />
+                )}
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-col flex-1">
               <nav className="flex-1 px-2 space-y-1">
                 {/* ============================ */}
                 {/* DASHBOARD - Top Level */}
