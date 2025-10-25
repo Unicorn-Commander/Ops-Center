@@ -41,7 +41,8 @@ import {
   ArrowDownTrayIcon,
   ClockIcon,
   SparklesIcon,
-  ServerIcon
+  ServerIcon,
+  ExclamationCircleIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import PowerLevelSelector from '../components/PowerLevelSelector';
@@ -63,6 +64,7 @@ ChartJS.register(
 export default function LLMUsage() {
   const { theme, currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState('month');
   const [usageData, setUsageData] = useState(null);
   const [powerLevel, setPowerLevel] = useState('balanced');
@@ -100,76 +102,51 @@ export default function LLMUsage() {
 
   const loadUsageData = async () => {
     setLoading(true);
+    setError(null);
+
     try {
       // Load summary stats
       const summaryResponse = await fetch(`/api/v1/llm/usage/summary?range=${timeRange}`, {
         credentials: 'include'
       });
 
-      if (summaryResponse.ok) {
-        const data = await summaryResponse.json();
-        setUsageData(data);
-      } else {
-        // Mock data for demo
-        setUsageData({
-          total_calls: 45230,
-          total_cost: 124.56,
-          avg_cost_per_call: 0.00275,
-          quota_used_percent: 78,
-          quota_limit: 100000,
-          timeline: Array.from({ length: 30 }, (_, i) => ({
-            date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            calls: Math.floor(Math.random() * 2000) + 1000,
-            cost: Math.random() * 5 + 2
-          })),
-          growth: {
-            calls: 12,
-            cost: 8,
-            avg_cost: -3
-          }
-        });
+      if (!summaryResponse.ok) {
+        throw new Error(`Failed to load usage summary: ${summaryResponse.status} ${summaryResponse.statusText}`);
       }
+
+      const summaryData = await summaryResponse.json();
+      setUsageData(summaryData);
 
       // Load provider breakdown
       const providerResponse = await fetch('/api/v1/llm/usage/by-provider', {
         credentials: 'include'
       });
 
-      if (providerResponse.ok) {
-        const data = await providerResponse.json();
-        setProviderData(data);
-      } else {
-        // Mock data
-        setProviderData({
-          providers: [
-            { name: 'OpenAI', calls: 20350, cost: 56.23, percentage: 45 },
-            { name: 'Anthropic', calls: 13570, cost: 38.12, percentage: 30 },
-            { name: 'Google AI', calls: 9050, cost: 21.45, percentage: 20 },
-            { name: 'Cohere', calls: 2260, cost: 8.76, percentage: 5 }
-          ]
-        });
+      if (!providerResponse.ok) {
+        throw new Error(`Failed to load provider data: ${providerResponse.status} ${providerResponse.statusText}`);
       }
+
+      const providerDataResult = await providerResponse.json();
+      setProviderData(providerDataResult);
 
       // Load power level breakdown
       const powerLevelResponse = await fetch('/api/v1/llm/usage/by-power-level', {
         credentials: 'include'
       });
 
-      if (powerLevelResponse.ok) {
-        const data = await powerLevelResponse.json();
-        setPowerLevelData(data);
-      } else {
-        // Mock data
-        setPowerLevelData({
-          levels: [
-            { level: 'eco', calls: 27140, cost: 28.34, percentage: 60 },
-            { level: 'balanced', calls: 13570, cost: 62.15, percentage: 30 },
-            { level: 'precision', calls: 4520, cost: 34.07, percentage: 10 }
-          ]
-        });
+      if (!powerLevelResponse.ok) {
+        throw new Error(`Failed to load power level data: ${powerLevelResponse.status} ${powerLevelResponse.statusText}`);
       }
+
+      const powerLevelDataResult = await powerLevelResponse.json();
+      setPowerLevelData(powerLevelDataResult);
+
     } catch (error) {
       console.error('Failed to load usage data:', error);
+      setError(error.message || 'Failed to load usage data. Please try again later.');
+      setUsageData(null);
+      setProviderData(null);
+      setPowerLevelData(null);
     } finally {
       setLoading(false);
     }
@@ -200,6 +177,79 @@ export default function LLMUsage() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
           <p className={themeClasses.text}>Loading usage data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if data failed to load
+  if (error || !usageData) {
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className={`text-3xl font-bold ${themeClasses.text}`}>
+              LLM Usage & Analytics
+            </h1>
+            <p className={`mt-2 ${themeClasses.subtext}`}>
+              Track API usage, costs, and optimize spending
+            </p>
+          </div>
+        </div>
+
+        {/* Error Alert */}
+        <div className={`rounded-xl border-2 border-red-500 p-6 ${
+          currentTheme === 'unicorn'
+            ? 'bg-red-900/30 backdrop-blur-xl'
+            : currentTheme === 'light'
+            ? 'bg-red-50'
+            : 'bg-red-900/20'
+        }`}>
+          <div className="flex items-start gap-4">
+            <ExclamationCircleIcon className="h-8 w-8 text-red-500 flex-shrink-0 mt-1" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-red-500 mb-2">
+                Failed to Load Usage Data
+              </h3>
+              <p className={`mb-4 ${
+                currentTheme === 'light' ? 'text-gray-700' : 'text-slate-300'
+              }`}>
+                {error || 'Unable to retrieve LLM usage data from the server. Please ensure the backend API is running and accessible.'}
+              </p>
+              <button
+                onClick={loadUsageData}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Troubleshooting Information */}
+        <div className={`rounded-xl border p-6 ${themeClasses.card}`}>
+          <h3 className={`text-lg font-semibold ${themeClasses.text} mb-4`}>
+            Troubleshooting Steps
+          </h3>
+          <ul className={`space-y-2 ${themeClasses.subtext}`}>
+            <li className="flex items-start gap-2">
+              <span className="font-bold">1.</span>
+              <span>Verify the backend API is running: <code className="bg-slate-700 px-2 py-1 rounded text-sm">docker ps | grep ops-center</code></span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="font-bold">2.</span>
+              <span>Check backend logs: <code className="bg-slate-700 px-2 py-1 rounded text-sm">docker logs ops-center-direct --tail 50</code></span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="font-bold">3.</span>
+              <span>Ensure the LLM usage API endpoints are implemented in the backend</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="font-bold">4.</span>
+              <span>Verify database connectivity and that usage data is being tracked</span>
+            </li>
+          </ul>
         </div>
       </div>
     );
@@ -515,31 +565,17 @@ export default function LLMUsage() {
               </tr>
             </thead>
             <tbody>
-              {[...Array(10)].map((_, idx) => (
-                <tr key={idx} className={`border-b ${currentTheme === 'light' ? 'border-gray-100' : 'border-slate-700/50'}`}>
-                  <td className={`py-3 px-4 ${themeClasses.text} text-sm`}>
-                    {new Date(Date.now() - idx * 60000).toLocaleTimeString()}
-                  </td>
-                  <td className={`py-3 px-4 ${themeClasses.text} text-sm`}>
-                    {['GPT-4', 'Claude Sonnet', 'GPT-3.5'][idx % 3]}
-                  </td>
-                  <td className={`py-3 px-4`}>
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      idx % 3 === 0 ? 'bg-green-500/20 text-green-400' :
-                      idx % 3 === 1 ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-purple-500/20 text-purple-400'
-                    }`}>
-                      {['Eco', 'Balanced', 'Precision'][idx % 3]}
-                    </span>
-                  </td>
-                  <td className={`py-3 px-4 ${themeClasses.text} text-sm`}>
-                    ${(Math.random() * 0.01).toFixed(4)}
-                  </td>
-                  <td className={`py-3 px-4 ${themeClasses.text} text-sm`}>
-                    {Math.floor(Math.random() * 2000 + 500)}ms
-                  </td>
-                </tr>
-              ))}
+              <tr>
+                <td colSpan="5" className="py-12 text-center">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <ExclamationCircleIcon className="h-12 w-12 text-slate-400" />
+                    <p className={themeClasses.text}>No recent requests available</p>
+                    <p className={`text-sm ${themeClasses.subtext}`}>
+                      Request history will appear here once the backend API is connected
+                    </p>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

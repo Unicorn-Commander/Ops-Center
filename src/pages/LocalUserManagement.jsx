@@ -354,10 +354,14 @@ const LocalUserManagement = () => {
       const data = await response.json();
 
       if (data.success) {
-        fetchUserSSHKeys(selectedUser.username);
+        toast.success('SSH key deleted successfully');
+        await fetchUserSSHKeys(selectedUser.username);
+      } else {
+        toast.error(`Failed to delete SSH key: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete SSH key:', error);
+      toast.error('Failed to delete SSH key. Please try again.');
     }
   };
 
@@ -927,41 +931,51 @@ const LocalUserManagement = () => {
                     </Button>
 
                     <List>
-                      {userSSHKeys.map((key, index) => (
-                        <React.Fragment key={index}>
-                          <ListItem>
-                            <ListItemText
-                              primary={
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Chip label={getSSHKeyType(key)} size="small" />
-                                  <code style={{ fontSize: '0.75rem' }}>
-                                    {truncateSSHKey(key)}
-                                  </code>
-                                </Box>
-                              }
-                            />
-                            <ListItemSecondaryAction>
-                              <Tooltip title={copiedKey === key ? 'Copied!' : 'Copy'}>
+                      {userSSHKeys.map((key, index) => {
+                        // Generate a stable fingerprint from the key for use as unique identifier
+                        // Use the key itself as the ID (will be URL-encoded in the API call)
+                        const keyId = typeof key === 'object' && key.id
+                          ? key.id
+                          : typeof key === 'object' && key.fingerprint
+                            ? key.fingerprint
+                            : index;
+
+                        return (
+                          <React.Fragment key={keyId}>
+                            <ListItem>
+                              <ListItemText
+                                primary={
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Chip label={getSSHKeyType(typeof key === 'string' ? key : key.key || key)} size="small" />
+                                    <code style={{ fontSize: '0.75rem' }}>
+                                      {truncateSSHKey(typeof key === 'string' ? key : key.key || key)}
+                                    </code>
+                                  </Box>
+                                }
+                              />
+                              <ListItemSecondaryAction>
+                                <Tooltip title={copiedKey === (typeof key === 'string' ? key : key.key) ? 'Copied!' : 'Copy'}>
+                                  <IconButton
+                                    onClick={() => handleCopyKey(typeof key === 'string' ? key : key.key || key)}
+                                    size="small"
+                                    sx={{ mr: 1 }}
+                                  >
+                                    {copiedKey === (typeof key === 'string' ? key : key.key) ? <Check size={16} /> : <Copy size={16} />}
+                                  </IconButton>
+                                </Tooltip>
                                 <IconButton
-                                  onClick={() => handleCopyKey(key)}
+                                  onClick={() => handleDeleteSSHKey(keyId)}
                                   size="small"
-                                  sx={{ mr: 1 }}
+                                  color="error"
                                 >
-                                  {copiedKey === key ? <Check size={16} /> : <Copy size={16} />}
+                                  <Trash2 size={16} />
                                 </IconButton>
-                              </Tooltip>
-                              <IconButton
-                                onClick={() => handleDeleteSSHKey(index)}
-                                size="small"
-                                color="error"
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </ListItemSecondaryAction>
-                          </ListItem>
-                          {index < userSSHKeys.length - 1 && <Divider />}
-                        </React.Fragment>
-                      ))}
+                              </ListItemSecondaryAction>
+                            </ListItem>
+                            {index < userSSHKeys.length - 1 && <Divider />}
+                          </React.Fragment>
+                        );
+                      })}
                     </List>
 
                     {userSSHKeys.length === 0 && (

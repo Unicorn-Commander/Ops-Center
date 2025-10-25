@@ -188,12 +188,14 @@ export default function System() {
   useEffect(() => {
     fetchHardwareInfo();
     fetchDiskIo();
+    fetchNetworkStats();
 
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
       fetchSystemStatus();
       fetchDiskIo();
+      fetchNetworkStats();
       updateHistoricalData();
     }, refreshInterval);
 
@@ -221,6 +223,22 @@ export default function System() {
       }
     } catch (error) {
       console.error('Failed to fetch disk I/O:', error);
+    }
+  };
+
+  const fetchNetworkStats = async () => {
+    try {
+      const response = await fetch('/api/v1/system/network');
+      if (response.ok) {
+        const data = await response.json();
+        setNetworkStats({
+          in: data.bytes_recv_per_sec || 0,
+          out: data.bytes_sent_per_sec || 0
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch network stats:', error);
+      setNetworkStats({ in: 0, out: 0 });
     }
   };
 
@@ -376,9 +394,8 @@ export default function System() {
         {[
           { id: 'overview', name: 'Overview', icon: ChartBarIcon },
           { id: 'processes', name: 'Processes', icon: RectangleStackIcon },
-          { id: 'hardware', name: 'Hardware', icon: ComputerDesktopIcon }
-          // Network tab hidden until network stats API is implemented
-          // { id: 'network', name: 'Network', icon: WifiIcon }
+          { id: 'hardware', name: 'Hardware', icon: ComputerDesktopIcon },
+          { id: 'network', name: 'Network', icon: WifiIcon }
         ].map(({ id, name, icon: Icon }) => (
           <button
             key={id}

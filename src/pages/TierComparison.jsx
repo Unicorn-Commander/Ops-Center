@@ -1,100 +1,158 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Grid, Card, CardContent, Typography, Button, List, ListItem,
-  ListItemIcon, ListItemText, Chip, Paper, Divider, Container
+  ListItemIcon, ListItemText, Chip, Paper, Divider, Container, CircularProgress
 } from '@mui/material';
 import { Check, Star, ArrowForward } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 
 export default function TierComparison() {
   const { currentTheme } = useTheme();
+  const [tiers, setTiers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [currentTier, setCurrentTier] = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const tiers = [
-    {
-      name: 'Free',
-      price: 0,
-      credits: 10,
-      billingPeriod: 'one-time',
-      description: 'Perfect for testing and small projects',
-      features: [
-        'Auto OpenRouter account creation',
-        '$10 free credits (one-time)',
-        'Free models only',
-        '$0.001/1k token markup',
-        'Community support',
-        'Basic usage analytics'
-      ],
-      limitations: [
-        'No paid models',
-        'Credits expire after 90 days'
-      ],
-      cta: 'Get Started',
-      ctaHref: '/admin/subscription/plan',
-      popular: false
-    },
-    {
-      name: 'Starter',
-      price: 30,
-      credits: 30,
-      billingPeriod: 'month',
-      description: 'For individuals and small teams',
-      features: [
-        'Managed OpenRouter account',
-        '$30 monthly credits',
-        'Free + paid models',
-        '10% markup on paid models',
-        'Email support',
-        'Advanced analytics',
-        'Usage alerts'
-      ],
-      limitations: [],
-      cta: 'Upgrade to Starter',
-      ctaHref: '/admin/subscription/plan?tier=starter',
-      popular: false
-    },
-    {
-      name: 'Professional',
-      price: 50,
-      credits: 50,
-      billingPeriod: 'month',
-      description: 'Most popular for growing teams',
-      features: [
-        '$50 monthly credits OR BYOK',
-        'Priority routing',
-        '5% markup (credits) or 0% (BYOK)',
-        'Team features (1-5 users)',
-        'Priority email support',
-        'Custom usage reports',
-        'API key management',
-        'Webhook integrations'
-      ],
-      limitations: [],
-      cta: 'Upgrade to Pro',
-      ctaHref: '/admin/subscription/plan?tier=professional',
-      popular: true
-    },
-    {
-      name: 'Enterprise',
-      price: 99,
-      credits: 100,
-      billingPeriod: 'month',
-      description: 'For large organizations',
-      features: [
-        '$100 monthly credits OR BYOK',
-        'Dedicated routing',
-        '0% markup on all models',
-        'Unlimited team members',
-        'White-label options',
-        '24/7 dedicated support',
-        'Custom SLA',
-        'On-premise deployment option'
-      ],
-      limitations: [],
-      cta: 'Contact Sales',
-      ctaHref: 'mailto:sales@magicunicorn.tech',
-      popular: false
+  useEffect(() => {
+    loadPlans();
+    loadCurrentSubscription();
+  }, []);
+
+  const loadPlans = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/v1/subscriptions/plans', {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load subscription plans');
+      }
+
+      const data = await response.json();
+
+      // Transform API data to match component format
+      const transformedTiers = data.plans.map(plan => ({
+        name: plan.display_name || plan.name,
+        price: plan.price_monthly || 0,
+        credits: plan.api_calls_limit || 0,
+        billingPeriod: 'month',
+        description: plan.description || '',
+        features: plan.features || [],
+        limitations: plan.limitations || [],
+        cta: plan.price_monthly === 0 ? 'Get Started' : plan.id === 'enterprise' ? 'Contact Sales' : `Upgrade to ${plan.display_name || plan.name}`,
+        ctaHref: plan.id === 'enterprise' ? 'mailto:sales@magicunicorn.tech' : null,
+        popular: plan.id === 'professional',
+        planId: plan.id
+      }));
+
+      setTiers(transformedTiers);
+    } catch (error) {
+      console.error('Failed to load plans:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const loadCurrentSubscription = async () => {
+    try {
+      const response = await fetch('/api/v1/subscriptions/current', {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentTier(data.plan?.id || null);
+      }
+    } catch (error) {
+      console.error('Failed to load current subscription:', error);
+      // Not critical, user may not be logged in
+    }
+  };
+
+  const handleSelectPlan = async (tier) => {
+    // Free tier - no payment required (navigate to signup)
+    if (tier.price === 0) {
+      window.location.href = '/signup';
+      return;
+    }
+
+    // Enterprise - contact sales
+    if (tier.planId === 'enterprise') {
+      window.location.href = 'mailto:sales@magicunicorn.tech';
+      return;
+    }
+
+    // Paid tiers - Stripe Checkout
+    try {
+      setCheckoutLoading(true);
+
+      const response = await fetch('/api/v1/billing/subscriptions/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          tier_id: tier.planId,
+          billing_cycle: 'monthly'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to create checkout session');
+      }
+
+      const data = await response.json();
+
+      if (data.checkout_url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.checkout_url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      alert(`Failed to start checkout: ${error.message}`);
+      setCheckoutLoading(false);
+    }
+  };
+
+  // Loading state
+  if (loading && tiers.length === 0) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <CircularProgress />
+          <Typography variant="body1" sx={{ mt: 2 }}>
+            Loading subscription plans...
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <Typography variant="h5" color="error" gutterBottom>
+            Failed to Load Plans
+          </Typography>
+          <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+            {error}
+          </Typography>
+          <Button variant="contained" onClick={loadPlans}>
+            Retry
+          </Button>
+        </Box>
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
