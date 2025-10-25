@@ -62,7 +62,7 @@ const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
 const LocalUsers = lazy(() => import('./pages/LocalUsers'));
-const LocalUserManagement = lazy(() => import('./pages/LocalUserManagement'));
+const LocalUserManagement = lazy(() => import('./components/LocalUserManagement'));
 const UsageMetrics = lazy(() => import('./pages/UsageMetrics'));
 const Network = lazy(() => import('./pages/NetworkTabbed'));
 const StorageBackup = lazy(() => import('./pages/StorageBackup'));
