@@ -81,6 +81,7 @@ from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
 from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
+from user_management_api import router as user_management_router
 from redis_session import redis_session_manager
 
 # Email Notification System (Epic 2.3)
@@ -486,6 +487,10 @@ logger.info("Credential management API endpoints registered at /api/v1/credentia
 # Keycloak Status API
 app.include_router(keycloak_status_router)
 logger.info("Keycloak status API endpoints registered at /api/v1/system/keycloak")
+
+# User Management API (Keycloak users)
+app.include_router(user_management_router)
+logger.info("User Management API endpoints registered at /api/v1/admin/users")
 
 # LiteLLM Routing and Provider Management API
 app.include_router(admin_local_users_router)
