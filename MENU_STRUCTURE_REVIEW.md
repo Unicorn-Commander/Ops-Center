@@ -1907,3 +1907,936 @@ setVllmSettings(prev => ({
 - **End User**: Not accessible (correct)
 
 ---
+
+## 🌐 Traefik Subsection (Infrastructure → Traefik)
+
+**Location**: Infrastructure Section → Traefik (Nested Submenu)
+**Pages**: 5 pages total
+**Purpose**: Reverse proxy management, SSL/TLS certificates, routing configuration, and traffic metrics
+
+### Overview
+
+The Traefik subsection provides comprehensive management of the Traefik reverse proxy that handles all ingress traffic for UC-Cloud services. It includes dashboard overview, route management, service discovery, SSL certificate handling, and traffic metrics visualization.
+
+**Backend Architecture**:
+- 8 backend Python files (161KB total)
+- Main manager: `traefik_manager.py` (81KB - comprehensive)
+- Specialized APIs: routes, services, SSL, metrics, config, middlewares
+- API prefix: `/api/v1/traefik`
+
+---
+
+### Page 1: Traefik Dashboard (`/admin/traefik/dashboard`)
+
+**Component**: `src/pages/TraefikDashboard.jsx` (404 lines)
+**Status**: ✅ REVIEWED (October 25, 2025)
+
+**Purpose**: Overview dashboard showing Traefik system health, statistics, and quick actions
+
+#### Features Implemented
+
+**1. Auto-Refresh System** ✅
+- Loads dashboard data on mount
+- Auto-refreshes every 30 seconds
+- Manual refresh button available
+- Endpoint: `/api/v1/traefik/dashboard`
+
+**2. Summary Cards** ✅ (4 clickable metric cards)
+- **Total Routes** → Navigates to `/admin/traefik/routes`
+- **Active Services** → Navigates to `/admin/traefik/services`
+- **SSL Certificates** → Navigates to `/admin/traefik/ssl`
+- **Requests/sec** → Navigates to `/admin/traefik/metrics`
+- All cards clickable with hover animations
+- Large numbers with descriptive labels
+- Color-coded icons (primary, info, success, warning)
+
+**3. System Health Panel** ✅
+- Shows current health status (healthy, degraded, unhealthy)
+- Color-coded status chips (green, yellow, red)
+- Last health check timestamp
+- SSL certificate breakdown:
+  - Valid certificates (green)
+  - Expiring soon (yellow, < 30 days)
+  - Expired certificates (red)
+- Two action buttons:
+  - "View Certificates" → `/admin/traefik/ssl`
+  - "View Logs" → `/admin/logs`
+
+**4. Recent Activity Feed** ✅
+- Shows last 5 Traefik-related events
+- Color-coded icons by action type:
+  - Create (green plus icon)
+  - Update (blue refresh icon)
+  - Delete (red warning icon)
+- Formatted timestamps (locale string)
+- Empty state: "No recent activity" with clock icon
+- "View All Activity" button if > 5 events
+
+**5. Quick Actions Panel** ✅ (4 action buttons)
+- **Add Route** → `/admin/traefik/routes?action=new`
+- **Discover Services** → `/admin/traefik/services?action=discover`
+- **Renew Certificates** → `/admin/traefik/ssl?action=renew`
+- **View Metrics** → `/admin/traefik/metrics`
+- Full-width responsive grid (1-4 columns)
+- Icon-based navigation
+
+#### API Dependencies
+
+| Endpoint | Method | Purpose | Status |
+|----------|--------|---------|--------|
+| `/api/v1/traefik/dashboard` | GET | Dashboard data | ✅ Expected |
+| `/api/v1/traefik/routes` | GET | Implied (navigation) | ✅ Exists |
+| `/api/v1/traefik/services` | GET | Implied (navigation) | ✅ Exists |
+| `/api/v1/traefik/certificates` | GET | Implied (navigation) | ✅ Exists |
+
+**Note**: The `/api/v1/traefik/dashboard` endpoint is expected but not found in backend files reviewed. This endpoint likely needs to be implemented or the component should fetch from multiple endpoints:
+- `/api/v1/traefik/status` (routes/certs counts)
+- `/api/v1/traefik/routes` (total routes)
+- `/api/v1/traefik/certificates` (SSL breakdown)
+- Recent activity from audit logs
+
+#### Data Model Expected
+
+```typescript
+{
+  summary: {
+    totalRoutes: number,        // Count of configured routes
+    activeServices: number,     // Count of healthy backend services
+    sslCertificates: number,    // Total SSL certificates
+    requestRate: number         // Requests per second (float)
+  },
+  health: {
+    status: 'healthy' | 'degraded' | 'unhealthy',
+    lastCheck: string (ISO timestamp)
+  },
+  recentActivity: Array<{
+    id: string,
+    type: 'create' | 'update' | 'delete',
+    description: string,
+    timestamp: string (ISO timestamp)
+  }>,
+  certificates: {
+    valid: number,          // Certificates valid > 30 days
+    expiringSoon: number,   // Certificates expiring < 30 days
+    expired: number         // Expired certificates
+  }
+}
+```
+
+#### Issues & Recommendations
+
+**🔴 Critical Issues**:
+
+1. **Missing API Endpoint** → `/api/v1/traefik/dashboard` doesn't exist
+   - **Impact**: Dashboard will fail to load data
+   - **Fix**: Either:
+     - Implement `/api/v1/traefik/dashboard` endpoint in backend
+     - OR refactor component to fetch from multiple existing endpoints
+   - **Recommended**: Create dashboard endpoint that aggregates data
+
+**🟡 Minor Issues**:
+
+2. **No Loading States on Navigation** → Cards navigate immediately without loading indication
+   - **Recommendation**: Add transition states when navigating
+
+3. **Hardcoded "Add Route" Navigation** → Uses query param `?action=new`
+   - **Current**: `/admin/traefik/routes?action=new` opens editor modal
+   - **Good**: Clean URL pattern, works well
+
+4. **Certificate Breakdown UI** → Could be more visual
+   - **Recommendation**: Add small progress bars or pie chart
+
+**🟢 Strengths**:
+
+1. ✅ **Clean, focused dashboard** - Not cluttered, essential info only
+2. ✅ **Excellent navigation** - Every metric is clickable
+3. ✅ **Auto-refresh** - Keeps data current without user action
+4. ✅ **Activity feed** - Shows what changed recently
+5. ✅ **Quick actions** - Common tasks easily accessible
+6. ✅ **Responsive grid** - Works on mobile and desktop
+7. ✅ **Error handling** - Shows dismissible error alerts
+8. ✅ **Visual hierarchy** - Clear sections with headers
+
+**📊 User Value**:
+
+- **System Admin**: ⭐⭐⭐⭐ Good overview, but needs functioning API
+- **Org Admin**: ⭐⭐⭐ Can see routing health (if they have access)
+- **End User**: Not accessible (correct)
+
+#### Recommended Enhancements
+
+1. **Implement dashboard endpoint** (backend)
+2. Add sparkline charts for request rate trend
+3. Show uptime percentage
+4. Add "Export Report" button
+5. Show top 5 routes by traffic
+6. Display certificate expiry timeline
+7. Add health check history (last 24 hours)
+8. Show middleware usage count
+
+---
+
+### Page 2: Traefik Routes (`/admin/traefik/routes`)
+
+**Component**: `src/pages/TraefikRoutes.jsx` (453 lines)
+**Status**: ✅ REVIEWED (October 25, 2025)
+
+**Purpose**: Manage routing rules, create/edit/delete routes, test route configurations
+
+#### Features Implemented
+
+**1. Route List Table** ✅
+- Paginated table (10, 25, 50, 100 rows per page)
+- 6 columns:
+  - Domain (with SSL lock icon if HTTPS)
+  - Path/Rule (monospace font)
+  - Service (backend service name)
+  - Middleware (chip badges, shows first 2 + count)
+  - Status (active/inactive with icons)
+  - Actions (test button + menu)
+- Skeleton loading states (5 rows)
+- Empty state: "No routes found" message
+- Hover row highlighting
+
+**2. Advanced Filtering** ✅
+- **Search box**: Domain, service, or name (debounced)
+- **Status filter**: All, Active, Inactive
+- **SSL filter**: All Routes, SSL Enabled, No SSL
+- Filters applied in real-time
+- Clean filter panel with icon
+
+**3. Route CRUD Operations** ✅
+- **Create**: "Add Route" button → Opens `TraefikRouteEditor` modal
+- **Read**: Table displays all route details
+- **Update**: Edit from actions menu → Opens editor with route data
+- **Delete**: Delete from menu → Confirmation prompt
+- All operations use REST API
+
+**4. Route Testing** ✅
+- Dedicated "Test Route" button (beaker icon)
+- Tests if route is reachable
+- Endpoint: `POST /api/v1/traefik/routes/{routeId}/test`
+- Shows success/failure message in alert
+
+**5. Route Editor Modal** ✅
+- Separate component: `TraefikRouteEditor.jsx`
+- Opens in three contexts:
+  - New route (button click)
+  - Edit route (menu action)
+  - URL param `?action=new`
+- Handles create and update operations
+- Closes on save or cancel
+
+**6. Actions Menu** ✅
+- Three-dot vertical ellipsis button
+- Menu options:
+  - Edit (pencil icon)
+  - Test (beaker icon)
+  - Delete (trash icon, red)
+- Opens on row hover/click
+
+#### API Dependencies
+
+| Endpoint | Method | Purpose | Status |
+|----------|--------|---------|--------|
+| `/api/v1/traefik/routes` | GET | List all routes | ✅ Exists |
+| `/api/v1/traefik/routes` | POST | Create route | ✅ Exists |
+| `/api/v1/traefik/routes/{id}` | PUT | Update route | ✅ Exists |
+| `/api/v1/traefik/routes/{id}` | DELETE | Delete route | ✅ Exists |
+| `/api/v1/traefik/routes/{id}/test` | POST | Test route | ❌ Not found |
+
+**Critical**: The test endpoint `/api/v1/traefik/routes/{id}/test` is called but doesn't exist in backend.
+
+#### Data Model
+
+**Route Object**:
+```typescript
+{
+  id: string,
+  domain: string,
+  rule: string,           // Traefik rule syntax
+  path: string,           // Path pattern
+  service: string,        // Backend service name
+  middleware: string[],   // Array of middleware names
+  ssl: boolean,           // SSL/TLS enabled
+  status: 'active' | 'inactive',
+  name: string            // Optional friendly name
+}
+```
+
+#### Issues & Recommendations
+
+**🔴 Critical Issues**:
+
+1. **Missing Test Endpoint** → `POST /api/v1/traefik/routes/{id}/test`
+   - **Impact**: Test button will always fail
+   - **Fix**: Implement route testing endpoint in backend
+   - **Test should verify**: Route is valid, service is reachable, SSL works
+
+**🟡 Minor Issues**:
+
+2. **No Validation Feedback** → When creating/editing routes
+   - **Recommendation**: Show validation errors inline in modal
+
+3. **Hardcoded Route ID Field** → Uses `route.id` but backend uses `route_name`
+   - **Check**: Verify backend actually returns `id` field
+   - **Backend**: Uses `route_name` as identifier in endpoints
+
+4. **No Bulk Actions** → Can't select multiple routes
+   - **Recommendation**: Add checkboxes for bulk delete/status change
+
+5. **Middleware Truncation** → Shows only first 2 middleware
+   - **Improvement**: Tooltip on "+X more" chip showing all middleware
+
+**🟢 Strengths**:
+
+1. ✅ **Comprehensive filtering** - Search, status, SSL
+2. ✅ **Clean table design** - Easy to scan
+3. ✅ **Route testing** - Great troubleshooting feature
+4. ✅ **Pagination** - Handles large route lists
+5. ✅ **Confirmation dialogs** - Prevents accidental deletions
+6. ✅ **SSL indicator** - Lock icon shows HTTPS routes
+7. ✅ **URL state** - `?action=new` works for deep linking
+8. ✅ **Success/error feedback** - Alert messages for all actions
+
+**📊 User Value**:
+
+- **System Admin**: ⭐⭐⭐⭐⭐ Essential for routing management
+- **Org Admin**: ⭐⭐⭐ Useful if managing org-specific routes
+- **End User**: Not accessible (correct)
+
+#### Recommended Enhancements
+
+1. **Implement route test endpoint** (backend) - CRITICAL
+2. Add route cloning feature
+3. Add route templates for common patterns
+4. Show route priority in table
+5. Add route usage statistics (request count)
+6. Bulk operations (delete, enable/disable)
+7. Export routes to JSON/YAML
+8. Import routes from file
+9. Route validation before save
+10. Show route health status
+
+---
+
+### Page 3: Traefik Services (`/admin/traefik/services`)
+
+**Component**: `src/pages/TraefikServices.jsx` (399 lines)
+**Status**: ✅ REVIEWED (October 25, 2025)
+
+**Purpose**: Manage backend services (upstream targets), service discovery, health checks
+
+#### Features Implemented
+
+**1. Service Discovery** ✅
+- **"Discover Services"** button (refresh icon)
+- Auto-discovers Docker containers
+- Endpoint: `POST /api/v1/traefik/services/discover`
+- Shows count of discovered services in success message
+- Can be triggered:
+  - Manually via button
+  - Automatically via URL param `?action=discover`
+
+**2. Service List Table** ✅
+- Paginated table (10, 25, 50 rows per page)
+- 6 columns:
+  - Service Name (bold)
+  - Backend URL (monospace)
+  - Health Check path
+  - Status (Healthy/Unhealthy with icons)
+  - Request Count (formatted with commas)
+  - Actions (menu button)
+- Empty state: Helpful message suggesting service discovery
+- Skeleton loading (5 rows)
+
+**3. Service CRUD Operations** ✅
+- **Create**: "Add Service" button → Opens inline dialog
+- **Read**: Table displays all service details
+- **Update**: Edit from menu → Pre-fills dialog
+- **Delete**: Delete from menu → Confirmation prompt
+- Simple inline dialog (not separate modal)
+
+**4. Service Editor Dialog** ✅
+- Three input fields:
+  - Service Name (required)
+  - Backend URL (required, placeholder: `http://container-name:8080`)
+  - Health Check Path (optional, default: `/health`)
+- Create/Update button (changes label)
+- Cancel button
+- Validates required fields
+
+**5. Health Status Indicators** ✅
+- Green check icon + "Healthy" for healthy services
+- Red X icon + "Unhealthy" for unhealthy services
+- Visual health status in status column
+
+**6. Request Counting** ✅
+- Shows request count per service
+- Formatted with thousands separators
+- Defaults to 0 if no data
+
+#### API Dependencies
+
+| Endpoint | Method | Purpose | Status |
+|----------|--------|---------|--------|
+| `/api/v1/traefik/services` | GET | List services | ✅ Exists |
+| `/api/v1/traefik/services` | POST | Create service | ✅ Exists |
+| `/api/v1/traefik/services/{id}` | PUT | Update service | ✅ Exists |
+| `/api/v1/traefik/services/{id}` | DELETE | Delete service | ✅ Exists |
+| `/api/v1/traefik/services/discover` | POST | Auto-discover | ❌ Not found |
+
+**Critical**: Service discovery endpoint is called but not found in reviewed backend files.
+
+#### Data Model
+
+**Service Object**:
+```typescript
+{
+  id: string,
+  name: string,              // Service name
+  url: string,               // Backend URL (http://host:port)
+  healthCheck: string,       // Health check path
+  healthy: boolean,          // Current health status
+  requestCount: number       // Total requests handled
+}
+```
+
+#### Issues & Recommendations
+
+**🔴 Critical Issues**:
+
+1. **Missing Discovery Endpoint** → `POST /api/v1/traefik/services/discover`
+   - **Impact**: Service discovery won't work
+   - **Fix**: Implement Docker container discovery in backend
+   - **Should detect**: Running containers with exposed ports
+
+**🟡 Minor Issues**:
+
+2. **No Health Check Visualization** → Health check path shown but not tested
+   - **Recommendation**: Add "Test Health" button to ping health endpoint
+
+3. **Request Count May Be Stale** → No auto-refresh
+   - **Recommendation**: Add auto-refresh every 30 seconds like dashboard
+
+4. **No Service Health History** → Can't see when service went unhealthy
+   - **Recommendation**: Add health timeline or uptime percentage
+
+5. **Backend URL Not Validated** → No URL format validation
+   - **Recommendation**: Validate URL format before saving
+
+6. **No Bulk Operations** → Can't select multiple services
+   - **Recommendation**: Add bulk delete, bulk health check
+
+**🟢 Strengths**:
+
+1. ✅ **Service discovery** - Smart auto-detection feature
+2. ✅ **Simple CRUD** - Easy to add/edit services
+3. ✅ **Health monitoring** - Shows service health status
+4. ✅ **Request tracking** - Shows usage per service
+5. ✅ **Helpful empty state** - Guides users to discover
+6. ✅ **Clean UI** - Not cluttered
+7. ✅ **URL params** - `?action=discover` for automation
+8. ✅ **Confirmation dialogs** - Safe deletions
+
+**📊 User Value**:
+
+- **System Admin**: ⭐⭐⭐⭐⭐ Critical for backend management
+- **Org Admin**: ⭐⭐⭐ Useful for org-specific services
+- **End User**: Not accessible (correct)
+
+#### Recommended Enhancements
+
+1. **Implement service discovery** (backend) - CRITICAL
+2. Add service health testing button
+3. Auto-refresh service list every 30s
+4. Show service uptime percentage
+5. Add service health history chart
+6. Show last health check timestamp
+7. Validate backend URLs before saving
+8. Add service templates (common backends)
+9. Bulk operations (delete, test health)
+10. Export/import service configurations
+11. Show which routes use each service
+12. Add load balancing configuration
+13. Show service response time metrics
+
+---
+
+### Page 4: Traefik SSL Certificates (`/admin/traefik/ssl`)
+
+**Component**: `src/pages/TraefikSSL.jsx` (433 lines)
+**Status**: ✅ REVIEWED (October 25, 2025)
+
+**Purpose**: SSL/TLS certificate management, renewal, expiry monitoring
+
+#### Features Implemented
+
+**1. Certificate List Table** ✅
+- Paginated table (10, 25, 50 rows per page)
+- 7 columns:
+  - Domain (with lock icon)
+  - Issuer (defaults to "Let's Encrypt")
+  - Valid From (formatted date)
+  - Valid Until (formatted date)
+  - Days Until Expiry (color-coded)
+  - Status (chip: Valid/Expiring Soon/Expired)
+  - Actions (menu button)
+- Skeleton loading (5 rows)
+- Empty state: "No SSL certificates found"
+
+**2. Expiry Monitoring** ✅
+- Calculates days until expiry
+- Color-coded warnings:
+  - **< 0 days**: Red "Expired" + clock icon
+  - **< 30 days**: Orange "Expiring Soon" + warning icon
+  - **≥ 30 days**: Green "Valid" + check icon
+- Shows exact day count or "Expired"
+
+**3. Certificate Renewal** ✅
+- **Individual renewal**: From actions menu
+- **Bulk renewal**: "Renew All" button
+- Endpoints:
+  - Single: `POST /api/v1/traefik/certificates/{id}/renew`
+  - Bulk: `POST /api/v1/traefik/certificates/renew`
+- Shows loading progress bar during renewal
+- Success message shows count of renewed certs
+
+**4. Certificate Details Dialog** ✅
+- Opens from "View Details" menu item
+- Shows complete certificate info:
+  - Domain
+  - Issuer
+  - Valid From (full timestamp)
+  - Expires At (full timestamp)
+  - Serial Number (monospace)
+  - Status chip
+- "Renew Now" button in dialog
+- Clean modal layout
+
+**5. Auto-Renewal on Load** ✅
+- If URL param `?action=renew`, triggers `handleRenewAll()`
+- Useful for automated renewal scripts
+- Good deep-linking pattern
+
+**6. Renewal Progress Indicator** ✅
+- Linear progress bar shown during renewal
+- Prevents duplicate renewal clicks
+- Disables buttons during operation
+
+#### API Dependencies
+
+| Endpoint | Method | Purpose | Status |
+|----------|--------|---------|--------|
+| `/api/v1/traefik/certificates` | GET | List certificates | ✅ Exists |
+| `/api/v1/traefik/certificates/{id}/renew` | POST | Renew one cert | ❌ Not found |
+| `/api/v1/traefik/certificates/renew` | POST | Renew all certs | ❌ Not found |
+
+**Critical**: Both renewal endpoints are called but not found in backend files.
+
+#### Data Model
+
+**Certificate Object**:
+```typescript
+{
+  id: string,
+  domain: string,           // Domain name
+  issuer: string,           // Certificate authority (default: Let's Encrypt)
+  validFrom: string,        // ISO timestamp
+  expiresAt: string,        // ISO timestamp
+  serialNumber: string      // Certificate serial number
+}
+```
+
+#### Issues & Recommendations
+
+**🔴 Critical Issues**:
+
+1. **Missing Renewal Endpoints** → Both renewal endpoints don't exist
+   - **Impact**: Certificate renewal won't work at all
+   - **Fix**: Implement renewal endpoints in backend
+   - **Should use**: ACME protocol (Let's Encrypt), support manual renewal
+
+**🟡 Minor Issues**:
+
+2. **No Certificate Upload** → Can't upload custom certificates
+   - **Recommendation**: Add manual certificate upload feature
+
+3. **Serial Number May Not Exist** → Falls back to "N/A"
+   - **Check**: Ensure backend provides serial number
+
+4. **No Certificate Validation** → Can't verify certificate before renewal
+   - **Recommendation**: Add "Verify Certificate" button
+
+5. **No Auto-Renewal Configuration** → Can't set renewal schedule
+   - **Recommendation**: Add auto-renewal settings (e.g., renew at 30 days)
+
+6. **No Wildcard Certificate Support** → UI doesn't show wildcards clearly
+   - **Recommendation**: Add wildcard indicator for `*.domain.com` certs
+
+**🟢 Strengths**:
+
+1. ✅ **Expiry monitoring** - Clear visual warnings
+2. ✅ **Days until expiry** - Easy to see urgency
+3. ✅ **Bulk renewal** - Can renew all at once
+4. ✅ **Certificate details** - Complete cert info in modal
+5. ✅ **URL automation** - `?action=renew` for scripts
+6. ✅ **Progress indication** - Shows renewal in progress
+7. ✅ **Status chips** - Color-coded cert status
+8. ✅ **Clean layout** - Easy to scan expiry dates
+
+**📊 User Value**:
+
+- **System Admin**: ⭐⭐⭐⭐⭐ Critical for SSL management
+- **Org Admin**: ⭐⭐⭐ Can monitor SSL health
+- **End User**: Not accessible (correct)
+
+#### Recommended Enhancements
+
+1. **Implement renewal endpoints** (backend) - CRITICAL
+2. Add certificate upload feature
+3. Add wildcard certificate indicator
+4. Show certificate chain visualization
+5. Add auto-renewal configuration
+6. Email alerts for expiring certificates
+7. Certificate usage stats (which routes use it)
+8. CSR (Certificate Signing Request) generation
+9. Certificate validation/verification tool
+10. Certificate export/backup
+11. Show ACME challenge status
+12. Support multiple CA providers (beyond Let's Encrypt)
+
+---
+
+### Page 5: Traefik Metrics (`/admin/traefik/metrics`)
+
+**Component**: `src/pages/TraefikMetrics.jsx` (353 lines)
+**Status**: ✅ REVIEWED (October 25, 2025)
+
+**Purpose**: Traffic visualization, performance metrics, analytics
+
+#### Features Implemented
+
+**1. Time Range Selector** ✅
+- Dropdown filter with 4 options:
+  - Last Hour
+  - Last 24 Hours (default: "day")
+  - Last Week
+  - Last Month
+- Changes trigger data reload
+- Clean Material-UI select component
+
+**2. Four Chart Visualizations** ✅
+
+**Chart 1: Requests by Route** (Bar Chart)
+- Shows request count per route
+- Bar chart visualization
+- Color: Indigo gradient
+- Useful for identifying high-traffic routes
+
+**Chart 2: Average Response Time** (Line Chart)
+- Shows response time over time
+- Line chart with area fill
+- Color: Green gradient
+- Y-axis: Milliseconds
+- X-axis: Timestamps
+
+**Chart 3: Error Rate Over Time** (Line Chart)
+- Shows error percentage over time
+- Line chart with area fill
+- Color: Red gradient
+- Y-axis: Percentage (%)
+- X-axis: Timestamps
+
+**Chart 4: HTTP Status Codes** (Pie Chart)
+- Distribution of status code ranges
+- Color-coded:
+  - 2xx: Green (success)
+  - 3xx: Yellow (redirect)
+  - 4xx: Blue (client error)
+  - 5xx: Red (server error)
+
+**3. Summary Statistics Panel** ✅
+- Four summary metrics:
+  - **Total Requests**: Total count (formatted with commas)
+  - **Avg Response Time**: In milliseconds
+  - **Error Rate**: Percentage
+  - **Active Routes**: Count of active routes
+- Color-coded (primary, success, warning, info)
+- Large numbers for quick scanning
+- Responsive grid (1-4 columns)
+
+**4. Data Export** ✅
+- "Export CSV" button (download icon)
+- Endpoint: `GET /api/v1/traefik/metrics/export?range={timeRange}`
+- Downloads CSV file with timestamp
+- Filename: `traefik-metrics-{range}-{timestamp}.csv`
+
+**5. Manual Refresh** ✅
+- "Refresh" button (rotating arrow)
+- Reloads current time range data
+- Disabled during loading
+
+**6. Chart.js Integration** ✅
+- Uses `react-chartjs-2` library
+- Chart.js registered components:
+  - CategoryScale, LinearScale
+  - PointElement, LineElement, BarElement, ArcElement
+  - Title, Tooltip, Legend
+- Responsive charts (height: 300px)
+- Maintains aspect ratio off for better control
+
+#### API Dependencies
+
+| Endpoint | Method | Purpose | Status |
+|----------|--------|---------|--------|
+| `/api/v1/traefik/metrics?range={range}` | GET | Get metrics data | ❌ Not found |
+| `/api/v1/traefik/metrics/export?range={range}` | GET | Export CSV | ❌ Not found |
+
+**Critical**: Both metrics endpoints are called but not found in reviewed files. There is a `traefik_metrics_api.py` file, but the endpoints don't match:
+- Backend has: `/api/v1/traefik/metrics/overview`, `/routes`, `/errors`, `/performance`, `/raw`
+- Frontend expects: `/api/v1/traefik/metrics?range={range}`, `/export?range={range}`
+
+**Endpoint Mismatch**: Frontend and backend are not aligned!
+
+#### Data Model Expected
+
+```typescript
+{
+  requestsByRoute: Array<{
+    route: string,
+    count: number
+  }>,
+  responseTimes: Array<{
+    timestamp: string,
+    avgTime: number  // milliseconds
+  }>,
+  errorRates: Array<{
+    timestamp: string,
+    rate: number     // percentage
+  }>,
+  statusCodes: {
+    '2xx': number,
+    '3xx': number,
+    '4xx': number,
+    '5xx': number
+  },
+  totalRequests: number,
+  avgResponseTime: number,  // milliseconds
+  errorRate: number,        // percentage
+  activeRoutes: number
+}
+```
+
+#### Issues & Recommendations
+
+**🔴 Critical Issues**:
+
+1. **Endpoint Mismatch** → Frontend expects different endpoints than backend provides
+   - **Frontend calls**: `/api/v1/traefik/metrics?range={range}`
+   - **Backend has**: `/api/v1/traefik/metrics/overview`, `/routes`, `/errors`, etc.
+   - **Impact**: Metrics page will fail to load data
+   - **Fix**: Either:
+     - Update frontend to call correct backend endpoints
+     - OR update backend to match frontend expectations
+   - **Recommended**: Update frontend to use existing backend structure
+
+2. **Missing Export Endpoint** → `/api/v1/traefik/metrics/export` doesn't exist
+   - **Impact**: CSV export won't work
+   - **Fix**: Implement CSV export endpoint in backend
+
+**🟡 Minor Issues**:
+
+3. **No Real-Time Updates** → Metrics don't auto-refresh
+   - **Recommendation**: Add auto-refresh every 30-60 seconds
+
+4. **Limited Time Ranges** → Only 4 preset ranges
+   - **Recommendation**: Add custom date range picker
+
+5. **No Metric Comparison** → Can't compare current vs previous period
+   - **Recommendation**: Add period comparison feature
+
+6. **Chart Heights Fixed** → All charts 300px
+   - **Recommendation**: Make charts responsive to content
+
+7. **No Chart Interactivity** → Can't zoom or filter
+   - **Recommendation**: Add chart zoom/pan, click to filter
+
+**🟢 Strengths**:
+
+1. ✅ **Four essential charts** - Covers key metrics
+2. ✅ **Time range filtering** - Flexible time periods
+3. ✅ **Summary statistics** - Quick overview at bottom
+4. ✅ **CSV export** - Data portability
+5. ✅ **Color coding** - Status codes clearly differentiated
+6. ✅ **Responsive layout** - Charts adapt to screen size
+7. ✅ **Chart.js** - Professional chart library
+8. ✅ **Manual refresh** - User control
+
+**📊 User Value**:
+
+- **System Admin**: ⭐⭐⭐⭐⭐ Critical for performance monitoring
+- **Org Admin**: ⭐⭐⭐⭐ Useful for capacity planning
+- **End User**: Not accessible (correct)
+
+#### Recommended Enhancements
+
+1. **Fix endpoint mismatch** (frontend + backend) - CRITICAL
+2. **Implement CSV export** (backend) - CRITICAL
+3. Add auto-refresh toggle
+4. Custom date range picker
+5. Period comparison (current vs previous)
+6. Drill-down from charts (click bar → show details)
+7. Add more metrics:
+   - Top 10 slowest routes
+   - Top 10 error routes
+   - Geographic traffic distribution
+   - Bandwidth usage
+8. Add alerting thresholds visualization
+9. Show percentile metrics (p50, p95, p99)
+10. Add chart zoom/pan controls
+11. Real-time websocket updates
+12. Prometheus integration visualization
+
+---
+
+## 📊 Traefik Subsection Summary
+
+### Overall Assessment
+
+**Total Lines**: 2,042 lines across 5 components
+**Backend Files**: 8 files (161KB total)
+**API Endpoints**: 24+ endpoints defined in backend
+
+**Completion Status**:
+- **Frontend**: 80% complete (all components built, some APIs missing)
+- **Backend**: 70% complete (core endpoints exist, specialized ones missing)
+- **Integration**: 40% complete (endpoint mismatches, missing features)
+
+### Critical Issues (Must Fix Before Production)
+
+1. **Missing Dashboard Endpoint** (`TraefikDashboard.jsx`)
+   - Frontend expects: `/api/v1/traefik/dashboard`
+   - Backend has: No matching endpoint
+   - **Fix**: Create aggregated dashboard endpoint
+
+2. **Missing Route Test Endpoint** (`TraefikRoutes.jsx`)
+   - Frontend expects: `POST /api/v1/traefik/routes/{id}/test`
+   - Backend has: No test endpoint
+   - **Fix**: Implement route connectivity testing
+
+3. **Missing Service Discovery** (`TraefikServices.jsx`)
+   - Frontend expects: `POST /api/v1/traefik/services/discover`
+   - Backend has: No discovery endpoint
+   - **Fix**: Implement Docker container auto-discovery
+
+4. **Missing Certificate Renewal** (`TraefikSSL.jsx`)
+   - Frontend expects: `POST /api/v1/traefik/certificates/{id}/renew`
+   - Backend has: No renewal endpoints
+   - **Fix**: Implement ACME-based renewal
+
+5. **Metrics Endpoint Mismatch** (`TraefikMetrics.jsx`)
+   - Frontend expects: `/api/v1/traefik/metrics?range={range}`
+   - Backend has: `/api/v1/traefik/metrics/overview`, `/routes`, etc.
+   - **Fix**: Align frontend with backend or vice versa
+
+6. **Missing CSV Export** (`TraefikMetrics.jsx`)
+   - Frontend expects: `/api/v1/traefik/metrics/export`
+   - Backend has: No export endpoint
+   - **Fix**: Implement CSV data export
+
+### Strengths
+
+1. ✅ **Comprehensive coverage** - All Traefik aspects covered
+2. ✅ **Consistent UI patterns** - All pages use same table/modal patterns
+3. ✅ **Good filtering** - Search and filters on most pages
+4. ✅ **Error handling** - Alert messages for errors
+5. ✅ **URL params** - Deep linking with `?action=...` patterns
+6. ✅ **Responsive design** - Mobile-friendly layouts
+7. ✅ **Visual indicators** - Icons, chips, colors used well
+8. ✅ **Chart visualization** - Professional Chart.js integration
+
+### Weaknesses
+
+1. ❌ **6 critical missing endpoints** - 40% of features won't work
+2. ❌ **No auto-refresh** - Manual refresh only (except dashboard)
+3. ❌ **No bulk operations** - Can't select multiple items
+4. ❌ **Limited validation** - No client-side form validation
+5. ❌ **No error boundaries** - Unhandled errors may crash page
+6. ❌ **Hardcoded assumptions** - SSL, domain patterns
+
+### API Coverage Matrix
+
+| Frontend Component | Backend Endpoint | Status | Priority |
+|-------------------|------------------|--------|----------|
+| Dashboard data | `/api/v1/traefik/dashboard` | ❌ Missing | P0 |
+| Route list | `/api/v1/traefik/routes` | ✅ Exists | - |
+| Route CRUD | `/api/v1/traefik/routes/{id}` | ✅ Exists | - |
+| Route test | `/api/v1/traefik/routes/{id}/test` | ❌ Missing | P1 |
+| Service list | `/api/v1/traefik/services` | ✅ Exists | - |
+| Service CRUD | `/api/v1/traefik/services/{id}` | ✅ Exists | - |
+| Service discover | `/api/v1/traefik/services/discover` | ❌ Missing | P0 |
+| Certificate list | `/api/v1/traefik/certificates` | ✅ Exists | - |
+| Cert renew single | `/api/v1/traefik/certificates/{id}/renew` | ❌ Missing | P0 |
+| Cert renew all | `/api/v1/traefik/certificates/renew` | ❌ Missing | P0 |
+| Metrics data | `/api/v1/traefik/metrics` | ⚠️ Mismatch | P0 |
+| Metrics export | `/api/v1/traefik/metrics/export` | ❌ Missing | P1 |
+
+**Legend**: ✅ Exists | ❌ Missing | ⚠️ Mismatch
+
+### User Value by Role
+
+**System Administrator**:
+- ⭐⭐⭐⭐⭐ Dashboard - Quick health overview
+- ⭐⭐⭐⭐⭐ Routes - Essential routing management
+- ⭐⭐⭐⭐⭐ Services - Backend service management
+- ⭐⭐⭐⭐⭐ SSL - Critical certificate management
+- ⭐⭐⭐⭐⭐ Metrics - Performance monitoring
+- **Overall**: ⭐⭐⭐⭐⭐ Critical subsection
+
+**Organization Administrator**:
+- ⭐⭐⭐ Dashboard - Can see routing health
+- ⭐⭐⭐ Routes - Useful for org-specific routes
+- ⭐⭐⭐ Services - Monitor org services
+- ⭐⭐⭐ SSL - Verify SSL status
+- ⭐⭐⭐⭐ Metrics - Capacity planning
+- **Overall**: ⭐⭐⭐ Useful if granted access
+
+**End User**:
+- Not accessible (correct - Traefik is infrastructure)
+
+### Recommended Action Plan
+
+#### Phase 1: Critical Endpoint Implementation (1-2 weeks)
+
+1. **Dashboard endpoint** - Aggregate data from existing endpoints
+2. **Service discovery** - Docker container auto-detection
+3. **Certificate renewal** - ACME protocol integration
+4. **Metrics alignment** - Fix endpoint mismatch
+
+#### Phase 2: Feature Completion (1 week)
+
+5. **Route testing** - Connectivity verification
+6. **CSV export** - Data export functionality
+7. **Form validation** - Client-side validation
+8. **Error boundaries** - React error boundaries
+
+#### Phase 3: Enhancements (1-2 weeks)
+
+9. **Auto-refresh** - Periodic data updates
+10. **Bulk operations** - Multi-select actions
+11. **Advanced charts** - More visualizations
+12. **Monitoring alerts** - Threshold-based alerts
+
+### Overall Grade
+
+**Frontend Quality**: B+ (Well-structured, missing backend support)
+**Backend Quality**: B- (Core exists, specialized endpoints missing)
+**Integration**: C+ (Significant endpoint gaps)
+**User Experience**: B (Clean UI, but features don't work yet)
+
+**Overall Traefik Subsection**: B- (Good foundation, needs backend completion)
+
+**Blocker for Production**: ⚠️ **YES** - 6 critical endpoints must be implemented
+
+---
