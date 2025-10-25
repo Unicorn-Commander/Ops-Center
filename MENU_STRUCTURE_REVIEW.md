@@ -1077,3 +1077,382 @@ HardwareManagement.jsx (main component)
 **Overall Grade**: A- (Excellent hardware monitoring, minor mock data to replace)
 
 ---
+
+## 📊 Page Review 4: Monitoring
+
+**Page Name**: System Resources Monitor
+**Route**: `/admin/system`
+**Component**: `System.jsx`
+**File**: `src/pages/System.jsx` (917 lines)
+**User Level**: System Admin only
+**Last Reviewed**: October 25, 2025
+
+### Purpose & Functionality
+
+Real-time system resource monitoring dashboard showing CPU, memory, GPU, disk, and network performance with historical charts and process management.
+
+### What's Here
+
+#### Overview Tab (Default View)
+- **4 Stat Cards**: CPU, Memory, Disk, System Uptime
+- **CPU Usage Chart**: Area chart showing CPU percent over time (30 data points)
+- **Memory Usage Chart**: Line chart showing memory percent over time
+- **GPU Performance Section** (if GPU detected):
+  - GPU Utilization, VRAM Usage, Temperature gauge, Power draw
+  - 2 charts: Utilization/Temperature and VRAM/Power over time
+- **Network Bandwidth Chart**: Shows upload/download over time
+- **Disk I/O Chart**: Shows read/write speeds over time
+- **CPU Cores Bar Chart**: Per-core utilization
+
+#### Processes Tab
+- **Process Table**: Top 20 processes by CPU usage
+  - Columns: Process Name, PID, CPU %, Memory, Status
+  - Kill process button (with confirmation)
+  - Color-coded status badges
+
+#### Hardware Tab
+- **6 Info Cards**: CPU, GPU, Memory, Storage, OS, Desktop info
+  - CPU: Model, cores, threads, frequency
+  - GPU: Model, VRAM, driver, CUDA version
+  - Memory: Total, type, configuration
+  - Storage: Primary/secondary drives
+  - OS: Name, version, kernel
+  - Desktop environment
+
+#### Network Tab
+- **Placeholder**: "Network statistics and configuration coming soon..."
+
+#### Top Controls
+- **Refresh Interval Selector**: 1s, 2s, 5s, 10s
+- **Auto-refresh Toggle**: Enable/disable auto-refresh
+- **Clear Cache Button**: Clears system cache
+
+### API Endpoints Used
+
+```javascript
+GET /api/v1/system/status     // From SystemContext - CPU, memory, disk, GPU
+GET /api/v1/system/hardware   // Hardware info (CPU/GPU specs)
+GET /api/v1/system/disk-io    // Disk I/O statistics
+DELETE /api/v1/system/process/:pid  // Kill process
+DELETE /api/v1/system/cache   // Clear cache
+```
+
+### 🟢 What Works Well
+
+1. **Comprehensive Monitoring** → Shows all major system resources in one place
+2. **Multiple Views** → 4 tabs (Overview, Processes, Hardware, Network) for different use cases
+3. **Real-time Updates** → Auto-refresh with configurable interval
+4. **Historical Charts** → 30 data points sliding window for trend analysis
+5. **Process Management** → Kill processes with confirmation dialog
+6. **GPU Monitoring** → Excellent GPU metrics (utilization, VRAM, temp, power)
+7. **Temperature Gauge** → Visual circular gauge with color coding (green < 60°C, yellow < 80°C, red ≥ 80°C)
+8. **Responsive Charts** → All charts use ResponsiveContainer for mobile
+9. **Theme Support** → Works with all 3 themes
+10. **Loading State** → Shows spinner while fetching initial data
+
+### 🔴 Issues Found
+
+#### 1. Network Tab Not Implemented (High Priority)
+**File**: System.jsx, lines 898-913
+**Problem**: Network tab shows placeholder text "coming soon..."
+**Impact**: User confusion - tab exists but has no functionality
+**Recommendation**: Either implement network statistics or hide the tab
+
+#### 2. Network Stats Never Updated (High Priority)
+**File**: System.jsx, line 180
+**Problem**: 
+```javascript
+const [networkStats, setNetworkStats] = useState({ in: 0, out: 0 });
+```
+- `networkStats` state is initialized but **never updated**
+- Network chart will always show 0 for upload/download
+- No fetch function for network stats
+
+**Recommendation**: Add `fetchNetworkStats()` function similar to `fetchDiskIo()`
+
+#### 3. Clear Cache Uses alert() (Medium Priority)
+**File**: System.jsx, lines 292-304
+**Problem**: Uses browser `alert()` for success message
+```javascript
+if (response.ok) {
+  alert('Cache cleared successfully');
+}
+```
+**Impact**: Poor UX - alert() is jarring and blocks UI
+**Recommendation**: Replace with toast notification
+
+#### 4. Kill Process No Feedback (Medium Priority)
+**File**: System.jsx, lines 268-282
+**Problem**: No user feedback on success/failure
+**Recommendation**: Add toast notifications:
+- Success: "Process 1234 terminated successfully"
+- Error: "Failed to terminate process: [error]"
+
+#### 5. No Error States (Medium Priority)
+**Problem**: If API calls fail, no error message shown
+**APIs without error handling**:
+- `/api/v1/system/hardware` (line 203)
+- `/api/v1/system/disk-io` (line 215)
+**Recommendation**: Add error states and display error messages
+
+#### 6. Hardware View Depends on API (Low Priority)
+**File**: System.jsx, lines 749-894
+**Problem**: Hardware tab shows nothing if `/api/v1/system/hardware` fails
+**Current behavior**: Just doesn't render (no error message)
+**Recommendation**: Show error card: "Failed to load hardware information"
+
+#### 7. Chart Colors Not Theme-Aware (Low Priority)
+**File**: System.jsx, lines 318-323
+**Problem**: Chart colors are hardcoded:
+```javascript
+const chartTheme = {
+  textColor: '#9ca3af',
+  gridColor: 'rgba(255,255,255,0.1)',
+  tooltipBackground: 'rgba(0,0,0,0.9)',
+  tooltipBorder: '#6366f1',
+};
+```
+**Impact**: Charts look inconsistent with light theme
+**Recommendation**: Derive chart colors from `theme` context
+
+### 📊 Data Accuracy
+
+| Metric | Source | Status | Notes |
+|--------|--------|--------|-------|
+| CPU % | `/api/v1/system/status` | ✅ Dynamic | Real-time via SystemContext |
+| Memory % | `/api/v1/system/status` | ✅ Dynamic | Real-time via SystemContext |
+| Disk % | `/api/v1/system/status` | ✅ Dynamic | Real-time via SystemContext |
+| GPU metrics | `/api/v1/system/status` | ✅ Dynamic | Real-time if GPU detected |
+| Processes | `/api/v1/system/status` | ✅ Dynamic | Top 20 by CPU usage |
+| Disk I/O | `/api/v1/system/disk-io` | ✅ Dynamic | Read/write bytes per second |
+| Network | Local state | ❌ Always 0 | Never updated from API |
+| Hardware info | `/api/v1/system/hardware` | ✅ Dynamic | One-time fetch on mount |
+
+**Overall Data Accuracy**: 85% (7 of 8 metrics dynamic, 1 broken)
+
+### 🎯 Relevance by User Level
+
+| User Level | Access | Relevance | Notes |
+|------------|--------|-----------|-------|
+| System Admin | ✅ Full | ⭐⭐⭐⭐⭐ | Essential for infrastructure monitoring |
+| Org Admin | ❌ Blocked | N/A | Shouldn't see infrastructure details |
+| End User | ❌ Blocked | N/A | Not relevant to end users |
+
+**Visibility**: Admin-only (correct) - Infrastructure monitoring is system admin responsibility
+
+### 🚫 Unnecessary/Confusing Elements
+
+1. **Network Tab** → Shows placeholder, should be hidden until implemented
+2. **Clear Cache Button** → Unclear what cache is cleared (Redis? Browser? Docker?)
+   - Add tooltip: "Clear Redis cache and temporary files"
+3. **Kill Process Button** → No safeguards against killing critical processes
+   - Add warning for system processes
+
+### 🎨 UX/UI Assessment
+
+**Layout**: ✅ Clean 4-view tab system
+**Visual Hierarchy**: ✅ Clear stat cards → detailed charts
+**Responsiveness**: ✅ Charts scale, cards stack on mobile
+**Color Coding**: ✅ Red/yellow/green for alerts
+**Loading States**: ✅ Spinner while loading
+**Error States**: ❌ Missing error messages
+**Empty States**: ⚠️ Network tab shows placeholder
+**Interactive Elements**: ✅ Buttons, tabs, toggles work well
+**Feedback**: ❌ Missing toast notifications
+
+**Overall UX Grade**: B+ (Excellent layout, missing error handling and feedback)
+
+### 🔧 Technical Details
+
+**File Size**: 917 lines
+**Component Type**: Functional component with hooks
+**State Management**: Local state + SystemContext
+**Performance**: 
+- Auto-refresh with cleanup
+- Sliding window (30 data points max)
+- `useRef` to avoid stale closures
+**Dependencies**:
+- `framer-motion` - Animations
+- `@heroicons/react` - Icons
+- `recharts` - Charts library
+- SystemContext - Global system status
+- ThemeContext - Theme support
+
+**Refresh Logic**:
+```javascript
+useEffect(() => {
+  if (!autoRefresh) return;
+  
+  const interval = setInterval(() => {
+    fetchSystemStatus();      // From SystemContext
+    fetchDiskIo();             // Local fetch
+    updateHistoricalData();    // Update charts
+  }, refreshInterval);
+  
+  return () => clearInterval(interval);
+}, [autoRefresh, refreshInterval]);
+```
+
+### 📝 Specific Recommendations
+
+#### Priority 1: Fix Network Monitoring
+**File**: System.jsx
+
+**Option A: Hide Network Tab (Quick Fix)**
+```javascript
+// Remove "network" from view selector (line 378)
+{ id: 'overview', name: 'Overview', icon: ChartBarIcon },
+{ id: 'processes', name: 'Processes', icon: RectangleStackIcon },
+{ id: 'hardware', name: 'Hardware', icon: ComputerDesktopIcon },
+// { id: 'network', name: 'Network', icon: WifiIcon } // Hidden until implemented
+```
+
+**Option B: Implement Network Stats (Complete Fix)**
+Add `fetchNetworkStats()` function:
+```javascript
+const fetchNetworkStats = async () => {
+  try {
+    const response = await fetch('/api/v1/system/network');
+    if (response.ok) {
+      const data = await response.json();
+      setNetworkStats({ in: data.bytes_in, out: data.bytes_out });
+    }
+  } catch (error) {
+    console.error('Failed to fetch network stats:', error);
+  }
+};
+
+// Add to useEffect interval
+setInterval(() => {
+  fetchSystemStatus();
+  fetchDiskIo();
+  fetchNetworkStats();  // Add this
+  updateHistoricalData();
+}, refreshInterval);
+```
+
+**Backend API needed**: `GET /api/v1/system/network` returning `{ bytes_in, bytes_out }`
+
+#### Priority 2: Replace alert() with Toast
+**File**: System.jsx, line 299
+
+**Current**:
+```javascript
+if (response.ok) {
+  alert('Cache cleared successfully');
+}
+```
+
+**Recommended**:
+```javascript
+if (response.ok) {
+  // Assuming a Toast context exists
+  showToast('Cache cleared successfully', 'success');
+} else {
+  showToast('Failed to clear cache', 'error');
+}
+```
+
+#### Priority 3: Add Error States
+Add error handling for API calls:
+
+```javascript
+const [errors, setErrors] = useState({
+  hardware: false,
+  diskIo: false,
+  network: false
+});
+
+const fetchHardwareInfo = async () => {
+  try {
+    const response = await fetch('/api/v1/system/hardware');
+    if (response.ok) {
+      const data = await response.json();
+      setHardwareInfo(data);
+      setErrors(prev => ({ ...prev, hardware: false }));
+    } else {
+      setErrors(prev => ({ ...prev, hardware: true }));
+    }
+  } catch (error) {
+    console.error('Failed to fetch hardware info:', error);
+    setErrors(prev => ({ ...prev, hardware: true }));
+  }
+};
+
+// In Hardware view:
+{selectedView === 'hardware' && (
+  errors.hardware ? (
+    <div className="text-center py-8 text-red-400">
+      ⚠️ Failed to load hardware information
+    </div>
+  ) : hardwareInfo ? (
+    // Render hardware cards
+  ) : (
+    <div className="text-center py-8">Loading...</div>
+  )
+)}
+```
+
+#### Priority 4: Add Process Kill Feedback
+**File**: System.jsx, line 268
+
+```javascript
+const handleKillProcess = async (pid) => {
+  try {
+    const response = await fetch(`/api/v1/system/process/${pid}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      showToast(`Process ${pid} terminated successfully`, 'success');
+      fetchSystemStatus();
+    } else {
+      const error = await response.json();
+      showToast(`Failed to kill process: ${error.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Error killing process:', error);
+    showToast('Failed to kill process', 'error');
+  }
+};
+```
+
+### 🎯 Summary
+
+**Strengths**:
+- ✅ Comprehensive real-time monitoring
+- ✅ Multiple specialized views
+- ✅ Excellent GPU monitoring
+- ✅ Historical charts for trend analysis
+- ✅ Process management with confirmation
+- ✅ Configurable refresh intervals
+- ✅ Responsive design
+
+**Weaknesses**:
+- ❌ Network monitoring not implemented (tab exists but empty)
+- ❌ Network stats always show 0
+- ❌ No error states or messages
+- ❌ Uses alert() instead of toast notifications
+- ❌ Chart colors hardcoded (not theme-aware)
+- ❌ Clear cache functionality unclear
+
+**Must Fix Before Production**:
+1. Hide or implement Network tab
+2. Fix network stats to pull from API
+3. Replace alert() with proper notifications
+4. Add error handling for all API calls
+
+**Nice to Have**:
+1. Theme-aware chart colors
+2. Process kill warnings for critical processes
+3. Clearer cache clearing description
+4. Export metrics to CSV
+
+**Overall Grade**: B+ (Great monitoring tool, needs error handling polish)
+
+**User Value**: 
+- **System Admin**: ⭐⭐⭐⭐⭐ Essential infrastructure monitoring
+- **Org Admin**: Not accessible (correct)
+- **End User**: Not accessible (correct)
+
+---
