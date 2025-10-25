@@ -4,6 +4,7 @@ import { useToast } from '../Toast';
 import ModelSettingsForm from '../ModelSettingsForm';
 import modelApi from '../../services/modelApi';
 import { serviceInfo } from '../../data/serviceInfo';
+import ErrorBoundary from '../ErrorBoundary';
 
 // Component imports
 import ServiceTabs from './ServiceTabs';
@@ -16,7 +17,7 @@ import InstalledModels from './InstalledModels';
 import ModelDetailsModal from './ModelDetailsModal';
 import { XCircleIcon } from '@heroicons/react/24/outline';
 
-export default function AIModelManagement() {
+function AIModelManagementCore() {
   const { systemStatus } = useSystem();
   const toast = useToast();
 
@@ -142,10 +143,11 @@ export default function AIModelManagement() {
       setDownloadProgress(progressMap);
     } catch (error) {
       console.error('Failed to load models:', error);
+      toast.error(`Failed to load installed models: ${error.message}`);
     } finally {
       setLoadingModels(false);
     }
-  }, [activeTab]);
+  }, [activeTab, toast]);
 
   // Load global settings
   const loadGlobalSettings = async () => {
@@ -164,6 +166,7 @@ export default function AIModelManagement() {
       setOllamaSettings(prevSettings => ({ ...prevSettings, ...ollama }));
     } catch (error) {
       console.error('Failed to load settings:', error);
+      toast.error(`Failed to load global settings: ${error.message}`);
     }
   };
 
@@ -566,5 +569,14 @@ export default function AIModelManagement() {
         downloadOllamaModel={downloadOllamaModel}
       />
     </div>
+  );
+}
+
+// Wrap component with ErrorBoundary for crash protection
+export default function AIModelManagement() {
+  return (
+    <ErrorBoundary>
+      <AIModelManagementCore />
+    </ErrorBoundary>
   );
 }

@@ -1,7 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PROVIDER_TYPES } from './ProviderTypeTab';
+import {
+  validateRequired,
+  validateGuid,
+  validateHostname,
+  validatePort
+} from '../../../utils/validation';
 
 /**
  * AuthenticationTab - Authentication configuration tab
@@ -20,8 +26,63 @@ import { PROVIDER_TYPES } from './ProviderTypeTab';
  */
 export default function AuthenticationTab({ formData, setFormData, showSensitive, setShowSensitive }) {
   const { currentTheme } = useTheme();
+  const [errors, setErrors] = useState({});
 
   const selectedType = PROVIDER_TYPES.find(p => p.id === formData.provider_type);
+
+  // Validation helper
+  const validateField = (name, value) => {
+    let error = null;
+
+    switch (name) {
+      case 'client_id':
+        error = validateRequired(value, 'Client ID') || validateGuid(value);
+        break;
+      case 'client_secret':
+        if (value !== '***HIDDEN***') {
+          error = validateRequired(value, 'Client Secret');
+        }
+        break;
+      case 'tenant_id':
+        error = validateRequired(value, 'Tenant ID') || validateGuid(value);
+        break;
+      case 'smtp_host':
+        error = validateRequired(value, 'SMTP Host') || validateHostname(value);
+        break;
+      case 'smtp_port':
+        error = validateRequired(value, 'SMTP Port') || validatePort(value);
+        break;
+      case 'smtp_username':
+        error = validateRequired(value, 'Username');
+        break;
+      case 'smtp_password':
+        if (value !== '***HIDDEN***') {
+          error = validateRequired(value, 'Password');
+        }
+        break;
+      case 'api_key':
+        if (value !== '***HIDDEN***') {
+          error = validateRequired(value, 'API Key');
+        }
+        break;
+      default:
+        break;
+    }
+
+    return error;
+  };
+
+  // Handle field change with validation
+  const handleFieldChange = (name, value) => {
+    setFormData({ ...formData, [name]: value });
+
+    // Real-time validation
+    const error = validateField(name, value);
+    setErrors(prev => ({
+      ...prev,
+      [name]: error
+    }));
+  };
 
   if (!selectedType) {
     return (

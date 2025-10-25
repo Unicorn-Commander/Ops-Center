@@ -16,12 +16,14 @@ import {
   ExclamationTriangleIcon,
   ArrowDownTrayIcon,
   TrashIcon,
-  StopIcon
+  StopIcon,
+  ShieldExclamationIcon
 } from '@heroicons/react/24/outline';
 import { useSystem } from '../contexts/SystemContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../components/Toast';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { isCriticalProcess, getCriticalProcessWarning } from '../utils/validation';
 
 // Format utilities
 const formatBytes = (bytes) => {
@@ -86,80 +88,213 @@ const TemperatureGauge = ({ temperature, maxTemp = 100, theme }) => {
   );
 };
 
-// Process row component
-const ProcessRow = ({ process, onKill, theme }) => {
-  const [showConfirm, setShowConfirm] = useState(false);
+// Critical Process Warning Modal
+const CriticalProcessModal = ({ isOpen, onClose, onConfirm, processName, pid, theme }) => {
+  const [confirmText, setConfirmText] = useState('');
+  const warning = getCriticalProcessWarning(processName, pid);
+
+  if (!isOpen) return null;
+
+  const isConfirmed = confirmText === warning.confirmationText;
 
   return (
-    <motion.tr
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="hover:bg-gray-800/50 transition-colors"
-    >
-      <td className={`px-4 py-3 text-sm font-mono ${theme.text.primary}`}>
-        {process.name}
-      </td>
-      <td className={`px-4 py-3 text-sm ${theme.text.secondary}`}>
-        {process.pid}
-      </td>
-      <td className={`px-4 py-3 text-sm ${theme.text.primary}`}>
-        <div className="flex items-center gap-2">
-          <div className="w-16 h-2 rounded-full bg-gray-700">
-            <div
-              className={`h-full rounded-full ${
-                process.cpu_percent > 50 ? 'bg-red-500' :
-                process.cpu_percent > 25 ? 'bg-yellow-500' : 'bg-green-500'
-              }`}
-              style={{ width: `${Math.min(process.cpu_percent || 0, 100)}%` }}
-            />
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-red-500/50"
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 p-6 border-b border-gray-700">
+            <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
+            <div>
+              <h2 className={`text-xl font-bold ${theme.text.primary}`}>
+                {warning.title}
+              </h2>
+              <p className={`text-sm ${theme.text.secondary}`}>
+                This is a CRITICAL system process
+              </p>
+            </div>
           </div>
-          <span>{(process.cpu_percent || 0).toFixed(1)}%</span>
-        </div>
-      </td>
-      <td className={`px-4 py-3 text-sm ${theme.text.primary}`}>
-        {formatBytes((process.memory_mb || 0) * 1024 * 1024)}
-      </td>
-      <td className={`px-4 py-3 text-sm`}>
-        <span className={`px-2 py-1 text-xs rounded-full ${
-          process.status === 'running'
-            ? 'bg-green-500/20 text-green-400'
-            : process.status === 'sleeping'
-            ? 'bg-blue-500/20 text-blue-400'
-            : 'bg-gray-500/20 text-gray-400'
-        }`}>
-          {process.status}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-sm">
-        {showConfirm ? (
-          <div className="flex items-center gap-2">
+
+          {/* Content */}
+          <div className="p-6 space-y-4">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+              <div className={`font-semibold mb-2 ${theme.text.primary}`}>
+                Process: <span className="font-mono text-red-400">{processName}</span>
+              </div>
+              <div className={`text-sm ${theme.text.secondary}`}>
+                PID: <span className="font-mono">{pid}</span>
+              </div>
+            </div>
+
+            <div>
+              <h3 className={`font-semibold mb-2 ${theme.text.primary}`}>
+                Killing this process may cause:
+              </h3>
+              <ul className="space-y-2">
+                {warning.impacts.map((impact, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <ShieldExclamationIcon className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                    <span className={theme.text.secondary}>{impact}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+              <p className={`text-sm ${theme.text.secondary} mb-3`}>
+                To confirm, type the process name: <span className="font-mono font-bold text-yellow-400">{warning.confirmationText}</span>
+              </p>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="Type process name here"
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-700">
             <button
-              onClick={() => {
-                onKill(process.pid);
-                setShowConfirm(false);
-              }}
-              className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 transition-colors"
-            >
-              Confirm
-            </button>
-            <button
-              onClick={() => setShowConfirm(false)}
-              className="px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-600 transition-colors"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
             >
               Cancel
             </button>
+            <button
+              onClick={() => {
+                if (isConfirmed) {
+                  onConfirm();
+                  onClose();
+                  setConfirmText('');
+                }
+              }}
+              disabled={!isConfirmed}
+              className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                isConfirmed
+                  ? 'bg-red-500 text-white hover:bg-red-600'
+                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              Yes, Kill Process
+            </button>
           </div>
-        ) : (
-          <button
-            onClick={() => setShowConfirm(true)}
-            className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
-            title="Kill Process"
-          >
-            <StopIcon className="h-4 w-4" />
-          </button>
-        )}
-      </td>
-    </motion.tr>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+};
+
+// Process row component
+const ProcessRow = ({ process, onKill, theme }) => {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [showCriticalModal, setShowCriticalModal] = useState(false);
+  const isCritical = isCriticalProcess(process.name);
+
+  const handleKillClick = () => {
+    if (isCritical) {
+      setShowCriticalModal(true);
+    } else {
+      setShowConfirm(true);
+    }
+  };
+
+  const handleConfirmKill = () => {
+    onKill(process.pid);
+    setShowConfirm(false);
+  };
+
+  return (
+    <>
+      <motion.tr
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="hover:bg-gray-800/50 transition-colors"
+      >
+        <td className={`px-4 py-3 text-sm font-mono ${theme.text.primary}`}>
+          <div className="flex items-center gap-2">
+            {isCritical && (
+              <ShieldExclamationIcon className="w-4 h-4 text-red-500" title="Critical Process" />
+            )}
+            {process.name}
+          </div>
+        </td>
+        <td className={`px-4 py-3 text-sm ${theme.text.secondary}`}>
+          {process.pid}
+        </td>
+        <td className={`px-4 py-3 text-sm ${theme.text.primary}`}>
+          <div className="flex items-center gap-2">
+            <div className="w-16 h-2 rounded-full bg-gray-700">
+              <div
+                className={`h-full rounded-full ${
+                  process.cpu_percent > 50 ? 'bg-red-500' :
+                  process.cpu_percent > 25 ? 'bg-yellow-500' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(process.cpu_percent || 0, 100)}%` }}
+              />
+            </div>
+            <span>{(process.cpu_percent || 0).toFixed(1)}%</span>
+          </div>
+        </td>
+        <td className={`px-4 py-3 text-sm ${theme.text.primary}`}>
+          {formatBytes((process.memory_mb || 0) * 1024 * 1024)}
+        </td>
+        <td className={`px-4 py-3 text-sm`}>
+          <span className={`px-2 py-1 text-xs rounded-full ${
+            process.status === 'running'
+              ? 'bg-green-500/20 text-green-400'
+              : process.status === 'sleeping'
+              ? 'bg-blue-500/20 text-blue-400'
+              : 'bg-gray-500/20 text-gray-400'
+          }`}>
+            {process.status}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-sm">
+          {showConfirm && !isCritical ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleConfirmKill}
+                className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 transition-colors"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleKillClick}
+              className={`p-1 hover:bg-red-500/10 rounded transition-colors ${
+                isCritical ? 'text-red-500 hover:text-red-400' : 'text-red-400 hover:text-red-300'
+              }`}
+              title={isCritical ? "Kill Critical Process (Requires Confirmation)" : "Kill Process"}
+            >
+              <StopIcon className="h-4 w-4" />
+            </button>
+          )}
+        </td>
+      </motion.tr>
+
+      {/* Critical Process Warning Modal */}
+      <CriticalProcessModal
+        isOpen={showCriticalModal}
+        onClose={() => setShowCriticalModal(false)}
+        onConfirm={() => onKill(process.pid)}
+        processName={process.name}
+        pid={process.pid}
+        theme={theme}
+      />
+    </>
   );
 };
 
@@ -181,7 +316,18 @@ export default function System() {
   const [diskIoStats, setDiskIoStats] = useState(null);
   const [networkStats, setNetworkStats] = useState({ in: 0, out: 0 });
   const [temperatures, setTemperatures] = useState({});
+  const [errors, setErrors] = useState({
+    hardware: null,
+    diskIo: null,
+    network: null
+  });
+  const [retryCount, setRetryCount] = useState({
+    hardware: 0,
+    diskIo: 0,
+    network: 0
+  });
   const maxDataPoints = 30;
+  const maxRetries = 3;
   const dataRef = useRef(historicalData);
 
   // Fetch data on mount and interval
@@ -205,40 +351,85 @@ export default function System() {
   const fetchHardwareInfo = async () => {
     try {
       const response = await fetch('/api/v1/system/hardware');
-      if (response.ok) {
-        const data = await response.json();
-        setHardwareInfo(data);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      const data = await response.json();
+      setHardwareInfo(data);
+      setErrors(prev => ({ ...prev, hardware: null }));
+      setRetryCount(prev => ({ ...prev, hardware: 0 }));
     } catch (error) {
       console.error('Failed to fetch hardware info:', error);
+      const errorMsg = `Failed to load hardware information: ${error.message}`;
+      setErrors(prev => ({ ...prev, hardware: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.hardware < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, hardware: prev.hardware + 1 }));
+          fetchHardwareInfo();
+        }, 2000 * (retryCount.hardware + 1)); // Exponential backoff
+      } else {
+        toast.error(errorMsg);
+      }
     }
   };
 
   const fetchDiskIo = async () => {
     try {
       const response = await fetch('/api/v1/system/disk-io');
-      if (response.ok) {
-        const data = await response.json();
-        setDiskIoStats(data);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      const data = await response.json();
+      setDiskIoStats(data);
+      setErrors(prev => ({ ...prev, diskIo: null }));
+      setRetryCount(prev => ({ ...prev, diskIo: 0 }));
     } catch (error) {
       console.error('Failed to fetch disk I/O:', error);
+      const errorMsg = `Failed to load disk I/O statistics: ${error.message}`;
+      setErrors(prev => ({ ...prev, diskIo: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.diskIo < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, diskIo: prev.diskIo + 1 }));
+          fetchDiskIo();
+        }, 2000 * (retryCount.diskIo + 1));
+      } else {
+        toast.warning(errorMsg); // Use warning since disk I/O is less critical
+      }
     }
   };
 
   const fetchNetworkStats = async () => {
     try {
       const response = await fetch('/api/v1/system/network');
-      if (response.ok) {
-        const data = await response.json();
-        setNetworkStats({
-          in: data.bytes_recv_per_sec || 0,
-          out: data.bytes_sent_per_sec || 0
-        });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      const data = await response.json();
+      setNetworkStats({
+        in: data.bytes_recv_per_sec || 0,
+        out: data.bytes_sent_per_sec || 0
+      });
+      setErrors(prev => ({ ...prev, network: null }));
+      setRetryCount(prev => ({ ...prev, network: 0 }));
     } catch (error) {
       console.error('Failed to fetch network stats:', error);
-      setNetworkStats({ in: 0, out: 0 });
+      const errorMsg = `Failed to load network statistics: ${error.message}`;
+      setErrors(prev => ({ ...prev, network: errorMsg }));
+      setNetworkStats({ in: 0, out: 0 }); // Fallback to zero
+
+      // Retry logic for transient failures
+      if (retryCount.network < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, network: prev.network + 1 }));
+          fetchNetworkStats();
+        }, 2000 * (retryCount.network + 1));
+      } else {
+        toast.warning(errorMsg);
+      }
     }
   };
 
@@ -766,8 +957,34 @@ export default function System() {
       )}
 
       {/* Hardware View */}
-      {selectedView === 'hardware' && hardwareInfo && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {selectedView === 'hardware' && (
+        <>
+          {/* Error Alert for Hardware Info */}
+          {errors.hardware && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-red-900/20 border border-red-500/50 rounded-xl p-4 flex items-start gap-3"
+            >
+              <ExclamationTriangleIcon className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-200 text-sm font-medium">{errors.hardware}</p>
+                {retryCount.hardware > 0 && retryCount.hardware < maxRetries && (
+                  <p className="text-red-300 text-xs mt-1">Retrying... (Attempt {retryCount.hardware}/{maxRetries})</p>
+                )}
+              </div>
+              <button
+                onClick={fetchHardwareInfo}
+                className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-500 transition-colors"
+              >
+                Retry Now
+              </button>
+            </motion.div>
+          )}
+
+          {/* Hardware Info Grid */}
+          {hardwareInfo && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* CPU Details */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -911,7 +1128,9 @@ export default function System() {
               </div>
             </div>
           </motion.div>
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Network View */}
