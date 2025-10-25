@@ -117,6 +117,120 @@ async def verify_org_access(request: Request, org_id: str, required_role: Option
 
 # ==================== API Endpoints ====================
 
+@router.get("/organizations")
+async def list_all_organizations(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+    tier: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """
+    Get list of all organizations (admin only)
+
+    Args:
+        request: FastAPI request object
+        limit: Maximum number of organizations to return (default: 50)
+        offset: Number of organizations to skip for pagination (default: 0)
+        status: Filter by status (active, suspended, deleted)
+        tier: Filter by subscription tier
+        search: Search by organization name
+
+    Returns:
+        List of organizations with member counts and metadata
+
+    Example:
+        GET /api/v1/org/organizations?limit=10&status=active
+        Response: {
+            "organizations": [
+                {
+                    "id": "org_12345",
+                    "name": "Acme Corp",
+                    "owner": "owner@example.com",
+                    "member_count": 5,
+                    "created_at": "2025-01-15T10:30:00Z",
+                    "subscription_tier": "professional",
+                    "status": "active",
+                    "lago_customer_id": "lago_cust_abc",
+                    "stripe_customer_id": "cus_xyz"
+                },
+                ...
+            ],
+            "total": 100,
+            "limit": 10,
+            "offset": 0
+        }
+    """
+    # Require admin access
+    await require_admin(request)
+
+    try:
+        # Get all organizations from manager
+        all_orgs = org_manager.list_all_organizations()
+
+        # Apply filters
+        filtered_orgs = all_orgs
+
+        # Filter by status
+        if status:
+            filtered_orgs = [org for org in filtered_orgs if org.status == status]
+
+        # Filter by tier
+        if tier:
+            filtered_orgs = [org for org in filtered_orgs if org.plan_tier == tier]
+
+        # Filter by search query (name)
+        if search:
+            search_lower = search.lower()
+            filtered_orgs = [org for org in filtered_orgs if search_lower in org.name.lower()]
+
+        # Get total count before pagination
+        total = len(filtered_orgs)
+
+        # Apply pagination
+        paginated_orgs = filtered_orgs[offset:offset + limit]
+
+        # Enrich with member counts and owner info
+        enriched_orgs = []
+        for org in paginated_orgs:
+            # Get member count
+            members = org_manager.get_org_users(org.id)
+            member_count = len(members)
+
+            # Find owner
+            owner_email = None
+            for member in members:
+                if member.role == "owner":
+                    owner_email = member.user_id
+                    break
+
+            enriched_orgs.append({
+                "id": org.id,
+                "name": org.name,
+                "owner": owner_email or "Unknown",
+                "member_count": member_count,
+                "created_at": org.created_at.isoformat(),
+                "subscription_tier": org.plan_tier,
+                "status": org.status,
+                "lago_customer_id": org.lago_customer_id,
+                "stripe_customer_id": org.stripe_customer_id
+            })
+
+        logger.info(f"Listed {len(enriched_orgs)} organizations (total: {total}, filters: status={status}, tier={tier}, search={search})")
+
+        return {
+            "organizations": enriched_orgs,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing organizations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list organizations: {str(e)}")
+
+
 @router.get("/roles")
 async def list_available_roles():
     """

@@ -33,6 +33,7 @@ const SubscriptionBilling = lazy(() => import('./pages/subscription/Subscription
 const SubscriptionPayment = lazy(() => import('./pages/subscription/SubscriptionPayment'));
 
 // Organization pages (lazy loaded)
+const OrganizationsList = lazy(() => import('./pages/organization/OrganizationsList'));
 const OrganizationTeam = lazy(() => import('./pages/organization/OrganizationTeam'));
 const OrganizationRoles = lazy(() => import('./pages/organization/OrganizationRoles'));
 const OrganizationSettings = lazy(() => import('./pages/organization/OrganizationSettings'));
@@ -256,6 +257,12 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* ORGANIZATION SECTION - Team & org management */}
                   {/* ============================================================ */}
+                  <Route path="organizations" element={<OrganizationsList />} />
+                  <Route path="organization/team" element={<OrganizationTeam />} />
+                  <Route path="organization/roles" element={<OrganizationRoles />} />
+                  <Route path="organization/settings" element={<OrganizationSettings />} />
+                  <Route path="organization/billing" element={<OrganizationBilling />} />
+                  {/* Legacy routes for backwards compatibility */}
                   <Route path="org/team" element={<OrganizationTeam />} />
                   <Route path="org/roles" element={<OrganizationRoles />} />
                   <Route path="org/settings" element={<OrganizationSettings />} />
