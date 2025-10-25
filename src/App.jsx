@@ -45,7 +45,7 @@ const LiteLLMManagement = lazy(() => import('./pages/LiteLLMManagement'));
 const LLMUsage = lazy(() => import('./pages/LLMUsage'));
 
 // Platform pages (lazy loaded)
-const EmailSettings = lazy(() => import('./pages/EmailSettings'));
+const EmailSettings = lazy(() => import('./components/EmailSettings'));
 const PlatformSettings = lazy(() => import('./pages/PlatformSettings'));
 const CredentialsManagement = lazy(() => import('./pages/settings/CredentialsManagement'));
 const ApiDocumentation = lazy(() => import('./pages/ApiDocumentation'));
@@ -74,7 +74,7 @@ const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 // Infrastructure pages (lazy loaded)
-const CloudflareDNS = lazy(() => import('./pages/network/CloudflareDNS'));
+const CloudflareDNS = lazy(() => import('./components/CloudflareDNS'));
 const MigrationWizard = lazy(() => import('./pages/migration/MigrationWizard'));
 
 // Traefik pages (lazy loaded)
