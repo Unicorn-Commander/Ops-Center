@@ -176,8 +176,12 @@ export default function TierComparison() {
                 display: 'flex',
                 flexDirection: 'column',
                 position: 'relative',
-                border: tier.popular ? '2px solid' : '1px solid',
-                borderColor: tier.popular ? 'primary.main' : 'divider',
+                border: currentTier === tier.planId ? '2px solid' : tier.popular ? '2px solid' : '1px solid',
+                borderColor: currentTier === tier.planId
+                  ? 'success.main'
+                  : tier.popular
+                  ? 'primary.main'
+                  : 'divider',
                 background: tier.popular && currentTheme === 'magic-unicorn'
                   ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)'
                   : undefined,
@@ -188,6 +192,19 @@ export default function TierComparison() {
                 }
               }}
             >
+              {currentTier === tier.planId && (
+                <Chip
+                  label="Current Plan"
+                  color="success"
+                  size="small"
+                  sx={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                  }}
+                />
+              )}
+
               {tier.popular && (
                 <Box
                   sx={{
@@ -274,10 +291,11 @@ export default function TierComparison() {
                   fullWidth
                   size="large"
                   endIcon={<ArrowForward />}
-                  href={tier.ctaHref}
+                  onClick={() => handleSelectPlan(tier)}
+                  disabled={currentTier === tier.planId || checkoutLoading}
                   sx={{ mt: 3 }}
                 >
-                  {tier.cta}
+                  {checkoutLoading ? 'Processing...' : currentTier === tier.planId ? 'Current Plan' : tier.cta}
                 </Button>
               </CardContent>
             </Card>
