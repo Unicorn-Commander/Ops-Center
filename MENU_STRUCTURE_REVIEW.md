@@ -1456,3 +1456,454 @@ const handleKillProcess = async (pid) => {
 - **End User**: Not accessible (correct)
 
 ---
+
+## 📊 Page Review 5: LLM Management
+
+**Page Name**: AI Model Management
+**Route**: `/admin/system/models`
+**Component**: `AIModelManagement.jsx`
+**File**: `src/pages/AIModelManagement.jsx` (1944 lines!)
+**User Level**: System Admin only
+**Last Reviewed**: October 25, 2025
+
+### Purpose & Functionality
+
+Comprehensive model management system for downloading, configuring, and managing AI models across 4 different services (vLLM, Ollama, Embeddings, Reranker).
+
+### What's Here
+
+#### 4 Service Tabs
+1. **vLLM Models** (GPU-accelerated LLM inference)
+   - Text generation models
+   - Prefers quantized models (AWQ, GPTQ, FP8)
+   - Global settings: GPU memory, max length, tensor parallel, quantization
+   
+2. **Ollama Models** (Alternative LLM runtime)
+   - GGUF format models
+   - Global settings: models path, GPU layers, context size, temperature
+   
+3. **iGPU Embeddings** (Intel GPU optimized)
+   - Sentence-transformers models
+   - Feature extraction models
+   - Global settings: model name, device, max length, batch size
+   
+4. **iGPU Reranker** (Intel GPU optimized)
+   - Cross-encoder models
+   - Sentence similarity models
+   - Global settings: model name, device, max length, batch size
+
+#### Core Features
+
+**Service Information Card**:
+- Service name, description
+- Key features list (3 items)
+- Compatible models info
+- Model selection tips
+- Links to homepage, GitHub, docs
+- Help tooltip with memory/performance tips
+
+**Global Settings Panel**:
+- Collapsible settings form per service
+- 10-15 configuration options per service
+- Save/reset buttons
+- Settings persist via API
+
+**Model Search** (HuggingFace integration):
+- Debounced search (300ms for long queries, 1000ms for short)
+- Service-specific default filters
+- Advanced filters: quantization, size range, license, task, language
+- Sort by: downloads, likes, last modified
+- Auto-boosts compatible models in results
+- Shows model cards with download button
+
+**Installed Models List**:
+- Grid/table of currently installed models
+- Model name, size, status, actions
+- Actions: Load, Unload, Delete, Settings
+- Download progress indicators
+- Per-model settings overrides
+
+**Model Downloads**:
+- Progress tracking with percentage
+- Background download monitoring
+- Task ID tracking
+- Auto-refresh on completion
+
+### API Endpoints Used
+
+```javascript
+// Model API (modelApi.js service)
+GET  /api/v1/models/installed          // Get installed models
+GET  /api/v1/models/cached/{service}   // Get cached models
+POST /api/v1/models/download           // Download model
+GET  /api/v1/models/download/{task_id} // Monitor download
+GET  /api/v1/models/settings/{service} // Get global settings
+POST /api/v1/models/settings/{service} // Save global settings
+DELETE /api/v1/models/{service}/{model} // Delete model
+
+// External API
+GET https://huggingface.co/api/models  // Search models
+```
+
+### 🟢 What Works Well
+
+1. **Comprehensive Model Management** → All-in-one interface for 4 different services
+2. **HuggingFace Integration** → Search 100K+ models directly from UI
+3. **Service-Specific Filters** → Auto-filters for compatible models (e.g., AWQ for vLLM)
+4. **Download Progress** → Real-time progress tracking for model downloads
+5. **Global + Per-Model Settings** → Flexible configuration at both levels
+6. **Educational Content** → Service descriptions, features, tips, links
+7. **Advanced Filtering** → Quantization, size, license, task, language filters
+8. **Smart Sorting** → Boosts compatible models, then sorts by popularity
+9. **Debounced Search** → Prevents excessive API calls
+10. **Loading States** → Skeleton screens while loading
+
+### 🔴 Critical Issues
+
+#### 1. Component Size Extremely Large (Critical)
+**File**: AIModelManagement.jsx - **1944 lines!!!**
+**Problem**: This is **4x larger** than recommended max (500 lines)
+
+**Impact**:
+- Hard to maintain and debug
+- Poor performance (large component re-renders)
+- Difficult code review
+- High complexity (20+ state variables)
+
+**Recommendation**: **Mandatory Refactoring** - Split into smaller components:
+
+```javascript
+// Recommended structure:
+AIModelManagement.jsx (main, 200 lines)
+├── ServiceTabs.jsx (100 lines)
+├── ServiceInfoCard.jsx (150 lines)
+├── GlobalSettingsPanel.jsx (200 lines)
+│   ├── VllmSettings.jsx
+│   ├── OllamaSettings.jsx
+│   ├── EmbeddingsSettings.jsx
+│   └── RerankerSettings.jsx
+├── ModelSearch.jsx (300 lines)
+│   ├── SearchBar.jsx
+│   ├── SearchFilters.jsx
+│   └── SearchResults.jsx
+├── InstalledModelsList.jsx (300 lines)
+│   ├── ModelCard.jsx
+│   ├── ModelActions.jsx
+│   └── DownloadProgress.jsx
+└── ModelDetailsModal.jsx (200 lines)
+
+Total: ~1450 lines split across 15+ files (manageable!)
+```
+
+#### 2. Uses alert() for Errors (High Priority)
+**File**: AIModelManagement.jsx, lines 373, 387
+
+**Problem**:
+```javascript
+alert(`Failed to start download: ${error.message}`);
+```
+
+**Impact**: Poor UX - alert() blocks UI and looks unprofessional
+
+**Recommendation**: Replace with toast notifications:
+```javascript
+showToast(`Failed to start download: ${error.message}`, 'error');
+```
+
+#### 3. No Error States for API Failures (High Priority)
+**Problem**: If APIs fail to load models or settings, page shows nothing or spinner forever
+
+**Missing error handling for**:
+- `/api/v1/models/installed` failure
+- `/api/v1/models/cached/{service}` failure  
+- `/api/v1/models/settings/{service}` failure
+- HuggingFace API rate limiting
+
+**Recommendation**: Add error boundaries and error cards
+
+#### 4. Complex State Management (Medium Priority)
+**Problem**: 20+ `useState` declarations
+
+**Current state variables** (partial list):
+```javascript
+const [activeTab, setActiveTab] = useState('vllm');
+const [searchQuery, setSearchQuery] = useState('');
+const [searchResults, setSearchResults] = useState([]);
+const [searching, setSearching] = useState(false);
+const [selectedModel, setSelectedModel] = useState(null);
+const [showSettings, setShowSettings] = useState(false);
+const [showModelSettings, setShowModelSettings] = useState(null);
+const [showFilters, setShowFilters] = useState(false);
+const [sortBy, setSortBy] = useState('downloads');
+const [installedModels, setInstalledModels] = useState({...});
+const [loadingModels, setLoadingModels] = useState(false);
+const [filters, setFilters] = useState({...});
+const [vllmSettings, setVllmSettings] = useState({...});
+const [ollamaSettings, setOllamaSettings] = useState({...});
+const [embeddingsSettings, setEmbeddingsSettings] = useState({...});
+const [rerankerSettings, setRerankerSettings] = useState({...});
+const [modelOverrides, setModelOverrides] = useState({});
+const [downloadProgress, setDownloadProgress] = useState({});
+const [searchTimer, setSearchTimer] = useState(null);
+// ... and more
+```
+
+**Recommendation**: Use `useReducer` or context for complex state
+
+#### 5. Service Info Hardcoded Paths (Low Priority)
+**File**: Lines 69, 79, 93, 103
+
+**Problem**: Hardcoded absolute paths like:
+```javascript
+download_dir: '/home/ucadmin/UC-1-Pro/volumes/vllm_models'
+models_path: '/home/ucadmin/.ollama/models'
+```
+
+**Impact**: Won't work on different systems or containers
+
+**Recommendation**: Load paths from environment variables or API
+
+### 📊 Data Accuracy
+
+| Feature | Source | Status | Notes |
+|---------|--------|--------|-------|
+| Installed models | `/api/v1/models/installed` | Needs verification | API may not exist yet |
+| Model search | HuggingFace API | ✅ Dynamic | Real HF API integration |
+| Download progress | `/api/v1/models/download/{id}` | Needs verification | Polling-based |
+| Global settings | `/api/v1/models/settings/{service}` | Needs verification | Save/load settings |
+| Service info | Local data file | ✅ Static | `serviceInfo.js` |
+| Model tips | Local data file | ✅ Static | `modelTips` object |
+
+**Overall Data Accuracy**: Cannot verify without backend API testing
+
+### 🎯 Relevance by User Level
+
+| User Level | Access | Relevance | Notes |
+|------------|--------|-----------|-------|
+| System Admin | ✅ Full | ⭐⭐⭐⭐⭐ | Essential for infrastructure management |
+| Org Admin | ❌ Blocked | N/A | Shouldn't manage models |
+| End User | ❌ Blocked | N/A | Not relevant |
+
+**Visibility**: Admin-only (correct) - Model management is infrastructure-level
+
+### 🚫 Unnecessary/Confusing Elements
+
+1. **iGPU Labels** → Tabs say "iGPU Embeddings" and "iGPU Reranker"
+   - **Issue**: What if running on NVIDIA GPU or CPU?
+   - **Fix**: Use "Embeddings" and "Reranker" (hardware-agnostic)
+
+2. **Help Tooltip** → Shows on hover, but content could be more visible
+   - **Issue**: Users may not discover tooltip
+   - **Fix**: Make tips more prominent or show by default
+
+3. **Search Delay** → 300ms-1000ms delay feels slow for short queries
+   - **Issue**: 1000ms delay for 1-2 character queries is too long
+   - **Fix**: Only debounce for 3+ characters, instant for common searches
+
+### 🎨 UX/UI Assessment
+
+**Layout**: ✅ Clean tab-based navigation
+**Visual Hierarchy**: ✅ Service info → Settings → Search → Installed
+**Responsiveness**: ⚠️ Not tested, likely issues with 1944-line component
+**Color Coding**: ✅ Blue theme consistent
+**Loading States**: ✅ Skeleton screens
+**Error States**: ❌ Missing error cards
+**Empty States**: ⚠️ Need to verify (no installed models)
+**Interactive Elements**: ✅ Tabs, buttons, search work well
+**Feedback**: ❌ Uses alert() instead of toast
+
+**Overall UX Grade**: B- (Great features, poor error handling, needs refactoring)
+
+### 🔧 Technical Details
+
+**File Size**: 1944 lines (⚠️ **4x too large**)
+**Component Type**: Functional component with hooks
+**State Management**: Local state (20+ useState)
+**Performance**: 
+- Debounced search
+- Download progress polling
+- Large re-renders (entire 1944-line component)
+**Dependencies**:
+- `framer-motion` - Animations
+- `@heroicons/react` - Icons
+- SystemContext - System status
+- modelApi service - API calls
+- serviceInfo data - Static service descriptions
+
+**Key Anti-Patterns**:
+1. ❌ **God Component** - Does everything in one file
+2. ❌ **Too Many States** - Should use reducer
+3. ❌ **alert()** - Modern apps use toast
+4. ❌ **Hardcoded Paths** - Should be configurable
+5. ❌ **No Error Boundaries** - No error handling
+
+### 📝 Specific Recommendations
+
+#### Priority 1: Refactor into Smaller Components (Mandatory)
+**Current**: 1 file, 1944 lines
+**Target**: 15 files, ~100-200 lines each
+
+**Step 1**: Extract settings forms
+```javascript
+// Create separate files:
+src/components/ModelManagement/
+  ├── VllmSettings.jsx        (150 lines)
+  ├── OllamaSettings.jsx      (150 lines)
+  ├── EmbeddingsSettings.jsx  (100 lines)
+  └── RerankerSettings.jsx    (100 lines)
+```
+
+**Step 2**: Extract search UI
+```javascript
+src/components/ModelManagement/
+  ├── ModelSearchBar.jsx      (100 lines)
+  ├── ModelSearchFilters.jsx  (150 lines)
+  ├── ModelSearchResults.jsx  (200 lines)
+  └── ModelCard.jsx           (100 lines)
+```
+
+**Step 3**: Extract model lists
+```javascript
+src/components/ModelManagement/
+  ├── InstalledModelsList.jsx (200 lines)
+  ├── ModelListItem.jsx       (150 lines)
+  └── DownloadProgress.jsx    (80 lines)
+```
+
+**Step 4**: Create main coordinator
+```javascript
+// AIModelManagement.jsx (200 lines)
+import ServiceTabs from './components/ModelManagement/ServiceTabs';
+import ServiceInfoCard from './components/ModelManagement/ServiceInfoCard';
+import GlobalSettings from './components/ModelManagement/GlobalSettings';
+import ModelSearch from './components/ModelManagement/ModelSearch';
+import InstalledModels from './components/ModelManagement/InstalledModels';
+
+export default function AIModelManagement() {
+  // Top-level state and coordination only
+  const [activeTab, setActiveTab] = useState('vllm');
+  const [installedModels, setInstalledModels] = useState({});
+  
+  return (
+    <>
+      <ServiceTabs activeTab={activeTab} onChange={setActiveTab} />
+      <ServiceInfoCard service={activeTab} />
+      <GlobalSettings service={activeTab} />
+      <ModelSearch service={activeTab} onDownload={handleDownload} />
+      <InstalledModels service={activeTab} models={installedModels[activeTab]} />
+    </>
+  );
+}
+```
+
+#### Priority 2: Replace alert() with Toast Notifications
+**File**: Lines 373, 387, and anywhere else alert() appears
+
+**Before**:
+```javascript
+catch (error) {
+  console.error('Download error:', error);
+  alert(`Failed to start download: ${error.message}`);
+}
+```
+
+**After**:
+```javascript
+catch (error) {
+  console.error('Download error:', error);
+  showToast(`Failed to start download: ${error.message}`, 'error');
+}
+```
+
+#### Priority 3: Add Error States
+Add error handling throughout:
+
+```javascript
+const [error, setError] = useState(null);
+
+// In loadInstalledModels
+try {
+  const models = await modelApi.getInstalledModels();
+  setInstalledModels(models);
+  setError(null);
+} catch (error) {
+  console.error('Failed to load models:', error);
+  setError('Failed to load installed models. Please try again.');
+}
+
+// In UI
+{error && (
+  <div className="bg-red-50 border border-red-200 rounded p-4 mb-4">
+    <div className="flex items-center gap-2 text-red-800">
+      <XCircleIcon className="h-5 w-5" />
+      <span>{error}</span>
+    </div>
+  </div>
+)}
+```
+
+#### Priority 4: Use Environment Variables for Paths
+Replace hardcoded paths:
+
+```javascript
+// Before
+download_dir: '/home/ucadmin/UC-1-Pro/volumes/vllm_models'
+
+// After
+download_dir: process.env.VLLM_MODELS_DIR || '/app/models/vllm'
+```
+
+Or load from backend API:
+```javascript
+const paths = await modelApi.getSystemPaths();
+setVllmSettings(prev => ({
+  ...prev,
+  download_dir: paths.vllm_models
+}));
+```
+
+### 🎯 Summary
+
+**Strengths**:
+- ✅ Comprehensive model management (4 services)
+- ✅ HuggingFace integration (100K+ models)
+- ✅ Service-specific smart filtering
+- ✅ Download progress tracking
+- ✅ Educational content (features, tips, links)
+- ✅ Advanced search and filters
+- ✅ Global + per-model settings
+
+**Critical Weaknesses**:
+- ❌ **1944 lines** - Needs immediate refactoring
+- ❌ Uses alert() for errors
+- ❌ No error states or boundaries
+- ❌ Complex state (20+ useState)
+- ❌ Hardcoded file paths
+
+**Must Fix Before Production**:
+1. **Refactor into 15+ smaller components** (Priority 1 - Critical)
+2. Replace all alert() with toast notifications
+3. Add comprehensive error handling
+4. Use environment variables for paths
+5. Implement error boundaries
+
+**Nice to Have**:
+1. Use useReducer for state management
+2. Add model comparison feature
+3. Show model benchmarks/performance
+4. Add model versioning
+5. Implement model aliasing
+6. Add model usage analytics
+
+**Overall Grade**: C+ (Great features, poor code organization)
+
+**Blocker for Production**: ⚠️ **YES** - The 1944-line component is a maintenance disaster and must be refactored
+
+**Estimated Refactoring Time**: 16-24 hours (full component decomposition)
+
+**User Value**:
+- **System Admin**: ⭐⭐⭐⭐⭐ Critical for model management
+- **Org Admin**: Not accessible (correct)
+- **End User**: Not accessible (correct)
+
+---
