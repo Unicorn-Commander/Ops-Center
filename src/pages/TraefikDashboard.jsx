@@ -30,11 +30,15 @@ import {
   ClockIcon
 } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../components/Toast';
 
 const TraefikDashboard = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
   const [dashboardData, setDashboardData] = useState({
     summary: {
       totalRoutes: 0,
@@ -68,13 +72,28 @@ const TraefikDashboard = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to load dashboard data');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       setDashboardData(data);
       setError(null);
+      setRetryCount(0);
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to load dashboard data:', err);
+      const errorMsg = `Failed to load Traefik dashboard: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic for transient failures
+      if (retryCount < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadDashboardData();
+        }, 2000 * (retryCount + 1)); // Exponential backoff
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -170,9 +189,41 @@ const TraefikDashboard = () => {
         </Box>
       </Box>
 
+      {/* Error Alert with Retry */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                setError(null);
+                setRetryCount(0);
+                loadDashboardData();
+              }}
+              disabled={retryCount >= maxRetries && retryCount > 0}
+            >
+              Retry Now
+            </Button>
+          }
+        >
+          <Box>
+            <Typography variant="body2" fontWeight="medium">
+              {error}
+            </Typography>
+            {retryCount > 0 && retryCount < maxRetries && (
+              <Typography variant="caption" display="block" mt={0.5}>
+                Retrying... (Attempt {retryCount}/{maxRetries})
+              </Typography>
+            )}
+            {retryCount >= maxRetries && (
+              <Typography variant="caption" display="block" mt={0.5}>
+                Maximum retry attempts reached. Please check your network connection or try again later.
+              </Typography>
+            )}
+          </Box>
         </Alert>
       )}
 

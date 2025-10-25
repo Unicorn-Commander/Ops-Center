@@ -9,6 +9,7 @@ import {
   ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useToast } from '../../components/Toast';
 import { loadStripe } from '@stripe/stripe-js';
 import {
   Elements,
@@ -52,6 +53,7 @@ const cardElementOptions = {
 function AddPaymentMethodForm({ onSuccess, onCancel, theme }) {
   const stripe = useStripe();
   const elements = useElements();
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [cardholderName, setCardholderName] = useState('');
@@ -76,8 +78,28 @@ function AddPaymentMethodForm({ onSuccess, onCancel, theme }) {
         }
       });
 
+      // Handle Stripe-specific errors - don't retry failed payments
       if (stripeError) {
-        setError(stripeError.message);
+        if (stripeError.decline_code) {
+          // Card declined - specific error for user
+          const errorMsg = `Card declined: ${stripeError.decline_code}`;
+          setError(errorMsg);
+          toast.error(errorMsg);
+        } else if (stripeError.type === 'validation_error') {
+          // Validation error - show specific message
+          const errorMsg = `Validation error: ${stripeError.message}`;
+          setError(errorMsg);
+          toast.error(errorMsg);
+        } else if (stripeError.type === 'card_error') {
+          // Card error - show specific message
+          const errorMsg = `Card error: ${stripeError.message}`;
+          setError(errorMsg);
+          toast.error(errorMsg);
+        } else {
+          // Generic Stripe error
+          setError(stripeError.message);
+          toast.error(stripeError.message);
+        }
         setLoading(false);
         return;
       }
@@ -92,15 +114,22 @@ function AddPaymentMethodForm({ onSuccess, onCancel, theme }) {
         })
       });
 
-      if (res.ok) {
-        onSuccess();
-      } else {
+      if (!res.ok) {
         const data = await res.json();
-        setError(data.error || 'Failed to add payment method');
+        const errorMsg = data.error || 'Failed to add payment method';
+        setError(errorMsg);
+        toast.error(errorMsg);
+        return;
       }
+
+      // Success - call onSuccess callback
+      toast.success('Payment method added successfully');
+      onSuccess();
     } catch (error) {
       console.error('Error adding payment method:', error);
-      setError('Network error');
+      const errorMsg = `Network error: ${error.message || 'Unable to connect to payment server'}`;
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -178,30 +207,51 @@ const EmptyState = ({ onAddClick, theme }) => (
 // Main Component
 function SubscriptionPaymentContent() {
   const { theme } = useTheme();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
 
   useEffect(() => {
     loadPaymentMethods();
   }, []);
 
-  const loadPaymentMethods = async () => {
+  const loadPaymentMethods = async (isRetry = false) => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/v1/billing/payment-methods');
-      if (res.ok) {
-        const data = await res.json();
-        setPaymentMethods(data);
-      } else {
-        setError('Failed to load payment methods');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      const data = await res.json();
+      setPaymentMethods(data);
+      setRetryCount(0); // Reset retry count on success
+
+      // Only show success toast if it's a retry
+      if (isRetry) {
+        toast.success('Payment methods loaded successfully');
       }
     } catch (error) {
       console.error('Error loading payment methods:', error);
-      setError('Network error');
+      const errorMsg = `Failed to load payment methods: ${error.message}`;
+      setError(errorMsg);
+
+      // Retry logic with exponential backoff
+      if (retryCount < maxRetries) {
+        const backoffDelay = 2000 * (retryCount + 1);
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadPaymentMethods(true);
+        }, backoffDelay);
+        toast.warning(`Loading payment methods... Retry ${retryCount + 1}/${maxRetries}`);
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -209,7 +259,8 @@ function SubscriptionPaymentContent() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadPaymentMethods();
+    setRetryCount(0); // Reset retry count for manual refresh
+    await loadPaymentMethods(true); // Show success toast on manual refresh
     setRefreshing(false);
   };
 
@@ -219,33 +270,44 @@ function SubscriptionPaymentContent() {
         method: 'POST'
       });
 
-      if (res.ok) {
-        await loadPaymentMethods();
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
+
+      await loadPaymentMethods();
+      toast.success('Default payment method updated');
     } catch (error) {
       console.error('Error setting default payment method:', error);
+      toast.error(`Failed to set default payment method: ${error.message}`);
     }
   };
 
   const handleRemove = async (paymentMethodId) => {
-    if (confirm('Are you sure you want to remove this payment method?')) {
-      try {
-        const res = await fetch(`/api/v1/billing/payment-methods/${paymentMethodId}`, {
-          method: 'DELETE'
-        });
+    if (!confirm('Are you sure you want to remove this payment method?')) {
+      return;
+    }
 
-        if (res.ok) {
-          await loadPaymentMethods();
-        }
-      } catch (error) {
-        console.error('Error removing payment method:', error);
+    try {
+      const res = await fetch(`/api/v1/billing/payment-methods/${paymentMethodId}`, {
+        method: 'DELETE'
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
+
+      await loadPaymentMethods();
+      toast.success('Payment method removed successfully');
+    } catch (error) {
+      console.error('Error removing payment method:', error);
+      toast.error(`Failed to remove payment method: ${error.message}`);
     }
   };
 
   const handleAddSuccess = async () => {
     setShowAddForm(false);
     await loadPaymentMethods();
+    // Toast already shown in AddPaymentMethodForm
   };
 
   if (loading) {
@@ -257,11 +319,33 @@ function SubscriptionPaymentContent() {
     );
   }
 
-  if (error) {
+  if (error && retryCount >= maxRetries) {
     return (
-      <div className={`${theme.card} rounded-xl p-6 border border-red-500/30`}>
-        <p className="text-red-400">{error}</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-red-900/20 border border-red-500/50 rounded-xl p-6"
+      >
+        <div className="flex items-start gap-3">
+          <ExclamationTriangleIcon className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-red-200 text-sm font-medium mb-2">{error}</p>
+            <p className="text-red-300 text-xs mb-3">
+              Failed to load payment methods after {maxRetries} attempts. This may be due to network issues or server problems.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setRetryCount(0);
+              setError(null);
+              loadPaymentMethods(true);
+            }}
+            className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-500 transition-colors"
+          >
+            Retry Now
+          </button>
+        </div>
+      </motion.div>
     );
   }
 

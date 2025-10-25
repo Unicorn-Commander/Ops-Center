@@ -501,6 +501,22 @@ export default function LiteLLMManagement() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [timeRange, setTimeRange] = useState('30d');
 
+  // Error handling state
+  const [errors, setErrors] = useState({
+    providers: null,
+    statistics: null,
+    usage: null,
+    addProvider: null,
+    testProvider: null,
+    deleteProvider: null,
+    updateStrategy: null
+  });
+  const [retryCount, setRetryCount] = useState({
+    providers: 0,
+    statistics: 0,
+    usage: 0
+  });
+
   useEffect(() => {
     fetchProviders();
     fetchStatistics();
@@ -512,30 +528,50 @@ export default function LiteLLMManagement() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchProviders = async () => {
+  const fetchProviders = async (attempt = 0) => {
     setLoading(true);
     try {
+      setErrors(prev => ({ ...prev, providers: null }));
       const response = await fetch('/api/v1/llm/providers', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       const data = await response.json();
       setProviders(data.providers || []);
+      setRetryCount(prev => ({ ...prev, providers: 0 }));
     } catch (error) {
       console.error('Failed to fetch providers:', error);
+      const errorMsg = `Failed to load providers: ${error.message}`;
+
+      // Retry logic with exponential backoff
+      if (attempt < 2) {
+        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
+        setRetryCount(prev => ({ ...prev, providers: attempt + 1 }));
+        setTimeout(() => fetchProviders(attempt + 1), delay);
+      } else {
+        setErrors(prev => ({ ...prev, providers: errorMsg }));
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchStatistics = async () => {
+  const fetchStatistics = async (attempt = 0) => {
     try {
+      setErrors(prev => ({ ...prev, statistics: null }));
       const response = await fetch('/api/v1/llm/usage', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       const data = await response.json();
       setStatistics({
         totalProviders: data.total_providers || 0,
@@ -543,18 +579,34 @@ export default function LiteLLMManagement() {
         totalCalls: data.total_calls || 0,
         totalCost: data.total_cost || 0
       });
+      setRetryCount(prev => ({ ...prev, statistics: 0 }));
     } catch (error) {
       console.error('Failed to fetch statistics:', error);
+      const errorMsg = `Failed to load statistics: ${error.message}`;
+
+      // Retry logic with exponential backoff
+      if (attempt < 2) {
+        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
+        setRetryCount(prev => ({ ...prev, statistics: attempt + 1 }));
+        setTimeout(() => fetchStatistics(attempt + 1), delay);
+      } else {
+        setErrors(prev => ({ ...prev, statistics: errorMsg }));
+        toast.error(errorMsg);
+      }
     }
   };
 
-  const fetchUsageAnalytics = async () => {
+  const fetchUsageAnalytics = async (attempt = 0) => {
     try {
+      setErrors(prev => ({ ...prev, usage: null }));
       const response = await fetch(`/api/v1/llm/usage?period=${timeRange}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       const data = await response.json();
 
       // Prepare chart data
@@ -583,13 +635,26 @@ export default function LiteLLMManagement() {
           ]
         }]
       });
+      setRetryCount(prev => ({ ...prev, usage: 0 }));
     } catch (error) {
       console.error('Failed to fetch usage analytics:', error);
+      const errorMsg = `Failed to load usage analytics: ${error.message}`;
+
+      // Retry logic with exponential backoff
+      if (attempt < 2) {
+        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
+        setRetryCount(prev => ({ ...prev, usage: attempt + 1 }));
+        setTimeout(() => fetchUsageAnalytics(attempt + 1), delay);
+      } else {
+        setErrors(prev => ({ ...prev, usage: errorMsg }));
+        toast.error(errorMsg);
+      }
     }
   };
 
   const handleAddProvider = async (formData) => {
     try {
+      setErrors(prev => ({ ...prev, addProvider: null }));
       const response = await fetch('/api/v1/llm/providers', {
         method: 'POST',
         headers: {
@@ -598,56 +663,75 @@ export default function LiteLLMManagement() {
         },
         body: JSON.stringify(formData)
       });
-      if (response.ok) {
-        fetchProviders();
-        fetchStatistics();
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      toast.success('Provider added successfully');
+      fetchProviders();
+      fetchStatistics();
     } catch (error) {
       console.error('Failed to add provider:', error);
+      const errorMsg = `Failed to add provider: ${error.message}`;
+      setErrors(prev => ({ ...prev, addProvider: errorMsg }));
+      toast.error(errorMsg);
     }
   };
 
   const handleTestProvider = async (provider) => {
     try {
+      setErrors(prev => ({ ...prev, testProvider: null }));
       const response = await fetch(`/api/v1/llm/providers/${provider.id}/test`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       const data = await response.json();
       if (data.success) {
         toast.success(`Test successful! (${data.latency}ms)`);
       } else {
-        toast.error(`Test failed: ${data.error}`);
+        throw new Error(data.error || 'Test failed');
       }
     } catch (error) {
-      toast.error('Test failed: ' + error.message);
+      console.error('Failed to test provider:', error);
+      const errorMsg = `Test failed: ${error.message}`;
+      setErrors(prev => ({ ...prev, testProvider: errorMsg }));
+      toast.error(errorMsg);
     }
   };
 
   const handleDeleteProvider = async (provider) => {
     if (!confirm(`Delete provider "${provider.name}"?`)) return;
     try {
+      setErrors(prev => ({ ...prev, deleteProvider: null }));
       const response = await fetch(`/api/v1/llm/providers/${provider.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
       });
-      if (response.ok) {
-        fetchProviders();
-        fetchStatistics();
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+      toast.success('Provider deleted successfully');
+      fetchProviders();
+      fetchStatistics();
     } catch (error) {
       console.error('Failed to delete provider:', error);
+      const errorMsg = `Failed to delete provider: ${error.message}`;
+      setErrors(prev => ({ ...prev, deleteProvider: errorMsg }));
+      toast.error(errorMsg);
     }
   };
 
   const handleUpdateStrategy = async (newStrategy) => {
     setRoutingStrategy(newStrategy);
     try {
-      await fetch('/api/v1/llm/routing/rules', {
+      setErrors(prev => ({ ...prev, updateStrategy: null }));
+      const response = await fetch('/api/v1/llm/routing/rules', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -655,8 +739,15 @@ export default function LiteLLMManagement() {
         },
         body: JSON.stringify({ strategy: newStrategy })
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      toast.success('Routing strategy updated successfully');
     } catch (error) {
       console.error('Failed to update routing strategy:', error);
+      const errorMsg = `Failed to update strategy: ${error.message}`;
+      setErrors(prev => ({ ...prev, updateStrategy: errorMsg }));
+      toast.error(errorMsg);
     }
   };
 
@@ -685,44 +776,94 @@ export default function LiteLLMManagement() {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Providers"
-          value={statistics.totalProviders}
-          icon={Users}
-          color="blue-500"
-          theme={theme}
-        />
-        <StatCard
-          title="Active Models"
-          value={statistics.activeModels}
-          icon={Brain}
-          color="purple-500"
-          trend={12}
-          theme={theme}
-        />
-        <StatCard
-          title="API Calls (30d)"
-          value={statistics.totalCalls.toLocaleString()}
-          icon={Activity}
-          color="green-500"
-          trend={8}
-          theme={theme}
-        />
-        <StatCard
-          title="Total Cost (30d)"
-          value={`$${statistics.totalCost.toFixed(2)}`}
-          icon={DollarSign}
-          color="amber-500"
-          trend={-5}
-          theme={theme}
-        />
-      </div>
+      {errors.statistics ? (
+        <div className={`${theme.card} rounded-xl p-6 border border-red-500/20`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-6 w-6 text-red-500" />
+              <div>
+                <p className={`font-semibold ${theme.text.primary}`}>Error Loading Statistics</p>
+                <p className={`text-sm ${theme.text.secondary}`}>{errors.statistics}</p>
+                {retryCount.statistics > 0 && (
+                  <p className={`text-xs ${theme.text.secondary} mt-1`}>
+                    Retry attempt {retryCount.statistics}/2
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => fetchStatistics()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Retry
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Providers"
+            value={statistics.totalProviders}
+            icon={Users}
+            color="blue-500"
+            theme={theme}
+          />
+          <StatCard
+            title="Active Models"
+            value={statistics.activeModels}
+            icon={Brain}
+            color="purple-500"
+            trend={12}
+            theme={theme}
+          />
+          <StatCard
+            title="API Calls (30d)"
+            value={statistics.totalCalls.toLocaleString()}
+            icon={Activity}
+            color="green-500"
+            trend={8}
+            theme={theme}
+          />
+          <StatCard
+            title="Total Cost (30d)"
+            value={`$${statistics.totalCost.toFixed(2)}`}
+            icon={DollarSign}
+            color="amber-500"
+            trend={-5}
+            theme={theme}
+          />
+        </div>
+      )}
 
       {/* Provider Cards Grid */}
       <div>
         <h2 className={`text-xl font-bold ${theme.text.primary} mb-4`}>Providers</h2>
-        {loading ? (
+        {errors.providers ? (
+          <div className={`${theme.card} rounded-xl p-6 border border-red-500/20`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-6 w-6 text-red-500" />
+                <div>
+                  <p className={`font-semibold ${theme.text.primary}`}>Error Loading Providers</p>
+                  <p className={`text-sm ${theme.text.secondary}`}>{errors.providers}</p>
+                  {retryCount.providers > 0 && (
+                    <p className={`text-xs ${theme.text.secondary} mt-1`}>
+                      Retry attempt {retryCount.providers}/2
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => fetchProviders()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
           </div>

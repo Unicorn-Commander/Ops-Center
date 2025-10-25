@@ -32,16 +32,31 @@ import {
   TrashIcon,
   CheckCircleIcon,
   XCircleIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
+import { useToast } from '../components/Toast';
 
 const TraefikServices = () => {
   const [searchParams] = useSearchParams();
+  const toast = useToast();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState({
+    services: null,
+    discover: null,
+    save: null,
+    delete: null
+  });
+  const [retryCount, setRetryCount] = useState({
+    services: 0,
+    discover: 0,
+    save: 0,
+    delete: 0
+  });
   const [success, setSuccess] = useState(null);
+  const maxRetries = 3;
 
   // Table state
   const [page, setPage] = useState(0);
@@ -77,13 +92,28 @@ const TraefikServices = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to load services');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       setServices(data.services || []);
-      setError(null);
+      setErrors(prev => ({ ...prev, services: null }));
+      setRetryCount(prev => ({ ...prev, services: 0 }));
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to load services:', err);
+      const errorMsg = `Failed to load services: ${err.message}`;
+      setErrors(prev => ({ ...prev, services: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.services < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, services: prev.services + 1 }));
+          loadServices();
+        }, 2000 * (retryCount.services + 1)); // Exponential backoff: 2s, 4s, 6s
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -99,13 +129,31 @@ const TraefikServices = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Service discovery failed');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
-      setSuccess(`Discovered ${data.count} services`);
+      const successMsg = `Discovered ${data.count} services`;
+      setSuccess(successMsg);
+      toast.success(successMsg);
+      setErrors(prev => ({ ...prev, discover: null }));
+      setRetryCount(prev => ({ ...prev, discover: 0 }));
       loadServices();
     } catch (err) {
-      setError(err.message);
+      console.error('Service discovery failed:', err);
+      const errorMsg = `Service discovery failed: ${err.message}`;
+      setErrors(prev => ({ ...prev, discover: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.discover < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, discover: prev.discover + 1 }));
+          handleDiscover();
+        }, 2000 * (retryCount.discover + 1));
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -128,15 +176,33 @@ const TraefikServices = () => {
         body: JSON.stringify(formData)
       });
 
-      if (!response.ok) throw new Error('Failed to save service');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
-      setSuccess(`Service ${editingService ? 'updated' : 'created'} successfully`);
+      const successMsg = `Service ${editingService ? 'updated' : 'created'} successfully`;
+      setSuccess(successMsg);
+      toast.success(successMsg);
+      setErrors(prev => ({ ...prev, save: null }));
+      setRetryCount(prev => ({ ...prev, save: 0 }));
       setDialogOpen(false);
       setEditingService(null);
       setFormData({ name: '', url: '', healthCheck: '/health' });
       loadServices();
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to save service:', err);
+      const errorMsg = `Failed to save service: ${err.message}`;
+      setErrors(prev => ({ ...prev, save: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.save < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, save: prev.save + 1 }));
+          handleSave();
+        }, 2000 * (retryCount.save + 1));
+      } else {
+        toast.error(errorMsg);
+      }
     }
   };
 
@@ -151,12 +217,30 @@ const TraefikServices = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to delete service');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
-      setSuccess('Service deleted successfully');
+      const successMsg = 'Service deleted successfully';
+      setSuccess(successMsg);
+      toast.success(successMsg);
+      setErrors(prev => ({ ...prev, delete: null }));
+      setRetryCount(prev => ({ ...prev, delete: 0 }));
       loadServices();
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to delete service:', err);
+      const errorMsg = `Failed to delete service: ${err.message}`;
+      setErrors(prev => ({ ...prev, delete: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.delete < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, delete: prev.delete + 1 }));
+          handleDelete(serviceId);
+        }, 2000 * (retryCount.delete + 1));
+      } else {
+        toast.error(errorMsg);
+      }
     }
   };
 
@@ -221,9 +305,96 @@ const TraefikServices = () => {
         </Box>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+      {/* Error Alerts with Retry Buttons */}
+      {errors.services && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={loadServices}
+              startIcon={<ArrowPathIcon style={{ width: 16, height: 16 }} />}
+            >
+              Retry
+            </Button>
+          }
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ExclamationTriangleIcon style={{ width: 20, height: 20 }} />
+            <div>
+              <Typography variant="body2" fontWeight={500}>
+                {errors.services}
+              </Typography>
+              {retryCount.services > 0 && retryCount.services < maxRetries && (
+                <Typography variant="caption" color="text.secondary">
+                  Retrying... (Attempt {retryCount.services}/{maxRetries})
+                </Typography>
+              )}
+            </div>
+          </Box>
+        </Alert>
+      )}
+
+      {errors.discover && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={handleDiscover}
+              startIcon={<ArrowPathIcon style={{ width: 16, height: 16 }} />}
+            >
+              Retry
+            </Button>
+          }
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ExclamationTriangleIcon style={{ width: 20, height: 20 }} />
+            <div>
+              <Typography variant="body2" fontWeight={500}>
+                {errors.discover}
+              </Typography>
+              {retryCount.discover > 0 && retryCount.discover < maxRetries && (
+                <Typography variant="caption" color="text.secondary">
+                  Retrying... (Attempt {retryCount.discover}/{maxRetries})
+                </Typography>
+              )}
+            </div>
+          </Box>
+        </Alert>
+      )}
+
+      {errors.save && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          onClose={() => setErrors(prev => ({ ...prev, save: null }))}
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ExclamationTriangleIcon style={{ width: 20, height: 20 }} />
+            <Typography variant="body2" fontWeight={500}>
+              {errors.save}
+            </Typography>
+          </Box>
+        </Alert>
+      )}
+
+      {errors.delete && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          onClose={() => setErrors(prev => ({ ...prev, delete: null }))}
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ExclamationTriangleIcon style={{ width: 20, height: 20 }} />
+            <Typography variant="body2" fontWeight={500}>
+              {errors.delete}
+            </Typography>
+          </Box>
         </Alert>
       )}
 

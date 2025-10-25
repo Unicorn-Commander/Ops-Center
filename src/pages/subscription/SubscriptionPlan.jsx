@@ -6,9 +6,11 @@ import {
   ArrowDownIcon,
   CheckCircleIcon,
   XCircleIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useToast } from '../../components/Toast';
 
 // Animation variants
 const itemVariants = {
@@ -115,11 +117,14 @@ const availablePlans = [
 
 export default function SubscriptionPlan() {
   const { theme } = useTheme();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [subscription, setSubscription] = useState(null);
   const [showComparison, setShowComparison] = useState(false);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
 
   useEffect(() => {
     loadSubscription();
@@ -133,26 +138,56 @@ export default function SubscriptionPlan() {
     }
   }, []);
 
-  const loadSubscription = async () => {
+  const loadSubscription = async (attempt = 1) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/v1/subscriptions/current');
-      if (res.ok) {
-        const data = await res.json();
-        setSubscription(data);
-      } else {
-        setError('Failed to load subscription');
+      const res = await fetch('/api/v1/subscriptions/current', {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        }
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error('Authentication required. Please log in again.');
+        } else if (res.status === 403) {
+          throw new Error('You do not have permission to view subscription information.');
+        } else if (res.status === 404) {
+          // No subscription found is OK - user may not have subscribed yet
+          setSubscription(null);
+          return;
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || `Failed to load subscription (${res.status})`);
+        }
       }
+
+      const data = await res.json();
+      setSubscription(data);
+      setRetryCount(0); // Reset retry count on success
+      toast.success('Subscription loaded successfully');
     } catch (error) {
       console.error('Error loading subscription:', error);
-      setError('Network error');
+      const errorMsg = error.message || 'Failed to load subscription';
+      setError(errorMsg);
+
+      // Retry logic for transient failures
+      if (attempt < maxRetries && !error.message.includes('Authentication') && !error.message.includes('permission')) {
+        setTimeout(() => {
+          setRetryCount(attempt);
+          loadSubscription(attempt + 1);
+        }, 2000 * attempt); // Exponential backoff
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpgrade = async (targetTier) => {
+  const handleUpgrade = async (targetTier, attempt = 1) => {
     setCheckoutLoading(true);
     setError(null);
 
@@ -160,7 +195,7 @@ export default function SubscriptionPlan() {
       // Find the plan object for the target tier
       const plan = availablePlans.find(p => p.tier === targetTier);
       if (!plan) {
-        throw new Error('Invalid plan selected');
+        throw new Error('Invalid plan selected. Please refresh the page and try again.');
       }
 
       // Call the correct billing checkout endpoint
@@ -180,55 +215,163 @@ export default function SubscriptionPlan() {
       });
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to create checkout session (${res.status})`);
+        if (res.status === 401) {
+          throw new Error('Authentication required. Please log in again.');
+        } else if (res.status === 403) {
+          throw new Error('You do not have permission to modify subscriptions.');
+        } else if (res.status === 400) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Invalid subscription request');
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || `Failed to create checkout session (${res.status})`);
+        }
       }
 
       const data = await res.json();
 
       // Redirect to Stripe Checkout
       if (data.checkout_url) {
-        window.location.href = data.checkout_url;
+        toast.info('Redirecting to secure payment page...');
+        setTimeout(() => {
+          window.location.href = data.checkout_url;
+        }, 500);
       } else {
-        throw new Error('No checkout URL returned from server');
+        throw new Error('No checkout URL returned from server. Please contact support.');
       }
     } catch (error) {
       console.error('Checkout error:', error);
-      setError(error.message || 'Failed to initiate checkout. Please try again.');
+
+      // Stripe-specific error handling
+      let errorMsg = error.message || 'Failed to initiate checkout';
+
+      if (error.type === 'StripeCardError') {
+        errorMsg = `Payment failed: ${error.message}`;
+        toast.error(errorMsg);
+      } else if (error.type === 'StripeInvalidRequestError') {
+        errorMsg = 'Invalid payment request. Please try again or contact support.';
+        toast.error(errorMsg);
+      } else if (error.type === 'StripeAPIError') {
+        errorMsg = 'Payment service unavailable. Please try again later.';
+        toast.error(errorMsg);
+      } else if (error.type === 'StripeAuthenticationError') {
+        errorMsg = 'Payment authentication failed. Please contact support.';
+        toast.error(errorMsg);
+      } else if (error.type === 'StripeRateLimitError') {
+        errorMsg = 'Too many requests. Please wait a moment and try again.';
+        toast.warning(errorMsg);
+      } else if (error.message.includes('Authentication')) {
+        errorMsg = error.message;
+        toast.error(errorMsg);
+        // Redirect to login after 2 seconds
+        setTimeout(() => {
+          window.location.href = '/auth/login';
+        }, 2000);
+      } else {
+        // Retry logic for transient failures
+        if (attempt < maxRetries && !error.message.includes('Invalid') && !error.message.includes('permission')) {
+          toast.warning(`Retrying checkout... (Attempt ${attempt}/${maxRetries})`);
+          setTimeout(() => {
+            handleUpgrade(targetTier, attempt + 1);
+          }, 2000 * attempt); // Exponential backoff
+          return;
+        } else {
+          toast.error(errorMsg);
+        }
+      }
+
+      setError(errorMsg);
       setCheckoutLoading(false);
     }
   };
 
-  const handleDowngrade = async (targetTier) => {
-    if (confirm(`Are you sure you want to downgrade to ${targetTier}?`)) {
-      try {
-        const res = await fetch('/api/v1/subscriptions/change', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target_tier: targetTier })
-        });
+  const handleDowngrade = async (targetTier, attempt = 1) => {
+    if (!confirm(`Are you sure you want to downgrade to ${targetTier}? This change will take effect at the end of your current billing period.`)) {
+      return;
+    }
 
-        if (res.ok) {
-          await loadSubscription();
+    try {
+      const res = await fetch('/api/v1/subscriptions/change', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        },
+        credentials: 'include',
+        body: JSON.stringify({ target_tier: targetTier })
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error('Authentication required. Please log in again.');
+        } else if (res.status === 403) {
+          throw new Error('You do not have permission to modify subscriptions.');
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || `Failed to downgrade subscription (${res.status})`);
         }
-      } catch (error) {
-        console.error('Error downgrading:', error);
+      }
+
+      toast.success(`Successfully scheduled downgrade to ${targetTier}. Change will take effect at the end of your billing period.`);
+      await loadSubscription();
+    } catch (error) {
+      console.error('Error downgrading:', error);
+      const errorMsg = error.message || 'Failed to downgrade subscription';
+
+      // Retry logic for transient failures
+      if (attempt < maxRetries && !error.message.includes('Authentication') && !error.message.includes('permission')) {
+        toast.warning(`Retrying downgrade... (Attempt ${attempt}/${maxRetries})`);
+        setTimeout(() => {
+          handleDowngrade(targetTier, attempt + 1);
+        }, 2000 * attempt);
+      } else {
+        toast.error(errorMsg);
+        setError(errorMsg);
       }
     }
   };
 
-  const handleCancelSubscription = async () => {
-    if (confirm('Are you sure you want to cancel your subscription? You will lose access at the end of your billing period.')) {
-      try {
-        const res = await fetch('/api/v1/subscriptions/cancel', {
-          method: 'POST'
-        });
+  const handleCancelSubscription = async (attempt = 1) => {
+    if (!confirm('Are you sure you want to cancel your subscription? You will lose access at the end of your billing period.')) {
+      return;
+    }
 
-        if (res.ok) {
-          await loadSubscription();
+    try {
+      const res = await fetch('/api/v1/subscriptions/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        },
+        credentials: 'include'
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error('Authentication required. Please log in again.');
+        } else if (res.status === 403) {
+          throw new Error('You do not have permission to cancel subscriptions.');
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || `Failed to cancel subscription (${res.status})`);
         }
-      } catch (error) {
-        console.error('Error canceling subscription:', error);
+      }
+
+      toast.success('Subscription canceled successfully. You will retain access until the end of your billing period.');
+      await loadSubscription();
+    } catch (error) {
+      console.error('Error canceling subscription:', error);
+      const errorMsg = error.message || 'Failed to cancel subscription';
+
+      // Retry logic for transient failures
+      if (attempt < maxRetries && !error.message.includes('Authentication') && !error.message.includes('permission')) {
+        toast.warning(`Retrying cancellation... (Attempt ${attempt}/${maxRetries})`);
+        setTimeout(() => {
+          handleCancelSubscription(attempt + 1);
+        }, 2000 * attempt);
+      } else {
+        toast.error(errorMsg);
+        setError(errorMsg);
       }
     }
   };
@@ -242,11 +385,44 @@ export default function SubscriptionPlan() {
     );
   }
 
-  if (error) {
+  if (error && !loading && retryCount >= maxRetries) {
     return (
-      <div className={`${theme.card} rounded-xl p-6 border border-red-500/30`}>
-        <p className="text-red-400">{error}</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`${theme.card} rounded-xl p-6 border border-red-500/50`}
+      >
+        <div className="flex items-start gap-3">
+          <ExclamationTriangleIcon className="h-6 w-6 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Failed to Load Subscription</h3>
+            <p className="text-red-300 text-sm mb-4">{error}</p>
+            {retryCount > 0 && retryCount < maxRetries && (
+              <p className="text-red-400 text-xs mb-4">
+                Retrying... (Attempt {retryCount}/{maxRetries})
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setError(null);
+                  setRetryCount(0);
+                  loadSubscription();
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-colors text-sm font-medium"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={() => window.location.href = '/admin/dashboard'}
+                className="px-4 py-2 border border-gray-600 text-gray-300 hover:bg-gray-700 rounded-lg transition-colors text-sm font-medium"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
     );
   }
 
@@ -254,6 +430,31 @@ export default function SubscriptionPlan() {
 
   return (
     <div className="space-y-6">
+      {/* Error Banner (non-critical errors during operation) */}
+      {error && !checkoutLoading && retryCount < maxRetries && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-yellow-900/20 border border-yellow-500/50 rounded-xl p-4 flex items-start gap-3"
+        >
+          <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-yellow-200 text-sm font-medium">{error}</p>
+            {retryCount > 0 && (
+              <p className="text-yellow-300 text-xs mt-1">
+                Retrying... (Attempt {retryCount}/{maxRetries})
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setError(null)}
+            className="text-yellow-400 hover:text-yellow-300 transition-colors"
+          >
+            <XCircleIcon className="h-5 w-5" />
+          </button>
+        </motion.div>
+      )}
+
       {/* Checkout Loading Overlay */}
       {checkoutLoading && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">

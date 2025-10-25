@@ -35,18 +35,28 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   LockClosedIcon,
-  BeakerIcon
+  BeakerIcon,
+  ExclamationTriangleIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import TraefikRouteEditor from '../components/TraefikRouteEditor';
+import { useToast } from '../components/Toast';
 
 const TraefikRoutes = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const toast = useToast();
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [retryCount, setRetryCount] = useState({
+    loadRoutes: 0,
+    deleteRoute: 0,
+    testRoute: 0,
+    saveRoute: 0
+  });
 
   // Table state
   const [page, setPage] = useState(0);
@@ -62,6 +72,8 @@ const TraefikRoutes = () => {
   // Editor modal state
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState(null);
+
+  const maxRetries = 3;
 
   useEffect(() => {
     loadRoutes();
@@ -81,13 +93,30 @@ const TraefikRoutes = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to load routes');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       setRoutes(data.routes || []);
       setError(null);
+      setRetryCount(prev => ({ ...prev, loadRoutes: 0 }));
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to load routes:', err);
+      const errorMsg = `Failed to load Traefik routes: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic with exponential backoff
+      if (retryCount.loadRoutes < maxRetries) {
+        const backoffDelay = 2000 * (retryCount.loadRoutes + 1);
+        toast.warning(`Retrying... (Attempt ${retryCount.loadRoutes + 1}/${maxRetries})`);
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, loadRoutes: prev.loadRoutes + 1 }));
+          loadRoutes();
+        }, backoffDelay);
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -104,12 +133,31 @@ const TraefikRoutes = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to delete route');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
-      setSuccess('Route deleted successfully');
+      const successMsg = 'Route deleted successfully';
+      setSuccess(successMsg);
+      toast.success(successMsg);
+      setRetryCount(prev => ({ ...prev, deleteRoute: 0 }));
       loadRoutes();
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to delete route:', err);
+      const errorMsg = `Failed to delete route: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic with exponential backoff
+      if (retryCount.deleteRoute < maxRetries) {
+        const backoffDelay = 2000 * (retryCount.deleteRoute + 1);
+        toast.warning(`Retrying delete... (Attempt ${retryCount.deleteRoute + 1}/${maxRetries})`);
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, deleteRoute: prev.deleteRoute + 1 }));
+          handleDelete(routeId);
+        }, backoffDelay);
+      } else {
+        toast.error(errorMsg);
+      }
     }
   };
 
@@ -122,12 +170,38 @@ const TraefikRoutes = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Route test failed');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const result = await response.json();
-      setSuccess(`Route test ${result.success ? 'passed' : 'failed'}: ${result.message}`);
+      const msg = `Route test ${result.success ? 'passed' : 'failed'}: ${result.message}`;
+
+      if (result.success) {
+        setSuccess(msg);
+        toast.success(msg);
+      } else {
+        setError(msg);
+        toast.warning(msg);
+      }
+
+      setRetryCount(prev => ({ ...prev, testRoute: 0 }));
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to test route:', err);
+      const errorMsg = `Failed to test route: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic with exponential backoff
+      if (retryCount.testRoute < maxRetries) {
+        const backoffDelay = 2000 * (retryCount.testRoute + 1);
+        toast.warning(`Retrying test... (Attempt ${retryCount.testRoute + 1}/${maxRetries})`);
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, testRoute: prev.testRoute + 1 }));
+          handleTest(routeId);
+        }, backoffDelay);
+      } else {
+        toast.error(errorMsg);
+      }
     }
   };
 
@@ -164,14 +238,33 @@ const TraefikRoutes = () => {
         body: JSON.stringify(routeData)
       });
 
-      if (!response.ok) throw new Error('Failed to save route');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
-      setSuccess(`Route ${routeData.id ? 'updated' : 'created'} successfully`);
+      const successMsg = `Route ${routeData.id ? 'updated' : 'created'} successfully`;
+      setSuccess(successMsg);
+      toast.success(successMsg);
+      setRetryCount(prev => ({ ...prev, saveRoute: 0 }));
       setEditorOpen(false);
       setEditingRoute(null);
       loadRoutes();
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to save route:', err);
+      const errorMsg = `Failed to save route: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic with exponential backoff
+      if (retryCount.saveRoute < maxRetries) {
+        const backoffDelay = 2000 * (retryCount.saveRoute + 1);
+        toast.warning(`Retrying save... (Attempt ${retryCount.saveRoute + 1}/${maxRetries})`);
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, saveRoute: prev.saveRoute + 1 }));
+          handleSaveRoute(routeData);
+        }, backoffDelay);
+      } else {
+        toast.error(errorMsg);
+      }
     }
   };
 
@@ -225,8 +318,36 @@ const TraefikRoutes = () => {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          onClose={() => setError(null)}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              startIcon={<ArrowPathIcon style={{ width: 16, height: 16 }} />}
+              onClick={() => {
+                setError(null);
+                setRetryCount({ loadRoutes: 0, deleteRoute: 0, testRoute: 0, saveRoute: 0 });
+                loadRoutes();
+              }}
+            >
+              Retry Now
+            </Button>
+          }
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ExclamationTriangleIcon style={{ width: 20, height: 20 }} />
+            <span>{error}</span>
+          </Box>
+          {(retryCount.loadRoutes > 0 || retryCount.deleteRoute > 0 ||
+            retryCount.testRoute > 0 || retryCount.saveRoute > 0) &&
+            Object.values(retryCount).some(count => count > 0 && count < maxRetries) && (
+            <Box mt={1} fontSize="0.875rem">
+              Retrying... (Attempt {Math.max(...Object.values(retryCount))}/{maxRetries})
+            </Box>
+          )}
         </Alert>
       )}
 
@@ -383,6 +504,32 @@ const TraefikRoutes = () => {
                     </TableCell>
                   </TableRow>
                 ))
+              ) : error && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+                      <ExclamationTriangleIcon style={{ width: 48, height: 48, color: '#f87171' }} />
+                      <Typography variant="body1" color="error">
+                        Failed to load Traefik routes
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {error}
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        startIcon={<ArrowPathIcon style={{ width: 20, height: 20 }} />}
+                        onClick={() => {
+                          setError(null);
+                          setLoading(true);
+                          setRetryCount({ loadRoutes: 0, deleteRoute: 0, testRoute: 0, saveRoute: 0 });
+                          loadRoutes();
+                        }}
+                      >
+                        Retry Now
+                      </Button>
+                    </Box>
+                  </TableCell>
+                </TableRow>
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} align="center" sx={{ py: 8 }}>

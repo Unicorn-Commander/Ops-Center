@@ -35,9 +35,11 @@ import {
   ClockIcon
 } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
+import { useToast } from '../components/Toast';
 
 const TraefikSSL = () => {
   const [searchParams] = useSearchParams();
+  const toast = useToast();
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -58,6 +60,13 @@ const TraefikSSL = () => {
   // Renewal state
   const [renewing, setRenewing] = useState(false);
 
+  // Retry state
+  const [retryCount, setRetryCount] = useState({
+    certificates: 0,
+    renew: 0
+  });
+  const maxRetries = 3;
+
   useEffect(() => {
     loadCertificates();
 
@@ -75,13 +84,28 @@ const TraefikSSL = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to load certificates');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       setCertificates(data.certificates || []);
       setError(null);
+      setRetryCount(prev => ({ ...prev, certificates: 0 }));
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to fetch certificates:', err);
+      const errorMsg = `Failed to load SSL certificates: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic for transient failures
+      if (retryCount.certificates < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, certificates: prev.certificates + 1 }));
+          loadCertificates();
+        }, 2000 * (retryCount.certificates + 1)); // Exponential backoff
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -89,46 +113,96 @@ const TraefikSSL = () => {
 
   const handleRenew = async (certId) => {
     setRenewing(true);
-    try {
-      const response = await fetch(`/api/v1/traefik/certificates/${certId}/renew`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+    setRetryCount(prev => ({ ...prev, renew: 0 })); // Reset retry count
+
+    const attemptRenew = async (attempt = 0) => {
+      try {
+        const response = await fetch(`/api/v1/traefik/certificates/${certId}/renew`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-      });
 
-      if (!response.ok) throw new Error('Certificate renewal failed');
+        const data = await response.json();
+        setSuccess('Certificate renewed successfully');
+        toast.success('Certificate renewed successfully');
+        loadCertificates();
+        setError(null);
+      } catch (err) {
+        console.error(`Failed to renew certificate (attempt ${attempt + 1}/${maxRetries}):`, err);
+        const errorMsg = `Certificate renewal failed: ${err.message}`;
 
-      setSuccess('Certificate renewed successfully');
-      loadCertificates();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setRenewing(false);
-      handleMenuClose();
-    }
+        // Retry logic for transient failures
+        if (attempt < maxRetries - 1) {
+          setRetryCount(prev => ({ ...prev, renew: attempt + 1 }));
+          setTimeout(() => {
+            attemptRenew(attempt + 1);
+          }, 2000 * (attempt + 1)); // Exponential backoff
+        } else {
+          setError(errorMsg);
+          toast.error(errorMsg);
+        }
+      } finally {
+        if (attempt === 0 || attempt >= maxRetries - 1) {
+          setRenewing(false);
+          handleMenuClose();
+        }
+      }
+    };
+
+    await attemptRenew();
   };
 
   const handleRenewAll = async () => {
     setRenewing(true);
-    try {
-      const response = await fetch('/api/v1/traefik/certificates/renew', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+    setRetryCount(prev => ({ ...prev, renew: 0 })); // Reset retry count
+
+    const attemptRenewAll = async (attempt = 0) => {
+      try {
+        const response = await fetch('/api/v1/traefik/certificates/renew', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-      });
 
-      if (!response.ok) throw new Error('Bulk renewal failed');
+        const data = await response.json();
+        const successMsg = `Renewed ${data.count || 0} certificates successfully`;
+        setSuccess(successMsg);
+        toast.success(successMsg);
+        loadCertificates();
+        setError(null);
+      } catch (err) {
+        console.error(`Failed to renew all certificates (attempt ${attempt + 1}/${maxRetries}):`, err);
+        const errorMsg = `Bulk renewal failed: ${err.message}`;
 
-      const data = await response.json();
-      setSuccess(`Renewed ${data.count} certificates successfully`);
-      loadCertificates();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setRenewing(false);
-    }
+        // Retry logic for transient failures
+        if (attempt < maxRetries - 1) {
+          setRetryCount(prev => ({ ...prev, renew: attempt + 1 }));
+          setTimeout(() => {
+            attemptRenewAll(attempt + 1);
+          }, 2000 * (attempt + 1)); // Exponential backoff
+        } else {
+          setError(errorMsg);
+          toast.error(errorMsg);
+        }
+      } finally {
+        if (attempt === 0 || attempt >= maxRetries - 1) {
+          setRenewing(false);
+        }
+      }
+    };
+
+    await attemptRenewAll();
   };
 
   const handleViewDetails = async (cert) => {
@@ -227,7 +301,32 @@ const TraefikSSL = () => {
       {renewing && <LinearProgress sx={{ mb: 3 }} />}
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          onClose={() => setError(null)}
+          action={
+            retryCount.certificates > 0 && retryCount.certificates < maxRetries ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="caption" sx={{ mr: 1 }}>
+                  Retrying... ({retryCount.certificates}/{maxRetries})
+                </Typography>
+              </Box>
+            ) : retryCount.certificates >= maxRetries ? (
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  setError(null);
+                  setRetryCount({ certificates: 0, renew: 0 });
+                  loadCertificates();
+                }}
+              >
+                Retry Now
+              </Button>
+            ) : null
+          }
+        >
           {error}
         </Alert>
       )}

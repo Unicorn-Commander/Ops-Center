@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Box,
   Container,
@@ -18,7 +19,8 @@ import {
 import {
   ChartBarIcon,
   ArrowDownTrayIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import {
   Chart as ChartJS,
@@ -33,6 +35,8 @@ import {
   Legend
 } from 'chart.js';
 import { Line, Bar, Pie } from 'react-chartjs-2';
+import { useToast } from '../components/Toast';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Register ChartJS components
 ChartJS.register(
@@ -48,15 +52,20 @@ ChartJS.register(
 );
 
 const TraefikMetrics = () => {
+  const toast = useToast();
+  const { theme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState('day');
+  const [retryCount, setRetryCount] = useState(0);
   const [metricsData, setMetricsData] = useState({
     requestsByRoute: [],
     responseTimes: [],
     errorRates: [],
     statusCodes: {}
   });
+
+  const maxRetries = 3;
 
   useEffect(() => {
     loadMetrics();
@@ -71,13 +80,28 @@ const TraefikMetrics = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Failed to load metrics');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       setMetricsData(data);
       setError(null);
+      setRetryCount(0);
     } catch (err) {
-      setError(err.message);
+      console.error('Failed to load Traefik metrics:', err);
+      const errorMsg = `Failed to load traffic metrics: ${err.message}`;
+      setError(errorMsg);
+
+      // Retry logic for transient failures
+      if (retryCount < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadMetrics();
+        }, 2000 * (retryCount + 1)); // Exponential backoff
+      } else {
+        toast.error(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -91,7 +115,9 @@ const TraefikMetrics = () => {
         }
       });
 
-      if (!response.ok) throw new Error('Export failed');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: Export failed`);
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -100,8 +126,12 @@ const TraefikMetrics = () => {
       a.download = `traefik-metrics-${timeRange}-${Date.now()}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
+      toast.success('Metrics exported successfully');
     } catch (err) {
-      setError(err.message);
+      console.error('Export failed:', err);
+      const errorMsg = `Failed to export metrics: ${err.message}`;
+      setError(errorMsg);
+      toast.error(errorMsg);
     }
   };
 
@@ -217,10 +247,38 @@ const TraefikMetrics = () => {
         </Box>
       </Box>
 
+      {/* Error Alert with Retry */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Alert
+            severity="error"
+            sx={{ mb: 3 }}
+            onClose={() => setError(null)}
+            action={
+              <Box display="flex" alignItems="center" gap={1}>
+                {retryCount > 0 && retryCount < maxRetries && (
+                  <Typography variant="caption" sx={{ mr: 1 }}>
+                    Retrying... (Attempt {retryCount}/{maxRetries})
+                  </Typography>
+                )}
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={loadMetrics}
+                  startIcon={<ArrowPathIcon style={{ width: 16, height: 16 }} />}
+                >
+                  Retry Now
+                </Button>
+              </Box>
+            }
+            icon={<ExclamationTriangleIcon style={{ width: 20, height: 20 }} />}
+          >
+            {error}
+          </Alert>
+        </motion.div>
       )}
 
       {/* Charts Grid */}

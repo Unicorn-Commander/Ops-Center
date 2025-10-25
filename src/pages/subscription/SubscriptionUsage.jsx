@@ -4,9 +4,11 @@ import {
   ChartBarIcon,
   ArrowPathIcon,
   DocumentArrowDownIcon,
-  ClockIcon
+  ClockIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useToast } from '../../components/Toast';
 import {
   LineChart,
   Line,
@@ -40,38 +42,95 @@ const formatDate = (dateString) => {
 
 export default function SubscriptionUsage() {
   const { theme } = useTheme();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [usage, setUsage] = useState(null);
   const [usageHistory, setUsageHistory] = useState([]);
   const [period, setPeriod] = useState('week'); // week, month
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState({
+    current: null,
+    history: null,
+    export: null
+  });
+  const [retryCount, setRetryCount] = useState({
+    current: 0,
+    history: 0
+  });
+  const maxRetries = 3;
 
   useEffect(() => {
     loadUsageData();
   }, [period]);
 
+  const fetchCurrentUsage = async () => {
+    try {
+      const response = await fetch('/api/v1/usage/current');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setUsage(data);
+      setErrors(prev => ({ ...prev, current: null }));
+      setRetryCount(prev => ({ ...prev, current: 0 }));
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch current usage:', error);
+      const errorMsg = `Failed to load current usage: ${error.message}`;
+      setErrors(prev => ({ ...prev, current: errorMsg }));
+
+      // Retry logic for transient failures
+      if (retryCount.current < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, current: prev.current + 1 }));
+          fetchCurrentUsage();
+        }, 2000 * (retryCount.current + 1)); // Exponential backoff
+      } else {
+        toast.error(errorMsg);
+      }
+      throw error;
+    }
+  };
+
+  const fetchUsageHistory = async () => {
+    try {
+      const response = await fetch(`/api/v1/usage/history?period=${period}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setUsageHistory(data);
+      setErrors(prev => ({ ...prev, history: null }));
+      setRetryCount(prev => ({ ...prev, history: 0 }));
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch usage history:', error);
+      const errorMsg = `Failed to load usage history: ${error.message}`;
+      setErrors(prev => ({ ...prev, history: errorMsg }));
+      setUsageHistory([]); // Fallback to empty array
+
+      // Retry logic for transient failures
+      if (retryCount.history < maxRetries) {
+        setTimeout(() => {
+          setRetryCount(prev => ({ ...prev, history: prev.history + 1 }));
+          fetchUsageHistory();
+        }, 2000 * (retryCount.history + 1));
+      } else {
+        toast.warning(errorMsg); // Use warning since history is less critical
+      }
+      throw error;
+    }
+  };
+
   const loadUsageData = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const [currentRes, historyRes] = await Promise.all([
-        fetch('/api/v1/usage/current'),
-        fetch(`/api/v1/usage/history?period=${period}`)
+      await Promise.all([
+        fetchCurrentUsage(),
+        fetchUsageHistory()
       ]);
-
-      if (currentRes.ok) {
-        setUsage(await currentRes.json());
-      } else {
-        setError('Failed to load current usage');
-      }
-
-      if (historyRes.ok) {
-        setUsageHistory(await historyRes.json());
-      }
     } catch (error) {
-      console.error('Error loading usage data:', error);
-      setError('Network error');
+      // Errors handled in individual fetch functions
     } finally {
       setLoading(false);
     }
@@ -79,26 +138,41 @@ export default function SubscriptionUsage() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadUsageData();
-    setRefreshing(false);
+    try {
+      await loadUsageData();
+      toast.success('Usage data refreshed successfully');
+    } catch (error) {
+      // Error already handled in loadUsageData
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleExport = async () => {
     try {
+      setErrors(prev => ({ ...prev, export: null }));
       const res = await fetch(`/api/v1/usage/export?period=${period}`);
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `usage-report-${period}-${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `usage-report-${period}-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success('Usage report exported successfully');
     } catch (error) {
       console.error('Error exporting usage:', error);
+      const errorMsg = `Failed to export usage report: ${error.message}`;
+      setErrors(prev => ({ ...prev, export: errorMsg }));
+      toast.error(errorMsg);
     }
   };
 
@@ -107,14 +181,6 @@ export default function SubscriptionUsage() {
       <div className={`${theme.card} rounded-xl p-6 animate-pulse`}>
         <div className="h-6 bg-slate-700 rounded w-1/3 mb-4"></div>
         <div className="h-64 bg-slate-700 rounded"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={`${theme.card} rounded-xl p-6 border border-red-500/30`}>
-        <p className="text-red-400">{error}</p>
       </div>
     );
   }
@@ -139,6 +205,78 @@ export default function SubscriptionUsage() {
 
   return (
     <div className="space-y-6">
+      {/* Error Alerts */}
+      {(errors.current || errors.history || errors.export) && (
+        <div className="space-y-2">
+          {errors.current && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-red-900/20 border border-red-500/50 rounded-xl p-4 flex items-start gap-3"
+            >
+              <ExclamationTriangleIcon className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-200 text-sm font-medium">{errors.current}</p>
+                {retryCount.current > 0 && retryCount.current < maxRetries && (
+                  <p className="text-red-300 text-xs mt-1">
+                    Retrying... (Attempt {retryCount.current}/{maxRetries})
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={fetchCurrentUsage}
+                className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-500 transition-colors"
+              >
+                Retry Now
+              </button>
+            </motion.div>
+          )}
+
+          {errors.history && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-yellow-900/20 border border-yellow-500/50 rounded-xl p-4 flex items-start gap-3"
+            >
+              <ExclamationTriangleIcon className="h-5 w-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-yellow-200 text-sm font-medium">{errors.history}</p>
+                {retryCount.history > 0 && retryCount.history < maxRetries && (
+                  <p className="text-yellow-300 text-xs mt-1">
+                    Retrying... (Attempt {retryCount.history}/{maxRetries})
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={fetchUsageHistory}
+                className="px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-500 transition-colors"
+              >
+                Retry Now
+              </button>
+            </motion.div>
+          )}
+
+          {errors.export && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-orange-900/20 border border-orange-500/50 rounded-xl p-4 flex items-start gap-3"
+            >
+              <ExclamationTriangleIcon className="h-5 w-5 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-orange-200 text-sm font-medium">{errors.export}</p>
+              </div>
+              <button
+                onClick={() => setErrors(prev => ({ ...prev, export: null }))}
+                className="text-orange-300 hover:text-orange-100 transition-colors"
+              >
+                ×
+              </button>
+            </motion.div>
+          )}
+        </div>
+      )}
+
       {/* Header with Controls */}
       <div className="flex items-center justify-between">
         <h3 className={`text-lg font-semibold ${theme.text.primary} flex items-center gap-2`}>
