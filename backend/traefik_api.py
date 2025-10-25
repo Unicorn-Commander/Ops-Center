@@ -226,6 +226,110 @@ async def get_acme_status():
 
 # ==================== Service Management ====================
 
+@router.get("/services/discover")
+async def discover_docker_services():
+    """
+    Discover Docker services suitable for Traefik routing (C11)
+
+    Scans running Docker containers and suggests Traefik configurations
+    for services with traefik.enable=true label.
+
+    Returns:
+        List of discoverable services with suggested route configurations
+    """
+    try:
+        import docker
+
+        # Connect to Docker
+        try:
+            client = docker.from_env()
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to connect to Docker: {e}"
+            )
+
+        discovered_services = []
+
+        # List all running containers
+        containers = client.containers.list()
+
+        for container in containers:
+            try:
+                # Get container details
+                labels = container.labels
+                name = container.name
+                networks = list(container.attrs['NetworkSettings']['Networks'].keys())
+
+                # Check if Traefik is enabled
+                traefik_enabled = labels.get('traefik.enable', '').lower() == 'true'
+
+                # Get exposed ports
+                ports_config = container.attrs['NetworkSettings']['Ports'] or {}
+                ports = []
+                for port_spec, bindings in ports_config.items():
+                    if bindings:
+                        for binding in bindings:
+                            ports.append({
+                                'container_port': port_spec,
+                                'host_port': binding.get('HostPort', '')
+                            })
+
+                # Extract Traefik-specific labels
+                traefik_labels = {
+                    k: v for k, v in labels.items()
+                    if k.startswith('traefik.')
+                }
+
+                # Determine suggested configuration
+                suggested_host = labels.get('traefik.http.routers.rule', '')
+                if not suggested_host and traefik_enabled:
+                    # Generate suggestion based on container name
+                    suggested_host = f"Host(`{name}.unicorncommander.ai`)"
+
+                suggested_service = labels.get('traefik.http.services.loadbalancer.server.port', '')
+                if not suggested_service and ports:
+                    # Use first exposed port
+                    suggested_service = f"http://{name}:{ports[0]['container_port'].split('/')[0]}"
+
+                service_info = {
+                    'container_name': name,
+                    'container_id': container.short_id,
+                    'networks': networks,
+                    'ports': ports,
+                    'traefik_enabled': traefik_enabled,
+                    'traefik_labels': traefik_labels,
+                    'suggested_config': {
+                        'route_name': f"{name}-route",
+                        'rule': suggested_host or f"Host(`{name}.localhost`)",
+                        'service': f"{name}-service",
+                        'backend_url': suggested_service or f"http://{name}:80",
+                        'entrypoints': ['websecure'],
+                        'tls_enabled': True
+                    } if traefik_enabled or not traefik_labels else None
+                }
+
+                # Only include if relevant for Traefik
+                if traefik_enabled or traefik_labels or ports:
+                    discovered_services.append(service_info)
+
+            except Exception as e:
+                logger.warning(f"Failed to process container {container.name}: {e}")
+                continue
+
+        return {
+            "discovered_services": discovered_services,
+            "count": len(discovered_services),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to discover services: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/services")
 async def list_services():
     """List all Traefik services"""
@@ -679,113 +783,68 @@ async def get_traefik_metrics(format: str = Query(default="json", regex="^(json|
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== Service Discovery (C11) ====================
+# ==================== SSL Certificate Renewal (C12) ====================
 
-@router.get("/services/discover")
-async def discover_docker_services():
+@router.post("/ssl/renew/bulk")
+async def renew_certificates_bulk(certificate_ids: List[str]):
     """
-    Discover Docker services suitable for Traefik routing (C11)
+    Renew multiple SSL certificates in bulk (C12)
 
-    Scans running Docker containers and suggests Traefik configurations
-    for services with traefik.enable=true label.
+    Request Body:
+        certificate_ids: Array of certificate domain names or IDs
 
     Returns:
-        List of discoverable services with suggested route configurations
+        Bulk renewal results with success/failure counts
     """
     try:
-        import docker
+        import asyncio
 
-        # Connect to Docker
-        try:
-            client = docker.from_env()
-        except Exception as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Failed to connect to Docker: {e}"
-            )
+        results = {
+            "total": len(certificate_ids),
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
 
-        discovered_services = []
-
-        # List all running containers
-        containers = client.containers.list()
-
-        for container in containers:
+        for cert_id in certificate_ids:
             try:
-                # Get container details
-                labels = container.labels
-                name = container.name
-                networks = list(container.attrs['NetworkSettings']['Networks'].keys())
+                # Attempt renewal
+                renewal = await renew_certificate(cert_id)
+                results["successful"] += 1
+                results["results"].append({
+                    "certificate_id": cert_id,
+                    "status": "success",
+                    "result": renewal
+                })
 
-                # Check if Traefik is enabled
-                traefik_enabled = labels.get('traefik.enable', '').lower() == 'true'
-
-                # Get exposed ports
-                ports_config = container.attrs['NetworkSettings']['Ports'] or {}
-                ports = []
-                for port_spec, bindings in ports_config.items():
-                    if bindings:
-                        for binding in bindings:
-                            ports.append({
-                                'container_port': port_spec,
-                                'host_port': binding.get('HostPort', '')
-                            })
-
-                # Extract Traefik-specific labels
-                traefik_labels = {
-                    k: v for k, v in labels.items()
-                    if k.startswith('traefik.')
-                }
-
-                # Determine suggested configuration
-                suggested_host = labels.get('traefik.http.routers.rule', '')
-                if not suggested_host and traefik_enabled:
-                    # Generate suggestion based on container name
-                    suggested_host = f"Host(`{name}.unicorncommander.ai`)"
-
-                suggested_service = labels.get('traefik.http.services.loadbalancer.server.port', '')
-                if not suggested_service and ports:
-                    # Use first exposed port
-                    suggested_service = f"http://{name}:{ports[0]['container_port'].split('/')[0]}"
-
-                service_info = {
-                    'container_name': name,
-                    'container_id': container.short_id,
-                    'networks': networks,
-                    'ports': ports,
-                    'traefik_enabled': traefik_enabled,
-                    'traefik_labels': traefik_labels,
-                    'suggested_config': {
-                        'route_name': f"{name}-route",
-                        'rule': suggested_host or f"Host(`{name}.localhost`)",
-                        'service': f"{name}-service",
-                        'backend_url': suggested_service or f"http://{name}:80",
-                        'entrypoints': ['websecure'],
-                        'tls_enabled': True
-                    } if traefik_enabled or not traefik_labels else None
-                }
-
-                # Only include if relevant for Traefik
-                if traefik_enabled or traefik_labels or ports:
-                    discovered_services.append(service_info)
+            except HTTPException as e:
+                results["failed"] += 1
+                results["results"].append({
+                    "certificate_id": cert_id,
+                    "status": "failed",
+                    "error": e.detail
+                })
+                logger.error(f"Bulk renewal failed for {cert_id}: {e.detail}")
 
             except Exception as e:
-                logger.warning(f"Failed to process container {container.name}: {e}")
-                continue
+                results["failed"] += 1
+                results["results"].append({
+                    "certificate_id": cert_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+                logger.error(f"Bulk renewal failed for {cert_id}: {e}")
 
         return {
-            "discovered_services": discovered_services,
-            "count": len(discovered_services),
+            "success": results["failed"] == 0,
+            "summary": results,
             "timestamp": datetime.utcnow().isoformat()
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Failed to discover services: {e}")
+        logger.error(f"Bulk certificate renewal failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ==================== SSL Certificate Renewal (C12) ====================
 
 @router.post("/ssl/renew/{certificate_id}")
 async def renew_certificate(certificate_id: str):
@@ -849,67 +908,6 @@ async def renew_certificate(certificate_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to renew certificate {certificate_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/ssl/renew/bulk")
-async def renew_certificates_bulk(certificate_ids: List[str]):
-    """
-    Renew multiple SSL certificates in bulk (C12)
-
-    Request Body:
-        certificate_ids: Array of certificate domain names or IDs
-
-    Returns:
-        Bulk renewal results with success/failure counts
-    """
-    try:
-        import asyncio
-
-        results = {
-            "total": len(certificate_ids),
-            "successful": 0,
-            "failed": 0,
-            "results": []
-        }
-
-        for cert_id in certificate_ids:
-            try:
-                # Attempt renewal
-                renewal = await renew_certificate(cert_id)
-                results["successful"] += 1
-                results["results"].append({
-                    "certificate_id": cert_id,
-                    "status": "success",
-                    "result": renewal
-                })
-
-            except HTTPException as e:
-                results["failed"] += 1
-                results["results"].append({
-                    "certificate_id": cert_id,
-                    "status": "failed",
-                    "error": e.detail
-                })
-                logger.error(f"Bulk renewal failed for {cert_id}: {e.detail}")
-
-            except Exception as e:
-                results["failed"] += 1
-                results["results"].append({
-                    "certificate_id": cert_id,
-                    "status": "failed",
-                    "error": str(e)
-                })
-                logger.error(f"Bulk renewal failed for {cert_id}: {e}")
-
-        return {
-            "success": results["failed"] == 0,
-            "summary": results,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"Bulk certificate renewal failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
