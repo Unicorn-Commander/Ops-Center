@@ -17,6 +17,7 @@ import {
   ClipboardDocumentIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../components/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Email Provider API helper
@@ -236,6 +237,7 @@ const copyToClipboard = (text) => {
 // Main EmailSettings component
 export default function EmailSettings() {
   const { currentTheme } = useTheme();
+  const toast = useToast();
   const [providers, setProviders] = useState([]);
   const [activeProvider, setActiveProvider] = useState(null);
   const [emailHistory, setEmailHistory] = useState([]);
@@ -293,7 +295,7 @@ export default function EmailSettings() {
       setEmailHistory(historyData.history || []);
     } catch (error) {
       console.error('Failed to load email settings:', error);
-      alert('Failed to load email settings: ' + error.message);
+      toast.error('Failed to load email settings: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -363,7 +365,7 @@ export default function EmailSettings() {
       // Validate required fields
       const selectedType = PROVIDER_TYPES.find(p => p.id === formData.provider_type);
       if (!selectedType) {
-        alert('Please select a provider type');
+        toast.warning('Please select a provider type');
         return;
       }
 
@@ -409,7 +411,7 @@ export default function EmailSettings() {
           providerData.provider_config = { ...providerData.provider_config, ...parsedConfig };
         }
       } catch (e) {
-        alert('Invalid JSON in configuration field');
+        toast.error('Invalid JSON in configuration field');
         return;
       }
 
@@ -420,44 +422,44 @@ export default function EmailSettings() {
         await emailProviderAPI.createProvider(providerData);
       }
 
-      alert(editingProvider ? 'Provider updated successfully' : 'Provider created successfully');
+      toast.success(editingProvider ? 'Provider updated successfully' : 'Provider created successfully');
       closeProviderDialog();
       loadData();
     } catch (error) {
       console.error('Failed to save provider:', error);
       // Better error display
       const errorMsg = error.message || String(error) || 'Unknown error';
-      alert('Failed to save provider: ' + errorMsg);
+      toast.error('Failed to save provider: ' + errorMsg);
     }
   };
 
   const handleDeleteProvider = async (providerId) => {
     try {
       await emailProviderAPI.deleteProvider(providerId);
-      alert('Provider deleted successfully');
+      toast.success('Provider deleted successfully');
       setShowDeleteConfirm(null);
       loadData();
     } catch (error) {
       console.error('Failed to delete provider:', error);
-      alert('Failed to delete provider: ' + error.message);
+      toast.error('Failed to delete provider: ' + error.message);
     }
   };
 
   const handleSendTestEmail = async () => {
     if (!testEmail) {
-      alert('Please enter a recipient email address');
+      toast.warning('Please enter a recipient email address');
       return;
     }
 
     try {
       await emailProviderAPI.sendTestEmail(testEmail);
-      alert('Test email sent successfully! Check your inbox.');
+      toast.success('Test email sent successfully! Check your inbox.');
       setShowTestDialog(false);
       setTestEmail('');
       loadData(); // Refresh history
     } catch (error) {
       console.error('Failed to send test email:', error);
-      alert('Failed to send test email: ' + error.message);
+      toast.error('Failed to send test email: ' + error.message);
     }
   };
 
@@ -933,7 +935,7 @@ export default function EmailSettings() {
                         <button
                           onClick={() => {
                             copyToClipboard(step.value);
-                            alert('Copied to clipboard!');
+                            toast.success('Copied to clipboard!');
                           }}
                           className="p-1 hover:bg-white/10 rounded"
                         >

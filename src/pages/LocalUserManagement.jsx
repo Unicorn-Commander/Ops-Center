@@ -56,8 +56,12 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { alpha } from '@mui/material/styles';
+import { useToast } from '../components/Toast';
 
 const LocalUserManagement = () => {
+  // Toast notifications
+  const toast = useToast();
+
   // State management
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -319,7 +323,7 @@ const LocalUserManagement = () => {
 
   const handleAddSSHKey = async () => {
     if (!validateSSHKey(newSSHKey)) {
-      alert('Invalid SSH key format. Key must start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-nistp*');
+      toast.error('Invalid SSH key format. Key must start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-nistp*');
       return;
     }
 

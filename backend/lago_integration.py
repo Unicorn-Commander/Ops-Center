@@ -725,3 +725,138 @@ async def check_lago_health() -> Dict[str, Any]:
             "api_url": LAGO_API_URL,
             "message": f"Cannot connect to Lago API: {e}"
         }
+
+
+# ============================================
+# NEW METHODS: Epic 2.4 - Subscription Changes
+# ============================================
+
+async def update_subscription_plan(
+    org_id: str,
+    new_plan_code: str,
+    effective_date: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update an existing subscription to a new plan.
+    This is the recommended way to change plans (vs terminate+create).
+
+    Args:
+        org_id: Organization ID
+        new_plan_code: New Lago plan code (e.g., "professional_monthly")
+        effective_date: When change takes effect (ISO format), defaults to now
+
+    Returns:
+        Updated subscription data
+
+    Raises:
+        LagoIntegrationError: If update fails
+    """
+    if not LAGO_API_KEY:
+        raise LagoIntegrationError("LAGO_API_KEY not configured")
+
+    # Get current subscription
+    current_sub = await get_subscription(org_id)
+    if not current_sub:
+        raise LagoIntegrationError(f"No active subscription for org {org_id}")
+
+    subscription_id = current_sub.get("external_id")
+
+    update_data = {
+        "subscription": {
+            "plan_code": new_plan_code
+        }
+    }
+
+    if effective_date:
+        update_data["subscription"]["subscription_at"] = effective_date
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{LAGO_API_URL}/api/v1/subscriptions/{subscription_id}",
+                headers={
+                    "Authorization": f"Bearer {LAGO_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json=update_data,
+                timeout=API_TIMEOUT
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Updated subscription for org {org_id} to plan {new_plan_code}")
+                return result.get("subscription", result)
+            else:
+                error_msg = f"Failed to update subscription: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                raise LagoIntegrationError(error_msg)
+
+    except httpx.RequestError as e:
+        error_msg = f"Network error updating subscription: {e}"
+        logger.error(error_msg)
+        raise LagoIntegrationError(error_msg)
+
+
+async def schedule_plan_change(
+    org_id: str,
+    new_plan_code: str,
+    effective_date: str
+) -> bool:
+    """
+    Schedule a subscription plan change for future date.
+    Note: Lago doesn't natively support scheduled changes, so we store
+    this in our database and process it via scheduled job.
+
+    Args:
+        org_id: Organization ID
+        new_plan_code: New plan code
+        effective_date: When change takes effect (ISO format)
+
+    Returns:
+        True if scheduled successfully
+
+    Raises:
+        LagoIntegrationError: If scheduling fails
+    """
+    logger.info(f"Scheduling plan change for {org_id} to {new_plan_code} on {effective_date}")
+
+    # This would be handled by the database layer in subscription_api.py
+    # Just validate the plan exists in Lago
+    # In production, you'd query Lago for plan availability
+
+    # For now, just log and return success
+    # The actual scheduling is done in the subscription_api downgrade endpoint
+    return True
+
+
+async def calculate_proration(
+    org_id: str,
+    current_plan_code: str,
+    new_plan_code: str,
+    days_remaining: int
+) -> Dict[str, float]:
+    """
+    Calculate proration amount for plan change.
+    This is a simple calculation - Stripe handles actual billing.
+
+    Args:
+        org_id: Organization ID
+        current_plan_code: Current plan code
+        new_plan_code: New plan code
+        days_remaining: Days remaining in current period
+
+    Returns:
+        Dict with proration amounts
+    """
+    # This is a simple calculation
+    # In production, you'd query plan prices from Lago or subscription_manager
+
+    # For now, return placeholder values
+    # Actual proration is handled by Stripe
+    return {
+        "current_plan": current_plan_code,
+        "new_plan": new_plan_code,
+        "days_remaining": days_remaining,
+        "proration_amount": 0.0,
+        "note": "Proration calculated by Stripe"
+    }

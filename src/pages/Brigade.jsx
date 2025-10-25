@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../components/Toast';
 
 export default function Brigade() {
+  const toast = useToast();
   const [selectedAgent, setSelectedAgent] = useState('research');
   const [task, setTask] = useState('');
   const [taskHistory, setTaskHistory] = useState([]);
@@ -56,7 +58,7 @@ export default function Brigade() {
       fetchUsage();
     } catch (error) {
       console.error('Error executing task:', error);
-      alert('Failed to execute task');
+      toast.error('Failed to execute task');
     } finally {
       setLoading(false);
     }

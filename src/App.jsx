@@ -11,6 +11,9 @@ import { DeploymentProvider } from './contexts/DeploymentContext';
 import { OrganizationProvider } from './contexts/OrganizationContext';
 import { ToastProvider } from './components/Toast';
 
+// Import touch optimization utilities
+import { initTouchOptimizations } from './utils/touchOptimization';
+
 // Lazy load all pages (loaded on-demand when route is accessed)
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
 const Login = lazy(() => import('./pages/Login'));
@@ -45,6 +48,8 @@ const LLMUsage = lazy(() => import('./pages/LLMUsage'));
 const EmailSettings = lazy(() => import('./pages/EmailSettings'));
 const PlatformSettings = lazy(() => import('./pages/PlatformSettings'));
 const CredentialsManagement = lazy(() => import('./pages/settings/CredentialsManagement'));
+const ApiDocumentation = lazy(() => import('./pages/ApiDocumentation'));
+const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 
 // System pages (lazy loaded)
 const AIModelManagement = lazy(() => import('./pages/AIModelManagement'));
@@ -52,12 +57,12 @@ const Services = lazy(() => import('./pages/Services'));
 const System = lazy(() => import('./pages/System'));
 const HardwareManagement = lazy(() => import('./pages/HardwareManagement'));
 const AdvancedAnalytics = lazy(() => import('./pages/AdvancedAnalytics'));
+const UsageAnalytics = lazy(() => import('./pages/UsageAnalytics'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
 const LocalUsers = lazy(() => import('./pages/LocalUsers'));
 const LocalUserManagement = lazy(() => import('./pages/LocalUserManagement'));
-const PermissionManagement = lazy(() => import('./pages/PermissionManagement'));
 const UsageMetrics = lazy(() => import('./pages/UsageMetrics'));
 const Network = lazy(() => import('./pages/NetworkTabbed'));
 const StorageBackup = lazy(() => import('./pages/StorageBackup'));
@@ -83,6 +88,7 @@ const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
 // Credit & Usage pages (lazy loaded)
 const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
+const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -269,6 +275,8 @@ function AppRoutes() {
                   <Route path="platform/email-settings" element={<EmailSettings />} />
                   <Route path="platform/settings" element={<PlatformSettings />} />
                   <Route path="platform/credentials" element={<CredentialsManagement />} />
+                  <Route path="platform/api-docs" element={<ApiDocumentation />} />
+                  <Route path="platform/performance" element={<PerformanceMonitor />} />
 
                   {/* ============================================================ */}
                   {/* SYSTEM SECTION - Platform administration */}
@@ -278,12 +286,12 @@ function AppRoutes() {
                   <Route path="system/resources" element={<System />} />
                   <Route path="system/hardware" element={<HardwareManagement />} />
                   <Route path="system/analytics" element={<AdvancedAnalytics />} />
+                  <Route path="system/usage-analytics" element={<UsageAnalytics />} />
                   <Route path="system/billing" element={<BillingDashboard />} />
                   <Route path="system/users" element={<UserManagement />} />
                   <Route path="system/users/:userId" element={<UserDetail />} />
                   <Route path="system/local-users" element={<LocalUsers />} />
                   <Route path="system/local-user-management" element={<LocalUserManagement />} />
-                  <Route path="system/permissions" element={<PermissionManagement />} />
                   <Route path="system/usage-metrics" element={<UsageMetrics />} />
                   <Route path="system/network" element={<Network />} />
                   <Route path="system/storage" element={<StorageBackup />} />
@@ -317,6 +325,12 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   <Route path="credits" element={<CreditDashboard />} />
                   <Route path="credits/tiers" element={<TierComparison />} />
+
+                  {/* ============================================================ */}
+                  {/* UPGRADE & PLANS SECTION - Subscription management */}
+                  {/* ============================================================ */}
+                  <Route path="upgrade" element={<UpgradeFlow />} />
+                  <Route path="plans" element={<TierComparison />} />
 
                   {/* ============================================================ */}
                   {/* LEGACY ROUTES - Backwards compatibility (DEPRECATED) */}
@@ -365,8 +379,16 @@ function AppRoutes() {
 
 function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
-  
+
   useEffect(() => {
+    // Initialize touch optimizations for mobile devices
+    initTouchOptimizations({
+      preventZoom: false, // Allow zoom for accessibility
+      optimizeTargets: true,
+      addHoverStates: true,
+      enableRipple: false
+    });
+
     // Check if user needs onboarding (only on admin pages)
     const hasCompletedTour = localStorage.getItem('uc1-tour-completed');
     if (!hasCompletedTour && window.location.pathname.startsWith('/admin')) {

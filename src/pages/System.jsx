@@ -20,6 +20,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useSystem } from '../contexts/SystemContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../components/Toast';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Format utilities
@@ -165,6 +166,7 @@ const ProcessRow = ({ process, onKill, theme }) => {
 export default function System() {
   const { systemStatus, controlService, fetchSystemStatus } = useSystem();
   const { theme } = useTheme();
+  const toast = useToast();
   const [historicalData, setHistoricalData] = useState({
     cpu: [],
     memory: [],
@@ -296,7 +298,7 @@ export default function System() {
       });
 
       if (response.ok) {
-        alert('Cache cleared successfully');
+        toast.success('Cache cleared successfully');
       }
     } catch (error) {
       console.error('Error clearing cache:', error);
@@ -374,8 +376,9 @@ export default function System() {
         {[
           { id: 'overview', name: 'Overview', icon: ChartBarIcon },
           { id: 'processes', name: 'Processes', icon: RectangleStackIcon },
-          { id: 'hardware', name: 'Hardware', icon: ComputerDesktopIcon },
-          { id: 'network', name: 'Network', icon: WifiIcon }
+          { id: 'hardware', name: 'Hardware', icon: ComputerDesktopIcon }
+          // Network tab hidden until network stats API is implemented
+          // { id: 'network', name: 'Network', icon: WifiIcon }
         ].map(({ id, name, icon: Icon }) => (
           <button
             key={id}

@@ -457,3 +457,381 @@ def getTierLevel(tier: str) -> int:
     """Get numeric level for tier comparison"""
     levels = {"trial": 1, "starter": 2, "professional": 3, "enterprise": 4}
     return levels.get(tier, 0)
+
+
+# ============================================================================
+# NEW ENDPOINTS: Self-Service Upgrades & Downgrades (Epic 2.4)
+# ============================================================================
+
+class UpgradeRequest(BaseModel):
+    target_tier: str
+
+class DowngradeRequest(BaseModel):
+    target_tier: str
+
+class ChangePreviewResponse(BaseModel):
+    old_tier: str
+    new_tier: str
+    old_price: float
+    new_price: float
+    proration_amount: float
+    proration_credit: float
+    effective_date: str
+    is_upgrade: bool
+
+@router.post("/upgrade")
+async def initiate_upgrade(
+    request: Request,
+    upgrade_req: UpgradeRequest
+):
+    """
+    Initiate subscription upgrade flow with Stripe Checkout.
+    Upgrades apply immediately with proration.
+
+    Returns Stripe Checkout session URL for payment.
+    """
+    user = await get_current_user(request)
+    org_id = await get_user_org_id(request)
+    target_tier = upgrade_req.target_tier
+
+    logger.info(f"Initiating upgrade for org {org_id} to {target_tier}")
+
+    try:
+        # 1. Get current subscription from Lago
+        current_subscription = await get_subscription(org_id)
+
+        if not current_subscription:
+            raise HTTPException(
+                status_code=404,
+                detail="No active subscription found. Please create a subscription first."
+            )
+
+        current_tier = current_subscription.get("plan_code", "").split("_")[0]
+
+        # 2. Validate this is actually an upgrade (not downgrade)
+        if getTierLevel(target_tier) <= getTierLevel(current_tier):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot upgrade to same or lower tier. Use /downgrade endpoint instead."
+            )
+
+        # 3. Get target plan details
+        target_plan = subscription_manager.get_plan(target_tier)
+        if not target_plan:
+            raise HTTPException(status_code=404, detail=f"Plan {target_tier} not found")
+
+        if not target_plan.stripe_price_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Stripe price not configured for {target_tier} plan"
+            )
+
+        # 4. Import stripe_integration for checkout session
+        from stripe_integration import stripe_integration
+
+        # 5. Get or create Stripe customer
+        customer_email = user.get("email")
+        stripe_customer = await stripe_integration.get_customer_by_email(customer_email)
+
+        if not stripe_customer:
+            # Create new Stripe customer
+            stripe_customer = await stripe_integration.create_customer(
+                email=customer_email,
+                name=user.get("name") or customer_email,
+                metadata={
+                    "org_id": org_id,
+                    "keycloak_user_id": user.get("id"),
+                    "current_tier": current_tier
+                }
+            )
+
+        if not stripe_customer:
+            raise HTTPException(status_code=500, detail="Failed to create Stripe customer")
+
+        # 6. Create Stripe Checkout session for upgrade
+        checkout_url = await stripe_integration.create_checkout_session(
+            customer_id=stripe_customer.get("id"),
+            price_id=target_plan.stripe_price_id,
+            customer_email=customer_email,
+            tier_name=target_tier,
+            billing_cycle="monthly"
+        )
+
+        if not checkout_url:
+            raise HTTPException(status_code=500, detail="Failed to create checkout session")
+
+        logger.info(f"Created upgrade checkout session for {customer_email} -> {target_tier}")
+
+        return {
+            "success": True,
+            "checkout_url": checkout_url,
+            "current_tier": current_tier,
+            "target_tier": target_tier,
+            "target_price": target_plan.price_monthly,
+            "message": f"Redirecting to payment for {target_tier} upgrade"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error initiating upgrade: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to initiate upgrade: {str(e)}")
+
+
+@router.post("/downgrade")
+async def initiate_downgrade(
+    request: Request,
+    downgrade_req: DowngradeRequest
+):
+    """
+    Schedule subscription downgrade at end of current billing period.
+    No immediate payment required.
+    """
+    user = await get_current_user(request)
+    org_id = await get_user_org_id(request)
+    target_tier = downgrade_req.target_tier
+
+    logger.info(f"Initiating downgrade for org {org_id} to {target_tier}")
+
+    try:
+        # 1. Get current subscription from Lago
+        current_subscription = await get_subscription(org_id)
+
+        if not current_subscription:
+            raise HTTPException(
+                status_code=404,
+                detail="No active subscription found"
+            )
+
+        current_tier = current_subscription.get("plan_code", "").split("_")[0]
+
+        # 2. Validate this is actually a downgrade
+        if getTierLevel(target_tier) >= getTierLevel(current_tier):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot downgrade to same or higher tier. Use /upgrade endpoint instead."
+            )
+
+        # 3. Get target plan details
+        target_plan = subscription_manager.get_plan(target_tier)
+        if not target_plan:
+            raise HTTPException(status_code=404, detail=f"Plan {target_tier} not found")
+
+        # 4. Schedule downgrade in Lago at end of period
+        # Note: Lago doesn't have native "schedule change" - we'll terminate current and create new
+        # For now, we'll just update subscription metadata to indicate pending downgrade
+
+        # Get current period end date
+        current_period_end = current_subscription.get("subscription_at") or current_subscription.get("terminated_at")
+
+        # Import database for tracking subscription change
+        from sqlalchemy import text
+        from database.connection import get_db_connection
+
+        async with get_db_connection() as db:
+            # Record subscription change in database
+            change_id = f"{org_id}_{int(datetime.now().timestamp())}"
+
+            await db.execute(
+                text("""
+                    INSERT INTO subscription_changes
+                    (id, user_id, old_tier, new_tier, change_type, effective_date)
+                    VALUES (:id, :user_id, :old_tier, :new_tier, 'downgrade', :effective_date)
+                """),
+                {
+                    "id": change_id,
+                    "user_id": user.get("id"),
+                    "old_tier": current_tier,
+                    "new_tier": target_tier,
+                    "effective_date": current_period_end
+                }
+            )
+            await db.commit()
+
+        # 5. Send downgrade scheduled email (don't fail if email fails)
+        try:
+            await email_service.send_tier_downgrade_notification(
+                user_id=user.get("id"),
+                old_tier=current_tier,
+                new_tier=target_tier,
+                effective_date=current_period_end
+            )
+            logger.info(f"Downgrade notification sent to user {user.get('id')}")
+        except Exception as e:
+            logger.error(f"Failed to send downgrade email: {e}")
+
+        return {
+            "success": True,
+            "current_tier": current_tier,
+            "target_tier": target_tier,
+            "effective_date": current_period_end,
+            "message": f"Downgrade to {target_tier} scheduled for end of billing period",
+            "current_period_end": current_period_end,
+            "new_price": target_plan.price_monthly
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error scheduling downgrade: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to schedule downgrade: {str(e)}")
+
+
+@router.get("/preview-change")
+async def preview_subscription_change(
+    request: Request,
+    target_tier: str
+):
+    """
+    Preview subscription change with proration calculation.
+    Shows amount to charge (upgrade) or credit (downgrade).
+    """
+    user = await get_current_user(request)
+    org_id = await get_user_org_id(request)
+
+    logger.info(f"Previewing change for org {org_id} to {target_tier}")
+
+    try:
+        # 1. Get current subscription
+        current_subscription = await get_subscription(org_id)
+
+        if not current_subscription:
+            raise HTTPException(status_code=404, detail="No active subscription found")
+
+        current_tier = current_subscription.get("plan_code", "").split("_")[0]
+
+        # 2. Get plan details
+        current_plan = subscription_manager.get_plan(current_tier)
+        target_plan = subscription_manager.get_plan(target_tier)
+
+        if not current_plan or not target_plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        # 3. Calculate proration
+        # Get subscription dates
+        subscription_start = current_subscription.get("subscription_at") or current_subscription.get("started_at")
+        current_period_start = datetime.fromisoformat(subscription_start.replace("Z", "+00:00"))
+
+        # Assume 30-day billing cycle
+        days_in_period = 30
+        days_elapsed = (datetime.now() - current_period_start).days
+        days_remaining = max(0, days_in_period - days_elapsed)
+
+        # Calculate proration amounts
+        current_daily_rate = current_plan.price_monthly / days_in_period
+        target_daily_rate = target_plan.price_monthly / days_in_period
+
+        # Amount already paid for remaining days
+        current_period_value = current_daily_rate * days_remaining
+
+        # Amount owed for remaining days at new rate
+        new_period_value = target_daily_rate * days_remaining
+
+        # Proration amount
+        proration_amount = new_period_value - current_period_value
+
+        # Determine if upgrade or downgrade
+        is_upgrade = getTierLevel(target_tier) > getTierLevel(current_tier)
+
+        return ChangePreviewResponse(
+            old_tier=current_tier,
+            new_tier=target_tier,
+            old_price=current_plan.price_monthly,
+            new_price=target_plan.price_monthly,
+            proration_amount=abs(proration_amount),
+            proration_credit=proration_amount if proration_amount < 0 else 0,
+            effective_date="immediate" if is_upgrade else subscription_start,
+            is_upgrade=is_upgrade
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error previewing change: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to preview change: {str(e)}")
+
+
+@router.post("/confirm-upgrade")
+async def confirm_upgrade(
+    request: Request,
+    checkout_session_id: str
+):
+    """
+    Confirm upgrade after successful Stripe payment.
+    Called by webhook or redirect after checkout.
+    """
+    user = await get_current_user(request)
+    org_id = await get_user_org_id(request)
+
+    logger.info(f"Confirming upgrade for org {org_id}, session {checkout_session_id}")
+
+    try:
+        # 1. Verify Stripe checkout session
+        from stripe_integration import stripe_integration
+        import stripe
+
+        session = stripe.checkout.Session.retrieve(checkout_session_id)
+
+        if session.payment_status != "paid":
+            raise HTTPException(
+                status_code=400,
+                detail="Payment not completed"
+            )
+
+        # 2. Get target tier from session metadata
+        target_tier = session.metadata.get("tier_id") or session.metadata.get("tier_name")
+
+        if not target_tier:
+            raise HTTPException(status_code=400, detail="Tier information missing from session")
+
+        # 3. Get current subscription
+        current_subscription = await get_subscription(org_id)
+        old_tier = "trial"
+
+        if current_subscription:
+            old_tier = current_subscription.get("plan_code", "").split("_")[0]
+
+            # Terminate old subscription
+            subscription_id = current_subscription.get("lago_id")
+            await terminate_subscription(org_id, subscription_id)
+
+        # 4. Create new subscription in Lago
+        lago_plan_code = f"{target_tier}_monthly"
+        new_subscription = await create_subscription(org_id, lago_plan_code)
+
+        # 5. Update user tier in Keycloak
+        from keycloak_integration import update_user_attributes
+
+        await update_user_attributes(
+            user.get("email"),
+            {
+                "subscription_tier": [target_tier],
+                "subscription_status": ["active"]
+            }
+        )
+
+        # 6. Send upgrade confirmation email
+        try:
+            await email_service.send_tier_upgrade_notification(
+                user_id=user.get("id"),
+                old_tier=old_tier,
+                new_tier=target_tier
+            )
+        except Exception as e:
+            logger.error(f"Failed to send confirmation email: {e}")
+
+        logger.info(f"Upgrade confirmed: {org_id} from {old_tier} to {target_tier}")
+
+        return {
+            "success": True,
+            "old_tier": old_tier,
+            "new_tier": target_tier,
+            "subscription_id": new_subscription.get("lago_id"),
+            "message": f"Successfully upgraded to {target_tier}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming upgrade: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to confirm upgrade: {str(e)}")

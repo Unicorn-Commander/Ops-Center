@@ -395,3 +395,278 @@ class StripeClient:
         except Exception as e:
             logger.error(f"Error fetching recent charges: {e}")
             return []
+
+    # ========================================================================
+    # NEW METHODS: Epic 2.4 - Self-Service Upgrades
+    # ========================================================================
+
+    async def create_checkout_session(
+        self,
+        customer_id: str,
+        price_id: str,
+        customer_email: str,
+        tier_name: str,
+        billing_cycle: str = "monthly",
+        success_url: Optional[str] = None,
+        cancel_url: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Create a Stripe Checkout session for subscription upgrade.
+
+        Args:
+            customer_id: Stripe customer ID
+            price_id: Stripe price ID for the subscription
+            customer_email: Customer email
+            tier_name: Subscription tier name
+            billing_cycle: monthly or yearly
+            success_url: URL to redirect after successful payment
+            cancel_url: URL to redirect after canceled payment
+
+        Returns:
+            Checkout session URL or None on failure
+        """
+        if not self.enabled:
+            logger.error("Stripe not enabled")
+            return None
+
+        # Default URLs
+        if not success_url:
+            success_url = os.getenv(
+                "STRIPE_SUCCESS_URL",
+                "https://unicorncommander.ai/billing/success"
+            )
+        if not cancel_url:
+            cancel_url = os.getenv(
+                "STRIPE_CANCEL_URL",
+                "https://unicorncommander.ai/billing/canceled"
+            )
+
+        try:
+            session = self.stripe.checkout.Session.create(
+                customer=customer_id,
+                payment_method_types=['card'],
+                line_items=[{
+                    'price': price_id,
+                    'quantity': 1,
+                }],
+                mode='subscription',
+                success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=cancel_url,
+                metadata={
+                    'customer_email': customer_email,
+                    'user_email': customer_email,  # Duplicate for compatibility
+                    'tier_id': tier_name,
+                    'tier_name': tier_name,
+                    'billing_cycle': billing_cycle
+                },
+                subscription_data={
+                    'metadata': {
+                        'tier_id': tier_name,
+                        'tier_name': tier_name,
+                        'billing_cycle': billing_cycle
+                    }
+                }
+            )
+
+            logger.info(f"Created checkout session: {session.id} for {customer_email}")
+            return session.url
+
+        except Exception as e:
+            logger.error(f"Failed to create checkout session: {e}")
+            return None
+
+    async def verify_checkout_session(self, session_id: str) -> Optional[Dict]:
+        """
+        Verify Stripe checkout session completed successfully.
+
+        Args:
+            session_id: Stripe checkout session ID
+
+        Returns:
+            Session details if paid, None otherwise
+        """
+        if not self.enabled:
+            return None
+
+        try:
+            session = self.stripe.checkout.Session.retrieve(session_id)
+
+            if session.payment_status != "paid":
+                logger.warning(f"Session {session_id} not paid: {session.payment_status}")
+                return None
+
+            return {
+                "id": session.id,
+                "customer": session.customer,
+                "subscription": session.subscription,
+                "payment_status": session.payment_status,
+                "customer_email": session.customer_details.email if session.customer_details else None,
+                "tier_name": session.metadata.get("tier_name"),
+                "billing_cycle": session.metadata.get("billing_cycle")
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to verify checkout session {session_id}: {e}")
+            return None
+
+    async def calculate_proration_preview(
+        self,
+        subscription_id: str,
+        new_price_id: str
+    ) -> Optional[Dict]:
+        """
+        Get proration preview from Stripe for subscription change.
+
+        Args:
+            subscription_id: Stripe subscription ID
+            new_price_id: New Stripe price ID
+
+        Returns:
+            Proration details or None on failure
+        """
+        if not self.enabled:
+            return None
+
+        try:
+            # Get current subscription
+            subscription = self.stripe.Subscription.retrieve(subscription_id)
+
+            # Calculate proration using Stripe's upcoming invoice preview
+            upcoming_invoice = self.stripe.Invoice.upcoming(
+                customer=subscription.customer,
+                subscription=subscription_id,
+                subscription_items=[{
+                    'id': subscription['items'].data[0].id,
+                    'price': new_price_id,
+                }],
+                subscription_proration_behavior='always_invoice'
+            )
+
+            # Extract proration details
+            proration_amount = 0
+            for line in upcoming_invoice.lines.data:
+                if line.proration:
+                    proration_amount += line.amount
+
+            return {
+                "proration_amount": proration_amount / 100,  # Convert cents to dollars
+                "total_amount": upcoming_invoice.total / 100,
+                "currency": upcoming_invoice.currency,
+                "period_start": datetime.fromtimestamp(
+                    upcoming_invoice.period_start,
+                    tz=timezone.utc
+                ).isoformat(),
+                "period_end": datetime.fromtimestamp(
+                    upcoming_invoice.period_end,
+                    tz=timezone.utc
+                ).isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to calculate proration: {e}")
+            return None
+
+    async def update_subscription_tier(
+        self,
+        subscription_id: str,
+        new_price_id: str
+    ) -> bool:
+        """
+        Update subscription to a different price/tier.
+
+        Args:
+            subscription_id: Stripe subscription ID
+            new_price_id: New Stripe price ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.enabled:
+            return False
+
+        try:
+            subscription = self.stripe.Subscription.retrieve(subscription_id)
+
+            self.stripe.Subscription.modify(
+                subscription_id,
+                items=[{
+                    'id': subscription['items']['data'][0].id,
+                    'price': new_price_id,
+                }],
+                proration_behavior='always_invoice'
+            )
+
+            logger.info(f"Updated subscription {subscription_id} to price {new_price_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update subscription: {e}")
+            return False
+
+    async def cancel_subscription(
+        self,
+        subscription_id: str,
+        at_period_end: bool = True
+    ) -> bool:
+        """
+        Cancel a subscription.
+
+        Args:
+            subscription_id: Stripe subscription ID
+            at_period_end: If True, cancel at period end; if False, cancel immediately
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.enabled:
+            return False
+
+        try:
+            if at_period_end:
+                subscription = self.stripe.Subscription.modify(
+                    subscription_id,
+                    cancel_at_period_end=True
+                )
+            else:
+                subscription = self.stripe.Subscription.cancel(subscription_id)
+
+            logger.info(f"Canceled subscription: {subscription_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to cancel subscription: {e}")
+            return False
+
+    async def create_customer(
+        self,
+        email: str,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> Optional[Dict]:
+        """
+        Create a Stripe customer.
+
+        Args:
+            email: Customer email address
+            name: Customer name
+            metadata: Additional metadata to store with customer
+
+        Returns:
+            Stripe customer object or None on failure
+        """
+        if not self.enabled:
+            return None
+
+        try:
+            customer = self.stripe.Customer.create(
+                email=email,
+                name=name,
+                metadata=metadata or {}
+            )
+
+            logger.info(f"Created Stripe customer: {customer.id} for {email}")
+            return customer
+
+        except Exception as e:
+            logger.error(f"Failed to create Stripe customer for {email}: {e}")
+            return None

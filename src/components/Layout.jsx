@@ -51,7 +51,8 @@ import {
   MagnifyingGlassIcon,
   SparklesIcon,
   EnvelopeIcon,
-  GlobeAltIcon
+  GlobeAltIcon,
+  CodeBracketIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
@@ -60,6 +61,9 @@ import NavigationItem from './NavigationItem';
 import { routes } from '../config/routes';
 import NotificationBell from './NotificationBell';
 import OrganizationSelector from './OrganizationSelectorSimple';
+import MobileNavigation from './MobileNavigation';
+import MobileBreadcrumbs from './MobileBreadcrumbs';
+import BottomNavBar from './BottomNavBar';
 
 // Icon mapping for dynamic icon resolution from route configuration
 const iconMap = {
@@ -88,7 +92,8 @@ const iconMap = {
   MagnifyingGlassIcon,
   SparklesIcon,
   EnvelopeIcon,
-  GlobeAltIcon
+  GlobeAltIcon,
+  CodeBracketIcon
 };
 
 export default function Layout({ children }) {
@@ -181,8 +186,11 @@ export default function Layout({ children }) {
 
   return (
     <div className={themeClasses.background}>
+      {/* Mobile Navigation - Hamburger menu and drawer */}
+      <MobileNavigation user={userInfo} currentPath={location.pathname} />
+
       <div className="flex h-screen">
-        {/* Sidebar */}
+        {/* Sidebar - Desktop Only */}
         <div className="hidden md:flex md:w-64 md:flex-col">
           <div className={`flex flex-col flex-grow pt-5 pb-4 overflow-y-auto ${themeClasses.sidebar}`}>
             {/* Brand Header */}
@@ -379,14 +387,8 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem
-                        name="Roles & Permissions"
-                        href="/admin/system/permissions"
-                        icon={iconMap.ShieldCheckIcon}
-                        indent={true}
-                      />
-                      <NavigationItem
                         name="API Keys"
-                        href="/admin/authentication"
+                        href="/admin/account/api-keys"
                         icon={iconMap.KeyIcon}
                         indent={true}
                       />
@@ -507,6 +509,12 @@ export default function Layout({ children }) {
                         icon={iconMap.CogIcon}
                         indent={true}
                       />
+                      <NavigationItem
+                        name="API Documentation"
+                        href="/admin/platform/api-docs"
+                        icon={iconMap.CodeBracketIcon}
+                        indent={true}
+                      />
                     </NavigationSection>
                   </>
                 )}
@@ -589,6 +597,9 @@ export default function Layout({ children }) {
 
         {/* Main content */}
         <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Mobile Breadcrumbs - Shows below header on mobile */}
+          <MobileBreadcrumbs path={location.pathname} />
+
           {/* Top Header Bar */}
           <header className={`${
             currentTheme === 'unicorn'
@@ -597,7 +608,8 @@ export default function Layout({ children }) {
               ? 'bg-white border-b border-gray-200'
               : 'bg-slate-800 border-b border-slate-700'
           } shadow-sm`}>
-            <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center justify-between px-4 md:px-4 py-3 pl-20 md:pl-4">
+              {/* pl-20 on mobile to account for hamburger menu button */}
               {/* Left: Page Title or Breadcrumbs */}
               <div className="flex-1">
                 <h2 className={`text-lg font-semibold ${
@@ -611,8 +623,28 @@ export default function Layout({ children }) {
                 </h2>
               </div>
 
-              {/* Right: Organization Selector, Notification Bell and User Info */}
+              {/* Right: Upgrade Button, Organization Selector, Notification Bell and User Info */}
               <div className="flex items-center gap-4">
+                {/* Upgrade Button (if not Enterprise tier) */}
+                {userInfo.subscription_tier && userInfo.subscription_tier !== 'enterprise' && (
+                  <Link
+                    to="/admin/upgrade"
+                    className={`
+                      px-4 py-2 rounded-lg font-semibold text-sm
+                      bg-gradient-to-r from-purple-600 to-pink-600
+                      text-white
+                      hover:from-purple-700 hover:to-pink-700
+                      transition-all duration-200
+                      shadow-lg hover:shadow-xl
+                      flex items-center gap-2
+                      ${currentTheme === 'unicorn' ? 'ring-2 ring-purple-400/50' : ''}
+                    `}
+                  >
+                    <SparklesIcon className="h-5 w-5" />
+                    <span>Upgrade</span>
+                  </Link>
+                )}
+
                 {/* Organization Selector */}
                 <OrganizationSelector />
 
@@ -640,22 +672,39 @@ export default function Layout({ children }) {
                   }`}>
                     {userInfo.username?.charAt(0).toUpperCase() || 'U'}
                   </div>
-                  <span className={`text-sm font-medium ${
-                    currentTheme === 'unicorn'
-                      ? 'text-white'
-                      : currentTheme === 'light'
-                      ? 'text-gray-700'
-                      : 'text-gray-200'
-                  }`}>
-                    {userInfo.username || 'User'}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className={`text-sm font-medium ${
+                      currentTheme === 'unicorn'
+                        ? 'text-white'
+                        : currentTheme === 'light'
+                        ? 'text-gray-700'
+                        : 'text-gray-200'
+                    }`}>
+                      {userInfo.username || 'User'}
+                    </span>
+                    {userInfo.subscription_tier && (
+                      <span className={`text-xs ${
+                        currentTheme === 'unicorn'
+                          ? 'text-purple-300'
+                          : currentTheme === 'light'
+                          ? 'text-gray-500'
+                          : 'text-gray-400'
+                      }`}>
+                        {userInfo.subscription_tier === 'professional' && '💼 Pro'}
+                        {userInfo.subscription_tier === 'enterprise' && '🏢 Enterprise'}
+                        {userInfo.subscription_tier === 'starter' && '🚀 Starter'}
+                        {userInfo.subscription_tier === 'trial' && '🔬 Trial'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </header>
 
           <main className="flex-1 relative overflow-y-auto focus:outline-none">
-            <div className="py-6">
+            <div className="py-6 pb-20 md:pb-6">
+              {/* pb-20 on mobile to account for bottom nav bar */}
               <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
                 {children}
               </div>
@@ -663,6 +712,9 @@ export default function Layout({ children }) {
           </main>
         </div>
       </div>
+
+      {/* Bottom Navigation Bar - Mobile Only */}
+      <BottomNavBar currentPath={location.pathname} userRole={userInfo.role} />
     </div>
   );
 }

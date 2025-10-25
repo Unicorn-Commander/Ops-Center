@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../components/Toast';
 import {
   Brain,
   Zap,
@@ -485,6 +486,7 @@ const PowerLevelCard = ({ level, theme }) => {
 // Main Component
 export default function LiteLLMManagement() {
   const { theme, currentTheme } = useTheme();
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState([]);
   const [statistics, setStatistics] = useState({
@@ -614,9 +616,13 @@ export default function LiteLLMManagement() {
         }
       });
       const data = await response.json();
-      alert(data.success ? `Test successful! (${data.latency}ms)` : `Test failed: ${data.error}`);
+      if (data.success) {
+        toast.success(`Test successful! (${data.latency}ms)`);
+      } else {
+        toast.error(`Test failed: ${data.error}`);
+      }
     } catch (error) {
-      alert('Test failed: ' + error.message);
+      toast.error('Test failed: ' + error.message);
     }
   };
 

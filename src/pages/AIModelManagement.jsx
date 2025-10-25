@@ -26,6 +26,7 @@ import {
   CpuChipIcon
 } from '@heroicons/react/24/outline';
 import { useSystem } from '../contexts/SystemContext';
+import { useToast } from '../components/Toast';
 import ModelSettingsForm from '../components/ModelSettingsForm';
 import modelApi from '../services/modelApi';
 import { serviceInfo, modelTips } from '../data/serviceInfo';
@@ -33,6 +34,7 @@ import SkeletonCard, { SkeletonTable } from '../components/SkeletonCard';
 
 export default function AIModelManagement() {
   const { systemStatus } = useSystem();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('vllm');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -370,7 +372,7 @@ export default function AIModelManagement() {
       }
     } catch (error) {
       console.error('Download error:', error);
-      alert(`Failed to start download: ${error.message}`);
+      toast.error(`Failed to start download: ${error.message}`);
     }
   };
 
@@ -384,7 +386,7 @@ export default function AIModelManagement() {
       }
     } catch (error) {
       console.error('Ollama download error:', error);
-      alert(`Failed to start download: ${error.message}`);
+      toast.error(`Failed to start download: ${error.message}`);
     }
   };
 
@@ -450,7 +452,7 @@ export default function AIModelManagement() {
       loadInstalledModels();
     } catch (error) {
       console.error('Failed to save model settings:', error);
-      alert(`Failed to save settings: ${error.message}`);
+      toast.error(`Failed to save settings: ${error.message}`);
     }
   };
 
@@ -465,11 +467,11 @@ export default function AIModelManagement() {
   const activateModel = async (backend, modelId) => {
     try {
       const result = await modelApi.activateModel(backend, modelId);
-      alert(`Model activated: ${result.message || 'Success'}`);
+      toast.success(`Model activated: ${result.message || 'Success'}`);
       loadInstalledModels();
     } catch (error) {
       console.error('Failed to activate model:', error);
-      alert(`Failed to activate model: ${error.message}`);
+      toast.error(`Failed to activate model: ${error.message}`);
     }
   };
 
@@ -481,11 +483,11 @@ export default function AIModelManagement() {
     
     try {
       await modelApi.deleteModel(backend, modelId);
-      alert('Model deleted successfully');
+      toast.success('Model deleted successfully');
       loadInstalledModels();
     } catch (error) {
       console.error('Failed to delete model:', error);
-      alert(`Failed to delete model: ${error.message}`);
+      toast.error(`Failed to delete model: ${error.message}`);
     }
   };
 
@@ -1320,13 +1322,13 @@ export default function AIModelManagement() {
                   } else if (activeTab === 'reranker') {
                     settingsToSave = rerankerSettings;
                   }
-                  
+
                   await modelApi.updateGlobalSettings(activeTab, settingsToSave);
-                  alert('Global settings saved successfully');
+                  toast.success('Global settings saved successfully');
                   setShowSettings(false);
                 } catch (error) {
                   console.error('Failed to save settings:', error);
-                  alert(`Failed to save settings: ${error.message}`);
+                  toast.error(`Failed to save settings: ${error.message}`);
                 }
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
