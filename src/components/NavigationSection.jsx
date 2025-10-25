@@ -35,7 +35,8 @@ export default function NavigationSection({
   defaultOpen = false,
   onToggle,
   children,
-  className = ''
+  className = '',
+  collapsed = false
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const { currentTheme } = useTheme();
@@ -79,6 +80,11 @@ export default function NavigationSection({
     }
     ${isOpen ? 'transform rotate-0' : ''}
   `;
+
+  // When sidebar is collapsed, render children directly without section wrapper
+  if (collapsed) {
+    return <>{children}</>;
+  }
 
   return (
     <div className={`mb-1 ${className}`}>

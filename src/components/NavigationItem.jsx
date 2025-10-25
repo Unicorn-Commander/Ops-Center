@@ -53,7 +53,8 @@ export default function NavigationItem({
   indent = false,
   external = false,
   className = '',
-  onClick
+  onClick,
+  collapsed = false
 }) {
   const location = useLocation();
   const { currentTheme } = useTheme();
@@ -61,9 +62,9 @@ export default function NavigationItem({
 
   // Theme-aware styling based on active state
   const linkClasses = `
-    group flex items-center px-3 py-2 text-sm font-medium rounded-lg
+    group flex items-center ${collapsed ? 'justify-center px-2' : 'px-3'} py-2 text-sm font-medium rounded-lg
     transition-all duration-200
-    ${indent ? 'pl-11' : ''}
+    ${indent && !collapsed ? 'pl-11' : ''}
     ${isActive
       ? currentTheme === 'unicorn'
         ? 'bg-white/20 text-white shadow-lg backdrop-blur-sm border border-white/20'
@@ -80,7 +81,7 @@ export default function NavigationItem({
   `;
 
   const iconClasses = `
-    mr-3 flex-shrink-0 h-5 w-5 transition-colors duration-200
+    ${collapsed ? '' : 'mr-3'} flex-shrink-0 h-5 w-5 transition-colors duration-200
     ${isActive
       ? currentTheme === 'unicorn'
         ? 'text-yellow-400'
@@ -110,6 +111,7 @@ export default function NavigationItem({
         className={linkClasses}
         target="_blank"
         rel="noopener noreferrer"
+        title={collapsed ? name : ''}
       >
         {Icon && (
           <Icon
@@ -117,7 +119,7 @@ export default function NavigationItem({
             aria-hidden="true"
           />
         )}
-        <span>{name}</span>
+        {!collapsed && <span>{name}</span>}
       </a>
     );
   }
@@ -129,6 +131,7 @@ export default function NavigationItem({
       onClick={handleClick}
       className={linkClasses}
       aria-current={isActive ? 'page' : undefined}
+      title={collapsed ? name : ''}
     >
       {Icon && (
         <Icon
@@ -136,7 +139,7 @@ export default function NavigationItem({
           aria-hidden="true"
         />
       )}
-      <span>{name}</span>
+      {!collapsed && <span>{name}</span>}
     </Link>
   );
 }

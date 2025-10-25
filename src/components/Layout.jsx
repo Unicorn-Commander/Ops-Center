@@ -52,7 +52,10 @@ import {
   SparklesIcon,
   EnvelopeIcon,
   GlobeAltIcon,
-  CodeBracketIcon
+  CodeBracketIcon,
+  ChevronDoubleLeftIcon,
+  ChevronDoubleRightIcon,
+  LockClosedIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
@@ -93,7 +96,8 @@ const iconMap = {
   SparklesIcon,
   EnvelopeIcon,
   GlobeAltIcon,
-  CodeBracketIcon
+  CodeBracketIcon,
+  LockClosedIcon
 };
 
 export default function Layout({ children }) {
@@ -137,6 +141,23 @@ export default function Layout({ children }) {
   };
 
   const [sectionState, setSectionState] = useState(loadSectionState);
+
+  // Sidebar collapse state - Load from localStorage
+  const loadSidebarCollapsed = () => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved === 'true';
+  };
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
+
+  // Toggle sidebar collapsed state
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const newState = !prev;
+      localStorage.setItem('sidebarCollapsed', newState.toString());
+      return newState;
+    });
+  };
 
   // Save section state to localStorage whenever it changes
   const toggleSection = (sectionName) => {
@@ -191,49 +212,81 @@ export default function Layout({ children }) {
 
       <div className="flex h-screen">
         {/* Sidebar - Desktop Only */}
-        <div className="hidden md:flex md:w-64 md:flex-col">
-          <div className={`flex flex-col flex-grow pt-5 pb-4 overflow-y-auto ${themeClasses.sidebar}`}>
+        <div className={`hidden md:flex md:flex-col transition-all duration-300 ${
+          sidebarCollapsed ? 'md:w-20' : 'md:w-64'
+        }`}>
+          <div className={`flex flex-col flex-grow pt-5 pb-4 overflow-y-auto overflow-x-hidden ${themeClasses.sidebar}`}>
+            {/* Collapse/Expand Button */}
+            <button
+              onClick={toggleSidebar}
+              className={`
+                absolute top-5 ${sidebarCollapsed ? 'left-5' : 'right-5'}
+                z-50 p-2 rounded-lg transition-all duration-200
+                ${currentTheme === 'unicorn'
+                  ? 'bg-purple-500/20 text-purple-200 hover:bg-purple-500/30'
+                  : currentTheme === 'light'
+                  ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }
+              `}
+              title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            >
+              {sidebarCollapsed ? (
+                <ChevronDoubleRightIcon className="h-5 w-5" />
+              ) : (
+                <ChevronDoubleLeftIcon className="h-5 w-5" />
+              )}
+            </button>
             {/* Brand Header */}
-            <div className="flex flex-col items-center flex-shrink-0 px-4 mb-8">
+            <div className={`flex flex-col items-center flex-shrink-0 mb-8 transition-all duration-300 ${
+              sidebarCollapsed ? 'px-2' : 'px-4'
+            }`}>
               {/* Main Logo Area - Clickable to navigate to landing page */}
               <Link
                 to="/"
-                className={`flex items-center gap-3 mb-3 cursor-pointer transition-all duration-200 rounded-lg p-2 ${
+                className={`flex items-center ${sidebarCollapsed ? 'flex-col gap-1' : 'gap-3'} mb-3 cursor-pointer transition-all duration-200 rounded-lg p-2 ${
                   currentTheme === 'unicorn'
                     ? 'hover:bg-white/10'
                     : currentTheme === 'light'
                     ? 'hover:bg-gray-100'
                     : 'hover:bg-slate-700/50'
                 }`}
+                title={sidebarCollapsed ? "Ops Center - UC-1 Pro Control" : ""}
               >
                 {/* The Colonel Logo */}
-                <ColonelLogo className="w-14 h-14 drop-shadow-xl" />
-                <div className="text-center">
-                  <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
-                    Ops Center
-                  </h1>
-                  <div className={`text-lg ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
-                    UC-1 Pro Control
+                <ColonelLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                {!sidebarCollapsed && (
+                  <div className="text-center">
+                    <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
+                      Ops Center
+                    </h1>
+                    <div className={`text-lg ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
+                      UC-1 Pro Control
+                    </div>
                   </div>
-                </div>
+                )}
               </Link>
 
-              {/* System Management - subtitle */}
-              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200/70' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-400'} mb-2 font-medium`}>
-                System Management Console
-              </div>
+              {/* System Management - subtitle (hidden when collapsed) */}
+              {!sidebarCollapsed && (
+                <>
+                  <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200/70' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-400'} mb-2 font-medium`}>
+                    System Management Console
+                  </div>
 
-              {/* Version */}
-              <div className={`text-xs ${currentTheme === 'unicorn' ? 'text-purple-300/60' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-500'} font-mono`}>
-                v1.0.0
-              </div>
+                  {/* Version */}
+                  <div className={`text-xs ${currentTheme === 'unicorn' ? 'text-purple-300/60' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-500'} font-mono`}>
+                    v2.1.0
+                  </div>
+                </>
+              )}
             </div>
             <div className="mt-8 flex flex-col flex-1">
               <nav className="flex-1 px-2 space-y-1">
                 {/* ============================ */}
                 {/* DASHBOARD - Top Level */}
                 {/* ============================ */}
-                <NavigationItem
+                <NavigationItem collapsed={sidebarCollapsed}
                   name="Dashboard"
                   href="/admin/"
                   icon={iconMap.HomeIcon}
@@ -244,103 +297,105 @@ export default function Layout({ children }) {
                 {/* ============================ */}
                 {userRole === 'admin' && (
                   <>
-                    {/* Section Header */}
-                    <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
-                      currentTheme === 'unicorn'
-                        ? 'text-purple-300/70'
-                        : currentTheme === 'light'
-                        ? 'text-gray-500'
-                        : 'text-gray-400'
-                    }`}>
-                      <div className="flex-1 h-px bg-current opacity-20"></div>
-                      <span className="text-xs font-bold uppercase tracking-wider">Infrastructure</span>
-                      <div className="flex-1 h-px bg-current opacity-20"></div>
-                    </div>
+                    {/* Section Header (hidden when collapsed) */}
+                    {!sidebarCollapsed && (
+                      <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
+                        currentTheme === 'unicorn'
+                          ? 'text-purple-300/70'
+                          : currentTheme === 'light'
+                          ? 'text-gray-500'
+                          : 'text-gray-400'
+                      }`}>
+                        <div className="flex-1 h-px bg-current opacity-20"></div>
+                        <span className="text-xs font-bold uppercase tracking-wider">Infrastructure</span>
+                        <div className="flex-1 h-px bg-current opacity-20"></div>
+                      </div>
+                    )}
 
-                    <NavigationSection
+                    <NavigationSection collapsed={sidebarCollapsed}
                       title="Infrastructure"
                       icon={iconMap.ComputerDesktopIcon}
                       defaultOpen={sectionState.infrastructure}
                       onToggle={() => toggleSection('infrastructure')}
                     >
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Services"
                         href="/admin/services"
                         icon={iconMap.ServerIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Hardware Management"
                         href="/admin/infrastructure/hardware"
                         icon={iconMap.WrenchIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Monitoring"
                         href="/admin/system"
                         icon={iconMap.ChartBarIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="LLM Management"
                         href="/admin/llm-management"
                         icon={iconMap.CubeIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="LLM Providers"
                         href="/admin/litellm-providers"
                         icon={iconMap.SparklesIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="LLM Usage"
                         href="/admin/llm/usage"
                         icon={iconMap.ChartBarIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Cloudflare DNS"
                         href="/admin/infrastructure/cloudflare"
                         icon={iconMap.GlobeAltIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Traefik"
                         icon={iconMap.ServerIcon}
                       >
-                        <NavigationItem
+                        <NavigationItem collapsed={sidebarCollapsed}
                           name="Dashboard"
                           href="/admin/traefik/dashboard"
                           icon={iconMap.ChartBarIcon}
                           indent={true}
                         />
-                        <NavigationItem
+                        <NavigationItem collapsed={sidebarCollapsed}
                           name="Routes"
                           href="/admin/traefik/routes"
                           icon={iconMap.GlobeAltIcon}
                           indent={true}
                         />
-                        <NavigationItem
+                        <NavigationItem collapsed={sidebarCollapsed}
                           name="Services"
                           href="/admin/traefik/services"
                           icon={iconMap.ServerIcon}
                           indent={true}
                         />
-                        <NavigationItem
+                        <NavigationItem collapsed={sidebarCollapsed}
                           name="SSL Certificates"
                           href="/admin/traefik/ssl"
                           icon={iconMap.LockClosedIcon}
                           indent={true}
                         />
-                        <NavigationItem
+                        <NavigationItem collapsed={sidebarCollapsed}
                           name="Metrics"
                           href="/admin/traefik/metrics"
                           icon={iconMap.ChartBarIcon}
                           indent={true}
                         />
                       </NavigationItem>
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Local Users"
                         href="/admin/system/local-user-management"
                         icon={iconMap.UsersIcon}
@@ -356,6 +411,7 @@ export default function Layout({ children }) {
                 {userRole === 'admin' && (
                   <>
                     {/* Section Header */}
+                    {!sidebarCollapsed && (
                     <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
                       currentTheme === 'unicorn'
                         ? 'text-purple-300/70'
@@ -367,26 +423,27 @@ export default function Layout({ children }) {
                       <span className="text-xs font-bold uppercase tracking-wider">Users & Organizations</span>
                       <div className="flex-1 h-px bg-current opacity-20"></div>
                     </div>
+                    )}
 
-                    <NavigationSection
+                    <NavigationSection collapsed={sidebarCollapsed}
                       title="Users & Organizations"
                       icon={iconMap.UsersIcon}
                       defaultOpen={sectionState.usersOrgs}
                       onToggle={() => toggleSection('usersOrgs')}
                     >
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="User Management"
                         href="/admin/system/users"
                         icon={iconMap.UsersIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Organizations"
                         href="/admin/org/settings"
                         icon={iconMap.BuildingOfficeIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="API Keys"
                         href="/admin/account/api-keys"
                         icon={iconMap.KeyIcon}
@@ -402,6 +459,7 @@ export default function Layout({ children }) {
                 {userRole === 'admin' && (
                   <>
                     {/* Section Header */}
+                    {!sidebarCollapsed && (
                     <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
                       currentTheme === 'unicorn'
                         ? 'text-purple-300/70'
@@ -413,44 +471,45 @@ export default function Layout({ children }) {
                       <span className="text-xs font-bold uppercase tracking-wider">Billing & Usage</span>
                       <div className="flex-1 h-px bg-current opacity-20"></div>
                     </div>
+                    )}
 
-                    <NavigationSection
+                    <NavigationSection collapsed={sidebarCollapsed}
                       title="Billing & Usage"
                       icon={iconMap.CurrencyDollarIcon}
                       defaultOpen={sectionState.billingUsage}
                       onToggle={() => toggleSection('billingUsage')}
                     >
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Credits & Tiers"
                         href="/admin/credits"
                         icon={iconMap.CreditCardIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Billing Dashboard"
                         href="/admin/system/billing"
                         icon={iconMap.CurrencyDollarIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Advanced Analytics"
                         href="/admin/system/analytics"
                         icon={iconMap.ChartBarIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Usage Metrics"
                         href="/admin/system/usage-metrics"
                         icon={iconMap.ChartPieIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Subscriptions"
                         href="/admin/billing"
                         icon={iconMap.RectangleStackIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Invoices"
                         href="/admin/system/billing#invoices"
                         icon={iconMap.DocumentDuplicateIcon}
@@ -466,6 +525,7 @@ export default function Layout({ children }) {
                 {userRole === 'admin' && (
                   <>
                     {/* Section Header */}
+                    {!sidebarCollapsed && (
                     <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
                       currentTheme === 'unicorn'
                         ? 'text-purple-300/70'
@@ -477,39 +537,40 @@ export default function Layout({ children }) {
                       <span className="text-xs font-bold uppercase tracking-wider">Platform</span>
                       <div className="flex-1 h-px bg-current opacity-20"></div>
                     </div>
+                    )}
 
-                    <NavigationSection
+                    <NavigationSection collapsed={sidebarCollapsed}
                       title="Platform"
                       icon={iconMap.SparklesIcon}
                       defaultOpen={sectionState.platform}
                       onToggle={() => toggleSection('platform')}
                     >
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Unicorn Brigade"
                         href="/admin/brigade"
                         icon={iconMap.SparklesIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Center-Deep Search"
                         href="https://search.unicorncommander.ai"
                         icon={iconMap.MagnifyingGlassIcon}
                         indent={true}
                         external={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Email Settings"
                         href="/admin/platform/email-settings"
                         icon={iconMap.EnvelopeIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Platform Settings"
                         href="/admin/platform/settings"
                         icon={iconMap.CogIcon}
                         indent={true}
                       />
-                      <NavigationItem
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="API Documentation"
                         href="/admin/platform/api-docs"
                         icon={iconMap.CodeBracketIcon}
