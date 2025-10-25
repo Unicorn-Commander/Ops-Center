@@ -65,6 +65,7 @@ const HardwareManagement = () => {
   const [history, setHistory] = useState([]);
   const [services, setServices] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [networkData, setNetworkData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [timeRange, setTimeRange] = useState('1hour');
@@ -134,6 +135,36 @@ const HardwareManagement = () => {
     }
   };
 
+  // Fetch network data
+  const fetchNetworkData = async () => {
+    try {
+      const response = await fetch('/api/v1/hardware/network');
+      if (response.ok) {
+        const data = await response.json();
+        setNetworkData(data);
+      } else {
+        // Fallback to reasonable defaults if API not available
+        setNetworkData({
+          upload_rate: 0,
+          download_rate: 0,
+          active_connections: 0,
+          tcp_connections: 0,
+          udp_connections: 0
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch network data:', error);
+      // Fallback to reasonable defaults
+      setNetworkData({
+        upload_rate: 0,
+        download_rate: 0,
+        active_connections: 0,
+        tcp_connections: 0,
+        udp_connections: 0
+      });
+    }
+  };
+
   // Initial load
   useEffect(() => {
     const loadAll = async () => {
@@ -142,7 +173,8 @@ const HardwareManagement = () => {
         fetchHardwareStatus(false),
         fetchHistory(),
         fetchServices(),
-        checkAlerts()
+        checkAlerts(),
+        fetchNetworkData()
       ]);
       setLoading(false);
     };
@@ -168,6 +200,7 @@ const HardwareManagement = () => {
     fetchHistory();
     fetchServices();
     checkAlerts();
+    fetchNetworkData();
   };
 
   // Handle storage cleanup
@@ -361,14 +394,14 @@ const HardwareManagement = () => {
         {/* Network Traffic (using new component) */}
         <Grid item xs={12} md={12} lg={4}>
           <NetworkTrafficChart
-            networkData={{
-              upload_rate: 45.2,
-              download_rate: 89.7,
-              active_connections: 127,
-              tcp_connections: 98,
-              udp_connections: 29
+            networkData={networkData || {
+              upload_rate: 0,
+              download_rate: 0,
+              active_connections: 0,
+              tcp_connections: 0,
+              udp_connections: 0
             }}
-            onRefresh={() => fetchHardwareStatus(true)}
+            onRefresh={fetchNetworkData}
             loading={refreshing}
           />
         </Grid>
@@ -445,256 +478,6 @@ const HardwareManagement = () => {
         </Grid>
       </Grid>
 
-      {/* Legacy Main Stats Grid (kept for backwards compatibility) */}
-      <Grid container spacing={3} mb={3} sx={{ display: 'none' }}>
-        {/* GPU Card */}
-        {hardwareStatus?.gpu && (
-          <Grid item xs={12} md={6} lg={3}>
-            <Card>
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={2}>
-                  <SpeedIcon sx={{ mr: 1, color: 'primary.main' }} />
-                  <Typography variant="h6">GPU</Typography>
-                </Box>
-
-                <Typography variant="body2" color="text.secondary" mb={1}>
-                  {hardwareStatus.gpu.model}
-                </Typography>
-
-                {/* Temperature Gauge */}
-                <Box mb={2}>
-                  <Box display="flex" justifyContent="space-between" mb={0.5}>
-                    <Typography variant="caption">Temperature</Typography>
-                    <Chip
-                      label={`${hardwareStatus.gpu.temperature.toFixed(1)}°C`}
-                      size="small"
-                      color={getTempColor(hardwareStatus.gpu.temperature, 'gpu')}
-                    />
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={(hardwareStatus.gpu.temperature / 100) * 100}
-                    sx={{
-                      height: 8,
-                      borderRadius: 1,
-                      backgroundColor: 'grey.200',
-                      '& .MuiLinearProgress-bar': {
-                        backgroundColor: hardwareStatus.gpu.temperature >= 80 ? 'error.main' :
-                                        hardwareStatus.gpu.temperature >= 70 ? 'warning.main' : 'success.main'
-                      }
-                    }}
-                  />
-                </Box>
-
-                {/* Memory Usage */}
-                <Box mb={2}>
-                  <Box display="flex" justifyContent="space-between" mb={0.5}>
-                    <Typography variant="caption">Memory</Typography>
-                    <Typography variant="caption">
-                      {(hardwareStatus.gpu.memory_used / 1024).toFixed(1)} GB / {(hardwareStatus.gpu.memory_total / 1024).toFixed(1)} GB
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={hardwareStatus.gpu.memory_percent}
-                    sx={{ height: 8, borderRadius: 1 }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    {hardwareStatus.gpu.memory_percent.toFixed(1)}% used
-                  </Typography>
-                </Box>
-
-                {/* Utilization */}
-                <Box mb={2}>
-                  <Box display="flex" justifyContent="space-between" mb={0.5}>
-                    <Typography variant="caption">Utilization</Typography>
-                    <Typography variant="caption">{hardwareStatus.gpu.utilization.toFixed(1)}%</Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={hardwareStatus.gpu.utilization}
-                    sx={{ height: 8, borderRadius: 1 }}
-                  />
-                </Box>
-
-                {/* Power Draw */}
-                <Box>
-                  <Box display="flex" justifyContent="space-between">
-                    <Typography variant="caption">Power</Typography>
-                    <Typography variant="caption">
-                      {hardwareStatus.gpu.power_draw.toFixed(1)} W / {hardwareStatus.gpu.power_limit.toFixed(0)} W
-                    </Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        )}
-
-        {/* CPU Card */}
-        <Grid item xs={12} md={6} lg={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" mb={2}>
-                <ComputerIcon sx={{ mr: 1, color: 'info.main' }} />
-                <Typography variant="h6">CPU</Typography>
-              </Box>
-
-              <Typography variant="body2" color="text.secondary" mb={1}>
-                {hardwareStatus?.cpu?.model || 'Unknown CPU'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" mb={2}>
-                {hardwareStatus?.cpu?.cores} Cores / {hardwareStatus?.cpu?.threads} Threads
-              </Typography>
-
-              {/* CPU Usage */}
-              <Box mb={2}>
-                <Box display="flex" justifyContent="space-between" mb={0.5}>
-                  <Typography variant="caption">Usage</Typography>
-                  <Typography variant="caption">{hardwareStatus?.cpu?.usage.toFixed(1)}%</Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={hardwareStatus?.cpu?.usage || 0}
-                  sx={{ height: 8, borderRadius: 1 }}
-                />
-              </Box>
-
-              {/* Temperature */}
-              {hardwareStatus?.cpu?.temperature && (
-                <Box mb={2}>
-                  <Box display="flex" justifyContent="space-between" mb={0.5}>
-                    <Typography variant="caption">Temperature</Typography>
-                    <Chip
-                      label={`${hardwareStatus.cpu.temperature.toFixed(1)}°C`}
-                      size="small"
-                      color={getTempColor(hardwareStatus.cpu.temperature, 'cpu')}
-                    />
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={(hardwareStatus.cpu.temperature / 100) * 100}
-                    sx={{
-                      height: 8,
-                      borderRadius: 1,
-                      backgroundColor: 'grey.200',
-                      '& .MuiLinearProgress-bar': {
-                        backgroundColor: hardwareStatus.cpu.temperature >= 80 ? 'error.main' :
-                                        hardwareStatus.cpu.temperature >= 70 ? 'warning.main' : 'success.main'
-                      }
-                    }}
-                  />
-                </Box>
-              )}
-
-              {/* Frequency */}
-              <Box>
-                <Box display="flex" justifyContent="space-between">
-                  <Typography variant="caption">Frequency</Typography>
-                  <Typography variant="caption">
-                    {(hardwareStatus?.cpu?.frequency_current / 1000).toFixed(2)} GHz
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Memory Card */}
-        <Grid item xs={12} md={6} lg={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" mb={2}>
-                <MemoryIcon sx={{ mr: 1, color: 'warning.main' }} />
-                <Typography variant="h6">Memory</Typography>
-              </Box>
-
-              <Typography variant="body2" color="text.secondary" mb={2}>
-                System RAM
-              </Typography>
-
-              <Box mb={2}>
-                <Box display="flex" justifyContent="space-between" mb={0.5}>
-                  <Typography variant="caption">Usage</Typography>
-                  <Typography variant="caption">
-                    {formatGB(hardwareStatus?.memory?.used)} GB / {formatGB(hardwareStatus?.memory?.total)} GB
-                  </Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={hardwareStatus?.memory?.percentage || 0}
-                  sx={{ height: 8, borderRadius: 1 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {hardwareStatus?.memory?.percentage.toFixed(1)}% used
-                </Typography>
-              </Box>
-
-              <Box mb={2}>
-                <Box display="flex" justifyContent="space-between">
-                  <Typography variant="caption">Available</Typography>
-                  <Typography variant="caption">
-                    {formatGB(hardwareStatus?.memory?.available)} GB
-                  </Typography>
-                </Box>
-              </Box>
-
-              {hardwareStatus?.memory?.swap_total > 0 && (
-                <Box>
-                  <Box display="flex" justifyContent="space-between">
-                    <Typography variant="caption">Swap</Typography>
-                    <Typography variant="caption">
-                      {formatGB(hardwareStatus.memory.swap_used)} GB / {formatGB(hardwareStatus.memory.swap_total)} GB
-                    </Typography>
-                  </Box>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Disk Card */}
-        <Grid item xs={12} md={6} lg={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" mb={2}>
-                <StorageIcon sx={{ mr: 1, color: 'success.main' }} />
-                <Typography variant="h6">Disk</Typography>
-              </Box>
-
-              <Typography variant="body2" color="text.secondary" mb={2}>
-                Root Filesystem
-              </Typography>
-
-              <Box mb={2}>
-                <Box display="flex" justifyContent="space-between" mb={0.5}>
-                  <Typography variant="caption">Usage</Typography>
-                  <Typography variant="caption">
-                    {formatGB(hardwareStatus?.disk?.used)} GB / {formatGB(hardwareStatus?.disk?.total)} GB
-                  </Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={hardwareStatus?.disk?.percentage || 0}
-                  sx={{ height: 8, borderRadius: 1 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {hardwareStatus?.disk?.percentage.toFixed(1)}% used
-                </Typography>
-              </Box>
-
-              <Box>
-                <Box display="flex" justifyContent="space-between">
-                  <Typography variant="caption">Free Space</Typography>
-                  <Typography variant="caption">
-                    {formatGB(hardwareStatus?.disk?.free)} GB
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
 
       {/* Historical Charts */}
       <Grid container spacing={3} mb={3}>

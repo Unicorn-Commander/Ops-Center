@@ -390,6 +390,42 @@ export default function Dashboard() {
   const vramUsed = systemData?.gpu?.[0]?.memory_used || 0;
   const vramTotal = systemData?.gpu?.[0]?.memory_total || 33554432000; // 32GB default
   const vramPercent = (vramUsed / vramTotal) * 100;
+
+  // Calculate system status dynamically
+  const criticalServices = ['vllm', 'open-webui', 'redis', 'postgresql', 'keycloak'];
+  const runningServices = services?.filter(s => s.status === 'running' || s.status === 'healthy') || [];
+  const criticalRunning = services?.filter(s =>
+    criticalServices.some(cs => s.name.includes(cs)) &&
+    (s.status === 'running' || s.status === 'healthy')
+  ) || [];
+
+  const getSystemStatus = () => {
+    if (!services || services.length === 0) {
+      return { text: 'Loading...', color: 'bg-gray-500', status: 'unknown' };
+    }
+
+    const criticalDown = criticalServices.length - criticalRunning.length;
+    const totalServices = services.length;
+    const runningCount = runningServices.length;
+    const percentage = (runningCount / totalServices) * 100;
+
+    if (criticalDown > 0) {
+      return {
+        text: `Critical Services Down (${criticalDown})`,
+        color: 'bg-red-500',
+        status: 'critical'
+      };
+    }
+    if (percentage === 100) {
+      return { text: 'All Systems Operational', color: 'bg-green-500', status: 'healthy' };
+    }
+    if (percentage >= 90) {
+      return { text: 'Degraded Performance', color: 'bg-yellow-500', status: 'degraded' };
+    }
+    return { text: 'System Issues Detected', color: 'bg-orange-500', status: 'issues' };
+  };
+
+  const systemStatus = getSystemStatus();
   
   // Safer quick actions
   const handleQuickAction = (action) => {
@@ -438,8 +474,8 @@ export default function Dashboard() {
           <div className="text-right">
             <div className={`text-sm ${theme.text.secondary}`}>System Status</div>
             <div className="flex items-center gap-2 mt-1">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className={`text-sm font-semibold ${theme.text.primary}`}>All Systems Operational</span>
+              <div className={`w-2 h-2 ${systemStatus.color} rounded-full ${systemStatus.status === 'healthy' || systemStatus.status === 'unknown' ? 'animate-pulse' : ''}`}></div>
+              <span className={`text-sm font-semibold ${theme.text.primary}`}>{systemStatus.text}</span>
             </div>
           </div>
         </div>
@@ -594,7 +630,7 @@ export default function Dashboard() {
           {/* GPU Usage */}
           <div>
             <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>GPU (RTX 5090)</span>
+              <span className={`text-sm ${theme.text.secondary}`}>GPU {systemData?.gpu?.[0]?.name ? `(${systemData.gpu[0].name})` : ''}</span>
               <span className={`text-sm ${theme.text.primary}`}>{gpuUsage.toFixed(1)}%</span>
             </div>
             <div className="w-full bg-gray-700/30 rounded-full h-3 shadow-inner">
@@ -656,7 +692,7 @@ export default function Dashboard() {
           {/* CPU */}
           <div>
             <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>CPU (i9-13900K)</span>
+              <span className={`text-sm ${theme.text.secondary}`}>CPU {hardwareInfo?.cpu?.model ? `(${hardwareInfo.cpu.model.split(' ').slice(0, 2).join(' ')})` : ''}</span>
               <span className={`text-sm ${theme.text.primary}`}>{systemData?.cpu?.percent?.toFixed(1) || 0}%</span>
             </div>
             <div className="w-full bg-gray-700/30 rounded-full h-3">
