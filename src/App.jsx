@@ -52,7 +52,7 @@ const ApiDocumentation = lazy(() => import('./pages/ApiDocumentation'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 
 // System pages (lazy loaded)
-const AIModelManagement = lazy(() => import('./pages/AIModelManagement'));
+const AIModelManagement = lazy(() => import('./components/AIModelManagement'));
 const Services = lazy(() => import('./pages/Services'));
 const System = lazy(() => import('./pages/System'));
 const HardwareManagement = lazy(() => import('./pages/HardwareManagement'));
