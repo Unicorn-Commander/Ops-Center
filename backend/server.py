@@ -60,6 +60,7 @@ from audit_helpers import (
 from password_policy import validate_password, check_password_strength, get_password_requirements
 from service_discovery import service_discovery
 from lago_webhooks import router as lago_webhook_router
+from webhooks import router as stripe_webhooks_router
 from byok_api import router as byok_router
 from tier_enforcement_middleware import TierEnforcementMiddleware
 from usage_api import router as usage_router
@@ -71,6 +72,7 @@ from billing_api import router as billing_router
 from credit_api import router as credit_router
 from local_user_api import router as local_user_router
 from org_api import router as org_router
+from org_manager import org_manager
 from firewall_api import router as firewall_router
 from cloudflare_api import router as cloudflare_router
 from migration_api import router as migration_router
@@ -85,6 +87,27 @@ from redis_session import redis_session_manager
 from email_scheduler import EmailScheduler
 from email_notification_api import router as notification_router
 
+# System Metrics & Health Monitoring (Epic 2.5)
+from system_metrics_api import router as system_metrics_router
+from metrics_collector import MetricsCollector
+from alert_manager import AlertManager
+
+# Revenue Analytics (Epic 2.6)
+from revenue_analytics import router as revenue_analytics_router
+
+# User Analytics (Epic 2.6)
+from user_analytics import router as user_analytics_router
+
+# Usage Analytics (Epic 2.6)
+from usage_analytics import router as usage_analytics_router
+
+# API Documentation (Epic 2.8)
+from api_docs import router as api_docs_router
+
+# Performance Optimization (Epic 3.1)
+from cache_middleware import CacheHeaderMiddleware, CompressionMiddleware
+# Note: redis_cache_manager provides decorators for API endpoint caching (future use)
+
 # Storage & Backup Management
 from storage_backup_api import router as storage_backup_router
 from restic_api_endpoints import router as restic_backup_router
@@ -97,6 +120,10 @@ from traefik_services_api import router as traefik_services_router
 from traefik_ssl_manager import router as traefik_ssl_router
 from traefik_metrics_api import router as traefik_metrics_router
 from traefik_middlewares_api import router as traefik_middlewares_router
+
+# System Metrics & Analytics (Epic 2.5)
+from system_metrics_api import router as system_metrics_router
+from metrics_collector import MetricsCollector
 
 # Keycloak SSO integration
 try:
@@ -236,6 +263,11 @@ app.add_middleware(
 # Enable GZip compression for faster response times
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Cache middleware for performance optimization (Epic 3.1)
+app.add_middleware(CacheHeaderMiddleware)
+app.add_middleware(CompressionMiddleware)
+logger.info("Cache middleware registered (Epic 3.1)")
+
 # Session Management Middleware
 from starlette.middleware.sessions import SessionMiddleware
 app.add_middleware(
@@ -265,7 +297,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/webhooks/lago",  # Lago webhooks
         "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
         "/api/v1/tier-check/health",  # Health checks
-        "/api/v1/traefik"  # Traefik API (Epic 1.3) - REST API, not form submissions
+        "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
+        "/api/v1/analytics/web-vitals"  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -323,6 +356,43 @@ async def startup_event():
     # except Exception as e:
     #     logger.error(f"Failed to start backup scheduler: {e}")
 
+    # Start metrics collector (Epic 2.5)
+    try:
+        metrics_collector = MetricsCollector()
+        asyncio.create_task(metrics_collector.start())
+        logger.info("Metrics collector started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start metrics collector: {e}")
+        # Don't block startup if metrics collection fails
+
+    # Start alert checker (Epic 2.5)
+    try:
+        from alert_manager import alert_manager
+        asyncio.create_task(check_alerts_periodically())
+        logger.info("Alert checker started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start alert checker: {e}")
+        # Don't block startup if alert checking fails
+
+
+async def check_alerts_periodically():
+    """
+    Background task that checks for system alerts every 60 seconds.
+    Epic 2.5: Admin Dashboard Polish - Analytics Lead
+    """
+    from alert_manager import alert_manager
+
+    while True:
+        try:
+            await alert_manager.check_alerts()
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            logger.info("Alert checker stopped")
+            break
+        except Exception as e:
+            logger.error(f"Alert check error: {e}")
+            await asyncio.sleep(60)
+
 # Shutdown event handler
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -353,6 +423,10 @@ logger.info("BYOK API endpoints registered at /api/v1/keys")
 # Register Lago webhooks router
 app.include_router(lago_webhook_router)
 logger.info("Lago webhooks registered at /api/v1/webhooks/lago")
+
+# Register Stripe webhooks router (Epic 2.4)
+app.include_router(stripe_webhooks_router)
+logger.info("Stripe webhooks registered at /api/v1/webhooks/stripe/*")
 
 # Register usage tracking API (always enabled for tier info)
 app.include_router(usage_router)
@@ -445,6 +519,32 @@ logger.info("Restic Backup API endpoints registered at /api/v1/backups/restic")
 # Email Notification API (Epic 2.3)
 app.include_router(notification_router)
 logger.info("Email Notification API endpoints registered at /api/v1/notifications")
+
+# System Metrics API (Epic 2.5 - Admin Dashboard Polish)
+app.include_router(system_metrics_router)
+logger.info("System Metrics API endpoints registered at /api/v1/system")
+
+# Revenue Analytics API (Epic 2.6)
+app.include_router(revenue_analytics_router)
+logger.info("Revenue Analytics API endpoints registered at /api/v1/analytics/revenue")
+
+# User Analytics API (Epic 2.6)
+app.include_router(user_analytics_router)
+logger.info("User Analytics API endpoints registered at /api/v1/analytics/users")
+
+# Usage Analytics API (Epic 2.6)
+app.include_router(usage_analytics_router)
+
+# API Documentation (Epic 2.8)
+app.include_router(api_docs_router)
+logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
+logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
+logger.info("Usage Analytics API endpoints registered at /api/v1/analytics/usage")
+
+# API Documentation (Epic 2.8)
+app.include_router(api_docs_router)
+logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
+logger.info("API Documentation endpoints registered at /api/v1/docs")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 
@@ -3637,6 +3737,143 @@ async def get_available_packages(current_user: dict = Depends(require_admin)):
     except Exception as e:
         logger.error(f"Error retrieving package updates: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve package updates: {str(e)}")
+
+
+# ==================== Analytics Endpoints ====================
+
+@app.post("/api/v1/analytics/web-vitals")
+async def track_web_vitals(request: Request):
+    """
+    Track Web Vitals metrics from the frontend.
+
+    Accepts Core Web Vitals data (LCP, FID, CLS, FCP, TTFB, INP) and logs them
+    for monitoring and performance analysis.
+
+    Request Body:
+        {
+            "metric_name": "LCP",
+            "value": 2500,
+            "rating": "good",
+            "metric_id": "v3-1234567890",
+            "url": "/admin/dashboard",
+            "user_agent": "Mozilla/5.0...",
+            "timestamp": "2025-10-25T07:30:00.000Z"
+        }
+
+    Returns:
+        {"status": "success", "message": "Web vitals tracked"}
+
+    Note:
+        Currently logs metrics only. Future enhancement: store in database
+        for analytics and performance monitoring dashboards.
+    """
+    try:
+        data = await request.json()
+
+        # Extract required fields
+        metric_name = data.get("metric_name", "unknown")
+        value = data.get("value", 0)
+        rating = data.get("rating", "unknown")
+        metric_id = data.get("metric_id", "unknown")
+        url = data.get("url", "unknown")
+        user_agent = data.get("user_agent", "unknown")
+        timestamp = data.get("timestamp", datetime.utcnow().isoformat())
+
+        # Log the web vitals metric
+        logger.info(
+            f"Web Vitals: {metric_name}={value}ms (rating: {rating}) | "
+            f"URL: {url} | ID: {metric_id} | UA: {user_agent[:50]}... | "
+            f"Time: {timestamp}"
+        )
+
+        # TODO: Store in database for analytics dashboard
+        # Future enhancement: INSERT INTO web_vitals_metrics (metric_name, value, rating, url, timestamp)
+
+        return {
+            "status": "success",
+            "message": "Web vitals tracked",
+            "metric": metric_name,
+            "value": value
+        }
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    except Exception as e:
+        logger.error(f"Error tracking web vitals: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to track web vitals: {str(e)}")
+
+
+@app.get("/api/v1/org/my-orgs")
+async def get_my_organizations(current_user: dict = Depends(get_current_user)):
+    """
+    Get all organizations the current user belongs to.
+
+    Returns an array of organizations with the user's role in each organization.
+    Used by the frontend OrganizationContext to populate the org switcher.
+
+    Returns:
+        [
+            {
+                "id": "org_abc123",
+                "name": "Organization Name",
+                "role": "owner",
+                "created_at": "2025-01-01T00:00:00Z",
+                "plan_tier": "professional",
+                "status": "active"
+            }
+        ]
+
+    Returns:
+        Empty array if user has no organizations
+
+    Authentication:
+        Requires valid session (any authenticated user)
+    """
+    try:
+        # Get user ID from session
+        user_id = current_user.get("id") or current_user.get("email")
+
+        if not user_id:
+            raise HTTPException(status_code=400, detail="User ID not found in session")
+
+        # Get organizations for this user using org_manager
+        organizations = org_manager.get_user_orgs(user_id)
+
+        if not organizations:
+            logger.info(f"No organizations found for user: {user_id}")
+            return []
+
+        # Get user's role in each organization
+        org_users_map = org_manager._load_org_users()
+
+        result = []
+        for org in organizations:
+            # Find user's role in this org
+            user_role = "member"  # default
+            org_users = org_users_map.get(org.id, [])
+            for org_user in org_users:
+                if org_user.user_id == user_id:
+                    user_role = org_user.role
+                    break
+
+            result.append({
+                "id": org.id,
+                "name": org.name,
+                "role": user_role,
+                "created_at": org.created_at.isoformat() if isinstance(org.created_at, datetime) else org.created_at,
+                "plan_tier": org.plan_tier,
+                "status": org.status
+            })
+
+        logger.info(f"Found {len(result)} organizations for user: {user_id}")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving user organizations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve organizations: {str(e)}")
+
 
 # User Registration endpoint
 @app.post("/auth/register")

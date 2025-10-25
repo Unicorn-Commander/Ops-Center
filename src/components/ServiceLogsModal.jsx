@@ -86,7 +86,8 @@ export default function ServiceLogsModal({ service, onClose }) {
 
     // Set up real-time log streaming (WebSocket)
     if (!isPaused) {
-      const ws = new WebSocket(`ws://${window.location.host}/ws/logs/${service.name}`);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/logs/${service.name}`);
       
       ws.onmessage = (event) => {
         try {

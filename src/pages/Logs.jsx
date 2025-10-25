@@ -149,9 +149,10 @@ export default function Logs() {
 
   const startStreaming = () => {
     if (!selectedSource || wsRef.current) return;
-    
+
     // Construct WebSocket URL with filters
-    const wsUrl = new URL(`ws://localhost:8084/ws/logs/${encodeURIComponent(selectedSource)}`, window.location.href);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = new URL(`${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(selectedSource)}`, window.location.href);
     if (logLevel !== 'all') {
       wsUrl.searchParams.append('levels', logLevel.toUpperCase());
     }
