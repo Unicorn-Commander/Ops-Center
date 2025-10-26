@@ -452,8 +452,9 @@ async def test_connection(
                 }
 
             try:
+                # Test with zones endpoint (zone-scoped tokens can't access /user endpoints)
                 response = requests.get(
-                    "https://api.cloudflare.com/client/v4/user/tokens/verify",
+                    "https://api.cloudflare.com/client/v4/zones",
                     headers={"Authorization": f"Bearer {api_token}"},
                     timeout=10
                 )
@@ -461,26 +462,49 @@ async def test_connection(
 
                 # Cloudflare API returns success=false for invalid tokens
                 if data.get("success", False):
+                    zones = data.get("result", [])
+                    zone_count = len(zones)
+                    zone_names = [z.get("name") for z in zones[:3]]  # First 3 zones
+
+                    # Check permissions on first zone
+                    permissions = []
+                    if zones:
+                        permissions = zones[0].get("permissions", [])
+
+                    has_dns_edit = any("dns_records:edit" in p for p in permissions)
+                    has_zone_read = any("zone:read" in p or "zone_settings:read" in p for p in permissions)
+
                     return {
                         "success": True,
-                        "message": "Cloudflare API token is valid",
+                        "message": f"Cloudflare API token is valid ({zone_count} zone(s) accessible)",
                         "details": {
-                            "status": data.get("result", {}).get("status", "active"),
-                            "id": data.get("result", {}).get("id", ""),
-                            "name": data.get("result", {}).get("name", "")
+                            "zones_count": zone_count,
+                            "sample_zones": zone_names if zone_names else ["(no zones)"],
+                            "dns_edit_permission": has_dns_edit,
+                            "zone_read_permission": has_zone_read,
+                            "status": "Token verified via zones API"
                         }
                     }
                 else:
                     # Token is invalid or has errors
                     errors = data.get("errors", [])
                     error_messages = [err.get("message", str(err)) for err in errors]
+                    error_code = data.get("errors", [{}])[0].get("code") if errors else None
+
+                    # Provide helpful hints based on error code
+                    hint = "Check that your token has 'Zone:DNS:Edit' and 'Zone:Zone:Read' permissions"
+                    if error_code == 9109:
+                        hint = "Token appears to be zone-scoped (this is correct). Try creating a token with 'Edit zone DNS' template."
+                    elif error_code == 1000:
+                        hint = "Token format is invalid or token has been revoked. Create a new token."
+
                     return {
                         "success": False,
                         "message": "Cloudflare API token is invalid",
                         "details": {
                             "errors": error_messages,
-                            "code": data.get("errors", [{}])[0].get("code") if errors else None,
-                            "hint": "Check that your token has 'Zone:Read' permission at minimum"
+                            "code": error_code,
+                            "hint": hint
                         }
                     }
 
