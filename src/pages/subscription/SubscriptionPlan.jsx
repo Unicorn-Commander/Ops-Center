@@ -50,7 +50,7 @@ const TierBadge = ({ tier }) => {
 
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${colors[tier] || colors.trial}`}>
-      {tier.charAt(0).toUpperCase() + tier.slice(1)}
+      {tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'}
     </span>
   );
 };
@@ -483,7 +483,7 @@ export default function SubscriptionPlan() {
               <div>
                 <p className={`text-sm ${theme.text.secondary} mb-1`}>Plan</p>
                 <p className={`text-2xl font-bold ${theme.text.primary}`}>
-                  {subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1)}
+                  {subscription.tier ? subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1) : 'Unknown'}
                 </p>
               </div>
               <div>

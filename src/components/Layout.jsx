@@ -405,12 +405,6 @@ export default function Layout({ children }) {
                           indent={true}
                         />
                       </NavigationItem>
-                      <NavigationItem collapsed={sidebarCollapsed}
-                        name="Local Users"
-                        href="/admin/system/local-user-management"
-                        icon={iconMap.UsersIcon}
-                        indent={true}
-                      />
                     </NavigationSection>
                   </>
                 )}
@@ -444,6 +438,12 @@ export default function Layout({ children }) {
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="User Management"
                         href="/admin/system/users"
+                        icon={iconMap.UsersIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Local Users"
+                        href="/admin/system/local-user-management"
                         icon={iconMap.UsersIcon}
                         indent={true}
                       />

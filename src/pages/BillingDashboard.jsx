@@ -93,7 +93,7 @@ const TierBadge = ({ tier }) => {
 
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${colors[tier] || colors.trial}`}>
-      {tier.charAt(0).toUpperCase() + tier.slice(1)}
+      {tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'}
     </span>
   );
 };
@@ -329,7 +329,7 @@ const UserView = ({ theme }) => {
               <div>
                 <p className={`text-sm ${theme.text.secondary}`}>Plan</p>
                 <p className={`text-xl font-bold ${theme.text.primary}`}>
-                  {subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1)}
+                  {subscription.tier ? subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1) : 'Unknown'}
                 </p>
               </div>
               <div>
