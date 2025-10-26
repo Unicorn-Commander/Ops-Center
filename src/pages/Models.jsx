@@ -456,8 +456,13 @@ export default function Models() {
           vLLM Model Management
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Browse and download vLLM-compatible models (AWQ, GPTQ, and FP16 formats)
+          Search HuggingFace, download to your server, and manage locally installed models for vLLM inference
         </p>
+        <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+          <p className="text-sm text-blue-800 dark:text-blue-300">
+            <strong>💡 Best Results:</strong> Use AWQ or GPTQ quantized models (4-bit) for faster inference and lower VRAM usage. Example: Qwen/Qwen2.5-32B-Instruct-AWQ
+          </p>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -933,7 +938,7 @@ export default function Models() {
             <div className="space-y-4">
               {models.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                  No models installed yet. Browse and download models from the Browse tab.
+                  No models installed locally yet. Use the Browse tab to search HuggingFace and download models compatible with vLLM (AWQ, GPTQ, or FP16 quantized models work best).
                 </p>
               ) : (
               models.map((model) => (

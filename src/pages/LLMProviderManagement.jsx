@@ -528,6 +528,7 @@ export default function LLMProviderManagement() {
                 value={providerForm.api_key}
                 onChange={(e) => setProviderForm({ ...providerForm, api_key: e.target.value })}
                 placeholder={editingProvider ? "Leave blank to keep current key" : "sk-..."}
+                helperText="OpenAI: platform.openai.com/api-keys | Anthropic: console.anthropic.com | Google: ai.google.dev"
               />
             </Grid>
             <Grid item xs={12}>
@@ -957,14 +958,22 @@ function BYOKTab({ onAddBYOK }) {
             Bring Your Own Key (BYOK)
           </Typography>
           <Typography variant="body2" color="textSecondary" paragraph>
-            Users can configure their own API keys for supported providers. This allows:
+            Configure your own API keys to use your provider accounts directly. Benefits:
           </Typography>
           <ul>
-            <li>Use your own API credits</li>
-            <li>Access exclusive models</li>
-            <li>Custom rate limits</li>
-            <li>Direct billing from providers</li>
+            <li><strong>Use your own API credits</strong> - Pay providers directly</li>
+            <li><strong>Access exclusive models</strong> - Use models from your subscriptions</li>
+            <li><strong>Custom rate limits</strong> - Based on your provider tier</li>
+            <li><strong>Direct billing</strong> - Transparent costs from providers</li>
           </ul>
+          <Alert severity="info" sx={{ mt: 2, mb: 2 }}>
+            <Typography variant="body2">
+              <strong>How to get API keys:</strong><br/>
+              • OpenAI: <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a><br/>
+              • Anthropic: <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a><br/>
+              • Google AI: <a href="https://ai.google.dev" target="_blank" rel="noopener">ai.google.dev</a>
+            </Typography>
+          </Alert>
           <Button variant="contained" startIcon={<KeyIcon />} onClick={onAddBYOK}>
             Configure BYOK
           </Button>

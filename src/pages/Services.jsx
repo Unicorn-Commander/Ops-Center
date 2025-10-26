@@ -501,7 +501,7 @@ export default function Services() {
             <ServerIcon className="h-12 w-12 text-gray-400" />
           </div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            {services.length === 0 ? 'No services detected' : `No ${filterStatus} services found`}
+            {services.length === 0 ? 'No Docker services detected. Make sure Docker is running.' : `No ${filterStatus} services found`}
           </h3>
           <p className="text-gray-500 dark:text-gray-400 mb-6">
             {services.length === 0 

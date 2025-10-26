@@ -706,7 +706,7 @@ export default function StorageBackup() {
               ) : (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   <ArchiveBoxIcon className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                  <p>No backups found</p>
+                  <p>No backups found. Create your first backup using the "Create Backup" button above.</p>
                 </div>
               )}
             </div>
