@@ -274,6 +274,8 @@ export default function Layout({ children }) {
                     : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                   }
                 `}
+                aria-label={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                aria-expanded={!sidebarCollapsed}
                 title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
               >
                 {!sidebarCollapsed && (

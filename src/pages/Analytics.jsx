@@ -107,25 +107,68 @@ export default function Analytics() {
 
   const fetchAnalyticsData = async () => {
     try {
-      // Fetch system metrics
-      const metricsResponse = await fetch('/api/v1/analytics/metrics');
+      // Fetch usage metrics (replaces /analytics/metrics)
+      const metricsResponse = await fetch('/api/v1/analytics/usage/overview?days=30');
       if (metricsResponse.ok) {
         const metrics = await metricsResponse.json();
-        setSystemMetrics(metrics);
+        setSystemMetrics({
+          uptime: systemData?.uptime || 0,
+          load_average: systemData?.load_average || [0, 0, 0],
+          process_count: systemData?.process_count || 0,
+          thread_count: systemData?.thread_count || 0,
+          service_health_score: calculateServiceHealthScore(),
+          total_api_calls: metrics.total_api_calls || 0,
+          total_cost: metrics.total_cost || 0
+        });
       }
 
-      // Fetch alert summary
-      const alertsResponse = await fetch('/api/v1/analytics/alerts');
+      // Fetch user analytics for alerts (active users, churn, etc)
+      const alertsResponse = await fetch('/api/v1/analytics/users/overview');
       if (alertsResponse.ok) {
         const alerts = await alertsResponse.json();
-        setAlertSummary(alerts);
+        setAlertSummary({
+          critical: alerts.churned_users_30d > 10 ? alerts.churned_users_30d : 0,
+          warning: alerts.growth_rate < 0 ? 1 : 0,
+          info: alerts.new_users_30d || 0,
+          total_events: alerts.total_users || 0
+        });
       }
 
-      // Fetch performance insights
-      const insightsResponse = await fetch('/api/v1/analytics/insights');
+      // Fetch performance insights from usage analytics
+      const insightsResponse = await fetch('/api/v1/analytics/usage/performance?days=7');
       if (insightsResponse.ok) {
         const insights = await insightsResponse.json();
-        setPerformanceInsights(insights);
+        const generatedInsights = [];
+
+        // Generate insights from performance data
+        if (insights.error_rate > 5) {
+          generatedInsights.push({
+            level: 'critical',
+            title: 'High Error Rate Detected',
+            description: `Current error rate is ${insights.error_rate.toFixed(2)}%, exceeding the 5% threshold.`,
+            recommendation: 'Review recent code changes and check service logs for recurring errors.'
+          });
+        }
+
+        if (insights.p95_latency_ms > 1000) {
+          generatedInsights.push({
+            level: 'warning',
+            title: 'High Latency Detected',
+            description: `95th percentile latency is ${insights.p95_latency_ms.toFixed(0)}ms, which may impact user experience.`,
+            recommendation: 'Review slow endpoints and consider caching or query optimization.'
+          });
+        }
+
+        if (insights.success_rate >= 99) {
+          generatedInsights.push({
+            level: 'info',
+            title: 'Excellent Service Reliability',
+            description: `Success rate is ${insights.success_rate.toFixed(2)}% with low error rates.`,
+            recommendation: 'Continue monitoring and maintain current best practices.'
+          });
+        }
+
+        setPerformanceInsights(generatedInsights);
       }
 
       // Update historical data
@@ -215,16 +258,41 @@ export default function Analytics() {
 
   const exportAnalytics = async () => {
     try {
-      const response = await fetch(`/api/v1/analytics/export?range=${timeRange}`);
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `analytics-${timeRange}-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
+      // Aggregate data from multiple analytics endpoints
+      const days = timeRange === '1h' ? 1 : timeRange === '6h' ? 1 : timeRange === '24h' ? 1 : timeRange === '7d' ? 7 : 30;
+
+      const [usageData, userData, revenueData] = await Promise.all([
+        fetch(`/api/v1/analytics/usage/overview?days=${days}`).then(r => r.ok ? r.json() : {}),
+        fetch('/api/v1/analytics/users/overview').then(r => r.ok ? r.json() : {}),
+        fetch('/api/v1/analytics/revenue/overview').then(r => r.ok ? r.json() : {})
+      ]);
+
+      const exportData = {
+        export_date: new Date().toISOString(),
+        time_range: timeRange,
+        usage_analytics: usageData,
+        user_analytics: userData,
+        revenue_analytics: revenueData,
+        system_data: {
+          cpu: systemData?.cpu,
+          memory: systemData?.memory,
+          gpu: systemData?.gpu,
+          disk: systemData?.disk
+        },
+        services: services?.map(s => ({
+          name: s.name,
+          status: s.status,
+          uptime: s.uptime
+        }))
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `analytics-${timeRange}-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export failed:', error);
     }

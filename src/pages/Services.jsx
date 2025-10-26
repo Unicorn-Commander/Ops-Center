@@ -127,10 +127,10 @@ export default function Services() {
   const [actionInProgress, setActionInProgress] = useState({});
   const [initialLoading, setInitialLoading] = useState(true);
 
-  // Fetch services from new monitoring API
+  // Fetch services from API
   const fetchServices = async () => {
     try {
-      const response = await fetch('/api/v1/monitoring/services', {
+      const response = await fetch('/api/v1/services', {
         credentials: 'include'
       });
       if (!response.ok) {
@@ -138,15 +138,15 @@ export default function Services() {
       }
       const data = await response.json();
 
-      // Transform API response to match expected format
-      const transformedServices = (data.services || []).map(service => ({
+      // API returns array of services directly
+      const transformedServices = (Array.isArray(data) ? data : []).map(service => ({
         name: service.name,
-        display_name: service.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        container_name: service.container,
+        display_name: service.display_name || service.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        container_name: service.container_name || service.name,
         status: service.status,
-        port: service.ports && service.ports.length > 0 ? service.ports[0] : null,
-        cpu_percent: service.metrics?.cpu_percent || 0,
-        memory_mb: service.metrics?.memory_mb || 0,
+        port: service.port,
+        cpu_percent: service.cpu_percent || 0,
+        memory_mb: service.memory_mb || 0,
         uptime: service.uptime,
         health: service.health,
         image: service.image,
@@ -167,7 +167,7 @@ export default function Services() {
   // Fetch system resources
   const fetchSystemResources = async () => {
     try {
-      const response = await fetch('/api/v1/monitoring/system-resources', {
+      const response = await fetch('/api/v1/system/status', {
         credentials: 'include'
       });
       if (response.ok) {
@@ -231,13 +231,14 @@ export default function Services() {
     setActionInProgress(prev => ({ ...prev, [containerName]: true }));
 
     try {
-      // Call the new monitoring API for service control
-      const response = await fetch(`/api/v1/monitoring/services/${containerName}/${action}`, {
+      // Call the service control API
+      const response = await fetch(`/api/v1/services/${containerName}/action`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({ action: action })
       });
 
       if (!response.ok) {

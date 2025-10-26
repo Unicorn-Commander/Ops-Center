@@ -263,10 +263,10 @@ const UserView = ({ theme }) => {
     setLoading(true);
     try {
       const [subRes, invRes, pmRes, usageRes] = await Promise.all([
-        fetch('/api/v1/billing/subscription', { credentials: 'include' }),
+        fetch('/api/v1/billing/summary', { credentials: 'include' }), // Fixed: subscription → summary
         fetch('/api/v1/billing/invoices?limit=10', { credentials: 'include' }),
         fetch('/api/v1/billing/payment-methods', { credentials: 'include' }),
-        fetch('/api/v1/billing/usage', { credentials: 'include' })
+        fetch('/api/v1/analytics/usage/overview', { credentials: 'include' }) // Fixed: billing/usage → analytics/usage/overview
       ]);
 
       if (subRes.ok) setSubscription(await subRes.json());
@@ -577,11 +577,11 @@ const AdminView = ({ theme }) => {
     setError(null);
     try {
       const [summaryRes, tierRes, paymentsRes, failedRes, renewalsRes] = await Promise.all([
-        fetch('/api/v1/billing/dashboard/summary', { credentials: 'include' }),
-        fetch('/api/v1/billing/analytics/tier-distribution', { credentials: 'include' }),
-        fetch('/api/v1/billing/payments/recent?limit=20', { credentials: 'include' }),
-        fetch('/api/v1/billing/payments/failed?limit=20', { credentials: 'include' }),
-        fetch('/api/v1/billing/invoices/upcoming?days=30', { credentials: 'include' })
+        fetch('/api/v1/billing/summary', { credentials: 'include' }), // Fixed: dashboard/summary → summary
+        fetch('/api/v1/analytics/users/segments', { credentials: 'include' }), // Fixed: billing/analytics/tier-distribution → analytics/users/segments
+        fetch('/api/v1/billing/invoices?limit=20', { credentials: 'include' }), // Fixed: payments/recent → invoices
+        fetch('/api/v1/billing/invoices?limit=20&status=failed', { credentials: 'include' }), // Fixed: payments/failed → invoices with filter
+        fetch('/api/v1/billing/invoices?upcoming=true&days=30', { credentials: 'include' }) // Fixed: invoices/upcoming path
       ]);
 
       if (summaryRes.ok) {
@@ -647,8 +647,8 @@ const AdminView = ({ theme }) => {
   const loadChartData = async () => {
     try {
       const [revenueRes, growthRes] = await Promise.all([
-        fetch(`/api/v1/billing/analytics/revenue-chart?period=${chartPeriod}`, { credentials: 'include' }),
-        fetch(`/api/v1/billing/analytics/user-growth?period=${chartPeriod}`, { credentials: 'include' })
+        fetch(`/api/v1/analytics/revenue/trends?period=${chartPeriod}`, { credentials: 'include' }), // Fixed: billing/analytics/revenue-chart → analytics/revenue/trends
+        fetch(`/api/v1/analytics/users/growth?period=${chartPeriod}`, { credentials: 'include' }) // Fixed: billing/analytics/user-growth → analytics/users/growth
       ]);
 
       if (revenueRes.ok) {

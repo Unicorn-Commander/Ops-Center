@@ -64,6 +64,13 @@ export default function NavigationItem({
   const linkClasses = `
     group flex items-center ${collapsed ? 'justify-center px-2' : 'px-3'} py-2 text-sm font-medium rounded-lg
     transition-all duration-200
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+    ${currentTheme === 'unicorn'
+      ? 'focus-visible:ring-purple-400'
+      : currentTheme === 'light'
+      ? 'focus-visible:ring-blue-500'
+      : 'focus-visible:ring-blue-400'
+    }
     ${indent && !collapsed ? 'pl-11' : ''}
     ${isActive
       ? currentTheme === 'unicorn'

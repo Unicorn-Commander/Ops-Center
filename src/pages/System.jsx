@@ -404,11 +404,12 @@ export default function System() {
 
   const fetchNetworkStats = async () => {
     try {
-      const response = await fetch('/api/v1/system/network');
+      const response = await fetch('/api/v1/network/status');
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const data = await response.json();
+      // Network status endpoint returns different structure
       setNetworkStats({
         in: data.bytes_recv_per_sec || 0,
         out: data.bytes_sent_per_sec || 0

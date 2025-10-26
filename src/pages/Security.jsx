@@ -75,10 +75,10 @@ export default function Security() {
   const loadAuditLogs = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/audit/events?limit=50');
+      const response = await fetch('/api/v1/audit/logs?limit=50');
       if (response.ok) {
         const data = await response.json();
-        setAuditLogs(data.events || data.logs || []);
+        setAuditLogs(data.logs || []);
       }
     } catch (err) {
       console.error('Failed to load audit logs:', err);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -41,10 +41,23 @@ export default function NavigationSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const { currentTheme } = useTheme();
 
+  // Sync local state with defaultOpen prop changes
+  useEffect(() => {
+    setIsOpen(defaultOpen);
+  }, [defaultOpen]);
+
   const toggleOpen = () => {
     setIsOpen(!isOpen);
     if (onToggle) {
       onToggle();
+    }
+  };
+
+  // Handle keyboard navigation
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleOpen();
     }
   };
 
@@ -91,6 +104,7 @@ export default function NavigationSection({
       {/* Section Header */}
       <button
         onClick={toggleOpen}
+        onKeyDown={handleKeyDown}
         className={sectionHeaderClasses}
         aria-expanded={isOpen}
         aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${title} section`}
