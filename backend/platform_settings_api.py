@@ -148,7 +148,41 @@ def mask_secret(value: str) -> str:
     return f"{value[:4]}...{value[-4:]}"
 
 def get_current_env_value(key: str) -> Optional[str]:
-    """Get current environment variable value"""
+    """
+    Get current setting value
+
+    Priority:
+    1. Database (if saved via settings UI)
+    2. Environment variable (from docker-compose or shell)
+    """
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+
+        conn = psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'unicorn-postgresql'),
+            port=os.getenv('POSTGRES_PORT', '5432'),
+            user=os.getenv('POSTGRES_USER', 'unicorn'),
+            password=os.getenv('POSTGRES_PASSWORD', 'unicorn'),
+            database=os.getenv('POSTGRES_DB', 'unicorn_db')
+        )
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Check database first
+        cursor.execute("SELECT value FROM platform_settings WHERE key = %s", (key,))
+        result = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if result:
+            return result['value']
+
+    except Exception as e:
+        # If database fails, fall back to environment
+        logger.debug(f"Database lookup failed for {key}, using environment: {e}")
+
+    # Fall back to environment variable
     return os.getenv(key)
 
 @router.get("/settings", summary="Get all platform settings")
@@ -221,10 +255,14 @@ async def update_platform_settings(
 
     **Process**:
     1. Validate all provided settings exist
-    2. Update docker-compose.direct.yml file
-    3. Optionally restart container to apply changes
+    2. Update environment variables in current process (immediate effect)
+    3. Store in PostgreSQL for persistence across restarts
+    4. Optionally restart container to fully apply changes
 
     **Permissions**: Admin only
+
+    **Note**: Settings are stored in both environment and database.
+    Some services may require container restart to pick up changes.
     """
     # Validate all keys exist
     invalid_keys = [k for k in update.settings.keys() if k not in PLATFORM_SETTINGS]
@@ -234,43 +272,74 @@ async def update_platform_settings(
             detail=f"Invalid setting keys: {', '.join(invalid_keys)}"
         )
 
-    # Read current docker-compose file
-    compose_file = "/app/../docker-compose.direct.yml"
-
     try:
-        with open(compose_file, 'r') as f:
-            content = f.read()
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+
+        # Database connection
+        conn = psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'unicorn-postgresql'),
+            port=os.getenv('POSTGRES_PORT', '5432'),
+            user=os.getenv('POSTGRES_USER', 'unicorn'),
+            password=os.getenv('POSTGRES_PASSWORD', 'unicorn'),
+            database=os.getenv('POSTGRES_DB', 'unicorn_db')
+        )
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Create platform_settings table if not exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS platform_settings (
+                key VARCHAR(255) PRIMARY KEY,
+                value TEXT,
+                category VARCHAR(100),
+                is_secret BOOLEAN DEFAULT TRUE,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
 
         # Update each setting
         updated_count = 0
         for key, value in update.settings.items():
-            # Find and replace the line
-            old_pattern = f"      - {key}="
+            config = PLATFORM_SETTINGS[key]
 
-            # Find the line
-            lines = content.split('\n')
-            for i, line in enumerate(lines):
-                if line.strip().startswith(f"- {key}="):
-                    lines[i] = f"      - {key}={value}"
-                    updated_count += 1
-                    break
+            # Update environment variable (immediate effect in current process)
+            os.environ[key] = value
 
-        # Write back
-        content = '\n'.join(lines)
-        with open(compose_file, 'w') as f:
-            f.write(content)
+            # Store in database (persistent across restarts)
+            cursor.execute("""
+                INSERT INTO platform_settings (key, value, category, is_secret, updated_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (key)
+                DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (key, value, config['category'], config['is_secret']))
+
+            updated_count += 1
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"Updated {updated_count} platform settings")
 
         # Restart container if requested
         restart_output = None
+        restart_warning = None
         if update.restart_required:
             try:
                 result = subprocess.run(
-                    ["docker", "compose", "-f", compose_file, "up", "-d"],
+                    ["docker", "restart", "ops-center-direct"],
                     capture_output=True,
                     text=True,
                     timeout=30
                 )
-                restart_output = result.stdout
+                if result.returncode == 0:
+                    restart_output = "Container restart initiated successfully"
+                    restart_warning = "Container is restarting. This page may disconnect briefly."
+                else:
+                    restart_output = f"Error: {result.stderr}"
             except Exception as e:
                 logger.error(f"Failed to restart container: {e}")
                 restart_output = f"Error: {str(e)}"
@@ -281,8 +350,10 @@ async def update_platform_settings(
             "settings": list(update.settings.keys()),
             "restart_required": update.restart_required,
             "restart_output": restart_output,
-            "message": f"Updated {updated_count} settings" +
-                      (" and restarted container" if update.restart_required else "")
+            "restart_warning": restart_warning,
+            "message": f"Updated {updated_count} settings successfully" +
+                      (" and initiated container restart" if update.restart_required else "") +
+                      ". Changes are now active."
         }
 
     except Exception as e:
@@ -373,19 +444,52 @@ async def test_connection(
             import requests
             api_token = creds.get("CLOUDFLARE_API_TOKEN")
 
-            response = requests.get(
-                "https://api.cloudflare.com/client/v4/user/tokens/verify",
-                headers={"Authorization": f"Bearer {api_token}"},
-                timeout=10
-            )
-            response.raise_for_status()
-            data = response.json()
+            if not api_token:
+                return {
+                    "success": False,
+                    "message": "Cloudflare API token is required",
+                    "details": {"error": "Missing CLOUDFLARE_API_TOKEN"}
+                }
 
-            return {
-                "success": data.get("success", False),
-                "message": "Cloudflare connection successful" if data.get("success") else "Cloudflare connection failed",
-                "details": data.get("result", {})
-            }
+            try:
+                response = requests.get(
+                    "https://api.cloudflare.com/client/v4/user/tokens/verify",
+                    headers={"Authorization": f"Bearer {api_token}"},
+                    timeout=10
+                )
+                data = response.json()
+
+                # Cloudflare API returns success=false for invalid tokens
+                if data.get("success", False):
+                    return {
+                        "success": True,
+                        "message": "Cloudflare API token is valid",
+                        "details": {
+                            "status": data.get("result", {}).get("status", "active"),
+                            "id": data.get("result", {}).get("id", ""),
+                            "name": data.get("result", {}).get("name", "")
+                        }
+                    }
+                else:
+                    # Token is invalid or has errors
+                    errors = data.get("errors", [])
+                    error_messages = [err.get("message", str(err)) for err in errors]
+                    return {
+                        "success": False,
+                        "message": "Cloudflare API token is invalid",
+                        "details": {
+                            "errors": error_messages,
+                            "code": data.get("errors", [{}])[0].get("code") if errors else None,
+                            "hint": "Check that your token has 'Zone:Read' permission at minimum"
+                        }
+                    }
+
+            except requests.exceptions.RequestException as req_err:
+                return {
+                    "success": False,
+                    "message": f"Failed to connect to Cloudflare API: {str(req_err)}",
+                    "details": {"error": str(req_err), "type": type(req_err).__name__}
+                }
 
         elif category == "namecheap":
             import requests
