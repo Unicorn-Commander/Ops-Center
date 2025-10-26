@@ -444,8 +444,8 @@ export default function Dashboard() {
         window.location.href = '/admin/models';
         break;
       case 'system-info':
-        // Show system information
-        alert('System information displayed below');
+        // Scroll to hardware section
+        document.getElementById('hardware-info')?.scrollIntoView({ behavior: 'smooth' });
         break;
     }
   };

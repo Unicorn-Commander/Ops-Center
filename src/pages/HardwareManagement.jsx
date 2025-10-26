@@ -562,7 +562,7 @@ const HardwareManagement = () => {
             This will optimize GPU memory allocation and clear GPU cache.
           </Typography>
           <Alert severity="info" sx={{ mt: 2 }}>
-            <strong>Note:</strong> Services using the GPU may experience brief interruptions.
+            Services using the GPU may experience brief interruptions during this operation.
           </Alert>
           {hardwareStatus?.gpu && (
             <Box sx={{ mt: 2 }}>

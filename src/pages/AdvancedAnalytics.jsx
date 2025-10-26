@@ -340,13 +340,13 @@ export default function AdvancedAnalytics() {
   const exportToPDF = () => {
     // Use jsPDF or similar library
     console.log('Export to PDF triggered');
-    alert('PDF export feature coming soon!');
+    // Future: Implement PDF export functionality
   };
 
   const exportToCSV = () => {
     // Generate CSV from current data
     console.log('Export to CSV triggered');
-    alert('CSV export feature coming soon!');
+    // Future: Implement CSV export functionality
   };
 
   if (loading) {
