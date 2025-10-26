@@ -16,8 +16,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import logging
 import asyncio
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+import httpx
 import numpy as np
 from scipy import stats
 import redis.asyncio as redis
@@ -31,19 +30,13 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/v1/analytics/revenue", tags=["Revenue Analytics"])
 
-# Database configuration
-LAGO_DB_URL = os.getenv(
-    "LAGO_DATABASE_URL",
-    "postgresql://lago:REMOVED@unicorn-lago-postgres:5432/lago"
-)
+# Lago API configuration
+LAGO_API_URL = os.getenv("LAGO_API_URL", "http://unicorn-lago-api:3000")
+LAGO_API_KEY = os.getenv("LAGO_API_KEY")
 
 # Redis configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://unicorn-redis:6379/0")
 CACHE_TTL = 300  # 5 minutes
-
-# Initialize database engine
-engine = create_engine(LAGO_DB_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 # Pydantic models
@@ -114,14 +107,11 @@ class CohortRevenue(BaseModel):
     retention_rate: float
 
 
-# Dependency for database session
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Dependency for HTTP client
+async def get_http_client():
+    """Get HTTP client for Lago API"""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        yield client
 
 
 # Dependency for Redis connection
@@ -158,394 +148,606 @@ async def cache_set(redis_client: redis.Redis, key: str, data: Any, ttl: int = C
         logger.warning(f"Cache set error: {e}")
 
 
-def calculate_mrr(db: Session) -> Dict[str, Any]:
-    """Calculate Monthly Recurring Revenue"""
-    query = text("""
-        SELECT
-            SUM(CASE
-                WHEN p.interval = 'monthly' THEN p.amount_cents / 100.0
-                WHEN p.interval = 'yearly' THEN (p.amount_cents / 100.0) / 12.0
-                WHEN p.interval = 'weekly' THEN (p.amount_cents / 100.0) * 4.33
-                ELSE 0
-            END) as mrr,
-            COUNT(DISTINCT s.id) as active_subscriptions,
-            COUNT(DISTINCT s.customer_id) as total_customers
-        FROM subscriptions s
-        JOIN plans p ON s.plan_id = p.id
-        WHERE s.status = 'active'
-    """)
+async def lago_api_call(client: httpx.AsyncClient, endpoint: str, method: str = "GET", data: Dict = None) -> Dict:
+    """
+    Make API call to Lago
 
-    result = db.execute(query).fetchone()
+    Args:
+        client: HTTP client
+        endpoint: API endpoint (e.g., /api/v1/customers)
+        method: HTTP method
+        data: Request body for POST/PUT
 
-    mrr = float(result[0] or 0)
-    arr = mrr * 12
-    active_subscriptions = int(result[1] or 0)
-    total_customers = int(result[2] or 0)
-    arpu = mrr / total_customers if total_customers > 0 else 0
+    Returns:
+        API response data
+    """
+    if not LAGO_API_KEY:
+        raise HTTPException(status_code=500, detail="Lago API key not configured")
 
-    return {
-        "mrr": mrr,
-        "arr": arr,
-        "active_subscriptions": active_subscriptions,
-        "total_customers": total_customers,
-        "arpu": arpu
-    }
+    url = f"{LAGO_API_URL}{endpoint}"
+    headers = {"Authorization": f"Bearer {LAGO_API_KEY}"}
 
+    try:
+        if method == "GET":
+            response = await client.get(url, headers=headers)
+        elif method == "POST":
+            response = await client.post(url, headers=headers, json=data)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
 
-def calculate_growth_rate(db: Session) -> float:
-    """Calculate month-over-month growth rate"""
-    query = text("""
-        WITH monthly_revenue AS (
-            SELECT
-                DATE_TRUNC('month', s.created_at) as month,
-                SUM(CASE
-                    WHEN p.interval = 'monthly' THEN p.amount_cents / 100.0
-                    WHEN p.interval = 'yearly' THEN (p.amount_cents / 100.0) / 12.0
-                    WHEN p.interval = 'weekly' THEN (p.amount_cents / 100.0) * 4.33
-                    ELSE 0
-                END) as revenue
-            FROM subscriptions s
-            JOIN plans p ON s.plan_id = p.id
-            WHERE s.status = 'active'
-            GROUP BY month
-            ORDER BY month DESC
-            LIMIT 2
-        )
-        SELECT
-            (MAX(revenue) - MIN(revenue)) / NULLIF(MIN(revenue), 0) * 100 as growth_rate
-        FROM monthly_revenue
-    """)
+        response.raise_for_status()
+        return response.json()
 
-    result = db.execute(query).fetchone()
-    return float(result[0] or 0)
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Lago API error ({e.response.status_code}): {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Lago API error: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Lago API request failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to connect to Lago API: {str(e)}")
 
 
-def calculate_churn_rate(db: Session) -> float:
-    """Calculate monthly churn rate"""
-    query = text("""
-        WITH churn_data AS (
-            SELECT
-                COUNT(*) FILTER (WHERE status = 'canceled'
-                    AND canceled_at >= NOW() - INTERVAL '30 days') as churned,
-                COUNT(*) FILTER (WHERE status = 'active'
-                    OR canceled_at >= NOW() - INTERVAL '30 days') as total
-            FROM subscriptions
-        )
-        SELECT
-            CASE
-                WHEN total > 0 THEN (churned::float / total::float) * 100
-                ELSE 0
-            END as churn_rate
-        FROM churn_data
-    """)
+async def calculate_mrr(client: httpx.AsyncClient) -> Dict[str, Any]:
+    """Calculate Monthly Recurring Revenue using Lago API"""
+    try:
+        # Get active subscriptions
+        subscriptions_data = await lago_api_call(client, "/api/v1/subscriptions?status=active")
+        subscriptions = subscriptions_data.get("subscriptions", [])
 
-    result = db.execute(query).fetchone()
-    return float(result[0] or 0)
+        # Get plans
+        plans_data = await lago_api_call(client, "/api/v1/plans")
+        plans_list = plans_data.get("plans", [])
 
+        # Create plan lookup
+        plans_by_id = {plan["lago_id"]: plan for plan in plans_list}
 
-def get_revenue_trends(db: Session, period: str = "monthly", days: int = 365) -> List[Dict[str, Any]]:
-    """Get historical revenue trends"""
+        mrr = 0.0
+        active_subscriptions = len(subscriptions)
+        customer_ids = set()
 
-    if period == "daily":
-        date_trunc = "day"
-        interval = "1 day"
-    elif period == "weekly":
-        date_trunc = "week"
-        interval = "7 days"
-    else:  # monthly
-        date_trunc = "month"
-        interval = "1 month"
+        for sub in subscriptions:
+            customer_ids.add(sub.get("customer_id"))
+            plan_id = sub.get("plan_code")
 
-    query = text(f"""
-        WITH revenue_series AS (
-            SELECT
-                DATE_TRUNC('{date_trunc}', created_at) as period,
-                SUM(amount_cents / 100.0) as revenue,
-                COUNT(DISTINCT customer_id) as customers
-            FROM invoices
-            WHERE created_at >= NOW() - INTERVAL '{days} days'
-                AND status IN ('finalized', 'succeeded')
-            GROUP BY period
-            ORDER BY period
-        )
-        SELECT
-            period::text,
-            COALESCE(revenue, 0) as revenue,
-            COALESCE(customers, 0) as customers
-        FROM revenue_series
-    """)
+            # Find plan by code
+            plan = None
+            for p in plans_list:
+                if p.get("code") == plan_id:
+                    plan = p
+                    break
 
-    results = db.execute(query).fetchall()
+            if plan:
+                amount_cents = plan.get("amount_cents", 0)
+                interval = plan.get("interval", "monthly")
 
-    trends = []
-    for row in results:
-        trends.append({
-            "date": row[0],
-            "revenue": float(row[1]),
-            "customers": int(row[2])
-        })
+                if interval == "monthly":
+                    mrr += amount_cents / 100.0
+                elif interval == "yearly":
+                    mrr += (amount_cents / 100.0) / 12.0
+                elif interval == "weekly":
+                    mrr += (amount_cents / 100.0) * 4.33
 
-    return trends
+        total_customers = len(customer_ids)
+        arr = mrr * 12
+        arpu = mrr / total_customers if total_customers > 0 else 0
 
-
-def get_revenue_by_plan(db: Session) -> List[Dict[str, Any]]:
-    """Get revenue breakdown by subscription plan"""
-    query = text("""
-        SELECT
-            p.code as plan_code,
-            p.name as plan_name,
-            SUM(CASE
-                WHEN p.interval = 'monthly' THEN p.amount_cents / 100.0
-                WHEN p.interval = 'yearly' THEN (p.amount_cents / 100.0) / 12.0
-                WHEN p.interval = 'weekly' THEN (p.amount_cents / 100.0) * 4.33
-                ELSE 0
-            END) as mrr,
-            COUNT(DISTINCT s.id) as subscriber_count
-        FROM subscriptions s
-        JOIN plans p ON s.plan_id = p.id
-        WHERE s.status = 'active'
-        GROUP BY p.code, p.name
-        ORDER BY mrr DESC
-    """)
-
-    results = db.execute(query).fetchall()
-
-    total_mrr = sum(float(row[2]) for row in results)
-
-    plan_data = []
-    for row in results:
-        mrr = float(row[2])
-        count = int(row[3])
-        plan_data.append({
-            "plan_code": row[0],
-            "plan_name": row[1],
-            "mrr": mrr,
-            "subscriber_count": count,
-            "percentage": (mrr / total_mrr * 100) if total_mrr > 0 else 0,
-            "average_revenue_per_subscriber": mrr / count if count > 0 else 0
-        })
-
-    return plan_data
-
-
-def forecast_revenue(db: Session, months: int) -> Dict[str, float]:
-    """Forecast revenue using linear regression"""
-    # Get historical monthly revenue
-    query = text("""
-        SELECT
-            EXTRACT(EPOCH FROM DATE_TRUNC('month', created_at)) / 86400 as day_number,
-            SUM(amount_cents / 100.0) as revenue
-        FROM invoices
-        WHERE created_at >= NOW() - INTERVAL '12 months'
-            AND status IN ('finalized', 'succeeded')
-        GROUP BY DATE_TRUNC('month', created_at)
-        ORDER BY DATE_TRUNC('month', created_at)
-    """)
-
-    results = db.execute(query).fetchall()
-
-    if len(results) < 3:
-        # Not enough data for forecasting
         return {
-            "forecast": 0,
-            "confidence_low": 0,
-            "confidence_high": 0,
-            "accuracy": 0
+            "mrr": mrr,
+            "arr": arr,
+            "active_subscriptions": active_subscriptions,
+            "total_customers": total_customers,
+            "arpu": arpu
+        }
+    except Exception as e:
+        logger.error(f"Error calculating MRR: {e}")
+        # Return default values on error
+        return {
+            "mrr": 0.0,
+            "arr": 0.0,
+            "active_subscriptions": 0,
+            "total_customers": 0,
+            "arpu": 0.0
         }
 
-    # Prepare data for linear regression
-    x = np.array([float(row[0]) for row in results])
-    y = np.array([float(row[1]) for row in results])
 
-    # Normalize x to start from 0
-    x = x - x[0]
+async def calculate_growth_rate(client: httpx.AsyncClient) -> float:
+    """Calculate month-over-month growth rate using Lago API"""
+    try:
+        # Get invoices for last 2 months
+        invoices_data = await lago_api_call(client, "/api/v1/invoices")
+        invoices = invoices_data.get("invoices", [])
 
-    # Perform linear regression
-    slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+        # Group by month
+        from collections import defaultdict
+        monthly_revenue = defaultdict(float)
 
-    # Calculate forecast
-    last_x = x[-1]
-    days_per_month = 30.44  # Average
-    forecast_x = last_x + (months * days_per_month)
-    forecast = slope * forecast_x + intercept
+        for invoice in invoices:
+            if invoice.get("status") in ["finalized", "succeeded"]:
+                created_at = datetime.fromisoformat(invoice["issuing_date"].replace("Z", "+00:00"))
+                month_key = created_at.strftime("%Y-%m")
+                amount_cents = invoice.get("amount_cents", 0)
+                monthly_revenue[month_key] += amount_cents / 100.0
 
-    # Calculate confidence interval (95%)
-    confidence_interval = 1.96 * std_err * np.sqrt(1 + 1/len(x) + (forecast_x - np.mean(x))**2 / np.sum((x - np.mean(x))**2))
+        # Get last 2 months
+        sorted_months = sorted(monthly_revenue.keys(), reverse=True)[:2]
 
-    return {
-        "forecast": max(0, float(forecast)),
-        "confidence_low": max(0, float(forecast - confidence_interval)),
-        "confidence_high": max(0, float(forecast + confidence_interval)),
-        "accuracy": float(r_value ** 2)  # R-squared
-    }
+        if len(sorted_months) < 2:
+            return 0.0
+
+        current_month_revenue = monthly_revenue[sorted_months[0]]
+        previous_month_revenue = monthly_revenue[sorted_months[1]]
+
+        if previous_month_revenue == 0:
+            return 0.0
+
+        growth_rate = ((current_month_revenue - previous_month_revenue) / previous_month_revenue) * 100
+        return float(growth_rate)
+
+    except Exception as e:
+        logger.error(f"Error calculating growth rate: {e}")
+        return 0.0
 
 
-def calculate_churn_impact(db: Session) -> Dict[str, Any]:
-    """Calculate churn impact on revenue"""
-    query = text("""
-        WITH churned_subs AS (
-            SELECT
-                s.id,
-                s.customer_id,
-                CASE
-                    WHEN p.interval = 'monthly' THEN p.amount_cents / 100.0
-                    WHEN p.interval = 'yearly' THEN (p.amount_cents / 100.0) / 12.0
-                    WHEN p.interval = 'weekly' THEN (p.amount_cents / 100.0) * 4.33
-                    ELSE 0
-                END as mrr
-            FROM subscriptions s
-            JOIN plans p ON s.plan_id = p.id
-            WHERE s.status = 'canceled'
-                AND s.canceled_at >= NOW() - INTERVAL '30 days'
+async def calculate_churn_rate(client: httpx.AsyncClient) -> float:
+    """Calculate monthly churn rate using Lago API"""
+    try:
+        # Get all subscriptions
+        all_subs_data = await lago_api_call(client, "/api/v1/subscriptions")
+        all_subscriptions = all_subs_data.get("subscriptions", [])
+
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+        churned = 0
+        total = 0
+
+        for sub in all_subscriptions:
+            status = sub.get("status")
+
+            # Count churned subscriptions in last 30 days
+            if status == "terminated" and sub.get("terminated_at"):
+                terminated_at = datetime.fromisoformat(sub["terminated_at"].replace("Z", "+00:00"))
+                if terminated_at >= thirty_days_ago:
+                    churned += 1
+                    total += 1
+
+            # Count active subscriptions
+            elif status == "active":
+                total += 1
+
+        if total == 0:
+            return 0.0
+
+        churn_rate = (churned / total) * 100
+        return float(churn_rate)
+
+    except Exception as e:
+        logger.error(f"Error calculating churn rate: {e}")
+        return 0.0
+
+
+async def get_revenue_trends(client: httpx.AsyncClient, period: str = "monthly", days: int = 365) -> List[Dict[str, Any]]:
+    """Get historical revenue trends using Lago API"""
+    try:
+        from collections import defaultdict
+        from datetime import timedelta
+
+        # Get invoices
+        invoices_data = await lago_api_call(client, "/api/v1/invoices")
+        invoices = invoices_data.get("invoices", [])
+
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        period_data = defaultdict(lambda: {"revenue": 0.0, "customers": set()})
+
+        for invoice in invoices:
+            if invoice.get("status") not in ["finalized", "succeeded"]:
+                continue
+
+            issued_date = datetime.fromisoformat(invoice["issuing_date"].replace("Z", "+00:00"))
+            if issued_date < cutoff_date:
+                continue
+
+            # Group by period
+            if period == "daily":
+                period_key = issued_date.strftime("%Y-%m-%d")
+            elif period == "weekly":
+                # Get Monday of the week
+                monday = issued_date - timedelta(days=issued_date.weekday())
+                period_key = monday.strftime("%Y-%m-%d")
+            else:  # monthly
+                period_key = issued_date.strftime("%Y-%m")
+
+            amount_cents = invoice.get("amount_cents", 0)
+            customer_id = invoice.get("customer", {}).get("lago_id")
+
+            period_data[period_key]["revenue"] += amount_cents / 100.0
+            if customer_id:
+                period_data[period_key]["customers"].add(customer_id)
+
+        # Convert to list format
+        trends = []
+        for date_key in sorted(period_data.keys()):
+            trends.append({
+                "date": date_key,
+                "revenue": float(period_data[date_key]["revenue"]),
+                "customers": len(period_data[date_key]["customers"])
+            })
+
+        return trends
+
+    except Exception as e:
+        logger.error(f"Error getting revenue trends: {e}")
+        return []
+
+
+async def get_revenue_by_plan(client: httpx.AsyncClient) -> List[Dict[str, Any]]:
+    """Get revenue breakdown by subscription plan using Lago API"""
+    try:
+        from collections import defaultdict
+
+        # Get active subscriptions
+        subscriptions_data = await lago_api_call(client, "/api/v1/subscriptions?status=active")
+        subscriptions = subscriptions_data.get("subscriptions", [])
+
+        # Get plans
+        plans_data = await lago_api_call(client, "/api/v1/plans")
+        plans_list = plans_data.get("plans", [])
+
+        # Create plan lookup
+        plans_by_code = {plan["code"]: plan for plan in plans_list}
+
+        # Group by plan
+        plan_metrics = defaultdict(lambda: {"mrr": 0.0, "count": 0})
+
+        for sub in subscriptions:
+            plan_code = sub.get("plan_code")
+            if plan_code and plan_code in plans_by_code:
+                plan = plans_by_code[plan_code]
+                amount_cents = plan.get("amount_cents", 0)
+                interval = plan.get("interval", "monthly")
+
+                # Calculate MRR contribution
+                if interval == "monthly":
+                    mrr = amount_cents / 100.0
+                elif interval == "yearly":
+                    mrr = (amount_cents / 100.0) / 12.0
+                elif interval == "weekly":
+                    mrr = (amount_cents / 100.0) * 4.33
+                else:
+                    mrr = 0.0
+
+                plan_metrics[plan_code]["mrr"] += mrr
+                plan_metrics[plan_code]["count"] += 1
+
+        # Calculate total MRR
+        total_mrr = sum(metrics["mrr"] for metrics in plan_metrics.values())
+
+        # Build response
+        plan_data = []
+        for plan_code, metrics in plan_metrics.items():
+            plan = plans_by_code.get(plan_code, {})
+            mrr = metrics["mrr"]
+            count = metrics["count"]
+
+            plan_data.append({
+                "plan_code": plan_code,
+                "plan_name": plan.get("name", plan_code),
+                "mrr": mrr,
+                "subscriber_count": count,
+                "percentage": (mrr / total_mrr * 100) if total_mrr > 0 else 0,
+                "average_revenue_per_subscriber": mrr / count if count > 0 else 0
+            })
+
+        # Sort by MRR descending
+        plan_data.sort(key=lambda x: x["mrr"], reverse=True)
+
+        return plan_data
+
+    except Exception as e:
+        logger.error(f"Error getting revenue by plan: {e}")
+        return []
+
+
+async def forecast_revenue(client: httpx.AsyncClient, months: int) -> Dict[str, float]:
+    """Forecast revenue using linear regression with Lago API data"""
+    try:
+        from collections import defaultdict
+
+        # Get historical invoices (last 12 months)
+        invoices_data = await lago_api_call(client, "/api/v1/invoices")
+        invoices = invoices_data.get("invoices", [])
+
+        cutoff_date = datetime.utcnow() - timedelta(days=365)
+        monthly_revenue = defaultdict(float)
+
+        for invoice in invoices:
+            if invoice.get("status") not in ["finalized", "succeeded"]:
+                continue
+
+            issued_date = datetime.fromisoformat(invoice["issuing_date"].replace("Z", "+00:00"))
+            if issued_date < cutoff_date:
+                continue
+
+            month_key = issued_date.strftime("%Y-%m")
+            amount_cents = invoice.get("amount_cents", 0)
+            monthly_revenue[month_key] += amount_cents / 100.0
+
+        if len(monthly_revenue) < 3:
+            # Not enough data for forecasting
+            return {
+                "forecast": 0.0,
+                "confidence_low": 0.0,
+                "confidence_high": 0.0,
+                "accuracy": 0.0
+            }
+
+        # Prepare data for linear regression
+        sorted_months = sorted(monthly_revenue.keys())
+        x = np.array(list(range(len(sorted_months))))
+        y = np.array([monthly_revenue[month] for month in sorted_months])
+
+        # Perform linear regression
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+
+        # Calculate forecast
+        forecast_x = len(sorted_months) - 1 + months
+        forecast = slope * forecast_x + intercept
+
+        # Calculate confidence interval (95%)
+        confidence_interval = 1.96 * std_err * np.sqrt(
+            1 + 1/len(x) + (forecast_x - np.mean(x))**2 / np.sum((x - np.mean(x))**2)
         )
-        SELECT
-            SUM(mrr) as churned_mrr,
-            COUNT(*) as churned_count
-        FROM churned_subs
-    """)
 
-    result = db.execute(query).fetchone()
+        return {
+            "forecast": max(0.0, float(forecast)),
+            "confidence_low": max(0.0, float(forecast - confidence_interval)),
+            "confidence_high": max(0.0, float(forecast + confidence_interval)),
+            "accuracy": float(r_value ** 2)  # R-squared
+        }
 
-    churned_mrr = float(result[0] or 0)
-    churned_count = int(result[1] or 0)
-
-    # Get total subscriptions for churn rate
-    total_query = text("""
-        SELECT COUNT(*)
-        FROM subscriptions
-        WHERE status IN ('active', 'canceled')
-            AND (status = 'active' OR canceled_at >= NOW() - INTERVAL '30 days')
-    """)
-
-    total_result = db.execute(total_query).fetchone()
-    total_subs = int(total_result[0] or 0)
-
-    churn_rate = (churned_count / total_subs * 100) if total_subs > 0 else 0
-
-    # Calculate annual revenue impact
-    revenue_impact = churned_mrr * 12
-
-    return {
-        "churned_mrr": churned_mrr,
-        "churned_subscribers": churned_count,
-        "churn_rate": churn_rate,
-        "revenue_impact": revenue_impact,
-        "period": "last_30_days"
-    }
+    except Exception as e:
+        logger.error(f"Error forecasting revenue: {e}")
+        return {
+            "forecast": 0.0,
+            "confidence_low": 0.0,
+            "confidence_high": 0.0,
+            "accuracy": 0.0
+        }
 
 
-def calculate_lifetime_value(db: Session) -> Dict[str, Any]:
-    """Calculate customer lifetime value"""
-    # Get average customer lifetime
-    lifetime_query = text("""
-        SELECT
-            AVG(EXTRACT(EPOCH FROM (COALESCE(canceled_at, NOW()) - created_at)) / 2592000) as avg_lifetime_months
-        FROM subscriptions
-        WHERE status IN ('active', 'canceled')
-    """)
+async def calculate_churn_impact(client: httpx.AsyncClient) -> Dict[str, Any]:
+    """Calculate churn impact on revenue using Lago API"""
+    try:
+        # Get subscriptions
+        subscriptions_data = await lago_api_call(client, "/api/v1/subscriptions")
+        subscriptions = subscriptions_data.get("subscriptions", [])
 
-    lifetime_result = db.execute(lifetime_query).fetchone()
-    avg_lifetime_months = float(lifetime_result[0] or 0)
+        # Get plans
+        plans_data = await lago_api_call(client, "/api/v1/plans")
+        plans_list = plans_data.get("plans", [])
+        plans_by_code = {plan["code"]: plan for plan in plans_list}
 
-    # Get ARPU by plan
-    arpu_query = text("""
-        SELECT
-            p.code,
-            AVG(CASE
-                WHEN p.interval = 'monthly' THEN p.amount_cents / 100.0
-                WHEN p.interval = 'yearly' THEN (p.amount_cents / 100.0) / 12.0
-                WHEN p.interval = 'weekly' THEN (p.amount_cents / 100.0) * 4.33
-                ELSE 0
-            END) as avg_mrr
-        FROM subscriptions s
-        JOIN plans p ON s.plan_id = p.id
-        WHERE s.status = 'active'
-        GROUP BY p.code
-    """)
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
 
-    arpu_results = db.execute(arpu_query).fetchall()
+        churned_mrr = 0.0
+        churned_count = 0
+        total_subs = 0
 
-    ltv_by_plan = {}
-    total_ltv = 0
-    plan_count = 0
+        for sub in subscriptions:
+            status = sub.get("status")
+            plan_code = sub.get("plan_code")
 
-    for row in arpu_results:
-        plan_code = row[0]
-        avg_mrr = float(row[1])
-        ltv = avg_mrr * avg_lifetime_months
-        ltv_by_plan[plan_code] = ltv
-        total_ltv += ltv
-        plan_count += 1
+            # Count churned subscriptions in last 30 days
+            if status == "terminated" and sub.get("terminated_at"):
+                terminated_at = datetime.fromisoformat(sub["terminated_at"].replace("Z", "+00:00"))
+                if terminated_at >= thirty_days_ago:
+                    churned_count += 1
+                    total_subs += 1
 
-    avg_ltv = total_ltv / plan_count if plan_count > 0 else 0
+                    # Calculate churned MRR
+                    if plan_code and plan_code in plans_by_code:
+                        plan = plans_by_code[plan_code]
+                        amount_cents = plan.get("amount_cents", 0)
+                        interval = plan.get("interval", "monthly")
 
-    return {
-        "average_ltv": avg_ltv,
-        "ltv_by_plan": ltv_by_plan,
-        "average_customer_lifetime_months": avg_lifetime_months,
-        "ltv_to_cac_ratio": None  # CAC data not available
-    }
+                        if interval == "monthly":
+                            churned_mrr += amount_cents / 100.0
+                        elif interval == "yearly":
+                            churned_mrr += (amount_cents / 100.0) / 12.0
+                        elif interval == "weekly":
+                            churned_mrr += (amount_cents / 100.0) * 4.33
+
+            # Count active subscriptions
+            elif status == "active":
+                total_subs += 1
+
+        churn_rate = (churned_count / total_subs * 100) if total_subs > 0 else 0
+        revenue_impact = churned_mrr * 12
+
+        return {
+            "churned_mrr": churned_mrr,
+            "churned_subscribers": churned_count,
+            "churn_rate": churn_rate,
+            "revenue_impact": revenue_impact,
+            "period": "last_30_days"
+        }
+
+    except Exception as e:
+        logger.error(f"Error calculating churn impact: {e}")
+        return {
+            "churned_mrr": 0.0,
+            "churned_subscribers": 0,
+            "churn_rate": 0.0,
+            "revenue_impact": 0.0,
+            "period": "last_30_days"
+        }
 
 
-def get_cohort_revenue(db: Session) -> List[Dict[str, Any]]:
-    """Get revenue by customer cohort"""
-    query = text("""
-        WITH customer_cohorts AS (
-            SELECT
-                c.id as customer_id,
-                DATE_TRUNC('month', c.created_at) as cohort_month,
-                SUM(i.amount_cents / 100.0) as total_revenue
-            FROM customers c
-            LEFT JOIN invoices i ON c.id = i.customer_id
-            WHERE i.status IN ('finalized', 'succeeded')
-            GROUP BY c.id, cohort_month
-        ),
-        cohort_stats AS (
-            SELECT
-                cohort_month::text as cohort,
-                COUNT(DISTINCT customer_id) as customer_count,
-                SUM(total_revenue) as total_revenue,
-                COUNT(DISTINCT CASE
-                    WHEN EXISTS (
-                        SELECT 1 FROM subscriptions s
-                        WHERE s.customer_id = cc.customer_id
-                        AND s.status = 'active'
-                    ) THEN customer_id
-                END)::float / COUNT(DISTINCT customer_id)::float * 100 as retention_rate
-            FROM customer_cohorts cc
-            GROUP BY cohort_month
-            ORDER BY cohort_month DESC
-            LIMIT 12
-        )
-        SELECT
-            cohort,
-            customer_count,
-            COALESCE(total_revenue, 0) as total_revenue,
-            COALESCE(retention_rate, 0) as retention_rate
-        FROM cohort_stats
-    """)
+async def calculate_lifetime_value(client: httpx.AsyncClient) -> Dict[str, Any]:
+    """Calculate customer lifetime value using Lago API"""
+    try:
+        # Get subscriptions
+        subscriptions_data = await lago_api_call(client, "/api/v1/subscriptions")
+        subscriptions = subscriptions_data.get("subscriptions", [])
 
-    results = db.execute(query).fetchall()
+        # Get plans
+        plans_data = await lago_api_call(client, "/api/v1/plans")
+        plans_list = plans_data.get("plans", [])
+        plans_by_code = {plan["code"]: plan for plan in plans_list}
 
-    cohorts = []
-    for row in results:
-        total_revenue = float(row[2])
-        customer_count = int(row[1])
-        cohorts.append({
-            "cohort": row[0],
-            "customer_count": customer_count,
-            "total_revenue": total_revenue,
-            "average_revenue_per_customer": total_revenue / customer_count if customer_count > 0 else 0,
-            "retention_rate": float(row[3])
+        # Calculate average lifetime
+        total_lifetime_months = 0
+        lifetime_count = 0
+        plan_mrr = {}
+
+        for sub in subscriptions:
+            status = sub.get("status")
+            created_at = datetime.fromisoformat(sub["created_at"].replace("Z", "+00:00"))
+
+            # Calculate lifetime
+            if status == "terminated" and sub.get("terminated_at"):
+                terminated_at = datetime.fromisoformat(sub["terminated_at"].replace("Z", "+00:00"))
+            else:
+                terminated_at = datetime.utcnow()
+
+            lifetime_months = (terminated_at - created_at).days / 30.44
+            total_lifetime_months += lifetime_months
+            lifetime_count += 1
+
+            # Calculate MRR by plan
+            if status == "active":
+                plan_code = sub.get("plan_code")
+                if plan_code and plan_code in plans_by_code:
+                    plan = plans_by_code[plan_code]
+                    amount_cents = plan.get("amount_cents", 0)
+                    interval = plan.get("interval", "monthly")
+
+                    if interval == "monthly":
+                        mrr = amount_cents / 100.0
+                    elif interval == "yearly":
+                        mrr = (amount_cents / 100.0) / 12.0
+                    elif interval == "weekly":
+                        mrr = (amount_cents / 100.0) * 4.33
+                    else:
+                        mrr = 0.0
+
+                    if plan_code not in plan_mrr:
+                        plan_mrr[plan_code] = {"total_mrr": 0.0, "count": 0}
+                    plan_mrr[plan_code]["total_mrr"] += mrr
+                    plan_mrr[plan_code]["count"] += 1
+
+        avg_lifetime_months = total_lifetime_months / lifetime_count if lifetime_count > 0 else 0
+
+        # Calculate LTV by plan
+        ltv_by_plan = {}
+        total_ltv = 0.0
+        plan_count = 0
+
+        for plan_code, metrics in plan_mrr.items():
+            avg_mrr = metrics["total_mrr"] / metrics["count"] if metrics["count"] > 0 else 0
+            ltv = avg_mrr * avg_lifetime_months
+            ltv_by_plan[plan_code] = ltv
+            total_ltv += ltv
+            plan_count += 1
+
+        avg_ltv = total_ltv / plan_count if plan_count > 0 else 0
+
+        return {
+            "average_ltv": avg_ltv,
+            "ltv_by_plan": ltv_by_plan,
+            "average_customer_lifetime_months": avg_lifetime_months,
+            "ltv_to_cac_ratio": None  # CAC data not available
+        }
+
+    except Exception as e:
+        logger.error(f"Error calculating LTV: {e}")
+        return {
+            "average_ltv": 0.0,
+            "ltv_by_plan": {},
+            "average_customer_lifetime_months": 0.0,
+            "ltv_to_cac_ratio": None
+        }
+
+
+async def get_cohort_revenue(client: httpx.AsyncClient) -> List[Dict[str, Any]]:
+    """Get revenue by customer cohort using Lago API"""
+    try:
+        from collections import defaultdict
+
+        # Get customers
+        customers_data = await lago_api_call(client, "/api/v1/customers")
+        customers = customers_data.get("customers", [])
+
+        # Get invoices
+        invoices_data = await lago_api_call(client, "/api/v1/invoices")
+        invoices = invoices_data.get("invoices", [])
+
+        # Get subscriptions
+        subscriptions_data = await lago_api_call(client, "/api/v1/subscriptions")
+        subscriptions = subscriptions_data.get("subscriptions", [])
+
+        # Group customers by cohort
+        customer_cohorts = {}
+        for customer in customers:
+            customer_id = customer.get("lago_id")
+            created_at = datetime.fromisoformat(customer["created_at"].replace("Z", "+00:00"))
+            cohort_month = created_at.strftime("%Y-%m")
+            customer_cohorts[customer_id] = cohort_month
+
+        # Calculate cohort metrics
+        cohort_metrics = defaultdict(lambda: {
+            "customer_count": set(),
+            "total_revenue": 0.0,
+            "active_customers": set()
         })
 
-    return cohorts
+        # Add revenue from invoices
+        for invoice in invoices:
+            if invoice.get("status") not in ["finalized", "succeeded"]:
+                continue
+
+            customer_id = invoice.get("customer", {}).get("lago_id")
+            if customer_id and customer_id in customer_cohorts:
+                cohort = customer_cohorts[customer_id]
+                amount_cents = invoice.get("amount_cents", 0)
+                cohort_metrics[cohort]["total_revenue"] += amount_cents / 100.0
+                cohort_metrics[cohort]["customer_count"].add(customer_id)
+
+        # Add active customers
+        for sub in subscriptions:
+            if sub.get("status") == "active":
+                customer_id = sub.get("customer", {}).get("lago_id")
+                if customer_id and customer_id in customer_cohorts:
+                    cohort = customer_cohorts[customer_id]
+                    cohort_metrics[cohort]["active_customers"].add(customer_id)
+
+        # Build response
+        cohorts = []
+        sorted_cohorts = sorted(cohort_metrics.keys(), reverse=True)[:12]
+
+        for cohort in sorted_cohorts:
+            metrics = cohort_metrics[cohort]
+            customer_count = len(metrics["customer_count"])
+            total_revenue = metrics["total_revenue"]
+            retention_rate = (len(metrics["active_customers"]) / customer_count * 100) if customer_count > 0 else 0
+
+            cohorts.append({
+                "cohort": cohort,
+                "customer_count": customer_count,
+                "total_revenue": total_revenue,
+                "average_revenue_per_customer": total_revenue / customer_count if customer_count > 0 else 0,
+                "retention_rate": retention_rate
+            })
+
+        return cohorts
+
+    except Exception as e:
+        logger.error(f"Error getting cohort revenue: {e}")
+        return []
 
 
 # API Endpoints
 @router.get("/overview", response_model=RevenueOverview)
 async def get_revenue_overview(
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -558,10 +760,10 @@ async def get_revenue_overview(
             logger.info("Returning cached revenue overview")
             return RevenueOverview(**cached)
 
-        # Calculate metrics
-        mrr_data = calculate_mrr(db)
-        growth_rate = calculate_growth_rate(db)
-        churn_rate = calculate_churn_rate(db)
+        # Calculate metrics using Lago API
+        mrr_data = await calculate_mrr(client)
+        growth_rate = await calculate_growth_rate(client)
+        churn_rate = await calculate_churn_rate(client)
 
         overview = RevenueOverview(
             mrr=mrr_data["mrr"],
@@ -588,7 +790,7 @@ async def get_revenue_overview(
 async def get_trends(
     period: str = Query("monthly", regex="^(daily|weekly|monthly)$"),
     days: int = Query(365, ge=30, le=730),
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -605,7 +807,7 @@ async def get_trends(
             logger.info(f"Returning cached revenue trends: {period}")
             return cached
 
-        trends = get_revenue_trends(db, period, days)
+        trends = await get_revenue_trends(client, period, days)
 
         total_revenue = sum(t["revenue"] for t in trends)
         average_revenue = total_revenue / len(trends) if trends else 0
@@ -629,7 +831,7 @@ async def get_trends(
 
 @router.get("/by-plan", response_model=List[RevenueByPlan])
 async def get_revenue_by_plan_endpoint(
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -641,7 +843,7 @@ async def get_revenue_by_plan_endpoint(
             logger.info("Returning cached revenue by plan")
             return [RevenueByPlan(**item) for item in cached]
 
-        plan_data = get_revenue_by_plan(db)
+        plan_data = await get_revenue_by_plan(client)
 
         result = [RevenueByPlan(**item) for item in plan_data]
 
@@ -657,7 +859,7 @@ async def get_revenue_by_plan_endpoint(
 
 @router.get("/forecasts", response_model=RevenueForecast)
 async def get_revenue_forecasts(
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -669,9 +871,9 @@ async def get_revenue_forecasts(
             logger.info("Returning cached revenue forecasts")
             return RevenueForecast(**cached)
 
-        forecast_3m = forecast_revenue(db, 3)
-        forecast_6m = forecast_revenue(db, 6)
-        forecast_12m = forecast_revenue(db, 12)
+        forecast_3m = await forecast_revenue(client, 3)
+        forecast_6m = await forecast_revenue(client, 6)
+        forecast_12m = await forecast_revenue(client, 12)
 
         result = RevenueForecast(
             forecast_3_months=forecast_3m["forecast"],
@@ -694,7 +896,7 @@ async def get_revenue_forecasts(
 
 @router.get("/churn-impact", response_model=ChurnImpact)
 async def get_churn_impact_endpoint(
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -706,7 +908,7 @@ async def get_churn_impact_endpoint(
             logger.info("Returning cached churn impact")
             return ChurnImpact(**cached)
 
-        impact = calculate_churn_impact(db)
+        impact = await calculate_churn_impact(client)
 
         result = ChurnImpact(**impact)
 
@@ -722,7 +924,7 @@ async def get_churn_impact_endpoint(
 
 @router.get("/ltv", response_model=LifetimeValue)
 async def get_lifetime_value_endpoint(
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -734,7 +936,7 @@ async def get_lifetime_value_endpoint(
             logger.info("Returning cached LTV")
             return LifetimeValue(**cached)
 
-        ltv = calculate_lifetime_value(db)
+        ltv = await calculate_lifetime_value(client)
 
         result = LifetimeValue(**ltv)
 
@@ -750,7 +952,7 @@ async def get_lifetime_value_endpoint(
 
 @router.get("/cohorts/revenue", response_model=List[CohortRevenue])
 async def get_cohort_revenue_endpoint(
-    db: Session = Depends(get_db),
+    client: httpx.AsyncClient = Depends(get_http_client),
     redis_client: redis.Redis = Depends(get_redis)
 ):
     """
@@ -762,7 +964,7 @@ async def get_cohort_revenue_endpoint(
             logger.info("Returning cached cohort revenue")
             return [CohortRevenue(**item) for item in cached]
 
-        cohorts = get_cohort_revenue(db)
+        cohorts = await get_cohort_revenue(client)
 
         result = [CohortRevenue(**item) for item in cohorts]
 

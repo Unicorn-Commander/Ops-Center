@@ -102,6 +102,21 @@ from user_analytics import router as user_analytics_router
 # Usage Analytics (Epic 2.6)
 from usage_analytics import router as usage_analytics_router
 
+# Model Management API (Sprint 6-7)
+from model_management_api import router as model_management_router
+
+# Permissions Management API (Sprint 6-7)
+from permissions_management_api import router as permissions_management_router
+
+# LLM Usage API (Sprint 6-7)
+from llm_usage_api import router as llm_usage_router
+
+# LLM Provider Settings API (Sprint 6-7)
+from llm_provider_settings_api import router as llm_provider_settings_router
+
+# Traefik Services Detail API (Sprint 6-7)
+from traefik_services_detail_api import router as traefik_services_detail_router
+
 # API Documentation (Epic 2.8)
 from api_docs import router as api_docs_router
 
@@ -546,12 +561,32 @@ logger.info("User Analytics API endpoints registered at /api/v1/analytics/users"
 
 # Usage Analytics API (Epic 2.6)
 app.include_router(usage_analytics_router)
+logger.info("Usage Analytics API endpoints registered at /api/v1/analytics/usage")
+
+# Model Management API (Sprint 6-7)
+app.include_router(model_management_router)
+logger.info("Model Management API endpoints registered at /api/v1/models")
+
+# Permissions Management API (Sprint 6-7)
+app.include_router(permissions_management_router)
+logger.info("Permissions Management API endpoints registered at /api/v1/permissions")
+
+# LLM Usage API (Sprint 6-7)
+app.include_router(llm_usage_router)
+logger.info("LLM Usage API endpoints registered at /api/v1/llm/usage")
+
+# LLM Provider Settings API (Sprint 6-7)
+app.include_router(llm_provider_settings_router)
+logger.info("LLM Provider Settings API endpoints registered at /api/v1/llm/providers")
+
+# Traefik Services Detail API (Sprint 6-7)
+app.include_router(traefik_services_detail_router)
+logger.info("Traefik Services Detail API endpoints registered at /api/v1/traefik/services")
 
 # API Documentation (Epic 2.8)
 app.include_router(api_docs_router)
 logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
 logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
-logger.info("Usage Analytics API endpoints registered at /api/v1/analytics/usage")
 
 # API Documentation (Epic 2.8)
 app.include_router(api_docs_router)

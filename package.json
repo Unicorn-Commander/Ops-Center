@@ -67,11 +67,22 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:chromium": "playwright test --project=chromium",
+    "test:e2e:firefox": "playwright test --project=firefox",
+    "test:e2e:webkit": "playwright test --project=webkit",
+    "test:e2e:accessibility": "playwright test --project=accessibility",
+    "test:e2e:report": "playwright show-report",
     "test:mobile": "playwright test tests/mobile/",
     "test:mobile:ui": "playwright test tests/mobile/ --ui",
     "test:mobile:responsiveness": "playwright test tests/mobile/mobile-responsiveness.test.js",
     "test:mobile:accessibility": "playwright test tests/mobile/mobile-accessibility.test.js",
     "test:mobile:performance": "playwright test tests/mobile/mobile-performance.test.js",
-    "test:mobile:report": "playwright show-report"
+    "test:mobile:report": "playwright show-report",
+    "playwright:install": "playwright install",
+    "playwright:install:deps": "playwright install-deps"
   }
 }
