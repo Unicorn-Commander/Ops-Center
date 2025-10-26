@@ -205,19 +205,47 @@ async def chat_completions(
         if request.model:
             proxy_request["model"] = request.model
 
-        # Call LiteLLM proxy
+        # Get provider info from database for direct API call
+        async with credit_system.db_pool.acquire() as conn:
+            # Get OpenRouter provider (or first enabled provider)
+            provider = await conn.fetchrow("""
+                SELECT id, name, type, api_key_encrypted, config
+                FROM llm_providers
+                WHERE enabled = true AND type = 'openrouter'
+                ORDER BY priority DESC
+                LIMIT 1
+            """)
+
+            if not provider:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No LLM providers configured. Please configure OpenRouter in Platform Settings."
+                )
+
+            # Get provider config (handle both dict and JSON string)
+            provider_config = provider['config'] or {}
+            if isinstance(provider_config, str):
+                import json
+                provider_config = json.loads(provider_config)
+
+            base_url = provider_config.get('base_url', 'https://openrouter.ai/api/v1')
+            api_key = provider['api_key_encrypted']  # Stored as plain text for now
+
+        # Call provider API directly (OpenRouter)
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
-                f"{LITELLM_PROXY_URL}/chat/completions",
+                f"{base_url}/chat/completions",
                 json=proxy_request,
                 headers={
-                    "Authorization": f"Bearer {os.getenv('LITELLM_MASTER_KEY')}",
-                    "Content-Type": "application/json"
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://unicorncommander.ai",  # Required by OpenRouter
+                    "X-Title": "UC-1 Pro Ops Center"  # Required by OpenRouter
                 }
             )
 
             if response.status_code != 200:
-                logger.error(f"LiteLLM proxy error: {response.text}")
+                logger.error(f"OpenRouter API error: {response.text}")
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"LLM provider error: {response.text}"
