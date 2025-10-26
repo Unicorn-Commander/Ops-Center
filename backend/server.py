@@ -80,6 +80,10 @@ from credential_api import router as credential_router
 from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
 from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
+from litellm_credit_system import CreditSystem
+from byok_manager import BYOKManager
+import asyncpg
+import redis.asyncio as aioredis
 from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
@@ -364,6 +368,46 @@ async def startup_event():
             if not os.environ.get("RATE_LIMIT_FAIL_OPEN", "true").lower() == "true":
                 raise
 
+    # Initialize LiteLLM credit system (CRITICAL for Brigade integration)
+    try:
+        # Create PostgreSQL connection pool
+        db_pool = await asyncpg.create_pool(
+            host=os.getenv('POSTGRES_HOST', 'unicorn-postgresql'),
+            port=int(os.getenv('POSTGRES_PORT', '5432')),
+            user=os.getenv('POSTGRES_USER', 'unicorn'),
+            password=os.getenv('POSTGRES_PASSWORD', 'unicorn'),
+            database=os.getenv('POSTGRES_DB', 'unicorn_db'),
+            min_size=2,
+            max_size=10
+        )
+        logger.info("PostgreSQL connection pool created")
+
+        # Create Redis client
+        redis_client = aioredis.from_url(
+            f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}",
+            encoding="utf-8",
+            decode_responses=True
+        )
+        await redis_client.ping()  # Test connection
+        logger.info("Redis client connected")
+
+        # Initialize credit system
+        credit_system = CreditSystem(db_pool, redis_client)
+        app.state.credit_system = credit_system
+        app.state.db_pool = db_pool  # Store for cleanup
+        app.state.redis_client = redis_client  # Store for cleanup
+        logger.info("LiteLLM credit system initialized successfully")
+
+        # Initialize BYOK manager (uses same db_pool)
+        byok_manager = BYOKManager(db_pool)
+        app.state.byok_manager = byok_manager
+        logger.info("BYOK manager initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize credit system / BYOK: {e}")
+        # Don't block startup, but credit-based features will fail
+        app.state.credit_system = None
+        app.state.byok_manager = None
+
     # Start email scheduler (Epic 2.3)
     try:
         email_scheduler = EmailScheduler()
@@ -427,6 +471,21 @@ async def shutdown_event():
             logger.info("Rate limiter closed")
         except Exception as e:
             logger.error(f"Error closing rate limiter: {e}")
+
+    # Close credit system connections
+    if hasattr(app.state, 'db_pool') and app.state.db_pool:
+        try:
+            await app.state.db_pool.close()
+            logger.info("PostgreSQL connection pool closed")
+        except Exception as e:
+            logger.error(f"Error closing database pool: {e}")
+
+    if hasattr(app.state, 'redis_client') and app.state.redis_client:
+        try:
+            await app.state.redis_client.close()
+            logger.info("Redis client closed")
+        except Exception as e:
+            logger.error(f"Error closing Redis client: {e}")
 
     # Stop backup scheduler (TODO: Install apscheduler in container first)
     # try:
