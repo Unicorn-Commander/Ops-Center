@@ -87,6 +87,7 @@ from redis_session import redis_session_manager
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
 from email_notification_api import router as notification_router
+from email_provider_api import router as email_provider_router
 
 # System Metrics & Health Monitoring (Epic 2.5)
 from system_metrics_api import router as system_metrics_router
@@ -546,6 +547,10 @@ logger.info("Restic Backup API endpoints registered at /api/v1/backups/restic")
 # Email Notification API (Epic 2.3)
 app.include_router(notification_router)
 logger.info("Email Notification API endpoints registered at /api/v1/notifications")
+
+# Email Provider Management API
+app.include_router(email_provider_router)
+logger.info("Email Provider API endpoints registered at /api/v1/email-provider")
 
 # System Metrics API (Epic 2.5 - Admin Dashboard Polish)
 app.include_router(system_metrics_router)
