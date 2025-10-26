@@ -79,6 +79,7 @@ from migration_api import router as migration_router
 from credential_api import router as credential_router
 from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
+from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
 from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
@@ -318,7 +319,10 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
         "/api/v1/tier-check/health",  # Health checks
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
-        "/api/v1/analytics/web-vitals"  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
+        "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
+        "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
+        "/api/v1/email-provider/",  # Email provider API - testing and management
+        "/api/v1/platform/"  # Platform settings API - credential management
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -513,6 +517,8 @@ app.include_router(admin_local_users_router)
 logger.info("Admin Local User Management API endpoints registered at /api/v1/admin/system/local-users")
 app.include_router(litellm_routing_router)
 logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
+app.include_router(litellm_api_router)
+logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
 
 # Platform Settings API
 app.include_router(platform_settings_router)

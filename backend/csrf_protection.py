@@ -114,7 +114,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/openapi.json",
             "/api/v1/auth/login",
-            "/api/v1/auth/logout"
+            "/api/v1/auth/logout",
+            "/api/v1/llm/",  # LLM API endpoints (used by Brigade, Open-WebUI, etc.)
+            "/api/v1/email-provider/",  # Email provider API (used for testing providers)
+            "/api/v1/platform/"  # Platform settings API (credential management)
         }
         self.enabled = enabled
         self.sessions_store = sessions_store or {}
