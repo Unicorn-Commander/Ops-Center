@@ -574,18 +574,37 @@ async def delete_provider(provider_id: str):
 async def list_models(
     provider_id: Optional[str] = None,
     enabled_only: bool = False,
-    sort_by: str = "cost"  # cost, latency, name
+    sort_by: str = "cost",  # cost, latency, name, context, popularity
+    search: Optional[str] = None,
+    min_cost: Optional[float] = None,
+    max_cost: Optional[float] = None,
+    min_context: Optional[int] = None,
+    max_context: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0
 ):
     """
-    List all available LLM models across providers
+    List all available LLM models across providers with advanced filtering
 
     Query Parameters:
         provider_id: Filter by provider UUID
-        enabled_only: Only return enabled models
-        sort_by: Sort by cost, latency, or name
+        enabled_only: Only return enabled models (default: false)
+        sort_by: Sort by cost, latency, name, context, or popularity (default: cost)
+        search: Search model names (case-insensitive)
+        min_cost: Minimum cost per 1M tokens (input + output average)
+        max_cost: Maximum cost per 1M tokens (input + output average)
+        min_context: Minimum context length
+        max_context: Maximum context length
+        limit: Maximum results to return (default: 100)
+        offset: Results offset for pagination (default: 0)
 
     Returns:
         List of models with pricing and performance data
+
+    Examples:
+        /api/v1/llm/models?search=gpt&max_cost=5.0&min_context=100000
+        /api/v1/llm/models?enabled_only=true&sort_by=context&limit=20
+        /api/v1/llm/models?provider_id=xxx&sort_by=cost&max_cost=1.0
     """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -600,6 +619,7 @@ async def list_models(
                 m.display_name,
                 m.cost_per_1m_input_tokens,
                 m.cost_per_1m_output_tokens,
+                (m.cost_per_1m_input_tokens + m.cost_per_1m_output_tokens) / 2 as avg_cost,
                 m.context_length,
                 m.enabled,
                 m.avg_latency_ms,
@@ -611,20 +631,57 @@ async def list_models(
 
         params = []
 
+        # Provider filter
         if provider_id:
             query += " AND m.provider_id = %s"
             params.append(provider_id)
 
+        # Enabled filter
         if enabled_only:
             query += " AND m.enabled = true AND p.enabled = true"
 
+        # Search filter (name or display_name)
+        if search:
+            query += " AND (m.name ILIKE %s OR m.display_name ILIKE %s)"
+            search_pattern = f"%{search}%"
+            params.append(search_pattern)
+            params.append(search_pattern)
+
+        # Cost filters (using average of input + output)
+        if min_cost is not None:
+            query += " AND (m.cost_per_1m_input_tokens + m.cost_per_1m_output_tokens) / 2 >= %s"
+            params.append(min_cost)
+
+        if max_cost is not None:
+            query += " AND (m.cost_per_1m_input_tokens + m.cost_per_1m_output_tokens) / 2 <= %s"
+            params.append(max_cost)
+
+        # Context length filters
+        if min_context is not None:
+            query += " AND m.context_length >= %s"
+            params.append(min_context)
+
+        if max_context is not None:
+            query += " AND m.context_length <= %s"
+            params.append(max_context)
+
         # Sort
         if sort_by == "cost":
-            query += " ORDER BY (m.cost_per_1m_input_tokens + m.cost_per_1m_output_tokens) / 2"
+            query += " ORDER BY avg_cost ASC"
         elif sort_by == "latency":
-            query += " ORDER BY m.avg_latency_ms NULLS LAST"
-        else:
+            query += " ORDER BY m.avg_latency_ms ASC NULLS LAST"
+        elif sort_by == "context":
+            query += " ORDER BY m.context_length DESC"
+        elif sort_by == "popularity":
+            # Sort by name for now (could add usage stats later)
             query += " ORDER BY m.name"
+        else:  # name
+            query += " ORDER BY m.name"
+
+        # Pagination
+        query += " LIMIT %s OFFSET %s"
+        params.append(limit)
+        params.append(offset)
 
         cursor.execute(query, params)
         models = cursor.fetchall()
