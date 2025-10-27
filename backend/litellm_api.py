@@ -41,6 +41,65 @@ LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://unicorn-litellm-wilme
 
 
 # ============================================================================
+# Provider Configuration
+# ============================================================================
+
+# Provider configurations for BYOK routing
+PROVIDER_CONFIGS = {
+    'openai': {
+        'base_url': 'https://api.openai.com/v1',
+        'model_prefixes': ['openai/', 'gpt-', 'o1-', 'o3-'],
+        'default_headers': {}
+    },
+    'anthropic': {
+        'base_url': 'https://api.anthropic.com/v1',
+        'model_prefixes': ['anthropic/', 'claude-'],
+        'default_headers': {
+            'anthropic-version': '2023-06-01'
+        }
+    },
+    'openrouter': {
+        'base_url': 'https://openrouter.ai/api/v1',
+        'model_prefixes': [],  # Accepts all models
+        'default_headers': {
+            'HTTP-Referer': 'https://unicorncommander.ai',
+            'X-Title': 'UC-1 Pro Ops Center'
+        }
+    },
+    'google': {
+        'base_url': 'https://generativelanguage.googleapis.com/v1beta',
+        'model_prefixes': ['google/', 'gemini-'],
+        'default_headers': {}
+    }
+}
+
+
+def detect_provider_from_model(model_name: str) -> str:
+    """
+    Detect provider from model name
+
+    Args:
+        model_name: Model identifier (e.g., "openai/gpt-4", "claude-3-opus")
+
+    Returns:
+        Provider name (openai, anthropic, openrouter, google)
+    """
+    if not model_name:
+        return 'openrouter'  # Default to OpenRouter
+
+    model_lower = model_name.lower()
+
+    # Check each provider's prefixes
+    for provider, config in PROVIDER_CONFIGS.items():
+        for prefix in config['model_prefixes']:
+            if model_lower.startswith(prefix.lower()):
+                return provider
+
+    # Default to OpenRouter (handles all models)
+    return 'openrouter'
+
+
+# ============================================================================
 # Request/Response Models
 # ============================================================================
 
@@ -78,6 +137,18 @@ class UsageStats(BaseModel):
     total_cost: float
     avg_cost_per_request: float
     providers: List[Dict]
+
+
+class AddBYOKKeyRequest(BaseModel):
+    """Request model for adding/updating a BYOK key"""
+    provider: str = Field(..., description="Provider name (openrouter, openai, anthropic, google)")
+    api_key: str = Field(..., description="API key from provider", min_length=10)
+    metadata: Optional[Dict] = Field(None, description="Optional metadata")
+
+
+class ToggleBYOKRequest(BaseModel):
+    """Request model for toggling BYOK key status"""
+    enabled: bool = Field(..., description="Enable or disable key")
 
 
 # ============================================================================
@@ -155,6 +226,27 @@ async def chat_completions(
         # Check if user has BYOK for preferred providers
         user_keys = await byok_manager.get_all_user_keys(user_id)
 
+        # Determine BYOK routing:
+        # 1. If user has OpenRouter BYOK, use it for ALL models (OpenRouter is universal proxy)
+        # 2. Otherwise, check if user has provider-specific BYOK for this model
+        using_byok = False
+        user_byok_key = None
+        detected_provider = None
+
+        if 'openrouter' in user_keys:
+            # User has OpenRouter BYOK - use it for all models
+            using_byok = True
+            user_byok_key = user_keys['openrouter']
+            detected_provider = 'openrouter'
+            logger.info(f"User {user_id} has OpenRouter BYOK - using for all models")
+        else:
+            # Check for provider-specific BYOK
+            detected_provider = detect_provider_from_model(request.model)
+            if detected_provider in user_keys:
+                using_byok = True
+                user_byok_key = user_keys[detected_provider]
+                logger.info(f"User {user_id} has {detected_provider} BYOK")
+
         # Estimate tokens for pre-check (rough estimate)
         estimated_tokens = sum(len(msg.content.split()) * 1.5 for msg in request.messages)
         estimated_tokens = int(estimated_tokens)
@@ -167,8 +259,8 @@ async def chat_completions(
             user_tier=user_tier
         )
 
-        # Check credits BEFORE making request (except free tier)
-        if user_tier != 'free':
+        # Check credits BEFORE making request (skip if using BYOK)
+        if not using_byok and user_tier != 'free':
             current_balance = await credit_system.get_user_credits(user_id)
 
             if current_balance < estimated_cost:
@@ -205,43 +297,69 @@ async def chat_completions(
         if request.model:
             proxy_request["model"] = request.model
 
-        # Get provider info from database for direct API call
-        async with credit_system.db_pool.acquire() as conn:
-            # Get OpenRouter provider (or first enabled provider)
-            provider = await conn.fetchrow("""
-                SELECT id, name, type, api_key_encrypted, config
-                FROM llm_providers
-                WHERE enabled = true AND type = 'openrouter'
-                ORDER BY priority DESC
-                LIMIT 1
-            """)
+        # Determine API endpoint and headers based on BYOK or system key
+        if using_byok:
+            # User is using their own API key
+            logger.info(f"Using BYOK for {user_id} with provider {detected_provider}")
 
-            if not provider:
-                raise HTTPException(
-                    status_code=503,
-                    detail="No LLM providers configured. Please configure OpenRouter in Platform Settings."
-                )
+            # Get provider config
+            provider_config = PROVIDER_CONFIGS.get(detected_provider, PROVIDER_CONFIGS['openrouter'])
+            base_url = provider_config['base_url']
+            api_key = user_byok_key
+            provider_name = detected_provider.title()
 
-            # Get provider config (handle both dict and JSON string)
-            provider_config = provider['config'] or {}
-            if isinstance(provider_config, str):
-                import json
-                provider_config = json.loads(provider_config)
+            # Build headers
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                **provider_config['default_headers']
+            }
 
-            base_url = provider_config.get('base_url', 'https://openrouter.ai/api/v1')
-            api_key = provider['api_key_encrypted']  # Stored as plain text for now
+        else:
+            # Using system OpenRouter key (charge credits)
+            logger.info(f"Using system OpenRouter key for {user_id}")
 
-        # Call provider API directly (OpenRouter)
+            # Get provider info from database for direct API call
+            async with credit_system.db_pool.acquire() as conn:
+                # Get OpenRouter provider (or first enabled provider)
+                provider = await conn.fetchrow("""
+                    SELECT id, name, type, api_key_encrypted, config
+                    FROM llm_providers
+                    WHERE enabled = true AND type = 'openrouter'
+                    ORDER BY priority DESC
+                    LIMIT 1
+                """)
+
+                if not provider:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="No LLM providers configured. Please configure OpenRouter in Platform Settings."
+                    )
+
+                # Get provider config (handle both dict and JSON string)
+                provider_db_config = provider['config'] or {}
+                if isinstance(provider_db_config, str):
+                    import json
+                    provider_db_config = json.loads(provider_db_config)
+
+                base_url = provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
+                api_key = provider['api_key_encrypted']  # Stored as plain text for now
+                provider_name = provider['name']
+
+            # Build headers for OpenRouter
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://unicorncommander.ai",  # Required by OpenRouter
+                "X-Title": "UC-1 Pro Ops Center"  # Required by OpenRouter
+            }
+
+        # Call provider API directly
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{base_url}/chat/completions",
                 json=proxy_request,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://unicorncommander.ai",  # Required by OpenRouter
-                    "X-Title": "UC-1 Pro Ops Center"  # Required by OpenRouter
-                }
+                headers=headers
             )
 
             if response.status_code != 200:
@@ -266,8 +384,15 @@ async def chat_completions(
             user_tier=user_tier
         )
 
-        # Debit credits (except free tier with free models)
-        if user_tier != 'free' or actual_cost > 0:
+        # Debit credits (skip if using BYOK - user pays provider directly)
+        if using_byok:
+            # User is using their own API key - no credit charge
+            new_balance = await credit_system.get_user_credits(user_id)
+            transaction_id = None
+            actual_cost = 0.0  # No cost to user's credit balance
+            logger.info(f"BYOK request for {user_id} - no credits charged")
+        elif user_tier != 'free' or actual_cost > 0:
+            # Using system key - charge credits
             new_balance, transaction_id = await credit_system.debit_credits(
                 user_id=user_id,
                 amount=actual_cost,
@@ -281,6 +406,7 @@ async def chat_completions(
                 }
             )
         else:
+            # Free tier with free model
             new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
 
@@ -312,7 +438,9 @@ async def chat_completions(
             'credits_remaining': new_balance,
             'transaction_id': transaction_id,
             'power_level': power_level,
-            'user_tier': user_tier
+            'user_tier': user_tier,
+            'using_byok': using_byok,
+            'byok_provider': detected_provider if using_byok else None
         }
 
         return response_data
@@ -524,36 +652,75 @@ async def get_usage_stats(
 
 @router.post("/byok/keys")
 async def add_byok_key(
-    provider: str,
-    api_key: str,
+    request: AddBYOKKeyRequest,
     user_id: str = Depends(get_user_id),
     byok_manager: BYOKManager = Depends(get_byok_manager)
 ):
-    """Add/update user's own API key for a provider"""
+    """
+    Add or update a BYOK key
+
+    This endpoint validates the API key format and optionally tests it
+    against the provider's API before storing.
+
+    Args:
+        request: BYOK key information (provider, api_key, metadata)
+
+    Returns:
+        Success message with key ID and test results
+
+    Raises:
+        400: Invalid provider or key format
+        503: API test failed (warning only, still stores key)
+    """
     try:
         # Validate key format
-        is_valid = await byok_manager.validate_api_key(user_id, provider, api_key)
+        is_valid = await byok_manager.validate_api_key(
+            user_id=user_id,
+            provider=request.provider,
+            api_key=request.api_key
+        )
+
         if not is_valid:
-            raise HTTPException(status_code=400, detail="Invalid API key format")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid API key format for {request.provider}"
+            )
+
+        # Optional: Test key before storing (recommended but non-blocking)
+        test_result = None
+        try:
+            test_result = await test_provider_api_key(request.provider, request.api_key)
+            if not test_result.get('success'):
+                logger.warning(
+                    f"BYOK test failed for {user_id}/{request.provider}: {test_result.get('message')}"
+                )
+                # Store anyway but include warning in response
+        except Exception as test_error:
+            logger.warning(f"BYOK test error for {user_id}/{request.provider}: {test_error}")
+            # Continue storing even if test fails
 
         # Store key
         key_id = await byok_manager.store_user_api_key(
             user_id=user_id,
-            provider=provider,
-            api_key=api_key
+            provider=request.provider,
+            api_key=request.api_key,
+            metadata=request.metadata
         )
+
+        logger.info(f"User {user_id} added/updated BYOK key for {request.provider}")
 
         return {
             'success': True,
             'key_id': key_id,
-            'provider': provider,
-            'message': 'API key stored successfully'
+            'provider': request.provider,
+            'message': 'API key stored successfully',
+            'test_result': test_result
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error adding BYOK key: {e}")
+        logger.error(f"Error adding BYOK key for {user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to add API key")
 
 
@@ -592,6 +759,347 @@ async def delete_byok_key(
     except Exception as e:
         logger.error(f"Error deleting BYOK key: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete key")
+
+
+@router.post("/byok/keys/{provider}/toggle")
+async def toggle_byok_key(
+    provider: str,
+    request: ToggleBYOKRequest,
+    user_id: str = Depends(get_user_id),
+    byok_manager: BYOKManager = Depends(get_byok_manager)
+):
+    """
+    Enable or disable a BYOK key
+
+    Args:
+        provider: Provider name
+        request: Toggle request (enabled: true/false)
+
+    Returns:
+        New enabled status
+
+    Raises:
+        404: Key not found
+    """
+    try:
+        updated = await byok_manager.toggle_provider(user_id, provider, request.enabled)
+
+        if not updated:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No API key found for provider '{provider}'"
+            )
+
+        action = "enabled" if request.enabled else "disabled"
+        logger.info(f"User {user_id} {action} BYOK key for {provider}")
+
+        return {
+            'success': True,
+            'provider': provider,
+            'enabled': request.enabled,
+            'message': f'API key for {provider} {action} successfully'
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling BYOK key: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle API key")
+
+
+# Rate limiting for test endpoint (simple in-memory tracker)
+from collections import defaultdict
+from time import time as current_time
+
+_test_rate_limits = defaultdict(list)
+TEST_RATE_LIMIT = 5  # Max 5 tests per minute
+TEST_RATE_WINDOW = 60  # 60 seconds
+
+
+def check_test_rate_limit(user_id: str) -> bool:
+    """Check if user is within rate limit for testing"""
+    now = current_time()
+
+    # Clean old timestamps
+    _test_rate_limits[user_id] = [
+        ts for ts in _test_rate_limits[user_id]
+        if now - ts < TEST_RATE_WINDOW
+    ]
+
+    # Check limit
+    if len(_test_rate_limits[user_id]) >= TEST_RATE_LIMIT:
+        return False
+
+    # Add new timestamp
+    _test_rate_limits[user_id].append(now)
+    return True
+
+
+async def test_provider_api_key(provider: str, api_key: str) -> Dict:
+    """Test API key against provider's API"""
+
+    if provider == 'openrouter':
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://openrouter.ai/api/v1/models',
+                    headers={
+                        'Authorization': f'Bearer {api_key}',
+                        'HTTP-Referer': 'https://unicorncommander.ai',
+                        'X-Title': 'UC-1 Pro Ops Center'
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid OpenRouter key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                elif response.status_code == 403:
+                    return {'success': False, 'message': 'API key lacks permissions'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+
+        except httpx.TimeoutException:
+            return {'success': False, 'message': 'Request timeout'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider == 'openai':
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.openai.com/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid OpenAI key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider == 'anthropic':
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    'https://api.anthropic.com/v1/messages',
+                    headers={
+                        'x-api-key': api_key,
+                        'anthropic-version': '2023-06-01',
+                        'content-type': 'application/json'
+                    },
+                    json={
+                        'model': 'claude-3-haiku-20240307',
+                        'max_tokens': 1,
+                        'messages': [{'role': 'user', 'content': 'Hi'}]
+                    }
+                )
+
+                if response.status_code == 200:
+                    return {
+                        'success': True,
+                        'message': 'Valid Anthropic API key.',
+                        'model': 'claude-3-haiku-20240307'
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider == 'google':
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f'https://generativelanguage.googleapis.com/v1beta/models?key={api_key}'
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('models', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid Google API key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 400:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    else:
+        return {'success': False, 'message': f'Testing not supported for provider: {provider}'}
+
+
+@router.post("/byok/keys/{provider}/test")
+async def test_byok_key(
+    provider: str,
+    user_id: str = Depends(get_user_id),
+    byok_manager: BYOKManager = Depends(get_byok_manager)
+):
+    """
+    Test a BYOK key against provider API
+
+    Rate Limited: 5 tests per minute per user
+
+    Args:
+        provider: Provider name to test
+
+    Returns:
+        Test results with success status and details
+    """
+    try:
+        # Check rate limit
+        if not check_test_rate_limit(user_id):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 5 tests per minute."
+            )
+
+        # Get decrypted key
+        api_key = await byok_manager.get_user_api_key(user_id, provider)
+
+        if not api_key:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No API key found for provider '{provider}'"
+            )
+
+        # Test key
+        test_result = await test_provider_api_key(provider, api_key)
+
+        logger.info(f"User {user_id} tested BYOK key for {provider}: {test_result.get('success')}")
+
+        return {
+            'success': test_result.get('success'),
+            'provider': provider,
+            'message': test_result.get('message'),
+            'details': {k: v for k, v in test_result.items() if k not in ['success', 'message']}
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error testing BYOK key: {e}")
+        raise HTTPException(status_code=500, detail="Failed to test API key")
+
+
+@router.get("/byok/keys/{provider}/usage")
+async def get_byok_usage(
+    provider: str,
+    user_id: str = Depends(get_user_id),
+    byok_manager: BYOKManager = Depends(get_byok_manager)
+):
+    """
+    Get usage statistics for a BYOK key
+
+    NOTE: Placeholder for Phase 2 - usage tracking integration
+
+    Args:
+        provider: Provider name
+
+    Returns:
+        Usage statistics
+    """
+    try:
+        # Verify key exists
+        providers = await byok_manager.list_user_providers(user_id)
+        provider_exists = any(p['provider'] == provider for p in providers)
+
+        if not provider_exists:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No API key found for provider '{provider}'"
+            )
+
+        # TODO: Query usage_metering table for BYOK requests
+        # For now, return placeholder
+
+        return {
+            'provider': provider,
+            'total_requests': 0,
+            'total_tokens': 0,
+            'total_cost': 0.0,
+            'last_used': None,
+            'message': 'Usage tracking integration coming in Phase 2'
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting BYOK usage: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get usage statistics")
+
+
+@router.get("/byok/providers")
+async def list_supported_providers():
+    """
+    List all supported BYOK providers
+
+    Returns:
+        List of provider configurations with details
+    """
+    return {
+        'providers': [
+            {
+                'name': 'openrouter',
+                'display_name': 'OpenRouter',
+                'description': 'Universal LLM proxy supporting 100+ models',
+                'key_format': 'sk-or-v1-...',
+                'signup_url': 'https://openrouter.ai',
+                'docs_url': 'https://openrouter.ai/docs',
+                'supports_test': True
+            },
+            {
+                'name': 'openai',
+                'display_name': 'OpenAI',
+                'description': 'GPT-4, GPT-3.5, and other OpenAI models',
+                'key_format': 'sk-...',
+                'signup_url': 'https://platform.openai.com',
+                'docs_url': 'https://platform.openai.com/docs',
+                'supports_test': True
+            },
+            {
+                'name': 'anthropic',
+                'display_name': 'Anthropic',
+                'description': 'Claude 3 models (Opus, Sonnet, Haiku)',
+                'key_format': 'sk-ant-...',
+                'signup_url': 'https://console.anthropic.com',
+                'docs_url': 'https://docs.anthropic.com',
+                'supports_test': True
+            },
+            {
+                'name': 'google',
+                'display_name': 'Google AI',
+                'description': 'Gemini and PaLM models',
+                'key_format': '39-character alphanumeric',
+                'signup_url': 'https://makersuite.google.com',
+                'docs_url': 'https://ai.google.dev/docs',
+                'supports_test': True
+            }
+        ]
+    }
 
 
 # ============================================================================

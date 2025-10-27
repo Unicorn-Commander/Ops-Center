@@ -348,6 +348,14 @@ export const routes = {
         description: 'Multi-provider LLM routing, cost optimization, BYOK',
         icon: 'SparklesIcon'
       },
+      openrouter: {
+        path: '/admin/openrouter-settings',
+        component: 'OpenRouterSettings',
+        roles: ['admin'],
+        name: 'OpenRouter Settings',
+        description: 'OpenRouter API configuration and 348 model browser',
+        icon: 'SparklesIcon'
+      },
       llmUsage: {
         path: '/admin/llm/usage',
         component: 'LLMUsage',

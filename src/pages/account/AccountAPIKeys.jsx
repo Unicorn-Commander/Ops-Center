@@ -1,22 +1,19 @@
 /**
- * AccountAPIKeys Component
+ * AccountAPIKeys Component - BYOK (Bring Your Own Key) Management
  *
- * BYOK (Bring Your Own Key) API keys management
- * - List of API keys (OpenAI, Anthropic, HuggingFace, etc.)
- * - Add/edit/delete key forms
- * - Masked display of keys for security
- * - Test key validation
+ * Comprehensive API key management for users to bring their own provider keys
+ * - OpenRouter (recommended - 348 models)
+ * - OpenAI (direct API access)
+ * - Anthropic (Claude models)
+ * - Google (Gemini models)
+ * - Plus 4 more providers
  *
- * API Endpoints:
- * - GET /api/v1/byok/keys - List all API keys
- * - POST /api/v1/byok/keys - Add new API key
- * - PUT /api/v1/byok/keys/{key_id} - Update API key
- * - DELETE /api/v1/byok/keys/{key_id} - Delete API key
- * - POST /api/v1/byok/keys/{key_id}/test - Test API key validity
+ * Backend: /api/v1/byok/* (Keycloak user attributes + Fernet encryption)
+ * Storage: Encrypted in Keycloak user attributes (no database)
  */
 
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   KeyIcon,
   PlusIcon,
@@ -25,34 +22,36 @@ import {
   EyeSlashIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
-  PencilIcon,
   ShieldCheckIcon,
   ServerIcon,
-  SparklesIcon
+  SparklesIcon,
+  CurrencyDollarIcon,
+  LockClosedIcon,
+  BoltIcon,
+  UserGroupIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
-import BYOKWizard from '../../components/BYOKWizard';
 
 export default function AccountAPIKeys() {
   const { theme, currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState(null);
-  const [apiKeys, setApiKeys] = useState([]);
+  const [byokKeys, setBYOKKeys] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingKey, setEditingKey] = useState(null);
+  const [selectedProvider, setSelectedProvider] = useState(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [labelInput, setLabelInput] = useState('');
+  const [testingProvider, setTestingProvider] = useState(null);
+  const [savingKey, setSavingKey] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState({});
-  const [testingKey, setTestingKey] = useState(null);
-  const [llmProviderKeys, setLLMProviderKeys] = useState([]);
-  const [showBYOKWizard, setShowBYOKWizard] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [stats, setStats] = useState(null);
 
-  const [keyForm, setKeyForm] = useState({
-    provider: 'openai',
-    name: '',
-    apiKey: '',
-    description: ''
-  });
-
-  // Theme classes matching UserSettings pattern
+  // Theme classes
   const themeClasses = {
     card: currentTheme === 'unicorn'
       ? 'bg-purple-900/50 backdrop-blur-xl border-white/20'
@@ -86,181 +85,295 @@ export default function AccountAPIKeys() {
       : 'bg-slate-800 border-slate-700'
   };
 
-  const providers = [
-    { value: 'openai', label: 'OpenAI', placeholder: 'sk-...' },
-    { value: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...' },
-    { value: 'huggingface', label: 'HuggingFace', placeholder: 'hf_...' },
-    { value: 'cohere', label: 'Cohere', placeholder: 'co-...' },
-    { value: 'replicate', label: 'Replicate', placeholder: 'r8_...' },
-    { value: 'custom', label: 'Custom Endpoint', placeholder: 'API Key' }
-  ];
+  // Provider information with benefits
+  const providerInfo = {
+    openrouter: {
+      name: 'OpenRouter',
+      icon: '🔀',
+      color: 'from-blue-500 to-cyan-500',
+      models: 348,
+      recommended: true,
+      benefits: [
+        'Access to 348+ models from all providers',
+        'Automatic fallback and load balancing',
+        'Often 50-70% cheaper than direct APIs',
+        'Single API key for everything'
+      ],
+      getKeyUrl: 'https://openrouter.ai/keys',
+      keyFormat: 'sk-or-v1-...',
+      description: 'Universal proxy for all LLM providers'
+    },
+    openai: {
+      name: 'OpenAI',
+      icon: '🤖',
+      color: 'from-green-500 to-emerald-500',
+      models: 15,
+      benefits: [
+        'Direct access to GPT-4, GPT-4 Turbo',
+        'Access to o1 reasoning models',
+        'DALL-E image generation',
+        'Whisper and TTS models'
+      ],
+      getKeyUrl: 'https://platform.openai.com/api-keys',
+      keyFormat: 'sk-proj-...',
+      description: 'GPT-4, o1, DALL-E, Whisper'
+    },
+    anthropic: {
+      name: 'Anthropic',
+      icon: '🧠',
+      color: 'from-purple-500 to-pink-500',
+      models: 8,
+      benefits: [
+        'Direct access to Claude 3.5 Sonnet',
+        'Claude 3 Opus for complex tasks',
+        'Claude 3 Haiku for speed',
+        '200K context window'
+      ],
+      getKeyUrl: 'https://console.anthropic.com/settings/keys',
+      keyFormat: 'sk-ant-...',
+      description: 'Claude 3.5 Sonnet, Opus, Haiku'
+    },
+    google: {
+      name: 'Google AI',
+      icon: '🔍',
+      color: 'from-red-500 to-orange-500',
+      models: 5,
+      benefits: [
+        'Gemini 1.5 Pro and Flash',
+        'Generous free tier',
+        'Multimodal capabilities',
+        '1M token context (Pro)'
+      ],
+      getKeyUrl: 'https://makersuite.google.com/app/apikey',
+      keyFormat: 'AIza...',
+      description: 'Gemini 1.5 Pro and Flash'
+    },
+    cohere: {
+      name: 'Cohere',
+      icon: '💬',
+      color: 'from-violet-500 to-purple-500',
+      models: 6,
+      benefits: [
+        'Command R+ for RAG',
+        'Excellent embeddings',
+        'Specialized for enterprise',
+        'Strong multilingual support'
+      ],
+      getKeyUrl: 'https://dashboard.cohere.com/api-keys',
+      keyFormat: 'co-...',
+      description: 'Command R+, enterprise embeddings'
+    },
+    together: {
+      name: 'Together AI',
+      icon: '🚀',
+      color: 'from-cyan-500 to-blue-500',
+      models: 50,
+      benefits: [
+        'Open-source model hosting',
+        'Llama 3, Mixtral, Qwen',
+        'Fast inference',
+        'Cost-effective'
+      ],
+      getKeyUrl: 'https://api.together.xyz/settings/api-keys',
+      keyFormat: 'together_...',
+      description: 'Open-source models (Llama, Mixtral)'
+    },
+    groq: {
+      name: 'Groq',
+      icon: '⚡',
+      color: 'from-yellow-500 to-orange-500',
+      models: 8,
+      benefits: [
+        'Fastest inference in the world',
+        'Llama 3, Mixtral, Gemma',
+        'Free tier available',
+        'Ultra-low latency'
+      ],
+      getKeyUrl: 'https://console.groq.com/keys',
+      keyFormat: 'gsk_...',
+      description: 'Ultra-fast inference for open models'
+    },
+    perplexity: {
+      name: 'Perplexity AI',
+      icon: '🔎',
+      color: 'from-indigo-500 to-purple-500',
+      models: 4,
+      benefits: [
+        'Perplexity Sonar models',
+        'Built-in web search',
+        'Citation support',
+        'Real-time information'
+      ],
+      getKeyUrl: 'https://www.perplexity.ai/settings/api',
+      keyFormat: 'pplx-...',
+      description: 'AI search with citations'
+    }
+  };
 
   useEffect(() => {
-    loadAPIKeys();
-    loadLLMProviderKeys();
+    loadData();
   }, []);
 
-  const loadAPIKeys = async () => {
+  const loadData = async () => {
+    setLoading(true);
     try {
-      const response = await fetch('/api/v1/byok/keys');
-      if (response.ok) {
-        const data = await response.json();
-        setApiKeys(data.keys || []);
-      }
-    } catch (error) {
-      console.error('Failed to load API keys:', error);
-      // Mock data for demonstration
-      setApiKeys([
-        {
-          id: '1',
-          provider: 'openai',
-          name: 'OpenAI Production',
-          apiKey: 'REMOVED',
-          description: 'Primary OpenAI key for production',
-          createdAt: '2024-10-01',
-          lastUsed: '2 hours ago',
-          status: 'active'
-        },
-        {
-          id: '2',
-          provider: 'anthropic',
-          name: 'Claude API',
-          apiKey: 'sk-ant-xyz789abc123def456',
-          description: 'Anthropic Claude access',
-          createdAt: '2024-10-05',
-          lastUsed: '1 day ago',
-          status: 'active'
-        }
+      await Promise.all([
+        loadProviders(),
+        loadKeys(),
+        loadStats()
       ]);
+    } catch (error) {
+      console.error('Error loading BYOK data:', error);
+      showToast('error', 'Failed to load API keys');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadLLMProviderKeys = async () => {
+  const loadProviders = async () => {
     try {
-      const response = await fetch('/api/v1/llm/providers/keys', {
+      const response = await fetch('/api/v1/byok/providers', {
         credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
-        setLLMProviderKeys(data.keys || []);
+        setProviders(data);
       }
     } catch (error) {
-      console.error('Failed to load LLM provider keys:', error);
-      // Mock data for demonstration
-      setLLMProviderKeys([
-        {
-          id: '1',
-          provider_name: 'OpenAI (BYOK)',
-          provider: 'openai',
-          api_key: 'REMOVEDjkl012',
-          description: 'Personal OpenAI key for testing',
-          status: 'active',
-          last_tested: '5 minutes ago',
-          created_at: '2025-10-15'
-        },
-        {
-          id: '2',
-          provider_name: 'Anthropic (BYOK)',
-          provider: 'anthropic',
-          api_key: 'sk-ant-api03-xyz789abc123def456',
-          description: 'Claude API access for production',
-          status: 'active',
-          last_tested: '1 hour ago',
-          created_at: '2025-10-20'
-        }
-      ]);
+      console.error('Error loading providers:', error);
     }
   };
 
-  const maskKey = (key) => {
-    if (key.length <= 8) return '••••••••';
-    return key.substring(0, 4) + '••••••••' + key.substring(key.length - 4);
-  };
-
-  const toggleKeyVisibility = (keyId) => {
-    setVisibleKeys({ ...visibleKeys, [keyId]: !visibleKeys[keyId] });
-  };
-
-  const handleAddKey = async (e) => {
-    e.preventDefault();
-
+  const loadKeys = async () => {
     try {
       const response = await fetch('/api/v1/byok/keys', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(keyForm)
+        credentials: 'include'
       });
-
       if (response.ok) {
-        const newKey = await response.json();
-        setApiKeys([...apiKeys, newKey]);
-        setMessage({ type: 'success', text: 'API key added successfully' });
-        setShowAddModal(false);
-        setKeyForm({ provider: 'openai', name: '', apiKey: '', description: '' });
-        setTimeout(() => setMessage(null), 3000);
-      } else {
-        const error = await response.json();
-        setMessage({ type: 'error', text: error.detail || 'Failed to add API key' });
+        const data = await response.json();
+        setBYOKKeys(data);
       }
     } catch (error) {
-      console.error('Failed to add API key:', error);
-      setMessage({ type: 'error', text: 'An error occurred while adding API key' });
+      console.error('Error loading keys:', error);
     }
   };
 
-  const handleDeleteKey = async (keyId) => {
-    if (!confirm('Are you sure you want to delete this API key?')) {
+  const loadStats = async () => {
+    try {
+      const response = await fetch('/api/v1/byok/stats', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const showToast = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleAddKey = async () => {
+    if (!selectedProvider || !apiKeyInput.trim()) {
+      showToast('error', 'Please select a provider and enter an API key');
       return;
     }
 
+    setSavingKey(true);
     try {
-      const response = await fetch(`/api/v1/byok/keys/${keyId}`, {
-        method: 'DELETE'
+      const response = await fetch('/api/v1/byok/keys/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          provider: selectedProvider,
+          key: apiKeyInput.trim(),
+          label: labelInput.trim() || null
+        })
       });
 
       if (response.ok) {
-        setApiKeys(apiKeys.filter(k => k.id !== keyId));
-        setMessage({ type: 'success', text: 'API key deleted successfully' });
-        setTimeout(() => setMessage(null), 2000);
+        showToast('success', `${providerInfo[selectedProvider].name} API key added successfully!`);
+        setShowAddModal(false);
+        setSelectedProvider(null);
+        setApiKeyInput('');
+        setLabelInput('');
+        await loadData();
       } else {
-        setMessage({ type: 'error', text: 'Failed to delete API key' });
+        const error = await response.json();
+        showToast('error', error.detail || 'Failed to add API key');
       }
     } catch (error) {
-      console.error('Failed to delete API key:', error);
-      setMessage({ type: 'error', text: 'An error occurred while deleting API key' });
+      console.error('Error adding key:', error);
+      showToast('error', 'Network error. Please try again.');
+    } finally {
+      setSavingKey(false);
     }
   };
 
-  const handleTestKey = async (keyId) => {
-    setTestingKey(keyId);
-
+  const handleTestKey = async (provider) => {
+    setTestingProvider(provider);
     try {
-      const response = await fetch(`/api/v1/byok/keys/${keyId}/test`, {
-        method: 'POST'
+      const response = await fetch(`/api/v1/byok/keys/test/${provider}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'valid') {
+        showToast('success', `${providerInfo[provider].name} API key is valid!`);
+        await loadKeys(); // Reload to update test status
+      } else {
+        showToast('error', result.message || 'API key validation failed');
+      }
+    } catch (error) {
+      console.error('Error testing key:', error);
+      showToast('error', 'Network error during test');
+    } finally {
+      setTestingProvider(null);
+    }
+  };
+
+  const handleDeleteKey = async (provider) => {
+    try {
+      const response = await fetch(`/api/v1/byok/keys/${provider}`, {
+        method: 'DELETE',
+        credentials: 'include'
       });
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'API key is valid and working' });
-        setTimeout(() => setMessage(null), 2000);
+        showToast('success', `${providerInfo[provider].name} API key removed`);
+        setConfirmDelete(null);
+        await loadData();
       } else {
-        setMessage({ type: 'error', text: 'API key validation failed' });
+        showToast('error', 'Failed to remove API key');
       }
     } catch (error) {
-      console.error('Failed to test API key:', error);
-      setMessage({ type: 'error', text: 'An error occurred while testing API key' });
-    } finally {
-      setTestingKey(null);
+      console.error('Error deleting key:', error);
+      showToast('error', 'Network error. Please try again.');
     }
+  };
+
+  const toggleKeyVisibility = (provider) => {
+    setVisibleKeys(prev => ({ ...prev, [provider]: !prev[provider] }));
+  };
+
+  const getProviderStatus = (providerId) => {
+    return byokKeys.find(k => k.provider === providerId);
   };
 
   if (loading) {
     return (
       <div className={`flex items-center justify-center py-12 ${themeClasses.text}`}>
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-current"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-current mx-auto mb-4"></div>
+          <p>Loading BYOK configuration...</p>
+        </div>
       </div>
     );
   }
@@ -270,387 +383,470 @@ export default function AccountAPIKeys() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className={`text-3xl font-bold ${themeClasses.text}`}>API Keys</h1>
+          <h1 className={`text-3xl font-bold ${themeClasses.text}`}>API Keys (BYOK)</h1>
           <p className={`mt-2 ${themeClasses.subtext}`}>
-            Manage your BYOK (Bring Your Own Key) API credentials
+            Bring Your Own Key - Use your API keys for LLM providers
           </p>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg ${themeClasses.button}`}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg ${themeClasses.button} shadow-lg`}
         >
           <PlusIcon className="h-5 w-5" />
           Add API Key
         </button>
       </div>
 
-      {/* Status Message */}
-      {message && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`rounded-lg p-4 ${
-            message.type === 'success'
-              ? 'bg-green-500/20 border border-green-500/50'
-              : 'bg-red-500/20 border border-red-500/50'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {message.type === 'success' ? (
-              <>
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`rounded-lg p-4 ${
+              toast.type === 'success'
+                ? 'bg-green-500/20 border border-green-500/50'
+                : 'bg-red-500/20 border border-red-500/50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {toast.type === 'success' ? (
                 <CheckCircleIcon className="h-5 w-5 text-green-400" />
-                <span className="text-green-400">{message.text}</span>
-              </>
-            ) : (
-              <>
+              ) : (
                 <ExclamationCircleIcon className="h-5 w-5 text-red-400" />
-                <span className="text-red-400">{message.text}</span>
-              </>
-            )}
+              )}
+              <span className={toast.type === 'success' ? 'text-green-400' : 'text-red-400'}>
+                {toast.message}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Benefits Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`rounded-xl border p-4 ${themeClasses.card}`}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
+              <CurrencyDollarIcon className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className={`font-semibold ${themeClasses.text}`}>No Credit Charges</h3>
+              <p className={`text-xs ${themeClasses.subtext}`}>Use your own API keys</p>
+            </div>
           </div>
-        </motion.div>
+        </div>
+
+        <div className={`rounded-xl border p-4 ${themeClasses.card}`}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-violet-500 rounded-lg flex items-center justify-center">
+              <LockClosedIcon className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className={`font-semibold ${themeClasses.text}`}>Secure Storage</h3>
+              <p className={`text-xs ${themeClasses.subtext}`}>Fernet encrypted at rest</p>
+            </div>
+          </div>
+        </div>
+
+        <div className={`rounded-xl border p-4 ${themeClasses.card}`}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+              <BoltIcon className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className={`font-semibold ${themeClasses.text}`}>Universal Proxy</h3>
+              <p className={`text-xs ${themeClasses.subtext}`}>OpenRouter = 348 models</p>
+            </div>
+          </div>
+        </div>
+
+        <div className={`rounded-xl border p-4 ${themeClasses.card}`}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center">
+              <UserGroupIcon className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className={`font-semibold ${themeClasses.text}`}>Organization Shared</h3>
+              <p className={`text-xs ${themeClasses.subtext}`}>Enterprise feature (soon)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Card */}
+      {stats && (
+        <div className={`rounded-xl border p-6 ${themeClasses.card}`}>
+          <h3 className={`text-lg font-semibold ${themeClasses.text} mb-4`}>Your BYOK Status</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div>
+              <p className={`text-2xl font-bold ${themeClasses.text}`}>{stats.configured_providers}</p>
+              <p className={`text-sm ${themeClasses.subtext}`}>Configured Providers</p>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold ${themeClasses.text}`}>{stats.tested_providers}</p>
+              <p className={`text-sm ${themeClasses.subtext}`}>Tested</p>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold ${themeClasses.text}`}>{stats.valid_providers}</p>
+              <p className={`text-sm ${themeClasses.subtext}`}>Valid Keys</p>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold ${themeClasses.text}`}>{stats.total_providers}</p>
+              <p className={`text-sm ${themeClasses.subtext}`}>Available Providers</p>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Security Notice */}
-      <div className={`rounded-lg p-4 border ${
-        currentTheme === 'light'
-          ? 'bg-blue-50 border-blue-200'
-          : 'bg-blue-500/10 border-blue-500/30'
-      }`}>
-        <div className="flex gap-3">
-          <ShieldCheckIcon className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className={`text-sm font-medium ${themeClasses.text}`}>
-              Your API keys are encrypted and secure
-            </p>
-            <p className={`text-sm ${themeClasses.subtext} mt-1`}>
-              Keys are encrypted at rest and never logged. Only you can view or use your keys.
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* Provider Cards */}
+      <div>
+        <h2 className={`text-2xl font-bold ${themeClasses.text} mb-4`}>Providers</h2>
 
-      {/* LLM Provider Keys Section (BYOK) */}
-      <div className="mb-12">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg flex items-center justify-center">
-            <SparklesIcon className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h2 className={`text-2xl font-bold ${themeClasses.text}`}>
-              LLM Provider Keys (BYOK)
-            </h2>
-            <p className={`${themeClasses.subtext}`}>
-              Bring Your Own Key for AI model providers. Use your own API keys for LLM routing.
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          {llmProviderKeys.length === 0 ? (
-            <div className={`rounded-xl border-2 border-dashed p-12 text-center ${themeClasses.card}`}>
-              <ServerIcon className={`h-12 w-12 ${themeClasses.subtext} mx-auto mb-4`} />
-              <p className={`text-lg font-medium ${themeClasses.text}`}>
-                No LLM provider keys configured
-              </p>
-              <p className={`${themeClasses.subtext} mt-2 mb-6`}>
-                Add your first provider key to start using BYOK for LLM routing
-              </p>
-              <button
-                onClick={() => setShowBYOKWizard(true)}
-                className={`px-6 py-3 rounded-lg ${themeClasses.button} font-medium`}
-              >
-                Add Your First Provider
-              </button>
+        {byokKeys.length === 0 ? (
+          /* Empty State */
+          <div className={`rounded-xl border-2 border-dashed p-12 text-center ${themeClasses.card}`}>
+            <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-violet-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <KeyIcon className="h-10 w-10 text-white" />
             </div>
-          ) : (
-            <>
-              {llmProviderKeys.map((key) => (
-                <motion.div
-                  key={key.id}
-                  whileHover={{ scale: 1.01 }}
-                  className={`rounded-xl border p-6 ${themeClasses.card}`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                          <ServerIcon className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          <h3 className={`font-semibold ${themeClasses.text}`}>
-                            {key.provider_name}
-                          </h3>
-                          <p className={`text-sm ${themeClasses.subtext}`}>
-                            {key.description || 'No description'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-4 text-sm mt-3">
-                        <div className={`flex items-center gap-2 px-3 py-1 rounded ${
-                          currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-700/30'
-                        }`}>
-                          <code className={themeClasses.text}>
-                            {visibleKeys[key.id] ? key.api_key : maskKey(key.api_key)}
-                          </code>
-                          <button
-                            onClick={() => toggleKeyVisibility(key.id)}
-                            className={themeClasses.subtext}
-                          >
-                            {visibleKeys[key.id] ? (
-                              <EyeSlashIcon className="h-4 w-4" />
-                            ) : (
-                              <EyeIcon className="h-4 w-4" />
-                            )}
-                          </button>
-                        </div>
-
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          key.status === 'active'
-                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        }`}>
-                          {key.status}
-                        </span>
-
-                        <span className={`text-xs ${themeClasses.subtext}`}>
-                          Last tested: {key.last_tested}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-4">
-                      <button
-                        onClick={() => handleTestKey(key.id)}
-                        disabled={testingKey === key.id}
-                        className={`p-2 rounded-lg ${themeClasses.button} disabled:opacity-50`}
-                        title="Test API key"
-                      >
-                        {testingKey === key.id ? (
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                        ) : (
-                          <CheckCircleIcon className="h-5 w-5" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteKey(key.id)}
-                        className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
-                        title="Delete API key"
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-
-              <button
-                onClick={() => setShowBYOKWizard(true)}
-                className={`w-full px-4 py-3 rounded-lg border-2 border-dashed ${
-                  currentTheme === 'light'
-                    ? 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                    : 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/50'
-                } flex items-center justify-center gap-2 ${themeClasses.text}`}
-              >
-                <PlusIcon className="h-5 w-5" />
-                Add Another LLM Provider
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Platform API Keys Section */}
-      <div className="mb-4">
-        <h2 className={`text-2xl font-bold ${themeClasses.text} mb-4`}>
-          Platform API Keys
-        </h2>
-        <p className={`${themeClasses.subtext} mb-4`}>
-          API keys for accessing the Unicorn Commander platform
-        </p>
-      </div>
-
-      {/* API Keys List */}
-      <div className="space-y-4">
-        {apiKeys.length === 0 ? (
-          <div className={`rounded-xl border p-12 text-center ${themeClasses.card}`}>
-            <KeyIcon className={`h-12 w-12 ${themeClasses.subtext} mx-auto mb-4`} />
-            <p className={`text-lg font-medium ${themeClasses.text}`}>
-              No API keys configured
+            <h3 className={`text-xl font-semibold ${themeClasses.text} mb-2`}>No API Keys Added Yet</h3>
+            <p className={`${themeClasses.subtext} mb-4 max-w-md mx-auto`}>
+              Add your first API key to start using BYOK. We recommend starting with OpenRouter for access to all 348 models.
             </p>
-            <p className={`${themeClasses.subtext} mt-2`}>
-              Add your first API key to get started with BYOK
-            </p>
+            <button
+              onClick={() => {
+                setSelectedProvider('openrouter');
+                setShowAddModal(true);
+              }}
+              className={`px-6 py-3 rounded-lg ${themeClasses.button} font-medium shadow-lg`}
+            >
+              Add OpenRouter Key (Recommended)
+            </button>
           </div>
         ) : (
-          apiKeys.map((key) => (
-            <motion.div
-              key={key.id}
-              whileHover={{ scale: 1.01 }}
-              className={`rounded-xl border p-6 ${themeClasses.card}`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                      <KeyIcon className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className={`font-semibold ${themeClasses.text}`}>
-                        {key.name}
-                      </h3>
-                      <p className={`text-sm ${themeClasses.subtext}`}>
-                        {providers.find(p => p.value === key.provider)?.label || key.provider}
-                      </p>
-                    </div>
-                  </div>
+          /* Provider Grid */
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {Object.entries(providerInfo).map(([providerId, info]) => {
+              const status = getProviderStatus(providerId);
+              const isConnected = !!status;
 
-                  {key.description && (
-                    <p className={`text-sm ${themeClasses.subtext} mb-3`}>
-                      {key.description}
-                    </p>
+              return (
+                <motion.div
+                  key={providerId}
+                  whileHover={{ scale: 1.01 }}
+                  className={`rounded-xl border p-6 ${themeClasses.card} ${
+                    info.recommended ? 'ring-2 ring-purple-500/50' : ''
+                  }`}
+                >
+                  {info.recommended && (
+                    <div className="inline-block px-3 py-1 bg-purple-500/20 text-purple-400 text-xs font-semibold rounded-full mb-3">
+                      ⭐ Recommended
+                    </div>
                   )}
 
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className={`flex items-center gap-2 px-3 py-1 rounded ${
-                      currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-700/30'
-                    }`}>
-                      <code className={themeClasses.text}>
-                        {visibleKeys[key.id] ? key.apiKey : maskKey(key.apiKey)}
-                      </code>
-                      <button
-                        onClick={() => toggleKeyVisibility(key.id)}
-                        className={themeClasses.subtext}
-                      >
-                        {visibleKeys[key.id] ? (
-                          <EyeSlashIcon className="h-4 w-4" />
-                        ) : (
-                          <EyeIcon className="h-4 w-4" />
-                        )}
-                      </button>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 bg-gradient-to-br ${info.color} rounded-lg flex items-center justify-center text-2xl`}>
+                        {info.icon}
+                      </div>
+                      <div>
+                        <h3 className={`font-semibold ${themeClasses.text}`}>{info.name}</h3>
+                        <p className={`text-sm ${themeClasses.subtext}`}>{info.description}</p>
+                        <p className={`text-xs ${themeClasses.subtext} mt-1`}>{info.models} models available</p>
+                      </div>
                     </div>
-
-                    <div className={`flex items-center gap-1 ${themeClasses.subtext}`}>
-                      <span>Last used: {key.lastUsed}</span>
+                    <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      isConnected
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                        : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                    }`}>
+                      {isConnected ? 'Connected' : 'Not Connected'}
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2 ml-4">
-                  <button
-                    onClick={() => handleTestKey(key.id)}
-                    disabled={testingKey === key.id}
-                    className={`p-2 rounded-lg ${themeClasses.button} disabled:opacity-50`}
-                    title="Test API key"
-                  >
-                    {testingKey === key.id ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  {/* Benefits List */}
+                  <ul className={`space-y-1 mb-4 text-sm ${themeClasses.subtext}`}>
+                    {info.benefits.map((benefit, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <CheckCircleIcon className="h-4 w-4 text-green-400 flex-shrink-0 mt-0.5" />
+                        <span>{benefit}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* Connected Key Display */}
+                  {isConnected && status && (
+                    <div className={`rounded-lg border p-3 mb-4 ${
+                      currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-xs font-medium ${themeClasses.subtext}`}>API Key:</span>
+                        <button
+                          onClick={() => toggleKeyVisibility(providerId)}
+                          className={`p-1 rounded ${themeClasses.subtext} hover:bg-gray-700/30`}
+                        >
+                          {visibleKeys[providerId] ? (
+                            <EyeSlashIcon className="h-4 w-4" />
+                          ) : (
+                            <EyeIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                      <code className={`text-xs ${themeClasses.text} font-mono block`}>
+                        {visibleKeys[providerId] ? '(decrypted view not available for security)' : status.key_preview}
+                      </code>
+                      {status.last_tested && (
+                        <p className={`text-xs ${themeClasses.subtext} mt-2`}>
+                          Last tested: {new Date(status.last_tested).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2">
+                    {isConnected ? (
+                      <>
+                        <button
+                          onClick={() => handleTestKey(providerId)}
+                          disabled={testingProvider === providerId}
+                          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg ${themeClasses.button} disabled:opacity-50`}
+                        >
+                          {testingProvider === providerId ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                              Testing...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircleIcon className="h-4 w-4" />
+                              Test Connection
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setConfirmDelete(providerId)}
+                          className="px-4 py-2 rounded-lg border border-red-500/50 text-red-400 hover:bg-red-500/10"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </>
                     ) : (
-                      <CheckCircleIcon className="h-5 w-5" />
+                      <button
+                        onClick={() => {
+                          setSelectedProvider(providerId);
+                          setShowAddModal(true);
+                        }}
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg ${themeClasses.button}`}
+                      >
+                        <PlusIcon className="h-4 w-4" />
+                        Add Key
+                      </button>
                     )}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 rounded-lg text-red-400 hover:bg-red-500/10"
-                    title="Delete API key"
-                  >
-                    <TrashIcon className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ))
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* BYOK Wizard */}
-      {showBYOKWizard && (
-        <BYOKWizard
-          onClose={() => setShowBYOKWizard(false)}
-          onComplete={() => {
-            setShowBYOKWizard(false);
-            loadLLMProviderKeys();
-            showToast('LLM provider added successfully');
-          }}
-        />
-      )}
+      {/* What is BYOK? Section */}
+      <div className={`rounded-xl border p-6 ${themeClasses.card}`}>
+        <h3 className={`text-lg font-semibold ${themeClasses.text} mb-4 flex items-center gap-2`}>
+          <InformationCircleIcon className="h-6 w-6 text-blue-400" />
+          What is BYOK?
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <h4 className={`font-semibold ${themeClasses.text} mb-2`}>How it Saves Money</h4>
+            <p className={`${themeClasses.subtext}`}>
+              When you use your own API keys, you pay providers directly at their rates. For example:
+              OpenRouter charges ~$0.002/1K tokens vs our bundled rate of $0.005/1K tokens - that's 60% savings!
+              Plus, you avoid our platform fees entirely.
+            </p>
+          </div>
+          <div>
+            <h4 className={`font-semibold ${themeClasses.text} mb-2`}>Security Guarantees</h4>
+            <p className={`${themeClasses.subtext}`}>
+              All API keys are encrypted using Fernet symmetric encryption with 256-bit keys. Keys are stored
+              in your Keycloak user profile (not in our database) and are never logged or transmitted in plain text.
+              Only you can decrypt and use your keys.
+            </p>
+          </div>
+          <div>
+            <h4 className={`font-semibold ${themeClasses.text} mb-2`}>Getting Started</h4>
+            <ol className={`list-decimal list-inside space-y-2 ${themeClasses.subtext}`}>
+              <li>Click "Add API Key" and choose a provider (we recommend OpenRouter first)</li>
+              <li>Get your API key from the provider's website (click the provider card for link)</li>
+              <li>Paste your key and test the connection</li>
+              <li>Start using Brigade, Open-WebUI, and other services with your own keys!</li>
+            </ol>
+          </div>
+        </div>
+      </div>
 
       {/* Add Key Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className={`rounded-xl border p-6 max-w-md w-full m-4 ${themeClasses.modal}`}
-          >
-            <h3 className={`text-xl font-bold ${themeClasses.text} mb-4`}>
-              Add API Key
-            </h3>
-
-            <form onSubmit={handleAddKey} className="space-y-4">
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
-                  Provider
-                </label>
-                <select
-                  value={keyForm.provider}
-                  onChange={(e) => setKeyForm({ ...keyForm, provider: e.target.value })}
-                  className={`w-full px-4 py-2 rounded-lg border ${themeClasses.input}`}
-                >
-                  {providers.map(provider => (
-                    <option key={provider.value} value={provider.value}>
-                      {provider.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
-                  Name
-                </label>
-                <input
-                  type="text"
-                  value={keyForm.name}
-                  onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
-                  className={`w-full px-4 py-2 rounded-lg border ${themeClasses.input}`}
-                  placeholder="My Production Key"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
-                  API Key
-                </label>
-                <input
-                  type="password"
-                  value={keyForm.apiKey}
-                  onChange={(e) => setKeyForm({ ...keyForm, apiKey: e.target.value })}
-                  className={`w-full px-4 py-2 rounded-lg border ${themeClasses.input}`}
-                  placeholder={providers.find(p => p.value === keyForm.provider)?.placeholder}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
-                  Description (Optional)
-                </label>
-                <textarea
-                  value={keyForm.description}
-                  onChange={(e) => setKeyForm({ ...keyForm, description: e.target.value })}
-                  className={`w-full px-4 py-2 rounded-lg border ${themeClasses.input}`}
-                  rows="2"
-                  placeholder="Additional notes about this key"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className={`rounded-xl border p-6 max-w-lg w-full m-4 ${themeClasses.modal}`}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className={`text-xl font-bold ${themeClasses.text}`}>
+                  Add API Key - {selectedProvider && providerInfo[selectedProvider]?.name}
+                </h3>
                 <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setSelectedProvider(null);
+                    setApiKeyInput('');
+                    setLabelInput('');
+                  }}
+                  className={`p-2 rounded-lg ${themeClasses.subtext} hover:bg-gray-700/30`}
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              {!selectedProvider ? (
+                <div>
+                  <p className={`${themeClasses.subtext} mb-4`}>Select a provider:</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(providerInfo).map(([id, info]) => (
+                      <button
+                        key={id}
+                        onClick={() => setSelectedProvider(id)}
+                        className={`p-4 rounded-lg border text-left transition-all ${
+                          info.recommended
+                            ? 'border-purple-500 bg-purple-500/10'
+                            : `border-gray-700 hover:border-purple-500/50 ${themeClasses.card}`
+                        }`}
+                      >
+                        <div className="text-3xl mb-2">{info.icon}</div>
+                        <div className={`font-semibold ${themeClasses.text} text-sm`}>{info.name}</div>
+                        {info.recommended && (
+                          <div className="text-xs text-purple-400 mt-1">Recommended</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className={`p-4 rounded-lg ${
+                    currentTheme === 'light' ? 'bg-blue-50 border border-blue-200' : 'bg-blue-500/10 border border-blue-500/30'
+                  }`}>
+                    <p className={`text-sm ${themeClasses.text} mb-2`}>
+                      Get your {providerInfo[selectedProvider].name} API key:
+                    </p>
+                    <a
+                      href={providerInfo[selectedProvider].getKeyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-400 hover:text-blue-300 underline"
+                    >
+                      {providerInfo[selectedProvider].getKeyUrl}
+                    </a>
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
+                      Label (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={labelInput}
+                      onChange={(e) => setLabelInput(e.target.value)}
+                      placeholder={`${providerInfo[selectedProvider].name} Production Key`}
+                      className={`w-full px-4 py-3 rounded-lg border ${themeClasses.input} focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
+                      API Key <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      placeholder={providerInfo[selectedProvider].keyFormat}
+                      className={`w-full px-4 py-3 rounded-lg border ${themeClasses.input} focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono`}
+                    />
+                    <p className={`text-xs ${themeClasses.subtext} mt-2`}>
+                      Your API key will be encrypted with Fernet and stored securely
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={() => setSelectedProvider(null)}
+                      className={`flex-1 px-4 py-3 rounded-lg border ${
+                        currentTheme === 'light'
+                          ? 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                          : 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handleAddKey}
+                      disabled={!apiKeyInput.trim() || savingKey}
+                      className={`flex-1 px-4 py-3 rounded-lg ${themeClasses.button} disabled:opacity-50 font-medium`}
+                    >
+                      {savingKey ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          Saving...
+                        </span>
+                      ) : (
+                        'Add Key'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {confirmDelete && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className={`rounded-xl border p-6 max-w-md w-full m-4 ${themeClasses.modal}`}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-red-500/20 rounded-lg flex items-center justify-center">
+                  <ExclamationCircleIcon className="h-6 w-6 text-red-400" />
+                </div>
+                <div>
+                  <h3 className={`text-xl font-bold ${themeClasses.text}`}>Remove API Key?</h3>
+                  <p className={`text-sm ${themeClasses.subtext}`}>
+                    {providerInfo[confirmDelete]?.name}
+                  </p>
+                </div>
+              </div>
+
+              <p className={`${themeClasses.subtext} mb-6`}>
+                Are you sure you want to remove this API key? This action cannot be undone.
+                You'll need to add the key again to use this provider.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmDelete(null)}
                   className={`flex-1 px-4 py-2 rounded-lg border ${
                     currentTheme === 'light'
                       ? 'border-gray-300 text-gray-700 hover:bg-gray-50'
@@ -660,16 +856,16 @@ export default function AccountAPIKeys() {
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  className={`flex-1 px-4 py-2 rounded-lg ${themeClasses.button}`}
+                  onClick={() => handleDeleteKey(confirmDelete)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
                 >
-                  Add Key
+                  Remove Key
                 </button>
               </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

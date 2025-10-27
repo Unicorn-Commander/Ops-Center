@@ -43,6 +43,8 @@ services:
       - POSTGRES_DB=unicorn_db
       # Credential Encryption Key (Fernet)
       - EREMOVED
+      # BYOK Encryption Key (for user API keys)
+      - BREMOVED
     networks:
       - web
       - unicorn-network

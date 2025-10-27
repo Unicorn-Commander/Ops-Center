@@ -43,6 +43,7 @@ const OrganizationBilling = lazy(() => import('./pages/organization/Organization
 const Brigade = lazy(() => import('./pages/Brigade'));
 const LLMManagement = lazy(() => import('./pages/LLMManagement'));
 const LiteLLMManagement = lazy(() => import('./pages/LiteLLMManagement'));
+const OpenRouterSettings = lazy(() => import('./pages/OpenRouterSettings'));
 const LLMUsage = lazy(() => import('./pages/LLMUsage'));
 
 // Platform pages (lazy loaded)
@@ -274,6 +275,7 @@ function AppRoutes() {
                   <Route path="brigade" element={<Brigade />} />
                   <Route path="llm-management" element={<LLMManagement />} />
                   <Route path="litellm-providers" element={<LiteLLMManagement />} />
+                  <Route path="openrouter-settings" element={<OpenRouterSettings />} />
                   <Route path="llm/usage" element={<LLMUsage />} />
 
                   {/* ============================================================ */}
