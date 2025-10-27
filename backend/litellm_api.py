@@ -189,7 +189,7 @@ class SystemKeyManager:
             async with self.pool.acquire() as conn:
                 await conn.execute("""
                     UPDATE llm_providers
-                    SET encrypted_api_key = $1,
+                    SET api_key_encrypted = $1,
                         api_key_source = $2,
                         api_key_updated_at = NOW()
                     WHERE id = $3
@@ -212,7 +212,7 @@ class SystemKeyManager:
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow("""
-                    SELECT encrypted_api_key, api_key_source, name
+                    SELECT api_key_encrypted, api_key_source, name
                     FROM llm_providers WHERE id = $1
                 """, provider_id)
 
@@ -220,9 +220,9 @@ class SystemKeyManager:
                     return None
 
                 # Try database key first
-                if row['encrypted_api_key']:
+                if row['api_key_encrypted']:
                     try:
-                        return self.cipher.decrypt(row['encrypted_api_key'].encode()).decode()
+                        return self.cipher.decrypt(row['api_key_encrypted'].encode()).decode()
                     except Exception as e:
                         logger.error(f"Failed to decrypt system key: {e}")
 
@@ -245,7 +245,7 @@ class SystemKeyManager:
             async with self.pool.acquire() as conn:
                 await conn.execute("""
                     UPDATE llm_providers
-                    SET encrypted_api_key = NULL,
+                    SET api_key_encrypted = NULL,
                         api_key_source = 'environment',
                         api_key_updated_at = NOW()
                     WHERE id = $1
@@ -265,7 +265,7 @@ class SystemKeyManager:
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT id, name, provider_type, encrypted_api_key,
+                    SELECT id, name, type as provider_type, api_key_encrypted,
                            api_key_source, api_key_last_tested, api_key_test_status
                     FROM llm_providers
                     WHERE enabled = TRUE
@@ -274,9 +274,17 @@ class SystemKeyManager:
 
                 result = []
                 for row in rows:
-                    has_db_key = bool(row['encrypted_api_key'])
+                    has_db_key = bool(row['api_key_encrypted'])
                     env_var = f"{row['name'].upper().replace('-', '_')}_API_KEY"
                     has_env_key = bool(os.getenv(env_var))
+
+                    # Determine key_source for frontend
+                    if has_db_key:
+                        key_source = 'database'
+                    elif has_env_key:
+                        key_source = 'environment'
+                    else:
+                        key_source = 'not_set'
 
                     result.append({
                         'id': str(row['id']),
@@ -284,10 +292,10 @@ class SystemKeyManager:
                         'provider_type': row['provider_type'],
                         'has_db_key': has_db_key,
                         'has_env_key': has_env_key,
-                        'api_key_source': row['api_key_source'],
+                        'key_source': key_source,  # Frontend expects 'key_source' not 'api_key_source'
                         'last_tested': row['api_key_last_tested'].isoformat() if row['api_key_last_tested'] else None,
                         'test_status': row['api_key_test_status'],
-                        'masked_key': self._mask_key(row['encrypted_api_key']) if has_db_key else None
+                        'key_preview': self._mask_key(row['api_key_encrypted']) if has_db_key else None  # Frontend expects 'key_preview' not 'masked_key'
                     })
                 return result
 
@@ -304,7 +312,8 @@ class SystemKeyManager:
             if len(decrypted) > 20:
                 return f"{decrypted[:7]}...{decrypted[-4:]}"
             return "***"
-        except:
+        except Exception as e:
+            logger.error(f"Failed to mask key: {e}")
             return "***"
 
 
