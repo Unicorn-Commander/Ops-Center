@@ -133,6 +133,9 @@ export default function Layout({ children }) {
     }
     // Default state
     return {
+      account: true,
+      subscription: true,
+      organization: true,
       infrastructure: true,
       usersOrgs: true,
       billingUsage: true,
@@ -303,6 +306,162 @@ export default function Layout({ children }) {
                 />
 
                 {/* ============================ */}
+                {/* ACCOUNT SECTION - ALL USERS */}
+                {/* ============================ */}
+                {/* Section Header (hidden when collapsed) */}
+                {!sidebarCollapsed && (
+                  <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
+                    currentTheme === 'unicorn'
+                      ? 'text-purple-300/70'
+                      : currentTheme === 'light'
+                      ? 'text-gray-500'
+                      : 'text-gray-400'
+                  }`}>
+                    <div className="flex-1 h-px bg-current opacity-20"></div>
+                    <span className="text-xs font-bold uppercase tracking-wider">Account</span>
+                    <div className="flex-1 h-px bg-current opacity-20"></div>
+                  </div>
+                )}
+
+                <NavigationSection collapsed={sidebarCollapsed}
+                  title="Account"
+                  icon={iconMap.UserCircleIcon}
+                  defaultOpen={sectionState.account}
+                  onToggle={() => toggleSection('account')}
+                >
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Profile & Preferences"
+                    href="/admin/account/profile"
+                    icon={iconMap.UserCircleIcon}
+                    indent={true}
+                  />
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Security & Sessions"
+                    href="/admin/account/security"
+                    icon={iconMap.LockClosedIcon}
+                    indent={true}
+                  />
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="API Keys (BYOK)"
+                    href="/admin/account/api-keys"
+                    icon={iconMap.KeyIcon}
+                    indent={true}
+                  />
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Notification Preferences"
+                    href="/admin/account/notification-settings"
+                    icon={iconMap.EnvelopeIcon}
+                    indent={true}
+                  />
+                </NavigationSection>
+
+                {/* ============================ */}
+                {/* MY SUBSCRIPTION SECTION - ALL USERS */}
+                {/* ============================ */}
+                {/* Section Header (hidden when collapsed) */}
+                {!sidebarCollapsed && (
+                  <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
+                    currentTheme === 'unicorn'
+                      ? 'text-purple-300/70'
+                      : currentTheme === 'light'
+                      ? 'text-gray-500'
+                      : 'text-gray-400'
+                  }`}>
+                    <div className="flex-1 h-px bg-current opacity-20"></div>
+                    <span className="text-xs font-bold uppercase tracking-wider">My Subscription</span>
+                    <div className="flex-1 h-px bg-current opacity-20"></div>
+                  </div>
+                )}
+
+                <NavigationSection collapsed={sidebarCollapsed}
+                  title="My Subscription"
+                  icon={iconMap.CreditCardIcon}
+                  defaultOpen={sectionState.subscription}
+                  onToggle={() => toggleSection('subscription')}
+                >
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Current Plan"
+                    href="/admin/subscription/plan"
+                    icon={iconMap.RectangleStackIcon}
+                    indent={true}
+                  />
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Usage & Limits"
+                    href="/admin/subscription/usage"
+                    icon={iconMap.ChartBarIcon}
+                    indent={true}
+                  />
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Billing History"
+                    href="/admin/subscription/billing"
+                    icon={iconMap.DocumentDuplicateIcon}
+                    indent={true}
+                  />
+                  <NavigationItem collapsed={sidebarCollapsed}
+                    name="Payment Methods"
+                    href="/admin/subscription/payment"
+                    icon={iconMap.CreditCardIcon}
+                    indent={true}
+                  />
+                </NavigationSection>
+
+                {/* ============================ */}
+                {/* MY ORGANIZATION SECTION - ORG ADMINS/OWNERS */}
+                {/* ============================ */}
+                {(userOrgRole === 'admin' || userOrgRole === 'owner') && (
+                  <>
+                    {/* Section Header (hidden when collapsed) */}
+                    {!sidebarCollapsed && (
+                      <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
+                        currentTheme === 'unicorn'
+                          ? 'text-purple-300/70'
+                          : currentTheme === 'light'
+                          ? 'text-gray-500'
+                          : 'text-gray-400'
+                      }`}>
+                        <div className="flex-1 h-px bg-current opacity-20"></div>
+                        <span className="text-xs font-bold uppercase tracking-wider">My Organization</span>
+                        <div className="flex-1 h-px bg-current opacity-20"></div>
+                      </div>
+                    )}
+
+                    <NavigationSection collapsed={sidebarCollapsed}
+                      title="My Organization"
+                      icon={iconMap.BuildingOfficeIcon}
+                      defaultOpen={sectionState.organization}
+                      onToggle={() => toggleSection('organization')}
+                    >
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Team Members"
+                        href="/admin/org/team"
+                        icon={iconMap.UsersIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Roles & Permissions"
+                        href="/admin/org/roles"
+                        icon={iconMap.ShieldCheckIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Organization Settings"
+                        href="/admin/org/settings"
+                        icon={iconMap.CogIcon}
+                        indent={true}
+                      />
+                      {userOrgRole === 'owner' && (
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Organization Billing"
+                          href="/admin/org/billing"
+                          icon={iconMap.CurrencyDollarIcon}
+                          indent={true}
+                        />
+                      )}
+                    </NavigationSection>
+                  </>
+                )}
+
+                {/* ============================ */}
                 {/* INFRASTRUCTURE SECTION */}
                 {/* ============================ */}
                 {userRole === 'admin' && (
@@ -451,12 +610,6 @@ export default function Layout({ children }) {
                         name="Organizations"
                         href="/admin/org/settings"
                         icon={iconMap.BuildingOfficeIcon}
-                        indent={true}
-                      />
-                      <NavigationItem collapsed={sidebarCollapsed}
-                        name="API Keys"
-                        href="/admin/account/api-keys"
-                        icon={iconMap.KeyIcon}
                         indent={true}
                       />
                     </NavigationSection>
