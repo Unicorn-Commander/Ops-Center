@@ -69,7 +69,8 @@ import {
   Search as SearchIcon,
   AutoAwesome as AutoAwesomeIcon,
   Email as EmailIcon,
-  Language as LanguageIcon
+  Language as LanguageIcon,
+  ViewList as ViewListIcon
 } from '@mui/icons-material';
 import { useTheme as useAppTheme } from '../contexts/ThemeContext';
 import { useSwipeDrawer } from '../hooks/useSwipeGestures';
@@ -218,6 +219,7 @@ export default function MobileNavigation({ user, currentPath }) {
         { label: 'Monitoring', path: '/admin/system', icon: <BarChartIcon /> },
         { label: 'LLM Management', path: '/admin/llm-management', icon: <CloudIcon /> },
         { label: 'LLM Providers', path: '/admin/litellm-providers', icon: <AutoAwesomeIcon /> },
+        { label: 'Model Catalog', path: '/admin/llm-models', icon: <ViewListIcon /> },
         { label: 'Cloudflare DNS', path: '/admin/infrastructure/cloudflare', icon: <LanguageIcon /> }
       ]
     },

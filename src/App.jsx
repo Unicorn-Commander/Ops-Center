@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Eagerly load critical components (needed on first render)
 import Layout from './components/Layout';
@@ -10,6 +11,17 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { DeploymentProvider } from './contexts/DeploymentContext';
 import { OrganizationProvider } from './contexts/OrganizationContext';
 import { ToastProvider } from './components/Toast';
+
+// Create QueryClient instance for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 5 * 60 * 1000 // 5 minutes
+    }
+  }
+});
 
 // Import touch optimization utilities
 import { initTouchOptimizations } from './utils/touchOptimization';
@@ -41,8 +53,10 @@ const OrganizationBilling = lazy(() => import('./pages/organization/Organization
 
 // Services pages (lazy loaded)
 const Brigade = lazy(() => import('./pages/Brigade'));
+const LLMHub = lazy(() => import('./pages/LLMHub'));
 const LLMManagement = lazy(() => import('./pages/LLMManagement'));
 const LiteLLMManagement = lazy(() => import('./pages/LiteLLMManagement'));
+const LLMManagementUnified = lazy(() => import('./pages/LLMManagementUnified'));
 const OpenRouterSettings = lazy(() => import('./pages/OpenRouterSettings'));
 const LLMUsage = lazy(() => import('./pages/LLMUsage'));
 
@@ -274,8 +288,10 @@ function AppRoutes() {
                   {/* SERVICES SECTION - Platform services */}
                   {/* ============================================================ */}
                   <Route path="brigade" element={<Brigade />} />
+                  <Route path="llm-hub" element={<LLMHub />} />
                   <Route path="llm-management" element={<LLMManagement />} />
                   <Route path="litellm-providers" element={<LiteLLMManagement />} />
+                  <Route path="llm-models" element={<LLMManagementUnified />} />
                   <Route path="openrouter-settings" element={<OpenRouterSettings />} />
                   <Route path="llm/usage" element={<LLMUsage />} />
 
@@ -409,18 +425,20 @@ function App() {
   
   return (
     <ErrorBoundary>
-      <DeploymentProvider>
-        <ThemeProvider>
-          <Router>
-            <AppRoutes />
-            {showOnboarding && (
-              <Suspense fallback={null}>
-                <OnboardingTour onComplete={() => setShowOnboarding(false)} />
-              </Suspense>
-            )}
-          </Router>
-        </ThemeProvider>
-      </DeploymentProvider>
+      <QueryClientProvider client={queryClient}>
+        <DeploymentProvider>
+          <ThemeProvider>
+            <Router>
+              <AppRoutes />
+              {showOnboarding && (
+                <Suspense fallback={null}>
+                  <OnboardingTour onComplete={() => setShowOnboarding(false)} />
+                </Suspense>
+              )}
+            </Router>
+          </ThemeProvider>
+        </DeploymentProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

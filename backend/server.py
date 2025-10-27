@@ -80,6 +80,7 @@ from credential_api import router as credential_router
 from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
 from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
+from model_catalog_api import router as model_catalog_router  # Model catalog API
 from litellm_credit_system import CreditSystem
 from byok_manager import BYOKManager
 import asyncpg
@@ -119,6 +120,12 @@ from llm_usage_api import router as llm_usage_router
 
 # LLM Provider Settings API (Sprint 6-7)
 from llm_provider_settings_api import router as llm_provider_settings_router
+
+# LLM Provider Keys API (Epic 3.2 - Unified LLM Management)
+from provider_keys_api import router as provider_keys_router
+
+# LLM Testing Lab API (Epic 3.2 - Unified LLM Management)
+from testing_lab_api import router as testing_lab_router
 
 # Traefik Services Detail API (Sprint 6-7)
 from traefik_services_detail_api import router as traefik_services_detail_router
@@ -578,6 +585,12 @@ app.include_router(litellm_routing_router)
 logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
 app.include_router(litellm_api_router)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
+app.include_router(model_catalog_router)
+logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")
+app.include_router(provider_keys_router)
+logger.info("Provider Keys API endpoints registered at /api/v1/llm/providers (keys management)")
+app.include_router(testing_lab_router)
+logger.info("Testing Lab API endpoints registered at /api/v1/llm/test (interactive testing)")
 
 # Platform Settings API
 app.include_router(platform_settings_router)

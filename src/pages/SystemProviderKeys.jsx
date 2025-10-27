@@ -195,7 +195,7 @@ export default function SystemProviderKeys() {
       });
 
       if (response.ok) {
-        showToast('success', `${providerInfo[selectedProvider.id]?.name || selectedProvider.id} system key updated successfully!`);
+        showToast('success', `${providerInfo[selectedProvider.provider_type]?.name || selectedProvider.name} system key updated successfully!`);
         setShowAddModal(false);
         setSelectedProvider(null);
         setApiKeyInput('');
@@ -223,7 +223,8 @@ export default function SystemProviderKeys() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        showToast('success', `${providerInfo[providerId]?.name || providerId} system key is valid!`);
+        // Use the backend's message which includes model count
+        showToast('success', result.message || `${result.provider_name || 'Provider'} system key is valid!`);
         await loadProviders();
       } else {
         showToast('error', result.message || 'System key validation failed');
@@ -238,13 +239,17 @@ export default function SystemProviderKeys() {
 
   const handleDeleteKey = async (providerId) => {
     try {
+      // Find provider to get the name
+      const provider = providers.find(p => p.id === providerId);
+      const providerName = provider ? (providerInfo[provider.provider_type]?.name || provider.name) : 'Provider';
+
       const response = await fetch(`/api/v1/llm/admin/system-keys/${providerId}`, {
         method: 'DELETE',
         credentials: 'include'
       });
 
       if (response.ok) {
-        showToast('info', `${providerInfo[providerId]?.name || providerId} system key deleted. Will use environment fallback.`);
+        showToast('info', `${providerName} system key deleted. Will use environment fallback.`);
         setConfirmDelete(null);
         await loadProviders();
       } else {
@@ -549,7 +554,7 @@ export default function SystemProviderKeys() {
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className={`text-xl font-bold ${themeClasses.text}`}>
-                  {selectedProvider.key_source === 'not_set' ? 'Add' : 'Update'} System Key - {providerInfo[selectedProvider.id]?.name || selectedProvider.id}
+                  {selectedProvider.key_source === 'not_set' ? 'Add' : 'Update'} System Key - {providerInfo[selectedProvider.provider_type]?.name || selectedProvider.name}
                 </h3>
                 <button
                   onClick={() => {
@@ -569,15 +574,15 @@ export default function SystemProviderKeys() {
                   currentTheme === 'light' ? 'bg-blue-50 border border-blue-200' : 'bg-blue-500/10 border border-blue-500/30'
                 }`}>
                   <p className={`text-sm ${themeClasses.text} mb-2`}>
-                    Get your {providerInfo[selectedProvider.id]?.name || selectedProvider.id} API key:
+                    Get your {providerInfo[selectedProvider.provider_type]?.name || selectedProvider.name} API key:
                   </p>
                   <a
-                    href={providerInfo[selectedProvider.id]?.getKeyUrl || '#'}
+                    href={providerInfo[selectedProvider.provider_type]?.getKeyUrl || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-blue-400 hover:text-blue-300 underline break-all"
                   >
-                    {providerInfo[selectedProvider.id]?.getKeyUrl || 'Provider website'}
+                    {providerInfo[selectedProvider.provider_type]?.getKeyUrl || 'Provider website'}
                   </a>
                 </div>
 
@@ -590,7 +595,7 @@ export default function SystemProviderKeys() {
                     type="password"
                     value={apiKeyInput}
                     onChange={(e) => setApiKeyInput(e.target.value)}
-                    placeholder={providerInfo[selectedProvider.id]?.keyFormat || 'Enter API key'}
+                    placeholder={providerInfo[selectedProvider.provider_type]?.keyFormat || 'Enter API key'}
                     className={`w-full px-4 py-3 rounded-lg border ${themeClasses.input} focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono`}
                   />
                   <p className={`text-xs ${themeClasses.subtext} mt-2`}>
@@ -652,7 +657,10 @@ export default function SystemProviderKeys() {
                 <div>
                   <h3 className={`text-xl font-bold ${themeClasses.text}`}>Delete System Key?</h3>
                   <p className={`text-sm ${themeClasses.subtext}`}>
-                    {providerInfo[confirmDelete]?.name || confirmDelete}
+                    {(() => {
+                      const provider = providers.find(p => p.id === confirmDelete);
+                      return provider ? (providerInfo[provider.provider_type]?.name || provider.name) : 'Provider';
+                    })()}
                   </p>
                 </div>
               </div>

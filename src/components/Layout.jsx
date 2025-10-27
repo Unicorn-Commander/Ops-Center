@@ -55,7 +55,8 @@ import {
   CodeBracketIcon,
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
-  LockClosedIcon
+  LockClosedIcon,
+  CpuChipIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
@@ -97,7 +98,8 @@ const iconMap = {
   EnvelopeIcon,
   GlobeAltIcon,
   CodeBracketIcon,
-  LockClosedIcon
+  LockClosedIcon,
+  CpuChipIcon
 };
 
 export default function Layout({ children }) {
@@ -503,6 +505,12 @@ export default function Layout({ children }) {
                         name="Monitoring"
                         href="/admin/system"
                         icon={iconMap.ChartBarIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="LLM Hub"
+                        href="/admin/llm-hub"
+                        icon={iconMap.CpuChipIcon}
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}

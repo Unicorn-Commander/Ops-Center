@@ -104,6 +104,66 @@ def detect_provider_from_model(model_name: str) -> str:
 
 
 # ============================================================================
+# Session-Based Authentication for Admin Endpoints
+# ============================================================================
+
+async def get_current_user_from_session(request: Request) -> Dict:
+    """
+    Get current user from session cookie (used by admin endpoints)
+
+    This uses the same session-based authentication as other admin endpoints
+    in ops-center (user_management_api, subscription_api, etc.)
+
+    Returns:
+        User dict with email, username, role, etc.
+
+    Raises:
+        HTTPException 401 if not authenticated
+    """
+    session_token = request.cookies.get("session_token")
+
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated - no session token")
+
+    # Get sessions from app state (shared with main server.py)
+    sessions = getattr(request.app.state, "sessions", {})
+    session_data = sessions.get(session_token)
+
+    if not session_data:
+        raise HTTPException(status_code=401, detail="Invalid session - please login again")
+
+    user = session_data.get("user", {})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found in session")
+
+    return user
+
+
+async def require_admin_from_session(request: Request) -> Dict:
+    """
+    Require admin role from session (used by admin endpoints)
+
+    Returns:
+        User dict if admin
+
+    Raises:
+        HTTPException 401 if not authenticated
+        HTTPException 403 if not admin
+    """
+    user = await get_current_user_from_session(request)
+
+    # Check if user is admin
+    user_role = user.get("role", "viewer")
+    if user_role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Admin access required (current role: {user_role})"
+        )
+
+    return user
+
+
+# ============================================================================
 # Request/Response Models
 # ============================================================================
 
@@ -1043,7 +1103,10 @@ def check_test_rate_limit(user_id: str) -> bool:
 async def test_provider_api_key(provider: str, api_key: str) -> Dict:
     """Test API key against provider's API"""
 
-    if provider == 'openrouter':
+    # Normalize provider name to lowercase for comparison
+    provider_lower = provider.lower()
+
+    if provider_lower == 'openrouter':
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
@@ -1075,7 +1138,7 @@ async def test_provider_api_key(provider: str, api_key: str) -> Dict:
         except Exception as e:
             return {'success': False, 'message': f'Test failed: {str(e)}'}
 
-    elif provider == 'openai':
+    elif provider_lower == 'openai':
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
@@ -1099,7 +1162,7 @@ async def test_provider_api_key(provider: str, api_key: str) -> Dict:
         except Exception as e:
             return {'success': False, 'message': f'Test failed: {str(e)}'}
 
-    elif provider == 'anthropic':
+    elif provider_lower == 'anthropic':
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
@@ -1130,7 +1193,7 @@ async def test_provider_api_key(provider: str, api_key: str) -> Dict:
         except Exception as e:
             return {'success': False, 'message': f'Test failed: {str(e)}'}
 
-    elif provider == 'google':
+    elif provider_lower == 'google':
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
@@ -1313,24 +1376,27 @@ async def list_supported_providers():
 
 @router.get("/admin/system-keys")
 async def get_system_provider_keys(
-    user_id: str = Depends(get_user_id),
+    request: Request,
     credit_system: CreditSystem = Depends(get_credit_system)
 ):
     """
     Get all providers with system key status (admin only)
 
+    Authentication: Uses session cookie (same as other admin endpoints)
+
     Returns:
         List of providers with key configuration status
     """
     try:
-        # Check admin role
-        user_role = get_user_role(user_id)
-        if user_role != 'admin':
-            raise HTTPException(status_code=403, detail="Admin access required")
+        # Check admin role from session
+        user = await require_admin_from_session(request)
+        user_id = user.get("email", user.get("username", "unknown"))
 
         # Get system key manager
         system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
         providers = await system_key_manager.get_all_providers_with_keys()
+
+        logger.info(f"Admin {user_id} retrieved system provider keys")
 
         return {'providers': providers}
 
@@ -1344,28 +1410,30 @@ async def get_system_provider_keys(
 @router.put("/admin/system-keys/{provider_id}")
 async def set_system_provider_key(
     provider_id: str,
-    request: dict,
-    user_id: str = Depends(get_user_id),
+    request_obj: Request,
     credit_system: CreditSystem = Depends(get_credit_system)
 ):
     """
     Set system API key for a provider (admin only)
 
+    Authentication: Uses session cookie (same as other admin endpoints)
+
     Args:
         provider_id: Provider UUID
-        request: {"api_key": "sk-..."}
+        request_obj: FastAPI request (contains session cookie)
+        Body: {"api_key": "sk-..."}
 
     Returns:
         Success message
     """
     try:
-        # Check admin role
-        user_role = get_user_role(user_id)
-        if user_role != 'admin':
-            raise HTTPException(status_code=403, detail="Admin access required")
+        # Check admin role from session
+        user = await require_admin_from_session(request_obj)
+        user_id = user.get("email", user.get("username", "unknown"))
 
-        # Validate request
-        api_key = request.get('api_key')
+        # Parse request body
+        body = await request_obj.json()
+        api_key = body.get('api_key')
         if not api_key or len(api_key) < 10:
             raise HTTPException(status_code=400, detail="Invalid API key")
 
@@ -1391,23 +1459,25 @@ async def set_system_provider_key(
 @router.delete("/admin/system-keys/{provider_id}")
 async def delete_system_provider_key(
     provider_id: str,
-    user_id: str = Depends(get_user_id),
+    request: Request,
     credit_system: CreditSystem = Depends(get_credit_system)
 ):
     """
     Delete system API key (falls back to environment) (admin only)
 
+    Authentication: Uses session cookie (same as other admin endpoints)
+
     Args:
         provider_id: Provider UUID
+        request: FastAPI request (contains session cookie)
 
     Returns:
         Success message
     """
     try:
-        # Check admin role
-        user_role = get_user_role(user_id)
-        if user_role != 'admin':
-            raise HTTPException(status_code=403, detail="Admin access required")
+        # Check admin role from session
+        user = await require_admin_from_session(request)
+        user_id = user.get("email", user.get("username", "unknown"))
 
         # Delete system key
         system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
@@ -1431,25 +1501,26 @@ async def delete_system_provider_key(
 @router.post("/admin/system-keys/{provider_id}/test")
 async def test_system_provider_key(
     provider_id: str,
-    user_id: str = Depends(get_user_id),
+    request: Request,
     credit_system: CreditSystem = Depends(get_credit_system)
 ):
     """
     Test system API key connection (admin only)
 
+    Authentication: Uses session cookie (same as other admin endpoints)
     Rate Limited: 5 tests per minute per user
 
     Args:
         provider_id: Provider UUID
+        request: FastAPI request (contains session cookie)
 
     Returns:
         Test results with success status and details
     """
     try:
-        # Check admin role
-        user_role = get_user_role(user_id)
-        if user_role != 'admin':
-            raise HTTPException(status_code=403, detail="Admin access required")
+        # Check admin role from session
+        user = await require_admin_from_session(request)
+        user_id = user.get("email", user.get("username", "unknown"))
 
         # Check rate limit
         if not check_test_rate_limit(user_id):
@@ -1507,6 +1578,200 @@ async def test_system_provider_key(
 # ============================================================================
 # Health Check
 # ============================================================================
+
+@router.get("/admin/models/openrouter")
+async def get_openrouter_models(
+    request: Request,
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Fetch all models from OpenRouter API and merge with database status
+
+    Returns:
+        List of models with pricing, capabilities, and enable/disable status
+    """
+    try:
+        # Check admin permission
+        user = await require_admin_from_session(request)
+        user_id = user.get("email", user.get("username", "unknown"))
+
+        logger.info(f"Admin {user_id} requesting OpenRouter model catalog")
+
+        # Get OpenRouter API key from database
+        async with credit_system.db_pool.acquire() as conn:
+            # Get OpenRouter provider
+            provider = await conn.fetchrow("""
+                SELECT id, name, api_key_encrypted
+                FROM llm_providers
+                WHERE LOWER(name) = 'openrouter'
+            """)
+
+            if not provider or not provider['api_key_encrypted']:
+                raise HTTPException(status_code=404, detail="OpenRouter system key not configured")
+
+            # Decrypt API key
+            cipher = Fernet(BYOK_ENCRYPTION_KEY.encode())
+            api_key = cipher.decrypt(provider['api_key_encrypted'].encode()).decode()
+
+            # Fetch models from OpenRouter
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    'https://openrouter.ai/api/v1/models',
+                    headers={
+                        'Authorization': f'Bearer {api_key}',
+                        'HTTP-Referer': 'https://unicorncommander.ai',
+                        'X-Title': 'UC-1 Pro Ops Center'
+                    }
+                )
+
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"OpenRouter API error: {response.text}"
+                    )
+
+                openrouter_models = response.json().get('data', [])
+
+            # Get enabled/disabled status from our database
+            db_models = await conn.fetch("""
+                SELECT name, enabled
+                FROM llm_models
+                WHERE provider_id = $1
+            """, provider['id'])
+
+            # Create a lookup dict for database models
+            db_models_dict = {m['name']: m for m in db_models}
+
+        # Merge OpenRouter data with our database status
+        enriched_models = []
+        for model in openrouter_models:
+            model_id = model.get('id')
+            # Try to match by model ID (which OpenRouter uses as the name)
+            db_model = db_models_dict.get(model_id, {})
+
+            # Extract pricing info
+            pricing = model.get('pricing', {})
+
+            enriched_models.append({
+                'id': model_id,
+                'name': model.get('name', model_id),
+                'description': model.get('description', ''),
+                'context_length': model.get('context_length', 0),
+                'architecture': model.get('architecture', {}).get('modality', 'text'),
+                'pricing': {
+                    'prompt': float(pricing.get('prompt', 0)),  # Per token
+                    'completion': float(pricing.get('completion', 0)),  # Per token
+                    'prompt_per_1m': float(pricing.get('prompt', 0)) * 1_000_000,  # Per 1M tokens
+                    'completion_per_1m': float(pricing.get('completion', 0)) * 1_000_000  # Per 1M tokens
+                },
+                'top_provider': model.get('top_provider', {}),
+                'is_active': db_model.get('enabled', False),  # Default to disabled
+                'supports_streaming': True,  # OpenRouter supports streaming
+                'supports_function_calling': 'tool' in model.get('architecture', {}).get('modality', '').lower(),
+                'supports_vision': 'vision' in model.get('architecture', {}).get('modality', '').lower()
+            })
+
+        logger.info(f"Returning {len(enriched_models)} OpenRouter models to admin {user_id}")
+
+        return {
+            'success': True,
+            'total_models': len(enriched_models),
+            'models': enriched_models,
+            'provider': {
+                'id': provider['id'],
+                'name': provider['name']
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching OpenRouter models: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch models: {str(e)}")
+
+
+@router.put("/admin/models/{model_id}/toggle")
+async def toggle_model_status(
+    model_id: str,
+    request: Request,
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Enable or disable a specific model
+
+    Args:
+        model_id: Model identifier (e.g., "openai/gpt-4")
+
+    Returns:
+        Updated model status
+    """
+    try:
+        # Check admin permission
+        user = await require_admin_from_session(request)
+        user_id = user.get("email", user.get("username", "unknown"))
+
+        logger.info(f"Admin {user_id} toggling model {model_id}")
+
+        async with credit_system.db_pool.acquire() as conn:
+            # Check if model exists
+            existing_model = await conn.fetchrow("""
+                SELECT id, enabled, provider_id
+                FROM llm_models
+                WHERE name = $1
+            """, model_id)
+
+            if existing_model:
+                # Toggle existing model
+                new_status = not existing_model['enabled']
+                await conn.execute("""
+                    UPDATE llm_models
+                    SET enabled = $1, updated_at = NOW()
+                    WHERE name = $2
+                """, new_status, model_id)
+
+                logger.info(f"Admin {user_id} set model {model_id} to {'enabled' if new_status else 'disabled'}")
+
+                return {
+                    'success': True,
+                    'model_id': model_id,
+                    'is_active': new_status,
+                    'message': f"Model {'enabled' if new_status else 'disabled'} successfully"
+                }
+            else:
+                # Model doesn't exist in DB yet, create it as enabled
+                # First, get the OpenRouter provider ID
+                provider = await conn.fetchrow("""
+                    SELECT id FROM llm_providers
+                    WHERE LOWER(name) = 'openrouter'
+                """)
+
+                if not provider:
+                    raise HTTPException(status_code=404, detail="OpenRouter provider not found")
+
+                # Insert new model as enabled
+                await conn.execute("""
+                    INSERT INTO llm_models (
+                        provider_id, name, display_name,
+                        enabled, created_at, updated_at
+                    )
+                    VALUES ($1, $2, $2, TRUE, NOW(), NOW())
+                """, provider['id'], model_id)
+
+                logger.info(f"Admin {user_id} enabled new model {model_id}")
+
+                return {
+                    'success': True,
+                    'model_id': model_id,
+                    'is_active': True,
+                    'message': 'Model enabled successfully'
+                }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling model {model_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to toggle model: {str(e)}")
+
 
 @router.get("/health")
 async def health_check():
