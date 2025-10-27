@@ -1464,7 +1464,7 @@ async def test_system_provider_key(
         # Get provider info
         async with credit_system.db_pool.acquire() as conn:
             provider = await conn.fetchrow("""
-                SELECT name, provider_type FROM llm_providers WHERE id = $1
+                SELECT name, type as provider_type FROM llm_providers WHERE id = $1
             """, provider_id)
 
             if not provider:
