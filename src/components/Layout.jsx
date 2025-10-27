@@ -734,6 +734,12 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
+                        name="System Provider Keys"
+                        href="/admin/platform/system-provider-keys"
+                        icon={iconMap.KeyIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="API Documentation"
                         href="/admin/platform/api-docs"
                         icon={iconMap.CodeBracketIcon}

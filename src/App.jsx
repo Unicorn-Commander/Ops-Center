@@ -50,6 +50,7 @@ const LLMUsage = lazy(() => import('./pages/LLMUsage'));
 const EmailSettings = lazy(() => import('./components/EmailSettings'));
 const PlatformSettings = lazy(() => import('./pages/PlatformSettings'));
 const CredentialsManagement = lazy(() => import('./pages/settings/CredentialsManagement'));
+const SystemProviderKeys = lazy(() => import('./pages/SystemProviderKeys'));
 const ApiDocumentation = lazy(() => import('./pages/ApiDocumentation'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 
@@ -284,6 +285,7 @@ function AppRoutes() {
                   <Route path="platform/email-settings" element={<EmailSettings />} />
                   <Route path="platform/settings" element={<PlatformSettings />} />
                   <Route path="platform/credentials" element={<CredentialsManagement />} />
+                  <Route path="platform/system-provider-keys" element={<SystemProviderKeys />} />
                   <Route path="platform/api-docs" element={<ApiDocumentation />} />
                   <Route path="platform/performance" element={<PerformanceMonitor />} />
 

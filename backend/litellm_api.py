@@ -27,6 +27,7 @@ import stripe
 from litellm_credit_system import CreditSystem, POWER_LEVELS
 from byok_manager import BYOKManager
 from usage_metering import usage_meter
+from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ router = APIRouter(prefix="/api/v1/llm", tags=["LLM"])
 
 # LiteLLM proxy URL
 LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://unicorn-litellm-wilmer:4000')
+
+# BYOK encryption key (used for both user and system keys)
+BYOK_ENCRYPTION_KEY = os.getenv('BYOK_ENCRYPTION_KEY')
 
 
 # ============================================================================
@@ -152,6 +156,159 @@ class ToggleBYOKRequest(BaseModel):
 
 
 # ============================================================================
+# System Key Manager (Admin Provider Keys)
+# ============================================================================
+
+class SystemKeyManager:
+    """Manages system-level provider API keys for metering users"""
+
+    def __init__(self, db_pool, encryption_key):
+        """
+        Initialize System Key Manager
+
+        Args:
+            db_pool: PostgreSQL connection pool
+            encryption_key: Fernet encryption key
+        """
+        self.pool = db_pool
+        if not encryption_key:
+            raise ValueError("BYOK_ENCRYPTION_KEY environment variable required")
+        self.cipher = Fernet(encryption_key.encode() if isinstance(encryption_key, str) else encryption_key)
+
+    async def set_system_key(self, provider_id: str, api_key: str, source: str = 'database'):
+        """
+        Encrypt and store system API key
+
+        Args:
+            provider_id: Provider UUID
+            api_key: Plain text API key
+            source: 'database' or 'environment'
+        """
+        try:
+            encrypted = self.cipher.encrypt(api_key.encode()).decode()
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE llm_providers
+                    SET encrypted_api_key = $1,
+                        api_key_source = $2,
+                        api_key_updated_at = NOW()
+                    WHERE id = $3
+                """, encrypted, source, provider_id)
+                logger.info(f"Updated system key for provider {provider_id}")
+        except Exception as e:
+            logger.error(f"Failed to set system key: {e}")
+            raise HTTPException(status_code=500, detail="Failed to store system key")
+
+    async def get_system_key(self, provider_id: str) -> Optional[str]:
+        """
+        Get decrypted system API key (database > environment)
+
+        Args:
+            provider_id: Provider UUID
+
+        Returns:
+            Decrypted API key or None
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT encrypted_api_key, api_key_source, name
+                    FROM llm_providers WHERE id = $1
+                """, provider_id)
+
+                if not row:
+                    return None
+
+                # Try database key first
+                if row['encrypted_api_key']:
+                    try:
+                        return self.cipher.decrypt(row['encrypted_api_key'].encode()).decode()
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt system key: {e}")
+
+                # Fallback to environment variable
+                env_var = f"{row['name'].upper().replace('-', '_')}_API_KEY"
+                return os.getenv(env_var)
+
+        except Exception as e:
+            logger.error(f"Failed to get system key: {e}")
+            return None
+
+    async def delete_system_key(self, provider_id: str):
+        """
+        Delete system API key (falls back to environment)
+
+        Args:
+            provider_id: Provider UUID
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE llm_providers
+                    SET encrypted_api_key = NULL,
+                        api_key_source = 'environment',
+                        api_key_updated_at = NOW()
+                    WHERE id = $1
+                """, provider_id)
+                logger.info(f"Deleted system key for provider {provider_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete system key: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete system key")
+
+    async def get_all_providers_with_keys(self):
+        """
+        Get all providers with masked keys
+
+        Returns:
+            List of provider dicts with key status
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT id, name, provider_type, encrypted_api_key,
+                           api_key_source, api_key_last_tested, api_key_test_status
+                    FROM llm_providers
+                    WHERE is_active = TRUE
+                    ORDER BY name
+                """)
+
+                result = []
+                for row in rows:
+                    has_db_key = bool(row['encrypted_api_key'])
+                    env_var = f"{row['name'].upper().replace('-', '_')}_API_KEY"
+                    has_env_key = bool(os.getenv(env_var))
+
+                    result.append({
+                        'id': str(row['id']),
+                        'name': row['name'],
+                        'provider_type': row['provider_type'],
+                        'has_db_key': has_db_key,
+                        'has_env_key': has_env_key,
+                        'api_key_source': row['api_key_source'],
+                        'last_tested': row['api_key_last_tested'].isoformat() if row['api_key_last_tested'] else None,
+                        'test_status': row['api_key_test_status'],
+                        'masked_key': self._mask_key(row['encrypted_api_key']) if has_db_key else None
+                    })
+                return result
+
+        except Exception as e:
+            logger.error(f"Failed to get providers with keys: {e}")
+            return []
+
+    def _mask_key(self, encrypted_key):
+        """Show first 7 and last 4 chars: sk-or-v...1234"""
+        if not encrypted_key:
+            return None
+        try:
+            decrypted = self.cipher.decrypt(encrypted_key.encode()).decode()
+            if len(decrypted) > 20:
+                return f"{decrypted[:7]}...{decrypted[-4:]}"
+            return "***"
+        except:
+            return "***"
+
+
+# ============================================================================
 # Dependency Injection
 # ============================================================================
 
@@ -184,6 +341,32 @@ async def get_user_id(authorization: Optional[str] = Header(None)) -> str:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return user_id
+
+
+def get_user_role(user_id: str) -> str:
+    """
+    Get user role from userInfo (cached in memory or fetch from Keycloak)
+
+    Args:
+        user_id: User identifier
+
+    Returns:
+        User role (admin, moderator, developer, analyst, viewer)
+
+    Note: This is a placeholder implementation. In production, this should:
+    1. Validate JWT token and extract roles
+    2. Query Keycloak for user roles
+    3. Cache results in Redis for performance
+    """
+    # TODO: Implement proper role extraction from JWT or Keycloak
+    # For now, assume all users are viewers unless explicitly admin
+
+    # Simple check: if user_id contains 'admin' or is in admin list
+    admin_users = os.getenv('ADMIN_USER_IDS', '').split(',')
+    if user_id in admin_users or 'admin' in user_id.lower():
+        return 'admin'
+
+    return 'viewer'
 
 
 # ============================================================================
@@ -319,6 +502,9 @@ async def chat_completions(
             # Using system OpenRouter key (charge credits)
             logger.info(f"Using system OpenRouter key for {user_id}")
 
+            # Get system key manager
+            system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+
             # Get provider info from database for direct API call
             async with credit_system.db_pool.acquire() as conn:
                 # Get OpenRouter provider (or first enabled provider)
@@ -343,8 +529,18 @@ async def chat_completions(
                     provider_db_config = json.loads(provider_db_config)
 
                 base_url = provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
-                api_key = provider['api_key_encrypted']  # Stored as plain text for now
                 provider_name = provider['name']
+
+                # Get system API key (prefer database over environment)
+                api_key = await system_key_manager.get_system_key(provider['id'])
+                if not api_key:
+                    # Fallback to old method (plain text in db)
+                    api_key = provider['api_key_encrypted']
+                    if not api_key:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="No API key configured for system provider. Please configure in Platform Settings."
+                        )
 
             # Build headers for OpenRouter
             headers = {
@@ -1100,6 +1296,203 @@ async def list_supported_providers():
             }
         ]
     }
+
+
+# ============================================================================
+# System Provider Keys (Admin Only)
+# ============================================================================
+
+@router.get("/admin/system-keys")
+async def get_system_provider_keys(
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Get all providers with system key status (admin only)
+
+    Returns:
+        List of providers with key configuration status
+    """
+    try:
+        # Check admin role
+        user_role = get_user_role(user_id)
+        if user_role != 'admin':
+            raise HTTPException(status_code=403, detail="Admin access required")
+
+        # Get system key manager
+        system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+        providers = await system_key_manager.get_all_providers_with_keys()
+
+        return {'providers': providers}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting system keys: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve system keys")
+
+
+@router.put("/admin/system-keys/{provider_id}")
+async def set_system_provider_key(
+    provider_id: str,
+    request: dict,
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Set system API key for a provider (admin only)
+
+    Args:
+        provider_id: Provider UUID
+        request: {"api_key": "sk-..."}
+
+    Returns:
+        Success message
+    """
+    try:
+        # Check admin role
+        user_role = get_user_role(user_id)
+        if user_role != 'admin':
+            raise HTTPException(status_code=403, detail="Admin access required")
+
+        # Validate request
+        api_key = request.get('api_key')
+        if not api_key or len(api_key) < 10:
+            raise HTTPException(status_code=400, detail="Invalid API key")
+
+        # Store system key
+        system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+        await system_key_manager.set_system_key(provider_id, api_key, 'database')
+
+        logger.info(f"Admin {user_id} updated system key for provider {provider_id}")
+
+        return {
+            'success': True,
+            'message': 'System key updated successfully',
+            'provider_id': provider_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting system key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to set system key")
+
+
+@router.delete("/admin/system-keys/{provider_id}")
+async def delete_system_provider_key(
+    provider_id: str,
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Delete system API key (falls back to environment) (admin only)
+
+    Args:
+        provider_id: Provider UUID
+
+    Returns:
+        Success message
+    """
+    try:
+        # Check admin role
+        user_role = get_user_role(user_id)
+        if user_role != 'admin':
+            raise HTTPException(status_code=403, detail="Admin access required")
+
+        # Delete system key
+        system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+        await system_key_manager.delete_system_key(provider_id)
+
+        logger.info(f"Admin {user_id} deleted system key for provider {provider_id}")
+
+        return {
+            'success': True,
+            'message': 'System key deleted (will fall back to environment variable)',
+            'provider_id': provider_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting system key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete system key")
+
+
+@router.post("/admin/system-keys/{provider_id}/test")
+async def test_system_provider_key(
+    provider_id: str,
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Test system API key connection (admin only)
+
+    Rate Limited: 5 tests per minute per user
+
+    Args:
+        provider_id: Provider UUID
+
+    Returns:
+        Test results with success status and details
+    """
+    try:
+        # Check admin role
+        user_role = get_user_role(user_id)
+        if user_role != 'admin':
+            raise HTTPException(status_code=403, detail="Admin access required")
+
+        # Check rate limit
+        if not check_test_rate_limit(user_id):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 5 tests per minute."
+            )
+
+        # Get system key manager
+        system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+
+        # Get provider info
+        async with credit_system.db_pool.acquire() as conn:
+            provider = await conn.fetchrow("""
+                SELECT name, provider_type FROM llm_providers WHERE id = $1
+            """, provider_id)
+
+            if not provider:
+                raise HTTPException(status_code=404, detail="Provider not found")
+
+        # Get system key
+        api_key = await system_key_manager.get_system_key(provider_id)
+        if not api_key:
+            raise HTTPException(status_code=400, detail="No API key configured")
+
+        # Test using existing test function
+        test_result = await test_provider_api_key(provider['name'], api_key)
+
+        # Update test status in database
+        async with credit_system.db_pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE llm_providers
+                SET api_key_last_tested = NOW(),
+                    api_key_test_status = $1
+                WHERE id = $2
+            """, 'success' if test_result['success'] else 'failed', provider_id)
+
+        logger.info(f"Admin {user_id} tested system key for provider {provider_id}: {test_result.get('success')}")
+
+        return {
+            'success': test_result.get('success'),
+            'provider_id': provider_id,
+            'provider_name': provider['name'],
+            'message': test_result.get('message'),
+            'details': {k: v for k, v in test_result.items() if k not in ['success', 'message']}
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error testing system key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to test system key")
 
 
 # ============================================================================
