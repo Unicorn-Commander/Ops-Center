@@ -268,7 +268,7 @@ class SystemKeyManager:
                     SELECT id, name, provider_type, encrypted_api_key,
                            api_key_source, api_key_last_tested, api_key_test_status
                     FROM llm_providers
-                    WHERE is_active = TRUE
+                    WHERE enabled = TRUE
                     ORDER BY name
                 """)
 
@@ -1261,7 +1261,7 @@ async def list_supported_providers():
             {
                 'name': 'openrouter',
                 'display_name': 'OpenRouter',
-                'description': 'Universal LLM proxy supporting 100+ models',
+                'description': 'Universal LLM proxy - 200+ models including GPT-4o, Claude 3.5 Sonnet, Gemini 2.0',
                 'key_format': 'sk-or-v1-...',
                 'signup_url': 'https://openrouter.ai',
                 'docs_url': 'https://openrouter.ai/docs',
@@ -1270,8 +1270,8 @@ async def list_supported_providers():
             {
                 'name': 'openai',
                 'display_name': 'OpenAI',
-                'description': 'GPT-4, GPT-3.5, and other OpenAI models',
-                'key_format': 'sk-...',
+                'description': 'GPT-4o, GPT-4o-mini, GPT-4-turbo, o1-preview, o1-mini, DALL-E 3',
+                'key_format': 'sk-proj-...',
                 'signup_url': 'https://platform.openai.com',
                 'docs_url': 'https://platform.openai.com/docs',
                 'supports_test': True
@@ -1279,7 +1279,7 @@ async def list_supported_providers():
             {
                 'name': 'anthropic',
                 'display_name': 'Anthropic',
-                'description': 'Claude 3 models (Opus, Sonnet, Haiku)',
+                'description': 'Claude 3.5 Sonnet (latest), Claude 3 Opus/Sonnet/Haiku',
                 'key_format': 'sk-ant-...',
                 'signup_url': 'https://console.anthropic.com',
                 'docs_url': 'https://docs.anthropic.com',
@@ -1288,9 +1288,9 @@ async def list_supported_providers():
             {
                 'name': 'google',
                 'display_name': 'Google AI',
-                'description': 'Gemini and PaLM models',
-                'key_format': '39-character alphanumeric',
-                'signup_url': 'https://makersuite.google.com',
+                'description': 'Gemini 2.0 Flash, Gemini 1.5 Pro/Flash (up to 2M context)',
+                'key_format': 'AIza...',
+                'signup_url': 'https://aistudio.google.com/apikey',
                 'docs_url': 'https://ai.google.dev/docs',
                 'supports_test': True
             }

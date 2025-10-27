@@ -89,7 +89,7 @@ export default function SystemProviderKeys() {
       name: 'OpenRouter',
       icon: '🔀',
       color: 'from-blue-500 to-cyan-500',
-      description: 'Universal proxy - 348 models',
+      description: 'Universal proxy - 200+ models (GPT-4o, Claude 3.5, Gemini 2.0)',
       getKeyUrl: 'https://openrouter.ai/keys',
       keyFormat: 'sk-or-v1-...',
       recommended: true
@@ -98,7 +98,7 @@ export default function SystemProviderKeys() {
       name: 'OpenAI',
       icon: '🤖',
       color: 'from-green-500 to-emerald-500',
-      description: 'GPT-4, GPT-4 Turbo, o1',
+      description: 'GPT-4o, GPT-4o-mini, GPT-4-turbo, o1-preview, o1-mini',
       getKeyUrl: 'https://platform.openai.com/api-keys',
       keyFormat: 'sk-proj-...'
     },
@@ -106,7 +106,7 @@ export default function SystemProviderKeys() {
       name: 'Anthropic',
       icon: '🧠',
       color: 'from-purple-500 to-pink-500',
-      description: 'Claude 3.5 Sonnet, Opus',
+      description: 'Claude 3.5 Sonnet (latest), Claude 3 Opus/Sonnet/Haiku',
       getKeyUrl: 'https://console.anthropic.com/settings/keys',
       keyFormat: 'sk-ant-...'
     },
@@ -114,8 +114,8 @@ export default function SystemProviderKeys() {
       name: 'Google AI',
       icon: '🔍',
       color: 'from-red-500 to-orange-500',
-      description: 'Gemini 1.5 Pro and Flash',
-      getKeyUrl: 'https://makersuite.google.com/app/apikey',
+      description: 'Gemini 2.0 Flash, Gemini 1.5 Pro/Flash (2M context)',
+      getKeyUrl: 'https://aistudio.google.com/apikey',
       keyFormat: 'AIza...'
     }
   };
@@ -521,10 +521,10 @@ export default function SystemProviderKeys() {
           <div>
             <h4 className={`font-semibold ${themeClasses.text} mb-2`}>When to Use Each Provider</h4>
             <ul className={`space-y-2 ${themeClasses.subtext}`}>
-              <li><strong>OpenRouter</strong> - Best for most use cases (348 models, auto-fallback, cost-effective)</li>
-              <li><strong>OpenAI</strong> - Direct access to GPT-4, o1, DALL-E</li>
-              <li><strong>Anthropic</strong> - Claude models with 200K context</li>
-              <li><strong>Google</strong> - Gemini 1.5 with 1M token context</li>
+              <li><strong>OpenRouter</strong> ⭐ - Best for most use cases (200+ models, auto-fallback, competitive pricing)</li>
+              <li><strong>OpenAI</strong> - Latest GPT-4o models, DALL-E 3, o1 reasoning models</li>
+              <li><strong>Anthropic</strong> - Claude 3.5 Sonnet (best coding), 200K context window</li>
+              <li><strong>Google</strong> - Gemini 2.0 Flash (fastest), 1.5 Pro (2M token context)</li>
             </ul>
           </div>
           <div>
