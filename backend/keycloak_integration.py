@@ -575,3 +575,378 @@ async def get_current_user_id() -> Optional[str]:
         "This needs OAuth2 token validation. Returning None."
     )
     return None
+
+
+# ============================================================================
+# TWO-FACTOR AUTHENTICATION (2FA) MANAGEMENT
+# ============================================================================
+
+
+async def get_user_credentials(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Get user's credentials from Keycloak.
+    This includes TOTP secrets, WebAuthn keys, passwords, etc.
+
+    Returns:
+        List of credential objects:
+        [
+            {
+                "id": "cred-id",
+                "type": "otp" | "webauthn" | "password",
+                "userLabel": "Google Authenticator",
+                "createdDate": 1698765432000
+            }
+        ]
+    """
+    try:
+        token = await get_admin_token()
+
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.get(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/credentials",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0
+            )
+
+            if response.status_code == 200:
+                credentials = response.json()
+                logger.info(f"Retrieved {len(credentials)} credentials for user {user_id}")
+                return credentials
+            else:
+                logger.error(f"Failed to get credentials: {response.status_code} - {response.text}")
+                return []
+
+    except Exception as e:
+        logger.error(f"Error getting user credentials: {e}")
+        return []
+
+
+async def remove_user_credential(user_id: str, credential_id: str) -> bool:
+    """
+    Remove a specific credential from user.
+    Used for resetting 2FA (removing TOTP or WebAuthn credentials).
+
+    Args:
+        user_id: Keycloak user ID
+        credential_id: ID of credential to remove
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        token = await get_admin_token()
+
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.delete(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/credentials/{credential_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0
+            )
+
+            if response.status_code == 204:
+                logger.info(f"Successfully removed credential {credential_id} for user {user_id}")
+                return True
+            else:
+                logger.error(f"Failed to remove credential: {response.status_code} - {response.text}")
+                return False
+
+    except Exception as e:
+        logger.error(f"Error removing credential: {e}")
+        return False
+
+
+async def get_user_2fa_status(user_id: str) -> Dict[str, Any]:
+    """
+    Get comprehensive 2FA status for a user.
+
+    Returns:
+        {
+            "user_id": str,
+            "username": str,
+            "email": str,
+            "two_factor_enabled": bool,
+            "two_factor_methods": [
+                {
+                    "id": str,
+                    "type": "otp" | "webauthn",
+                    "label": str,
+                    "created_date": str (ISO format)
+                }
+            ],
+            "setup_pending": bool,  # If CONFIGURE_TOTP in requiredActions
+            "last_used": str or None  # Not available from Keycloak API
+        }
+    """
+    try:
+        # Get user details
+        user = await get_user_by_id(user_id)
+        if not user:
+            return {
+                "error": "User not found",
+                "user_id": user_id,
+                "two_factor_enabled": False
+            }
+
+        # Get user's credentials
+        credentials = await get_user_credentials(user_id)
+
+        # Filter for 2FA credentials (OTP and WebAuthn)
+        two_factor_methods = []
+        for cred in credentials:
+            if cred.get("type") in ["otp", "webauthn"]:
+                # Convert timestamp to ISO format
+                created_timestamp = cred.get("createdDate", 0)
+                created_date = datetime.fromtimestamp(created_timestamp / 1000).isoformat() if created_timestamp else None
+
+                two_factor_methods.append({
+                    "id": cred.get("id"),
+                    "type": cred.get("type"),
+                    "label": cred.get("userLabel", "Unnamed Device"),
+                    "created_date": created_date
+                })
+
+        # Check if user has pending 2FA setup
+        required_actions = user.get("requiredActions", [])
+        setup_pending = "CONFIGURE_TOTP" in required_actions
+
+        return {
+            "user_id": user_id,
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "two_factor_enabled": len(two_factor_methods) > 0,
+            "two_factor_methods": two_factor_methods,
+            "setup_pending": setup_pending,
+            "last_used": None  # Not available from Keycloak API
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting 2FA status: {e}")
+        return {
+            "error": str(e),
+            "user_id": user_id,
+            "two_factor_enabled": False
+        }
+
+
+async def enforce_user_2fa(user_id: str, method: str = "email", lifespan: int = 86400) -> Dict[str, Any]:
+    """
+    Enforce 2FA for a user.
+
+    Args:
+        user_id: Keycloak user ID
+        method: "email" (send setup email) or "immediate" (require on next login)
+        lifespan: Email link validity in seconds (default 24 hours)
+
+    Returns:
+        {
+            "success": bool,
+            "user_id": str,
+            "action_taken": str,
+            "message": str
+        }
+    """
+    try:
+        # Get user to check if 2FA already enabled
+        status = await get_user_2fa_status(user_id)
+        if status.get("two_factor_enabled"):
+            return {
+                "success": True,
+                "user_id": user_id,
+                "action_taken": "none",
+                "message": "User already has 2FA enabled"
+            }
+
+        token = await get_admin_token()
+
+        if method == "email":
+            # Send execute actions email with CONFIGURE_TOTP action
+            async with httpx.AsyncClient(verify=False) as client:
+                response = await client.put(
+                    f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/execute-actions-email",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=["CONFIGURE_TOTP"],
+                    params={"lifespan": lifespan},
+                    timeout=10.0
+                )
+
+                if response.status_code == 204:
+                    logger.info(f"Sent 2FA setup email to user {user_id}")
+                    return {
+                        "success": True,
+                        "user_id": user_id,
+                        "action_taken": "email_sent",
+                        "message": "2FA setup email sent. User must configure 2FA via link in email."
+                    }
+                else:
+                    logger.error(f"Failed to send 2FA email: {response.status_code} - {response.text}")
+                    return {
+                        "success": False,
+                        "user_id": user_id,
+                        "action_taken": "none",
+                        "message": f"Failed to send email: {response.status_code}"
+                    }
+
+        elif method == "immediate":
+            # Add CONFIGURE_TOTP to required actions
+            user = await get_user_by_id(user_id)
+            required_actions = user.get("requiredActions", [])
+
+            if "CONFIGURE_TOTP" not in required_actions:
+                required_actions.append("CONFIGURE_TOTP")
+
+                async with httpx.AsyncClient(verify=False) as client:
+                    response = await client.put(
+                        f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json"
+                        },
+                        json={"requiredActions": required_actions},
+                        timeout=10.0
+                    )
+
+                    if response.status_code == 204:
+                        logger.info(f"Set CONFIGURE_TOTP required action for user {user_id}")
+                        return {
+                            "success": True,
+                            "user_id": user_id,
+                            "action_taken": "required_action_set",
+                            "message": "User will be prompted to setup 2FA on next login."
+                        }
+                    else:
+                        logger.error(f"Failed to set required action: {response.status_code}")
+                        return {
+                            "success": False,
+                            "user_id": user_id,
+                            "action_taken": "none",
+                            "message": f"Failed to set required action: {response.status_code}"
+                        }
+            else:
+                return {
+                    "success": True,
+                    "user_id": user_id,
+                    "action_taken": "none",
+                    "message": "CONFIGURE_TOTP already in required actions"
+                }
+
+        else:
+            return {
+                "success": False,
+                "user_id": user_id,
+                "action_taken": "none",
+                "message": f"Invalid method: {method}. Must be 'email' or 'immediate'."
+            }
+
+    except Exception as e:
+        logger.error(f"Error enforcing 2FA: {e}")
+        return {
+            "success": False,
+            "user_id": user_id,
+            "action_taken": "none",
+            "message": f"Error: {str(e)}"
+        }
+
+
+async def reset_user_2fa(user_id: str, require_reconfigure: bool = True) -> Dict[str, Any]:
+    """
+    Reset user's 2FA by removing all OTP and WebAuthn credentials.
+
+    Args:
+        user_id: Keycloak user ID
+        require_reconfigure: If True, add CONFIGURE_TOTP to requiredActions
+
+    Returns:
+        {
+            "success": bool,
+            "user_id": str,
+            "credentials_removed": List[str],  # IDs of removed credentials
+            "required_action_set": bool,
+            "message": str
+        }
+    """
+    try:
+        # Get user's credentials
+        credentials = await get_user_credentials(user_id)
+
+        # Filter for 2FA credentials
+        two_factor_creds = [c for c in credentials if c.get("type") in ["otp", "webauthn"]]
+
+        if not two_factor_creds:
+            return {
+                "success": True,
+                "user_id": user_id,
+                "credentials_removed": [],
+                "required_action_set": False,
+                "message": "No 2FA credentials found for user"
+            }
+
+        # Remove each 2FA credential
+        removed_cred_ids = []
+        for cred in two_factor_creds:
+            cred_id = cred.get("id")
+            if await remove_user_credential(user_id, cred_id):
+                removed_cred_ids.append(cred_id)
+            else:
+                logger.warning(f"Failed to remove credential {cred_id}")
+
+        # Optionally require reconfiguration
+        required_action_set = False
+        if require_reconfigure:
+            result = await enforce_user_2fa(user_id, method="immediate")
+            required_action_set = result.get("success", False)
+
+        logger.info(f"Reset 2FA for user {user_id}: removed {len(removed_cred_ids)} credentials")
+
+        return {
+            "success": True,
+            "user_id": user_id,
+            "credentials_removed": removed_cred_ids,
+            "required_action_set": required_action_set,
+            "message": f"Successfully removed {len(removed_cred_ids)} 2FA credential(s)"
+        }
+
+    except Exception as e:
+        logger.error(f"Error resetting 2FA: {e}")
+        return {
+            "success": False,
+            "user_id": user_id,
+            "credentials_removed": [],
+            "required_action_set": False,
+            "message": f"Error: {str(e)}"
+        }
+
+
+async def logout_user_sessions(user_id: str) -> bool:
+    """
+    Logout all sessions for a user.
+    Useful after 2FA reset to force re-authentication.
+
+    Args:
+        user_id: Keycloak user ID
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        token = await get_admin_token()
+
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.post(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/logout",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0
+            )
+
+            if response.status_code == 204:
+                logger.info(f"Successfully logged out all sessions for user {user_id}")
+                return True
+            else:
+                logger.error(f"Failed to logout user sessions: {response.status_code}")
+                return False
+
+    except Exception as e:
+        logger.error(f"Error logging out user sessions: {e}")
+        return False
