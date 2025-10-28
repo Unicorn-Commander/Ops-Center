@@ -117,7 +117,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/logout",
             "/api/v1/llm/",  # LLM API endpoints (used by Brigade, Open-WebUI, etc.)
             "/api/v1/email-provider/",  # Email provider API (used for testing providers)
-            "/api/v1/platform/"  # Platform settings API (credential management)
+            "/api/v1/platform/",  # Platform settings API (credential management)
+            "/api/v1/monitoring/grafana/"  # Grafana integration API (monitoring)
         }
         self.enabled = enabled
         self.sessions_store = sessions_store or {}
@@ -126,13 +127,16 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         """Check if a URL path is exempt from CSRF protection"""
         # Check exact matches
         if path in self.exempt_urls:
+            logger.debug(f"Path {path} matched exact exempt URL")
             return True
 
         # Check prefix matches for OAuth callbacks
         for exempt_url in self.exempt_urls:
             if path.startswith(exempt_url):
+                logger.debug(f"Path {path} matched exempt URL prefix: {exempt_url}")
                 return True
 
+        logger.debug(f"Path {path} not exempt. Exempt URLs: {self.exempt_urls}")
         return False
 
     def get_token_from_request(self, request: Request) -> Optional[str]:
@@ -203,7 +207,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         # Check if URL is exempt
         if self.is_exempt(request.url.path):
-            logger.debug(f"CSRF check skipped for exempt URL: {request.url.path}")
+            logger.info(f"CSRF check skipped for exempt URL: {request.url.path}")
             return await call_next(request)
 
         # For protected methods, validate CSRF token
