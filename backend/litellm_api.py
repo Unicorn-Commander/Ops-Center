@@ -392,24 +392,51 @@ async def get_byok_manager(request: Request) -> BYOKManager:
 
 
 async def get_user_id(authorization: Optional[str] = Header(None)) -> str:
-    """Extract user ID from authorization header"""
+    """
+    Extract user ID from authorization header
+
+    Supports two authentication methods:
+    1. API Key: Bearer uc_<hex-key>
+    2. JWT Token: Bearer <jwt-token>
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     if not authorization.startswith('Bearer '):
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
+        raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Authorization: Bearer <api-key>")
 
-    # Extract token and decode (simplified - replace with real JWT validation)
+    # Extract token
     token = authorization[7:]
 
-    # TODO: Validate JWT token and extract user_id
-    # For now, use token as user_id (development only)
-    user_id = token
+    # Try API key validation first (format: uc_<hex>)
+    if token.startswith('uc_'):
+        from api_key_manager import get_api_key_manager
+        try:
+            manager = get_api_key_manager()
+            user_info = await manager.validate_api_key(token)
 
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+            if user_info:
+                # API key is valid
+                return user_info['user_id']
+            else:
+                raise HTTPException(status_code=401, detail="Invalid or expired API key")
+        except Exception as e:
+            logger.error(f"API key validation error: {e}")
+            raise HTTPException(status_code=401, detail="API key validation failed")
 
-    return user_id
+    # Try JWT token validation
+    try:
+        from api_key_manager import get_api_key_manager
+        manager = get_api_key_manager()
+        payload = manager.validate_jwt_token(token)
+
+        if payload and 'user_id' in payload:
+            return payload['user_id']
+        else:
+            raise HTTPException(status_code=401, detail="Invalid or expired JWT token")
+    except Exception as e:
+        logger.error(f"JWT validation error: {e}")
+        raise HTTPException(status_code=401, detail="Token validation failed")
 
 
 def get_user_role(user_id: str) -> str:

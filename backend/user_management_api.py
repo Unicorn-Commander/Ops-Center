@@ -654,17 +654,57 @@ async def get_user_activity(user_id: str, admin: bool = Depends(require_admin)):
 async def generate_api_key(
     user_id: str,
     request: APIKeyCreate,
-    admin: bool = Depends(require_admin)
+    admin: bool = Depends(require_admin),
+    app_state: Any = Depends(lambda: None)
 ):
-    """Generate API key for user"""
-    # TODO: Implement API key generation
-    return {"message": "API key generation not yet implemented"}
+    """
+    Generate API key for user
+
+    Creates a secure API key for external application authentication.
+    The key is shown ONCE and cannot be retrieved again.
+    """
+    from api_key_manager import get_api_key_manager
+
+    try:
+        manager = get_api_key_manager()
+
+        # Create API key
+        result = await manager.create_api_key(
+            user_id=user_id,
+            key_name=request.name,
+            expires_in_days=request.expires_in_days,
+            permissions=request.permissions or ["llm:inference", "llm:models"]
+        )
+
+        return {
+            "success": True,
+            **result
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate API key: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
 
 @router.get("/{user_id}/api-keys")
 async def list_api_keys(user_id: str, admin: bool = Depends(require_admin)):
-    """List user's API keys"""
-    # TODO: Implement API key listing
-    return {"api_keys": [], "message": "API key management not yet implemented"}
+    """
+    List user's API keys
+
+    Returns all API keys for the user (masked - actual keys are never shown again)
+    """
+    from api_key_manager import get_api_key_manager
+
+    try:
+        manager = get_api_key_manager()
+        keys = await manager.list_user_keys(user_id)
+
+        return {
+            "success": True,
+            "api_keys": keys,
+            "total": len(keys)
+        }
+    except Exception as e:
+        logger.error(f"Failed to list API keys: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list API keys: {str(e)}")
 
 @router.delete("/{user_id}/api-keys/{key_id}")
 async def revoke_api_key(
@@ -672,9 +712,29 @@ async def revoke_api_key(
     key_id: str,
     admin: bool = Depends(require_admin)
 ):
-    """Revoke user's API key"""
-    # TODO: Implement API key revocation
-    return {"message": "API key management not yet implemented"}
+    """
+    Revoke user's API key
+
+    Permanently disables the specified API key. This action cannot be undone.
+    """
+    from api_key_manager import get_api_key_manager
+
+    try:
+        manager = get_api_key_manager()
+        success = await manager.revoke_key(user_id, key_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail="API key not found")
+
+        return {
+            "success": True,
+            "message": f"API key {key_id} revoked successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to revoke API key: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to revoke API key: {str(e)}")
 
 @router.post("/{user_id}/impersonate/start")
 async def start_impersonation(

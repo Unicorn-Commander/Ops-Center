@@ -89,6 +89,7 @@ from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
 from redis_session import redis_session_manager
+from subscription_tiers_api import router as subscription_tiers_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -99,6 +100,14 @@ from email_provider_api import router as email_provider_router
 from system_metrics_api import router as system_metrics_router
 from metrics_collector import MetricsCollector
 from alert_manager import AlertManager
+# Grafana Integration (Monitoring Team)
+from grafana_api import router as grafana_router
+
+# Umami Analytics Integration (Epic 2.5 - Monitoring)
+from umami_api import router as umami_router
+
+# Prometheus Monitoring API (Epic 3.1)
+from prometheus_api import router as prometheus_router
 
 # Revenue Analytics (Epic 2.6)
 from revenue_analytics import router as revenue_analytics_router
@@ -170,6 +179,9 @@ try:
 except ImportError:
     print("Keycloak integration not available")
     KEYCLOAK_ENABLED = False
+
+# Two-Factor Authentication Management API (Priority 1 Polish)
+from two_factor_api import router as two_factor_router
 
 # OAuth settings from environment
 EXTERNAL_HOST = os.environ.get("EXTERNAL_HOST", "192.168.1.135")
@@ -333,7 +345,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
         "/api/v1/email-provider/",  # Email provider API - testing and management
-        "/api/v1/platform/"  # Platform settings API - credential management
+        "/api/v1/platform/",  # Platform settings API - credential management
+        "/api/v1/monitoring/grafana/"  # Grafana integration API - monitoring endpoints
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -409,8 +422,13 @@ async def startup_event():
         byok_manager = BYOKManager(db_pool)
         app.state.byok_manager = byok_manager
         logger.info("BYOK manager initialized successfully")
+
+        # Initialize API Key Manager (Epic: External App Authentication)
+        from api_key_manager import initialize_api_key_manager
+        await initialize_api_key_manager(db_pool)
+        logger.info("API Key Manager initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize credit system / BYOK: {e}")
+        logger.error(f"Failed to initialize credit system / BYOK / API keys: {e}")
         # Don't block startup, but credit-based features will fail
         app.state.credit_system = None
         app.state.byok_manager = None
@@ -578,6 +596,10 @@ logger.info("Keycloak status API endpoints registered at /api/v1/system/keycloak
 app.include_router(user_management_router)
 logger.info("User Management API endpoints registered at /api/v1/admin/users")
 
+# Subscription Tier Management API (Epic 4.4)
+app.include_router(subscription_tiers_router)
+logger.info("Subscription Tier Management API endpoints registered at /api/v1/admin/tiers")
+
 # LiteLLM Routing and Provider Management API
 app.include_router(admin_local_users_router)
 logger.info("Admin Local User Management API endpoints registered at /api/v1/admin/system/local-users")
@@ -626,13 +648,28 @@ logger.info("Restic Backup API endpoints registered at /api/v1/backups/restic")
 app.include_router(notification_router)
 logger.info("Email Notification API endpoints registered at /api/v1/notifications")
 
+# Two-Factor Authentication Management API (Priority 1 Polish)
+app.include_router(two_factor_router)
+logger.info("Two-Factor Authentication API endpoints registered at /api/v1/admin/2fa")
+
 # Email Provider Management API
 app.include_router(email_provider_router)
 logger.info("Email Provider API endpoints registered at /api/v1/email-provider")
 
 # System Metrics API (Epic 2.5 - Admin Dashboard Polish)
 app.include_router(system_metrics_router)
+# Grafana API
+app.include_router(grafana_router)
+logger.info("Grafana API endpoints registered at /api/v1/monitoring/grafana")
 logger.info("System Metrics API endpoints registered at /api/v1/system")
+
+# Umami Analytics API (Epic 2.5 - Monitoring)
+app.include_router(umami_router)
+logger.info("Umami Analytics API endpoints registered at /api/v1/monitoring/umami")
+
+# Prometheus Monitoring API (Epic 3.1)
+app.include_router(prometheus_router)
+logger.info("Prometheus Monitoring API endpoints registered at /api/v1/monitoring/prometheus")
 
 # Revenue Analytics API (Epic 2.6)
 app.include_router(revenue_analytics_router)
@@ -1855,6 +1892,38 @@ async def get_service_urls():
         "external_protocol": external_protocol,
         "service_urls": service_urls
     }
+
+@app.get("/api/v1/geeses/agent-card")
+async def get_geeses_agent_card():
+    """
+    Get Geeses Navigator Agent Card (Brigade A2A protocol compatible)
+    Returns the agent definition JSON for Navigator Geeses
+    """
+    try:
+        agent_card_path = os.path.join(os.path.dirname(__file__), "../geeses/architecture/geeses-agent.json")
+
+        # Try alternate path if not found
+        if not os.path.exists(agent_card_path):
+            agent_card_path = os.path.join(os.path.dirname(__file__), "geeses/architecture/geeses-agent.json")
+
+        if not os.path.exists(agent_card_path):
+            raise HTTPException(
+                status_code=404,
+                detail="Agent card not found. Ensure geeses/architecture/geeses-agent.json exists."
+            )
+
+        with open(agent_card_path, 'r') as f:
+            agent_card = json.load(f)
+
+        return agent_card
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Geeses agent card file not found")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid JSON in agent card file")
+    except Exception as e:
+        logger.error(f"Error loading Geeses agent card: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load agent card: {str(e)}")
 
 @app.post("/api/v1/landing/service/{service_id}")
 async def update_landing_service(
