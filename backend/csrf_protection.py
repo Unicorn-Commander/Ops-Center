@@ -118,7 +118,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/llm/",  # LLM API endpoints (used by Brigade, Open-WebUI, etc.)
             "/api/v1/email-provider/",  # Email provider API (used for testing providers)
             "/api/v1/platform/",  # Platform settings API (credential management)
-            "/api/v1/monitoring/grafana/"  # Grafana integration API (monitoring)
+            "/api/v1/monitoring/grafana/",  # Grafana integration API (monitoring)
+            "/api/v1/admin/users/"  # User management and API key endpoints
         }
         self.enabled = enabled
         self.sessions_store = sessions_store or {}

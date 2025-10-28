@@ -346,7 +346,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
         "/api/v1/email-provider/",  # Email provider API - testing and management
         "/api/v1/platform/",  # Platform settings API - credential management
-        "/api/v1/monitoring/grafana/"  # Grafana integration API - monitoring endpoints
+        "/api/v1/monitoring/grafana/",  # Grafana integration API - monitoring endpoints
+        "/api/v1/admin/users/"  # User management and API key endpoints - REST API operations
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE

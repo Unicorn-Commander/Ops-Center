@@ -18,6 +18,59 @@ from lago_integration import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/billing", tags=["billing-lago"])
 
+# Hardcoded subscription plans (from Lago configuration)
+SUBSCRIPTION_PLANS = [
+    {
+        "plan_id": "bbbba413-45de-468d-b03e-f23713684354",
+        "plan_code": "trial",
+        "name": "Trial",
+        "description": "7-day trial with basic features",
+        "price_monthly": 1.00,
+        "price_yearly": None,
+        "interval": "weekly",
+        "features": ["100 API calls/day", "Open-WebUI access", "Basic AI models", "Community support"],
+        "api_calls_limit": 700,
+        "is_trial": True
+    },
+    {
+        "plan_id": "02a9058d-e0f6-4e09-9c39-a775d57676d1",
+        "plan_code": "starter",
+        "name": "Starter",
+        "description": "Perfect for individuals and small projects",
+        "price_monthly": 19.00,
+        "price_yearly": 190.00,
+        "interval": "monthly",
+        "features": ["1,000 API calls/month", "All AI models", "BYOK support", "Email support"],
+        "api_calls_limit": 1000,
+        "is_trial": False
+    },
+    {
+        "plan_id": "0eefed2d-cdf8-4d0a-b5d0-852dacf9909d",
+        "plan_code": "professional",
+        "name": "Professional",
+        "description": "Most popular - for growing teams",
+        "price_monthly": 49.00,
+        "price_yearly": 490.00,
+        "interval": "monthly",
+        "features": ["10,000 API calls/month", "All services", "Priority support", "Billing dashboard"],
+        "api_calls_limit": 10000,
+        "is_trial": False,
+        "is_popular": True
+    },
+    {
+        "plan_id": "ee2d9d3d-e985-4166-97ba-2fd6e8cd5b0b",
+        "plan_code": "enterprise",
+        "name": "Enterprise",
+        "description": "For organizations with advanced needs",
+        "price_monthly": 99.00,
+        "price_yearly": 990.00,
+        "interval": "monthly",
+        "features": ["Unlimited API calls", "Team management (5 seats)", "Custom integrations", "24/7 support", "White-label"],
+        "api_calls_limit": -1,  # -1 = unlimited
+        "is_trial": False
+    }
+]
+
 
 async def get_user_org_id(request: Request) -> str:
     """Get organization ID from user session"""
@@ -43,6 +96,22 @@ async def get_user_org_id(request: Request) -> str:
             raise HTTPException(status_code=400, detail="Cannot determine org_id")
 
     return org_id
+
+
+@router.get("/plans")
+async def get_subscription_plans():
+    """
+    Get available subscription plans.
+
+    Returns:
+        List of subscription plans with pricing and features
+    """
+    logger.info("Fetching subscription plans")
+    return {
+        "plans": SUBSCRIPTION_PLANS,
+        "currency": "USD",
+        "billing_provider": "lago"
+    }
 
 
 @router.get("/invoices")
