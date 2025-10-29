@@ -295,7 +295,7 @@ const BulkActionsToolbar = ({
                   {selected.map((role) => (
                     <Chip
                       key={role}
-                      label={role.replace('brigade-', '')}
+                      label={typeof role === 'string' ? role.replace(/^brigade-(platform-)?/, '') : String(role || '')}
                       size="small"
                     />
                   ))}
@@ -304,7 +304,7 @@ const BulkActionsToolbar = ({
             >
               {availableRoles.map((role) => (
                 <MenuItem key={role} value={role}>
-                  {role.replace('brigade-', '')}
+                  {typeof role === 'string' ? role.replace(/^brigade-(platform-)?/, '') : String(role || '')}
                 </MenuItem>
               ))}
             </Select>

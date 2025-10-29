@@ -759,10 +759,10 @@ const UserManagement = () => {
                     label="Brigade Roles"
                     renderValue={(selected) => (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((value) => (
+                        {Array.isArray(selected) && selected.map((value) => (
                           <Chip
                             key={value}
-                            label={value.replace('brigade-', '')}
+                            label={typeof value === 'string' ? value.replace(/^brigade-(platform-)?/, '') : String(value || '')}
                             size="small"
                           />
                         ))}
@@ -772,7 +772,7 @@ const UserManagement = () => {
                     {availableRoles.map((role) => (
                       <MenuItem key={role} value={role}>
                         <Checkbox checked={filters.roles.indexOf(role) > -1} />
-                        <ListItemText primary={role.replace('brigade-', '')} />
+                        <ListItemText primary={typeof role === 'string' ? role.replace(/^brigade-(platform-)?/, '') : String(role || '')} />
                       </MenuItem>
                     ))}
                   </Select>
@@ -985,10 +985,10 @@ const UserManagement = () => {
                       color="primary"
                     />
                   ))}
-                  {filters.roles.map((role) => (
+                  {Array.isArray(filters.roles) && filters.roles.map((role) => (
                     <Chip
                       key={role}
-                      label={`Role: ${role.replace('brigade-', '')}`}
+                      label={`Role: ${typeof role === 'string' ? role.replace(/^brigade-(platform-)?/, '') : String(role || '')}`}
                       onDelete={() =>
                         setFilters({
                           ...filters,

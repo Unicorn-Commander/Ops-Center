@@ -395,7 +395,7 @@ const RoleManagementModal = ({
                           <ListItemText
                             primary={
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2">{role.replace('brigade-platform-', '')}</Typography>
+                                <Typography variant="body2">{typeof role === 'string' ? role.replace(/^brigade-(platform-)?/, '') : String(role || '')}</Typography>
                                 <Chip
                                   label={roleHierarchy[role]?.level || 0}
                                   size="small"
@@ -475,7 +475,7 @@ const RoleManagementModal = ({
                         <ListItemText
                           primary={
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="body2">{role.replace('brigade-platform-', '')}</Typography>
+                              <Typography variant="body2">{typeof role === 'string' ? role.replace(/^brigade-(platform-)?/, '') : String(role || '')}</Typography>
                               <Chip
                                 label={roleHierarchy[role]?.level || 0}
                                 size="small"

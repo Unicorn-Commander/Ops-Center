@@ -505,6 +505,27 @@ async def activate_model(backend: str, model_id: str):
         raise HTTPException(status_code=500, detail=f"Activation failed: {str(e)}")
 
 
+@router.get("/installed", response_model=Dict[str, List[Dict[str, Any]]])
+async def get_installed_models():
+    """
+    Get all installed models for all backends
+
+    **Example**:
+    ```
+    GET /api/v1/models/installed
+    ```
+
+    **Returns**: Dictionary with backend keys (vllm, ollama, embeddings, reranker)
+    containing lists of model objects
+    """
+    try:
+        models = await ai_model_manager.scan_local_models()
+        return models
+    except Exception as e:
+        logger.error(f"Error scanning installed models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to scan installed models: {str(e)}")
+
+
 @router.get("/{backend}", response_model=List[Dict[str, Any]])
 async def list_models_by_backend(backend: str):
     """
