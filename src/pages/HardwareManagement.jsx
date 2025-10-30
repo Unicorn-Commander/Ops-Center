@@ -84,7 +84,9 @@ const HardwareManagement = () => {
     if (showLoading) setRefreshing(true);
 
     try {
-      const response = await fetch('/api/v1/hardware/status');
+      const response = await fetch('/api/v1/system/hardware', {
+        credentials: 'include'
+      });
       if (response.ok) {
         const data = await response.json();
         setHardwareStatus(data);
@@ -96,52 +98,99 @@ const HardwareManagement = () => {
     }
   };
 
-  // Fetch historical data
+  // Fetch historical data - DISABLED (endpoint not available)
   const fetchHistory = async () => {
-    try {
-      const response = await fetch(`/api/v1/hardware/history?interval=${timeRange}`);
-      if (response.ok) {
-        const data = await response.json();
-        setHistory(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch hardware history:', error);
-    }
+    // TODO: Implement /api/v1/hardware/history endpoint
+    setHistory([]);
   };
 
   // Fetch service allocations
   const fetchServices = async () => {
     try {
-      const response = await fetch('/api/v1/hardware/services');
+      // Use existing /api/v1/services endpoint
+      const response = await fetch('/api/v1/services', {
+        credentials: 'include'
+      });
       if (response.ok) {
         const data = await response.json();
-        setServices(data);
+        setServices(data || []);
       }
     } catch (error) {
       console.error('Failed to fetch services:', error);
+      setServices([]);
     }
   };
 
-  // Check for alerts
+  // Check for alerts - Generate client-side based on hardware status
   const checkAlerts = async () => {
-    try {
-      const response = await fetch('/api/v1/hardware/alerts/check');
-      if (response.ok) {
-        const data = await response.json();
-        setAlerts(data.alerts || []);
+    const alerts = [];
+
+    if (hardwareStatus) {
+      // Check GPU temperature
+      if (hardwareStatus.gpu?.temperature > 85) {
+        alerts.push({
+          severity: 'critical',
+          component: 'GPU',
+          metric: 'temperature',
+          message: `GPU temperature is ${hardwareStatus.gpu.temperature.toFixed(1)}°C (critical: >85°C)`
+        });
+      } else if (hardwareStatus.gpu?.temperature > 75) {
+        alerts.push({
+          severity: 'warning',
+          component: 'GPU',
+          metric: 'temperature',
+          message: `GPU temperature is ${hardwareStatus.gpu.temperature.toFixed(1)}°C (warning: >75°C)`
+        });
       }
-    } catch (error) {
-      console.error('Failed to check alerts:', error);
+
+      // Check disk space
+      if (hardwareStatus.disk?.percentage > 90) {
+        alerts.push({
+          severity: 'critical',
+          component: 'Disk',
+          metric: 'space',
+          message: `Disk usage is ${hardwareStatus.disk.percentage.toFixed(1)}% (critical: >90%)`
+        });
+      } else if (hardwareStatus.disk?.percentage > 80) {
+        alerts.push({
+          severity: 'warning',
+          component: 'Disk',
+          metric: 'space',
+          message: `Disk usage is ${hardwareStatus.disk.percentage.toFixed(1)}% (warning: >80%)`
+        });
+      }
+
+      // Check memory usage
+      if (hardwareStatus.memory?.percentage > 90) {
+        alerts.push({
+          severity: 'warning',
+          component: 'Memory',
+          metric: 'usage',
+          message: `Memory usage is ${hardwareStatus.memory.percentage.toFixed(1)}% (warning: >90%)`
+        });
+      }
     }
+
+    setAlerts(alerts);
   };
 
-  // Fetch network data
+  // Fetch network data - Use system network endpoint
   const fetchNetworkData = async () => {
     try {
-      const response = await fetch('/api/v1/hardware/network');
+      const response = await fetch('/api/v1/system/network', {
+        credentials: 'include'
+      });
       if (response.ok) {
         const data = await response.json();
-        setNetworkData(data);
+        // Map network config to traffic data format
+        setNetworkData({
+          upload_rate: 0,
+          download_rate: 0,
+          active_connections: 0,
+          tcp_connections: 0,
+          udp_connections: 0,
+          interface: data.interface || 'N/A'
+        });
       } else {
         // Fallback to reasonable defaults if API not available
         setNetworkData({
@@ -182,13 +231,19 @@ const HardwareManagement = () => {
     loadAll();
   }, [timeRange]);
 
+  // Check alerts whenever hardware status changes
+  useEffect(() => {
+    if (hardwareStatus) {
+      checkAlerts();
+    }
+  }, [hardwareStatus]);
+
   // Auto-refresh every 30 seconds
   useEffect(() => {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
       fetchHardwareStatus(false);
-      checkAlerts();
     }, 30000);
 
     return () => clearInterval(interval);

@@ -141,6 +141,7 @@ export default function Layout({ children }) {
       infrastructure: true,
       usersOrgs: true,
       billingUsage: true,
+      analytics: true,
       platform: true
     };
   };
@@ -518,7 +519,32 @@ export default function Layout({ children }) {
                         href="/admin/llm-hub"
                         icon={iconMap.CpuChipIcon}
                         indent={true}
-                      />
+                      >
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Hub Overview"
+                          href="/admin/llm-hub"
+                          icon={iconMap.HomeIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="LLM Management"
+                          href="/admin/llm-management"
+                          icon={iconMap.CogIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="LLM Providers"
+                          href="/admin/litellm-providers"
+                          icon={iconMap.ServerIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="LLM Usage"
+                          href="/admin/llm/usage"
+                          icon={iconMap.ChartBarIcon}
+                          indent={true}
+                        />
+                      </NavigationItem>
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="Cloudflare DNS"
                         href="/admin/infrastructure/cloudflare"
@@ -646,10 +672,58 @@ export default function Layout({ children }) {
                         icon={iconMap.CurrencyDollarIcon}
                         indent={true}
                       />
+                    </NavigationSection>
+                  </>
+                )}
+
+                {/* ============================ */}
+                {/* ANALYTICS SECTION */}
+                {/* ============================ */}
+                {userRole === 'admin' && (
+                  <>
+                    {/* Section Header */}
+                    {!sidebarCollapsed && (
+                    <div className={`mt-4 mb-2 px-3 flex items-center gap-2 ${
+                      currentTheme === 'unicorn'
+                        ? 'text-purple-300/70'
+                        : currentTheme === 'light'
+                        ? 'text-gray-500'
+                        : 'text-gray-400'
+                    }`}>
+                      <div className="flex-1 h-px bg-current opacity-20"></div>
+                      <span className="text-xs font-bold uppercase tracking-wider">Analytics & Insights</span>
+                      <div className="flex-1 h-px bg-current opacity-20"></div>
+                    </div>
+                    )}
+
+                    <NavigationSection collapsed={sidebarCollapsed}
+                      title="Analytics & Insights"
+                      icon={iconMap.ChartBarIcon}
+                      defaultOpen={sectionState.analytics}
+                      onToggle={() => toggleSection('analytics')}
+                    >
                       <NavigationItem collapsed={sidebarCollapsed}
-                        name="Advanced Analytics"
-                        href="/admin/system/analytics"
+                        name="Analytics Dashboard"
+                        href="/admin/analytics"
                         icon={iconMap.ChartBarIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="LLM Analytics"
+                        href="/admin/llm/usage"
+                        icon={iconMap.CpuChipIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="User Analytics"
+                        href="/admin/system/analytics"
+                        icon={iconMap.UsersIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Billing Analytics"
+                        href="/admin/system/billing"
+                        icon={iconMap.CurrencyDollarIcon}
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
