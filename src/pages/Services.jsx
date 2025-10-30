@@ -685,7 +685,7 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
             {formatMemory(service.memory_mb)}
           </span>
         </div>
-        {(service.port || serviceInfo.ports) && (
+        {(service.port || serviceInfo?.port) && (
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-1">
               <GlobeAltIcon className="h-4 w-4" />
@@ -697,11 +697,11 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
               />
             </div>
             <span className="font-medium text-gray-900 dark:text-white">
-              {service.port || (serviceInfo.ports && serviceInfo.ports[0])}
+              {service.port || serviceInfo?.port}
             </span>
           </div>
         )}
-        {hasGPU && serviceInfo.gpu.vram && (
+        {hasGPU && serviceInfo?.gpu?.vram && (
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-1">
               <FireIcon className="h-4 w-4" />

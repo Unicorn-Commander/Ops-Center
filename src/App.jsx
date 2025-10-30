@@ -59,6 +59,7 @@ const LiteLLMManagement = lazy(() => import('./pages/LiteLLMManagement'));
 const LLMManagementUnified = lazy(() => import('./pages/LLMManagementUnified'));
 const OpenRouterSettings = lazy(() => import('./pages/OpenRouterSettings'));
 const LLMUsage = lazy(() => import('./pages/LLMUsage'));
+const AnalyticsDashboard = lazy(() => import('./pages/llm/AnalyticsDashboard'));
 
 // Platform pages (lazy loaded)
 const EmailSettings = lazy(() => import('./components/EmailSettings'));
@@ -76,10 +77,11 @@ const HardwareManagement = lazy(() => import('./pages/HardwareManagement'));
 const AdvancedAnalytics = lazy(() => import('./pages/AdvancedAnalytics'));
 const UsageAnalytics = lazy(() => import('./pages/UsageAnalytics'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
+const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
-const LocalUsers = lazy(() => import('./pages/LocalUsers'));
-const LocalUserManagement = lazy(() => import('./components/LocalUserManagement'));
+// Consolidated: Using LocalUserManagement for all local user operations
+const LocalUserManagement = lazy(() => import('./pages/LocalUserManagement'));
 const UsageMetrics = lazy(() => import('./pages/UsageMetrics'));
 const Network = lazy(() => import('./pages/NetworkTabbed'));
 const StorageBackup = lazy(() => import('./pages/StorageBackup'));
@@ -106,6 +108,13 @@ const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
 const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
 const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
+
+// Monitoring & Analytics pages (lazy loaded)
+const MonitoringOverview = lazy(() => import('./pages/MonitoringOverview'));
+const GrafanaConfig = lazy(() => import('./pages/GrafanaConfig'));
+const PrometheusConfig = lazy(() => import('./pages/PrometheusConfig'));
+const UmamiConfig = lazy(() => import('./pages/UmamiConfig'));
+const Geeses = lazy(() => import('./pages/Geeses'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -273,7 +282,7 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* ORGANIZATION SECTION - Team & org management */}
                   {/* ============================================================ */}
-                  <Route path="organizations" element={<OrganizationsList />} />
+                  <Route path="organization/list" element={<OrganizationsList />} />
                   <Route path="organization/team" element={<OrganizationTeam />} />
                   <Route path="organization/roles" element={<OrganizationRoles />} />
                   <Route path="organization/settings" element={<OrganizationSettings />} />
@@ -294,12 +303,17 @@ function AppRoutes() {
                   <Route path="llm-models" element={<LLMManagementUnified />} />
                   <Route path="openrouter-settings" element={<OpenRouterSettings />} />
                   <Route path="llm/usage" element={<LLMUsage />} />
+                  <Route path="analytics" element={<AnalyticsDashboard />} />
 
                   {/* ============================================================ */}
-                  {/* PLATFORM SECTION - Platform configuration */}
+                  {/* INTEGRATIONS SECTION - External APIs & Services */}
                   {/* ============================================================ */}
-                  <Route path="platform/email-settings" element={<EmailSettings />} />
-                  <Route path="platform/settings" element={<PlatformSettings />} />
+                  <Route path="integrations/credentials" element={<PlatformSettings />} />
+                  <Route path="integrations/email" element={<EmailSettings />} />
+
+                  {/* Legacy Platform Settings routes (redirects) */}
+                  <Route path="platform/email-settings" element={<Navigate to="/admin/integrations/email" replace />} />
+                  <Route path="platform/settings" element={<Navigate to="/admin/integrations/credentials" replace />} />
                   <Route path="platform/credentials" element={<CredentialsManagement />} />
                   <Route path="platform/system-provider-keys" element={<SystemProviderKeys />} />
                   <Route path="platform/api-docs" element={<ApiDocumentation />} />
@@ -315,25 +329,44 @@ function AppRoutes() {
                   <Route path="system/analytics" element={<AdvancedAnalytics />} />
                   <Route path="system/usage-analytics" element={<UsageAnalytics />} />
                   <Route path="system/billing" element={<BillingDashboard />} />
+                  <Route path="system/subscription-management" element={<SubscriptionManagement />} />
                   <Route path="system/users" element={<UserManagement />} />
                   <Route path="system/users/:userId" element={<UserDetail />} />
-                  <Route path="system/local-users" element={<LocalUsers />} />
-                  <Route path="system/local-user-management" element={<LocalUserManagement />} />
+                  {/* Local User Management - consolidated to single route */}
+                  <Route path="system/local-users" element={<LocalUserManagement />} />
                   <Route path="system/usage-metrics" element={<UsageMetrics />} />
                   <Route path="system/network" element={<Network />} />
                   <Route path="system/storage" element={<StorageBackup />} />
                   <Route path="system/security" element={<Security />} />
                   <Route path="system/authentication" element={<Authentication />} />
                   <Route path="system/extensions" element={<Extensions />} />
-                  <Route path="system/logs" element={<Logs />} />
                   <Route path="system/landing" element={<LandingCustomization />} />
                   <Route path="system/settings" element={<Settings />} />
 
                   {/* ============================================================ */}
+                  {/* MONITORING & ANALYTICS SECTION - Metrics, Logs, Analytics */}
+                  {/* ============================================================ */}
+                  <Route path="monitoring/overview" element={<MonitoringOverview />} />
+                  <Route path="monitoring/grafana" element={<GrafanaConfig />} />
+                  <Route path="monitoring/prometheus" element={<PrometheusConfig />} />
+                  <Route path="monitoring/umami" element={<UmamiConfig />} />
+                  <Route path="monitoring/logs" element={<Logs />} />
+                  <Route path="monitoring/geeses" element={<Geeses />} />
+
+                  {/* ATLAS Multi-Agent System (Geeses) */}
+                  <Route path="geeses" element={<Geeses />} />
+
+                  {/* Legacy system/logs route (redirect) */}
+                  <Route path="system/logs" element={<Navigate to="/admin/monitoring/logs" replace />} />
+
+                  {/* ============================================================ */}
                   {/* INFRASTRUCTURE SECTION - Network & DNS */}
                   {/* ============================================================ */}
-                  <Route path="infrastructure/cloudflare" element={<CloudflareDNS />} />
+                  <Route path="integrations/cloudflare" element={<CloudflareDNS />} />
                   <Route path="infrastructure/migration" element={<MigrationWizard />} />
+
+                  {/* Legacy cloudflare route (redirect) */}
+                  <Route path="infrastructure/cloudflare" element={<Navigate to="/admin/integrations/cloudflare" replace />} />
 
                   {/* ============================================================ */}
                   {/* TRAEFIK SECTION - Reverse Proxy Management */}

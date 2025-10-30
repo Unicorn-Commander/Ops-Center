@@ -142,6 +142,7 @@ export default function Layout({ children }) {
       usersOrgs: true,
       billingUsage: true,
       analytics: true,
+      llmHub: true,
       platform: true
     };
   };
@@ -514,11 +515,11 @@ export default function Layout({ children }) {
                         icon={iconMap.ChartBarIcon}
                         indent={true}
                       />
-                      <NavigationItem collapsed={sidebarCollapsed}
-                        name="LLM Hub"
-                        href="/admin/llm-hub"
+                      <NavigationSection collapsed={sidebarCollapsed}
+                        title="LLM Hub"
                         icon={iconMap.CpuChipIcon}
-                        indent={true}
+                        defaultOpen={sectionState.llmHub}
+                        onToggle={() => toggleSection('llmHub')}
                       >
                         <NavigationItem collapsed={sidebarCollapsed}
                           name="Hub Overview"
@@ -544,7 +545,7 @@ export default function Layout({ children }) {
                           icon={iconMap.ChartBarIcon}
                           indent={true}
                         />
-                      </NavigationItem>
+                      </NavigationSection>
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="Cloudflare DNS"
                         href="/admin/infrastructure/cloudflare"

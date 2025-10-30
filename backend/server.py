@@ -347,7 +347,9 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/email-provider/",  # Email provider API - testing and management
         "/api/v1/platform/",  # Platform settings API - credential management
         "/api/v1/monitoring/grafana/",  # Grafana integration API - monitoring endpoints
-        "/api/v1/admin/users/"  # User management and API key endpoints - REST API operations
+        "/api/v1/admin/users/",  # User management and API key endpoints - REST API operations
+        "/api/v1/org/",  # Organization management API - CRUD operations
+        "/api/v1/org"    # Organization management API (without trailing slash)
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -722,6 +724,8 @@ async def root_redirect(request: Request):
     """Show registration page or serve dashboard for authenticated users"""
     print("Root redirect handler called!")
     session_token = request.cookies.get("session_token")
+    print(f"Session token from cookie: {session_token[:20] if session_token else 'None'}...")
+    print(f"Session token exists in Redis: {session_token in sessions if session_token else False}")
     if session_token and session_token in sessions:
         print("User authenticated, serving React app")
         # Serve the React app for authenticated users
@@ -1692,8 +1696,8 @@ async def get_system_status(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/system/hardware")
-async def get_hardware_info(current_user: dict = Depends(get_current_user)):
-    """Get detailed hardware information (authenticated users only)"""
+async def get_hardware_info():
+    """Get detailed hardware information"""
     try:
         return hardware_detector.get_all_hardware_info()
     except Exception as e:
@@ -4280,6 +4284,27 @@ async def register_user(request: Request):
             logger.error(f"Unexpected error creating Lago subscription: {lago_error}")
             logger.warning(f"Continuing registration without Lago subscription")
 
+        # Step 5.5: Create credit account for new user (CRITICAL - enables API access)
+        credit_account_created = False
+        try:
+            from credit_system import credit_manager
+
+            # Initialize credit manager if needed
+            await credit_manager.initialize()
+
+            # Create credit account with trial tier allocation
+            credit_balance = await credit_manager.create_user_credits(
+                user_id=email,  # Use email as user_id for credit system
+                tier="trial"
+            )
+            credit_account_created = True
+            logger.info(f"Created credit account for {email}: {credit_balance['credits_remaining']} credits")
+
+        except Exception as credit_error:
+            # Log error but don't fail registration - credits will auto-provision on first API call
+            logger.error(f"Failed to create credit account during registration for {email}: {credit_error}")
+            logger.warning(f"User will have credits auto-provisioned on first API call")
+
         # Step 6: Audit log successful registration
         if AUDIT_ENABLED:
             await log_auth_success(
@@ -4292,7 +4317,8 @@ async def register_user(request: Request):
                     "keycloak_user_id": keycloak_user_id,
                     "org_id": org_id,
                     "org_name": org_name,
-                    "lago_customer_created": lago_customer_created
+                    "lago_customer_created": lago_customer_created,
+                    "credit_account_created": credit_account_created
                 }
             )
 
@@ -4714,12 +4740,13 @@ async def oauth_callback(request: Request, code: str, state: str = None):
     # Build correct redirect URI based on the request
     redirect_uri = f"https://{EXTERNAL_HOST}/auth/callback"
 
-    # Keycloak realm (default to "master" if not specified)
-    keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
+    # Keycloak realm (default to "uchub" for ops-center)
+    keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
 
-    # Use Keycloak token endpoint (not Authentik)
+    # Use Keycloak token endpoint (EXTERNAL URL to match redirect_uri)
+    # This ensures consistency in OAuth flow and JWT validation
     token_url = f"https://auth.{EXTERNAL_HOST}/realms/{keycloak_realm}/protocol/openid-connect/token"
-    
+
     # Exchange code for token
     async with httpx.AsyncClient() as client:
         data = {
@@ -4750,14 +4777,9 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     print(f"Response text: {response.text}")
                     return RedirectResponse(url="/?error=token_parse_error")
                 
-                # Get user info
-                # Keycloak realm (default to "master" if not specified)
-                keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
-
-                if "yoda.unicorncommander.ai" in str(request.url):
-                    userinfo_url = f"https://auth.yoda.unicorncommander.ai/realms/{keycloak_realm}/protocol/openid-connect/userinfo"
-                else:
-                    userinfo_url = f"https://auth.{EXTERNAL_HOST}/realms/{keycloak_realm}/protocol/openid-connect/userinfo"
+                # Get user info using external Keycloak URL
+                # Use external URL to ensure JWT validation succeeds
+                userinfo_url = f"https://auth.{EXTERNAL_HOST}/realms/{keycloak_realm}/protocol/openid-connect/userinfo"
 
                 print(f"Getting user info from: {userinfo_url}")
                 headers = {"Authorization": f"Bearer {access_token}"}
@@ -4845,7 +4867,7 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     # Redirect with session token
                     response = RedirectResponse(url=redirect_url)
                     
-                    # Set cookie with domain for subdomain access if using magicunicorn.tech
+                    # Set cookie with domain for subdomain access
                     cookie_kwargs = {
                         "key": "session_token",
                         "value": session_token,
@@ -4855,14 +4877,16 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         "samesite": "lax",
                         "max_age": 86400  # 24 hours
                     }
-                    
-                    # If using subdomain, set domain to allow cookie sharing
-                    if "magicunicorn.tech" in EXTERNAL_HOST:
-                        # Set domain to parent domain for subdomain sharing
-                        cookie_kwargs["domain"] = ".yoda.unicorncommander.ai"
-                    
+
+                    # Set domain for cookie sharing across subdomains
+                    # unicorncommander.ai -> .unicorncommander.ai
+                    if "." in EXTERNAL_HOST and not EXTERNAL_HOST.startswith("localhost"):
+                        cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
+                        print(f"Setting cookie domain to: .{EXTERNAL_HOST}")
+
                     response.set_cookie(**cookie_kwargs)
-                    print(f"Redirecting to / with session cookie")
+                    print(f"Redirecting to {redirect_url} with session cookie")
+                    print(f"Cookie config: httponly={cookie_kwargs['httponly']}, secure={cookie_kwargs['secure']}, domain={cookie_kwargs.get('domain', 'not set')}")
                     return response
                 else:
                     print(f"Failed to get user info: {user_response.status_code}")
