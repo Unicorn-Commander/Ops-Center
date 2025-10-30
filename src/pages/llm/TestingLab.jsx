@@ -112,13 +112,28 @@ export default function TestingLab() {
       const res = await fetch('/api/v1/llm/models?limit=100');
       if (!res.ok) throw new Error('Failed to load models');
       const data = await res.json();
-      setModels(data);
-      if (data.length > 0) {
-        setSelectedModel(data[0]);
+
+      // Ensure data is always an array
+      let modelsArray = [];
+      if (Array.isArray(data)) {
+        modelsArray = data;
+      } else if (data && Array.isArray(data.models)) {
+        modelsArray = data.models;
+      } else if (data && Array.isArray(data.data)) {
+        modelsArray = data.data;
+      } else if (data && typeof data === 'object') {
+        console.warn('Unexpected API response structure:', data);
+        modelsArray = [];
+      }
+
+      setModels(modelsArray);
+      if (modelsArray.length > 0) {
+        setSelectedModel(modelsArray[0]);
       }
     } catch (err) {
       console.error('Error loading models:', err);
       setError('Failed to load model catalog');
+      setModels([]); // Ensure models is always an array
     } finally {
       setLoadingModels(false);
     }
@@ -297,7 +312,7 @@ export default function TestingLab() {
   // Computed Values
   // ============================================================================
 
-  const filteredModels = models.filter(model => {
+  const filteredModels = (Array.isArray(models) ? models : []).filter(model => {
     if (!modelSearch) return true;
     const search = modelSearch.toLowerCase();
     return (
