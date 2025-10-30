@@ -570,7 +570,7 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
 
   // Get service description and metadata
   const serviceInfo = getServiceInfo(service.name);
-  const hasGPU = serviceInfo.gpu?.enabled;
+  const hasGPU = service.gpu_enabled || serviceInfo?.gpu?.enabled;
 
   return (
     <motion.div
