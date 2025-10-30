@@ -5,6 +5,18 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import {
   ServerIcon,
   CheckCircleIcon,
   ClockIcon,
@@ -14,6 +26,19 @@ import MetricCard from '../../../components/analytics/MetricCard';
 import AnalyticsChart from '../../../components/analytics/AnalyticsChart';
 import DateRangeSelector from '../../../components/analytics/DateRangeSelector';
 import { useTheme } from '../../../contexts/ThemeContext';
+
+// Register Chart.js scales
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const ServiceAnalyticsTab = ({ dateRange, setDateRange }) => {
   const { currentTheme } = useTheme();

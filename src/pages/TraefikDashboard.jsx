@@ -66,18 +66,62 @@ const TraefikDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const response = await fetch('/api/v1/traefik/dashboard', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
-      });
+      // NEW: Fetch REAL live data from Docker labels
+      const [overviewResponse, routesResponse, servicesResponse] = await Promise.all([
+        fetch('/api/v1/traefik/live/overview', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        }),
+        fetch('/api/v1/traefik/live/routes', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        }),
+        fetch('/api/v1/traefik/live/services', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        })
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (!overviewResponse.ok || !routesResponse.ok || !servicesResponse.ok) {
+        throw new Error(`HTTP error: ${overviewResponse.status}`);
       }
 
-      const data = await response.json();
-      setDashboardData(data);
+      const overview = await overviewResponse.json();
+      const routes = await routesResponse.json();
+      const services = await servicesResponse.json();
+
+      // Count TLS certificates from routes
+      const tlsRoutes = routes.filter(r => r.tls);
+      const expiringSoonThreshold = new Date();
+      expiringSoonThreshold.setDate(expiringSoonThreshold.getDate() + 30);
+
+      // Transform live data to dashboard format
+      const transformedData = {
+        summary: {
+          totalRoutes: overview.routes_count || 0,
+          activeServices: overview.services_count || 0,
+          sslCertificates: overview.tls_routes_count || 0,
+          requestRate: 0 // Not available from Docker labels
+        },
+        health: {
+          status: 'healthy',
+          lastCheck: overview.timestamp || new Date().toISOString()
+        },
+        recentActivity: routes.slice(0, 5).map(route => ({
+          type: 'route',
+          action: 'active',
+          resource: route.name,
+          timestamp: overview.timestamp,
+          details: `${route.rule} → ${route.service}`
+        })),
+        certificates: {
+          valid: tlsRoutes.length,
+          expiringSoon: 0, // Cannot determine without cert expiry dates
+          expired: 0
+        },
+        // NEW: Include raw live data for detailed views
+        liveRoutes: routes,
+        liveServices: services
+      };
+
+      setDashboardData(transformedData);
       setError(null);
       setRetryCount(0);
     } catch (err) {

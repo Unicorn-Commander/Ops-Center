@@ -55,11 +55,15 @@ namecheap_manager = None
 cloudflare_manager = None
 
 if NAMECHEAP_API_KEY and NAMECHEAP_USERNAME:
-    namecheap_manager = NameCheapManager(
+    from namecheap_manager import NameCheapCredentials
+    credentials = NameCheapCredentials(
+        api_username=NAMECHEAP_USERNAME,
         api_key=NAMECHEAP_API_KEY,
         username=NAMECHEAP_USERNAME,
-        client_ip=NAMECHEAP_CLIENT_IP
+        client_ip=NAMECHEAP_CLIENT_IP or "127.0.0.1",
+        sandbox=False
     )
+    namecheap_manager = NameCheapManager(credentials)
 
 if CLOUDFLARE_API_TOKEN:
     cloudflare_manager = CloudflareManager(api_token=CLOUDFLARE_API_TOKEN)

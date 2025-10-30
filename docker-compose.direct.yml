@@ -12,6 +12,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./backend:/app
       - ./public:/app/public
+      # Mount host user/group files as read-only for Local Users feature
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+    env_file:
+      - .env.auth
     environment:
       - EXTERNAL_HOST=unicorncommander.ai
       - EXTERNAL_PROTOCOL=https

@@ -435,15 +435,15 @@ const LocalUserManagement = () => {
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
           <Typography variant="h4" sx={{ fontWeight: 600 }}>
-            Local User Management
+            Local User Management (HOST Server)
           </Typography>
           <HelpTooltip
             title="What are Local Users?"
             content={[
-              "This page shows Linux system users inside the Docker container (ops-center-direct).",
+              "This page shows Linux system users on the HOST server (not container users).",
               "These are NOT application users (for those, see User Management).",
               "These are NOT Keycloak users (for SSO users, see User Management).",
-              "Purpose: Infrastructure management, process isolation, and SSH access control."
+              "Purpose: Server administration, SSH access control, and system security."
             ]}
             link={{
               text: "View Application Users →",
@@ -453,7 +453,7 @@ const LocalUserManagement = () => {
           />
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Manage Linux system users, SSH keys, and sudo permissions
+          Manage HOST server Linux users, SSH keys, and sudo permissions
         </Typography>
 
         {/* INFO BANNER - Clarifies what this page is for */}
@@ -472,8 +472,8 @@ const LocalUserManagement = () => {
               📋 What This Page Shows
             </Typography>
             <Typography variant="body2" sx={{ mb: 1.5 }}>
-              This page manages <strong>container system users</strong> (Linux users inside the Docker container).
-              These are used for process isolation and security, not for logging into the application.
+              This page manages <strong>HOST server system users</strong> (Linux users on the physical/virtual server).
+              These are used for server administration, SSH access, and system security.
             </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid item xs={12} sm={6}>
@@ -499,7 +499,7 @@ const LocalUserManagement = () => {
                       What You See Here:
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Linux users like "nobody", "root", "www-data" (container internals)
+                      Linux users like "muut", "root", "ubuntu" (server accounts with SSH access)
                     </Typography>
                   </Box>
                 </Box>

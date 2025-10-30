@@ -1040,8 +1040,9 @@ async def cloudflare_health_check():
         # Try to get Cloudflare manager
         manager = get_cloudflare_manager()
 
-        # Check Cloudflare API connectivity
-        is_connected = await manager.check_connectivity()
+        # Check Cloudflare API connectivity by getting account status
+        account_status = manager.get_account_status()
+        is_connected = account_status.get("api_connected", False)
 
         return {
             "status": "healthy" if is_connected else "degraded",

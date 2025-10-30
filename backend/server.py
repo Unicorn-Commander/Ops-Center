@@ -158,6 +158,7 @@ from traefik_services_api import router as traefik_services_router
 from traefik_ssl_manager import router as traefik_ssl_router
 from traefik_metrics_api import router as traefik_metrics_router
 from traefik_middlewares_api import router as traefik_middlewares_router
+from traefik_live_api import router as traefik_live_router  # NEW: Live data from Docker labels
 
 # Brigade Integration API (H23)
 from brigade_api import router as brigade_router
@@ -624,6 +625,10 @@ logger.info("Platform Settings API endpoints registered at /api/v1/platform")
 # Traefik Configuration Management APIs (Epic 1.3)
 app.include_router(traefik_router)
 logger.info("Traefik Comprehensive API endpoints registered at /api/v1/traefik (Epic 1.3)")
+
+# Traefik Live Data API (NEW - reads real Docker labels)
+app.include_router(traefik_live_router)
+logger.info("Traefik Live Data API endpoints registered at /api/v1/traefik/live")
 
 # Legacy Traefik APIs (keep for backward compatibility)
 app.include_router(traefik_routes_router)

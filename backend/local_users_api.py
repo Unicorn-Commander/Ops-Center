@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/v1/admin/system/local-users", tags=["Local Users"])
 
+# Host system files (mounted as read-only volumes)
+HOST_PASSWD_FILE = "/host/etc/passwd"
+HOST_GROUP_FILE = "/host/etc/group"
+
 
 # ============================================================================
 # SECURITY & VALIDATION UTILITIES
@@ -410,6 +414,138 @@ class GroupsResponse(BaseModel):
 
 
 # ============================================================================
+# HOST FILE PARSING UTILITIES
+# ============================================================================
+
+def parse_host_passwd() -> List[Dict[str, Any]]:
+    """
+    Parse /host/etc/passwd file to get host system users
+
+    Returns:
+        List of user dictionaries with keys: username, uid, gid, gecos, home, shell
+    """
+    users = []
+
+    try:
+        if not Path(HOST_PASSWD_FILE).exists():
+            logger.warning(f"Host passwd file not found: {HOST_PASSWD_FILE}")
+            logger.warning("Showing container users instead. To see host users, mount /etc/passwd:/host/etc/passwd:ro")
+            # Fallback to container users
+            for user_info in pwd.getpwall():
+                users.append({
+                    'username': user_info.pw_name,
+                    'uid': user_info.pw_uid,
+                    'gid': user_info.pw_gid,
+                    'gecos': user_info.pw_gecos,
+                    'home': user_info.pw_dir,
+                    'shell': user_info.pw_shell
+                })
+            return users
+
+        with open(HOST_PASSWD_FILE, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+
+                parts = line.split(':')
+                if len(parts) >= 7:
+                    users.append({
+                        'username': parts[0],
+                        'uid': int(parts[2]),
+                        'gid': int(parts[3]),
+                        'gecos': parts[4],
+                        'home': parts[5],
+                        'shell': parts[6]
+                    })
+
+    except Exception as e:
+        logger.error(f"Failed to parse host passwd file: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read host system users: {str(e)}"
+        )
+
+    return users
+
+
+def parse_host_group() -> Dict[str, List[str]]:
+    """
+    Parse /host/etc/group file to get group memberships
+
+    Returns:
+        Dictionary mapping group names to list of member usernames
+    """
+    groups = {}
+
+    try:
+        if not Path(HOST_GROUP_FILE).exists():
+            logger.warning(f"Host group file not found: {HOST_GROUP_FILE}")
+            # Fallback to container groups
+            for group_info in grp.getgrall():
+                groups[group_info.gr_name] = group_info.gr_mem
+            return groups
+
+        with open(HOST_GROUP_FILE, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+
+                parts = line.split(':')
+                if len(parts) >= 4:
+                    group_name = parts[0]
+                    members = parts[3].split(',') if parts[3] else []
+                    groups[group_name] = [m.strip() for m in members if m.strip()]
+
+    except Exception as e:
+        logger.error(f"Failed to parse host group file: {e}")
+        # Don't fail hard on group parsing errors
+        return {}
+
+    return groups
+
+
+def get_user_groups_from_host(username: str, primary_gid: int) -> List[str]:
+    """
+    Get all groups a user belongs to (including primary group)
+
+    Args:
+        username: Username
+        primary_gid: User's primary GID
+
+    Returns:
+        List of group names
+    """
+    groups_map = parse_host_group()
+    user_groups = []
+
+    # Find primary group by GID
+    try:
+        if Path(HOST_GROUP_FILE).exists():
+            with open(HOST_GROUP_FILE, 'r') as f:
+                for line in f:
+                    parts = line.strip().split(':')
+                    if len(parts) >= 3:
+                        if int(parts[2]) == primary_gid:
+                            user_groups.append(parts[0])
+                            break
+        else:
+            # Fallback to container groups
+            primary_group = grp.getgrgid(primary_gid)
+            user_groups.append(primary_group.gr_name)
+    except Exception as e:
+        logger.warning(f"Failed to get primary group for GID {primary_gid}: {e}")
+
+    # Add supplementary groups
+    for group_name, members in groups_map.items():
+        if username in members and group_name not in user_groups:
+            user_groups.append(group_name)
+
+    return sorted(user_groups)
+
+
+# ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
@@ -484,32 +620,33 @@ def check_user_has_sudo(username: str) -> bool:
 
 
 def get_local_users(include_system: bool = False) -> List[LocalUser]:
-    """Get list of local Linux users"""
+    """Get list of local Linux users (from HOST system)"""
     users = []
 
     try:
-        for user_info in pwd.getpwall():
+        # Parse host passwd file
+        host_users = parse_host_passwd()
+
+        for user_data in host_users:
             # Skip system users if requested
-            if not include_system and user_info.pw_uid < SYSTEM_UID_MIN:
+            if not include_system and user_data['uid'] < SYSTEM_UID_MIN:
                 continue
 
-            # Get user groups
-            user_groups = [g.gr_name for g in grp.getgrall() if user_info.pw_name in g.gr_mem]
-            primary_group = grp.getgrgid(user_info.pw_gid).gr_name
-            all_groups = list(set(user_groups + [primary_group]))
+            # Get user groups from host
+            user_groups = get_user_groups_from_host(user_data['username'], user_data['gid'])
 
             # Create user object
             user = LocalUser(
-                username=user_info.pw_name,
-                uid=user_info.pw_uid,
-                gid=user_info.pw_gid,
-                home=user_info.pw_dir,
-                shell=user_info.pw_shell,
-                groups=sorted(all_groups),
-                has_sudo=check_user_has_sudo(user_info.pw_name),
-                last_login=get_user_last_login(user_info.pw_name),
-                ssh_keys_count=count_ssh_keys(user_info.pw_name),
-                gecos=user_info.pw_gecos if user_info.pw_gecos else None
+                username=user_data['username'],
+                uid=user_data['uid'],
+                gid=user_data['gid'],
+                home=user_data['home'],
+                shell=user_data['shell'],
+                groups=user_groups,
+                has_sudo=check_user_has_sudo(user_data['username']),
+                last_login=get_user_last_login(user_data['username']),
+                ssh_keys_count=count_ssh_keys(user_data['username']),
+                gecos=user_data['gecos'] if user_data['gecos'] else None
             )
             users.append(user)
 

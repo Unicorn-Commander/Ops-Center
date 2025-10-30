@@ -108,7 +108,7 @@ const SubscriptionManagement = () => {
     { key: 'billing_dashboard', name: 'Billing Dashboard', category: 'services' },
     { key: 'litellm_access', name: 'LiteLLM Gateway', category: 'services' },
     { key: 'brigade_access', name: 'Brigade Agents', category: 'services' },
-    { key: 'bolt_access', name: 'Bolt.DIY', name: 'services' },
+    { key: 'bolt_access', name: 'Bolt.DIY', category: 'services' },
     { key: 'priority_support', name: 'Priority Support', category: 'support' },
     { key: 'dedicated_support', name: 'Dedicated Support', category: 'support' },
     { key: 'sso_enabled', name: 'SSO Integration', category: 'enterprise' },

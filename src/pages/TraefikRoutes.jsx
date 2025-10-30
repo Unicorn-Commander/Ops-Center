@@ -87,7 +87,8 @@ const TraefikRoutes = () => {
 
   const loadRoutes = async () => {
     try {
-      const response = await fetch('/api/v1/traefik/routes', {
+      // NEW: Fetch REAL live routes from Docker labels
+      const response = await fetch('/api/v1/traefik/live/routes', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -98,7 +99,8 @@ const TraefikRoutes = () => {
       }
 
       const data = await response.json();
-      setRoutes(data.routes || []);
+      // Live API returns array directly, not wrapped in object
+      setRoutes(Array.isArray(data) ? data : []);
       setError(null);
       setRetryCount(prev => ({ ...prev, loadRoutes: 0 }));
     } catch (err) {

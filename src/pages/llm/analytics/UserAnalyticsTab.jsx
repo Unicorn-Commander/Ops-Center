@@ -6,6 +6,19 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import {
   UsersIcon,
   UserPlusIcon,
   UserGroupIcon,
@@ -15,6 +28,20 @@ import MetricCard from '../../../components/analytics/MetricCard';
 import AnalyticsChart from '../../../components/analytics/AnalyticsChart';
 import DateRangeSelector from '../../../components/analytics/DateRangeSelector';
 import { useTheme } from '../../../contexts/ThemeContext';
+
+// Register Chart.js scales
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const UserAnalyticsTab = ({ dateRange, setDateRange }) => {
   const { currentTheme } = useTheme();

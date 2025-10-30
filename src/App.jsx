@@ -326,6 +326,7 @@ function AppRoutes() {
                   <Route path="system/services" element={<Services />} />
                   <Route path="system/resources" element={<System />} />
                   <Route path="system/hardware" element={<HardwareManagement />} />
+                  <Route path="infrastructure/hardware" element={<HardwareManagement />} />
                   <Route path="system/analytics" element={<AdvancedAnalytics />} />
                   <Route path="system/usage-analytics" element={<UsageAnalytics />} />
                   <Route path="system/billing" element={<BillingDashboard />} />
