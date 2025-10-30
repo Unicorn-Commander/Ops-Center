@@ -99,7 +99,8 @@ class CreditManager:
 
     async def get_balance(self, user_id: str) -> Dict[str, Any]:
         """
-        Get current credit credits_remaining for a user.
+        Get current credit balance for a user.
+        Auto-provisions credit account if user doesn't have one (first-request pattern).
 
         Args:
             user_id: Keycloak user ID
@@ -122,7 +123,7 @@ class CreditManager:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT user_id, credits_remaining, credits_allocated,
+                SELECT user_id, credits_remaining, credits_allocated, tier,
                         last_reset, updated_at, created_at
                 FROM user_credits
                 WHERE user_id = $1
@@ -131,15 +132,20 @@ class CreditManager:
             )
 
             if not row:
-                # User doesn't exist yet, create with 0 balance
-                return await self.create_user_credits(user_id)
+                # AUTO-PROVISION: User doesn't exist yet, create with default trial tier
+                logger.info(f"Auto-provisioning credit account for new user: {user_id}")
+                return await self.create_user_credits(user_id, tier="trial")
 
+            # Map database columns to API response fields
             return {
                 "user_id": row["user_id"],
-                "credits_remaining": row["credits_remaining"],
-                "credits_allocated": row["credits_allocated"],
-                                        "last_reset": row["last_reset"],
-                "updated_at": row["updated_at"],
+                "balance": row["credits_remaining"],  # DB column: credits_remaining
+                "allocated_monthly": row["credits_allocated"],  # DB column: credits_allocated
+                "bonus_credits": Decimal("0.00"),  # Not stored in DB
+                "free_tier_used": Decimal("0.00"),  # Calculated: allocated - remaining
+                "reset_date": row["last_reset"],  # DB column: last_reset
+                "last_updated": row["updated_at"],  # DB column: updated_at
+                "tier": row["tier"],
                 "created_at": row["created_at"]
             }
 
@@ -174,27 +180,28 @@ class CreditManager:
                 user_id, allocated, allocated, tier, allocated, last_reset
             )
 
-            # Log allocation transaction
+            # Log allocation transaction (use 'purchase' type for initial allocation)
             await self._log_transaction(
                 conn, user_id, allocated, allocated,
-                "allocation", metadata={
+                "purchase", metadata={
                     "tier": tier,
-                    "reason": "initial_allocation"
+                    "reason": "initial_allocation",
+                    "source": "trial_signup"
                 }
             )
 
             # Audit log
             await audit_logger.log(
                 action="credit.create",
+                result="success",
                 user_id=user_id,
                 resource_type="user_credits",
                 resource_id=user_id,
-                details={
+                metadata={
                     "tier": tier,
                     "allocated": float(allocated),
                     "last_reset": last_reset.isoformat()
-                },
-                status="success"
+                }
             )
 
         # Send welcome email (don't fail transaction if email fails)
@@ -273,7 +280,7 @@ class CreditManager:
                 details={
                     "amount": float(amount),
                     "source": source,
-                    "new_balance": float(new_balance),
+                    "new_balance": float(new_credits_remaining),
                     "metadata": metadata
                 },
                 status="success"
@@ -335,13 +342,13 @@ class CreditManager:
                     resource_id=user_id,
                     details={
                         "amount": float(amount),
-                        "current_balance": float(current_balance),
+                        "current_balance": float(current_credits_remaining),
                         "reason": "insufficient_credits"
                     },
                     status="failure"
                 )
                 raise InsufficientCreditsError(
-                    f"Insufficient credits. Required: {amount}, Available: {current_balance}"
+                    f"Insufficient credits. Required: {amount}, Available: {current_credits_remaining}"
                 )
 
             new_credits_remaining = current_credits_remaining - amount
@@ -413,15 +420,14 @@ class CreditManager:
             raise ValueError("Bonus amount must be positive")
 
         async with self.transaction() as conn:
-            # Update credits_remaining and bonus credits
+            # Update credits_remaining (note: bonus_credits column doesn't exist in DB)
             result = await conn.fetchrow(
                 """
                 UPDATE user_credits
                 SET credits_remaining = credits_remaining + $1,
-                    bonus_credits = bonus_credits + $1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = $2
-                RETURNING balance
+                RETURNING credits_remaining
                 """,
                 amount, user_id
             )
@@ -449,7 +455,7 @@ class CreditManager:
                 details={
                     "amount": float(amount),
                     "reason": reason,
-                    "new_balance": float(new_balance),
+                    "new_balance": float(new_credits_remaining),
                     "metadata": metadata
                 },
                 status="success"
@@ -487,7 +493,7 @@ class CreditManager:
                 SET credits_remaining = credits_remaining + $1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = $2
-                RETURNING balance
+                RETURNING credits_remaining
                 """,
                 amount, user_id
             )
@@ -515,7 +521,7 @@ class CreditManager:
                 details={
                     "amount": float(amount),
                     "reason": reason,
-                    "new_balance": float(new_balance),
+                    "new_balance": float(new_credits_remaining),
                     "metadata": metadata
                 },
                 status="success"
@@ -542,7 +548,7 @@ class CreditManager:
             # Get current allocation
             current = await conn.fetchrow(
                 """
-                SELECT credits_allocated, balance
+                SELECT credits_allocated, credits_remaining
                 FROM user_credits
                 WHERE user_id = $1
                 """,
@@ -634,7 +640,7 @@ class CreditManager:
         if transaction_type:
             query = """
                 SELECT id, user_id, amount, balance_after, transaction_type,
-                       service, model, cost_breakdown, metadata, created_at
+                       provider as service, model, cost as cost_breakdown, metadata, created_at
                 FROM credit_transactions
                 WHERE user_id = $1 AND transaction_type = $2
                 ORDER BY created_at DESC
@@ -644,7 +650,7 @@ class CreditManager:
         else:
             query = """
                 SELECT id, user_id, amount, balance_after, transaction_type,
-                       service, model, cost_breakdown, metadata, created_at
+                       provider as service, model, cost as cost_breakdown, metadata, created_at
                 FROM credit_transactions
                 WHERE user_id = $1
                 ORDER BY created_at DESC
@@ -655,9 +661,11 @@ class CreditManager:
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
 
+            import json
+
             return [
                 {
-                    "id": row["id"],
+                    "id": str(row["id"]),  # Convert UUID to string
                     "user_id": row["user_id"],
                     "amount": row["amount"],
                     "balance_after": row["balance_after"],
@@ -665,7 +673,7 @@ class CreditManager:
                     "service": row["service"],
                     "model": row["model"],
                     "cost_breakdown": row["cost_breakdown"],
-                    "metadata": row["metadata"],
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] and isinstance(row["metadata"], str) else row["metadata"],
                     "created_at": row["created_at"]
                 }
                 for row in rows
@@ -687,8 +695,8 @@ class CreditManager:
             (has_sufficient, current_balance)
         """
         balance_info = await self.get_balance(user_id)
-        current_credits_remaining = balance_info["credits_remaining"]
-        return (current_credits_remaining >= amount, current_balance)
+        current_balance = balance_info["balance"]  # Use the mapped field name
+        return (current_balance >= amount, current_balance)
 
     async def _log_transaction(
         self,
@@ -709,13 +717,13 @@ class CreditManager:
             """
             INSERT INTO credit_transactions (
                 user_id, amount, balance_after, transaction_type,
-                service, model, cost_breakdown, metadata
+                provider, model, metadata
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
             user_id, amount, balance_after, transaction_type,
-            service, model,
-            json.dumps(cost_breakdown) if cost_breakdown else None,
+            service,  # Maps to 'provider' column
+            model,
             json.dumps(metadata) if metadata else None
         )
 

@@ -96,17 +96,41 @@ class ImpersonationRequest(BaseModel):
 # ============================================================================
 
 async def require_admin(request: Request):
-    """Verify user is authenticated and has admin role"""
-    # This should be replaced with actual auth check
-    # For now, assuming auth is handled by middleware
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
+    """Verify user is authenticated and has admin role (uses Redis session manager)"""
+    import sys
+    import os
+
+    # Add parent directory to path if needed
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+
+    from redis_session import RedisSessionManager
+
+    # Get session token from cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # TODO: Add actual role check from JWT token
-    # user_roles = decode_jwt_and_get_roles(auth_header)
-    # if "admin" not in user_roles:
-    #     raise HTTPException(status_code=403, detail="Admin access required")
+    # Get Redis connection info
+    redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
+    # Initialize session manager
+    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+
+    # Get session data
+    if session_token not in sessions:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    session_data = sessions[session_token]
+    user = session_data.get("user", {})
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found in session")
+
+    # Check if user has admin role
+    if not user.get("is_admin") and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
 
     return True
 

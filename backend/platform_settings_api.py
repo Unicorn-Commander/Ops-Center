@@ -139,6 +139,22 @@ PLATFORM_SETTINGS = {
         "required": False,
         "test_connection": True
     },
+
+    # Forgejo Settings
+    "FORGEJO_API_URL": {
+        "description": "Forgejo API URL (e.g., https://git.unicorncommander.ai)",
+        "category": "forgejo",
+        "is_secret": False,
+        "required": False,
+        "test_connection": True
+    },
+    "FORGEJO_API_TOKEN": {
+        "description": "Forgejo API token (Personal Access Token with read permissions)",
+        "category": "forgejo",
+        "is_secret": True,
+        "required": False,
+        "test_connection": True
+    },
 }
 
 def mask_secret(value: str) -> str:
@@ -374,14 +390,31 @@ async def test_connection(
     - keycloak: Tests Keycloak admin API
     - cloudflare: Tests Cloudflare API
     - namecheap: Tests NameCheap API
+    - forgejo: Tests Forgejo Git API
+
+    **Note**: If credentials contain masked values or are empty,
+    falls back to current environment/database values
     """
     category = request.category
     creds = request.credentials
 
+    # Helper function to get credential value (from request or fallback to env)
+    def get_cred(key: str) -> Optional[str]:
+        """Get credential value, falling back to environment if not provided or masked"""
+        value = creds.get(key, "")
+
+        # If value is masked (contains ...) or empty, use current env value
+        if not value or "..." in value or value == "****":
+            env_value = get_current_env_value(key)
+            logger.debug(f"Using environment value for {key} (frontend sent masked/empty value)")
+            return env_value
+
+        return value
+
     try:
         if category == "stripe":
             import stripe
-            stripe.api_key = creds.get("STRIPE_SECRET_KEY")
+            stripe.api_key = get_cred("STRIPE_SECRET_KEY")
             balance = stripe.Balance.retrieve()
             return {
                 "success": True,
@@ -394,27 +427,42 @@ async def test_connection(
 
         elif category == "lago":
             import requests
-            api_key = creds.get("LAGO_API_KEY")
-            api_url = creds.get("LAGO_API_URL")
+            api_key = get_cred("LAGO_API_KEY")
+            api_url = get_cred("LAGO_API_URL")
 
+            if not api_key or not api_url:
+                return {
+                    "success": False,
+                    "message": "Lago API credentials not configured",
+                    "details": {"error": "LAGO_API_KEY and LAGO_API_URL are required"}
+                }
+
+            # Lago health endpoint doesn't require authentication
             response = requests.get(
                 f"{api_url}/health",
-                headers={"Authorization": f"Bearer {api_key}"},
                 timeout=10
             )
             response.raise_for_status()
+            health_data = response.json()
 
             return {
                 "success": True,
-                "message": "Lago connection successful",
-                "details": response.json()
+                "message": f"Lago connection successful (v{health_data.get('version', 'unknown')})",
+                "details": health_data
             }
 
         elif category == "keycloak":
             import requests
-            keycloak_url = creds.get("KEYCLOAK_URL")
-            admin_password = creds.get("KEYCLOAK_ADMIN_PASSWORD")
-            realm = creds.get("KEYCLOAK_REALM", "uchub")
+            keycloak_url = get_cred("KEYCLOAK_URL")
+            admin_password = get_cred("KEYCLOAK_ADMIN_PASSWORD")
+            realm = get_cred("KEYCLOAK_REALM") or "uchub"
+
+            if not keycloak_url or not admin_password:
+                return {
+                    "success": False,
+                    "message": "Keycloak credentials not configured",
+                    "details": {"error": "KEYCLOAK_URL and KEYCLOAK_ADMIN_PASSWORD are required"}
+                }
 
             # Get admin token
             token_url = f"{keycloak_url}/realms/master/protocol/openid-connect/token"
@@ -442,7 +490,7 @@ async def test_connection(
 
         elif category == "cloudflare":
             import requests
-            api_token = creds.get("CLOUDFLARE_API_TOKEN")
+            api_token = get_cred("CLOUDFLARE_API_TOKEN")
 
             if not api_token:
                 return {
@@ -517,9 +565,16 @@ async def test_connection(
 
         elif category == "namecheap":
             import requests
-            username = creds.get("NAMECHEAP_API_USERNAME")
-            api_key = creds.get("NAMECHEAP_API_KEY")
-            client_ip = creds.get("NAMECHEAP_CLIENT_IP", "")
+            username = get_cred("NAMECHEAP_API_USERNAME")
+            api_key = get_cred("NAMECHEAP_API_KEY")
+            client_ip = get_cred("NAMECHEAP_CLIENT_IP") or ""
+
+            if not username or not api_key:
+                return {
+                    "success": False,
+                    "message": "NameCheap credentials not configured",
+                    "details": {"error": "NAMECHEAP_API_USERNAME and NAMECHEAP_API_KEY are required"}
+                }
 
             # Test with namecheap.domains.getList
             url = "https://api.namecheap.com/xml.response"
@@ -539,6 +594,45 @@ async def test_connection(
                 "message": "NameCheap connection successful",
                 "details": {"status": "API key is valid"}
             }
+
+        elif category == "forgejo":
+            import requests
+            api_url = get_cred("FORGEJO_API_URL")
+            api_token = get_cred("FORGEJO_API_TOKEN")
+
+            if not api_url or not api_token:
+                return {
+                    "success": False,
+                    "message": "Forgejo credentials not configured",
+                    "details": {"error": "FORGEJO_API_URL and FORGEJO_API_TOKEN are required"}
+                }
+
+            try:
+                # Test with /api/v1/user endpoint (Forgejo API v1)
+                response = requests.get(
+                    f"{api_url}/api/v1/user",
+                    headers={"Authorization": f"token {api_token}"},
+                    timeout=10
+                )
+                response.raise_for_status()
+                user_data = response.json()
+
+                return {
+                    "success": True,
+                    "message": f"Forgejo connection successful (user: {user_data.get('username', 'unknown')})",
+                    "details": {
+                        "username": user_data.get("username"),
+                        "email": user_data.get("email"),
+                        "is_admin": user_data.get("is_admin", False),
+                        "api_version": "v1"
+                    }
+                }
+            except requests.exceptions.RequestException as e:
+                return {
+                    "success": False,
+                    "message": f"Forgejo connection failed: {str(e)}",
+                    "details": {"error": str(e)}
+                }
 
         else:
             raise HTTPException(status_code=400, detail=f"Unknown category: {category}")

@@ -232,7 +232,7 @@ const TraefikDashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <SummaryCard
             title="Total Routes"
-            value={dashboardData.summary.totalRoutes}
+            value={dashboardData?.summary?.totalRoutes || 0}
             icon={GlobeAltIcon}
             color="primary"
             onClick={() => navigate('/admin/traefik/routes')}
@@ -241,7 +241,7 @@ const TraefikDashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <SummaryCard
             title="Active Services"
-            value={dashboardData.summary.activeServices}
+            value={dashboardData?.summary?.activeServices || 0}
             icon={ServerIcon}
             color="info"
             onClick={() => navigate('/admin/traefik/services')}
@@ -250,7 +250,7 @@ const TraefikDashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <SummaryCard
             title="SSL Certificates"
-            value={dashboardData.summary.sslCertificates}
+            value={dashboardData?.summary?.sslCertificates || 0}
             icon={LockClosedIcon}
             color="success"
             onClick={() => navigate('/admin/traefik/ssl')}
@@ -277,11 +277,11 @@ const TraefikDashboard = () => {
               </Typography>
               <Box display="flex" alignItems="center" gap={2} mt={2}>
                 <Chip
-                  label={dashboardData.health.status.toUpperCase()}
-                  color={getHealthColor(dashboardData.health.status)}
+                  label={(dashboardData?.health?.status || 'unknown').toUpperCase()}
+                  color={getHealthColor(dashboardData?.health?.status)}
                   icon={<CheckCircleIcon style={{ width: 16, height: 16 }} />}
                 />
-                {dashboardData.health.lastCheck && (
+                {dashboardData?.health?.lastCheck && (
                   <Typography variant="body2" color="text.secondary">
                     Last checked: {new Date(dashboardData.health.lastCheck).toLocaleString()}
                   </Typography>
@@ -296,7 +296,7 @@ const TraefikDashboard = () => {
                   <Grid item xs={4}>
                     <Box textAlign="center">
                       <Typography variant="h4" color="success.main">
-                        {dashboardData.certificates.valid}
+                        {dashboardData?.certificates?.valid || 0}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         Valid
@@ -306,7 +306,7 @@ const TraefikDashboard = () => {
                   <Grid item xs={4}>
                     <Box textAlign="center">
                       <Typography variant="h4" color="warning.main">
-                        {dashboardData.certificates.expiringSoon}
+                        {dashboardData?.certificates?.expiringSoon || 0}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         Expiring Soon
@@ -316,7 +316,7 @@ const TraefikDashboard = () => {
                   <Grid item xs={4}>
                     <Box textAlign="center">
                       <Typography variant="h4" color="error.main">
-                        {dashboardData.certificates.expired}
+                        {dashboardData?.certificates?.expired || 0}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         Expired
@@ -366,12 +366,12 @@ const TraefikDashboard = () => {
                     </Box>
                   ))}
                 </Box>
-              ) : dashboardData.recentActivity.length > 0 ? (
+              ) : (dashboardData?.recentActivity?.length || 0) > 0 ? (
                 <List>
-                  {dashboardData.recentActivity.slice(0, 5).map((activity, index) => (
+                  {(dashboardData?.recentActivity || []).slice(0, 5).map((activity, index) => (
                     <React.Fragment key={activity.id}>
                       <ActivityItem activity={activity} />
-                      {index < dashboardData.recentActivity.length - 1 && <Divider />}
+                      {index < (dashboardData?.recentActivity?.length || 0) - 1 && <Divider />}
                     </React.Fragment>
                   ))}
                 </List>
@@ -384,7 +384,7 @@ const TraefikDashboard = () => {
                 </Box>
               )}
 
-              {dashboardData.recentActivity.length > 5 && (
+              {(dashboardData?.recentActivity?.length || 0) > 5 && (
                 <Box mt={2} textAlign="center">
                   <Button size="small" onClick={() => navigate('/admin/logs')}>
                     View All Activity

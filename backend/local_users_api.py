@@ -157,24 +157,58 @@ async def check_admin_role(request: Request) -> str:
     Returns:
         User email if admin, raises HTTPException otherwise
     """
-    # Try to get user from session
-    user_email = request.session.get("user_email")
-    user_roles = request.session.get("user_roles", [])
+    import sys
+    import os
 
-    if not user_email:
+    # Add parent directory to path if needed
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+
+    from redis_session import RedisSessionManager
+
+    # Get session token from cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
         )
 
+    # Get Redis connection info
+    redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
+    # Initialize session manager
+    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+
+    # Get session data
+    if session_token not in sessions:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session"
+        )
+
+    session_data = sessions[session_token]
+    user = session_data.get("user", {})
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found in session"
+        )
+
     # Check if user has admin role
-    if "admin" not in user_roles:
+    user_role = user.get("role", "")
+    is_admin = user.get("is_admin", False)
+
+    if user_role != "admin" and not is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required to manage local system users"
         )
 
-    return user_email
+    # Return user email or username
+    return user.get("email") or user.get("preferred_username") or user.get("username", "unknown")
 
 
 # ============================================================================

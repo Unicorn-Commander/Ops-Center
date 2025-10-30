@@ -568,9 +568,9 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
     key.startsWith(`${containerName}-`) && loading[key]
   );
 
-  // Get service description and metadata
-  const serviceInfo = getServiceInfo(service.name);
-  const hasGPU = service.gpu_enabled || serviceInfo?.gpu?.enabled;
+  // Get service description and metadata (with null safety)
+  const serviceInfo = getServiceInfo(service.name) || { gpu: null, port: null, category: 'Unknown', description: 'No description available' };
+  const hasGPU = service.gpu_enabled || serviceInfo?.gpu?.enabled || false;
 
   return (
     <motion.div
@@ -616,22 +616,22 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
           )}
         </div>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          {serviceInfo.name}
+          {serviceInfo?.name || service.display_name || service.name}
         </h3>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight">
-          {serviceInfo.description.slice(0, 80)}...
+          {(serviceInfo?.description || 'No description available').slice(0, 80)}...
         </p>
         <div className="flex items-center gap-2 mt-2">
           <div className="flex items-center gap-1">
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              serviceInfo.category === 'AI Core' ? 'bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-200' :
-              serviceInfo.category === 'AI Processing' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-200' :
-              serviceInfo.category === 'Speech Processing' ? 'bg-pink-100 text-pink-800 dark:bg-pink-800 dark:text-pink-200' :
-              serviceInfo.category === 'Database' ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200' :
-              serviceInfo.category === 'Monitoring' ? 'bg-orange-100 text-orange-800 dark:bg-orange-800 dark:text-orange-200' :
+              serviceInfo?.category === 'AI Core' ? 'bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-200' :
+              serviceInfo?.category === 'AI Processing' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-200' :
+              serviceInfo?.category === 'Speech Processing' ? 'bg-pink-100 text-pink-800 dark:bg-pink-800 dark:text-pink-200' :
+              serviceInfo?.category === 'Database' ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200' :
+              serviceInfo?.category === 'Monitoring' ? 'bg-orange-100 text-orange-800 dark:bg-orange-800 dark:text-orange-200' :
               'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
             }`}>
-              {serviceInfo.category}
+              {serviceInfo?.category || 'Unknown'}
             </span>
             <HelpTooltip 
               title={getTooltip('services', 'categoryBadge').title}

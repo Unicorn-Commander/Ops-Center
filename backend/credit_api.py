@@ -33,16 +33,55 @@ from email_notifications import EmailNotificationService
 # Email notification service
 email_service = EmailNotificationService()
 
-# Import authentication dependencies (assuming these exist in your codebase)
-try:
-    from auth_manager import get_current_user, require_admin
-except ImportError:
-    # Fallback for testing
-    async def get_current_user():
-        return {"user_id": "test_user", "email": "test@example.com"}
+# Import Request for manual session handling (avoids circular import)
+from fastapi import Request
 
-    async def require_admin():
-        return {"user_id": "admin", "email": "admin@example.com"}
+# Manual authentication function (matches server.py logic)
+async def get_current_user_from_request(request: Request):
+    """Get current user from session cookie (avoids circular import with server.py)"""
+    # Import here to avoid circular dependency
+    import sys
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+
+    # Import sessions from server module
+    from redis_session import RedisSessionManager
+    import os
+
+    # Get Redis connection (same as server.py)
+    redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
+    # Initialize session manager
+    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+
+    # Get session token from cookie
+    session_token = request.cookies.get("session_token")
+
+    if not session_token or session_token not in sessions:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session = sessions[session_token]
+    user_data = session.get("user", {})
+
+    # Ensure user_id field exists (map from Keycloak 'sub' field)
+    if "user_id" not in user_data:
+        user_data["user_id"] = user_data.get("sub") or user_data.get("id", "unknown")
+
+    return user_data
+
+# Admin check function
+async def require_admin_from_request(current_user: dict = Depends(get_current_user_from_request)):
+    """Require admin role"""
+    from fastapi import HTTPException
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+# Aliases for compatibility
+get_current_user = get_current_user_from_request
+require_admin = require_admin_from_request
 
 
 # Logging setup
@@ -61,26 +100,27 @@ router = APIRouter(prefix="/api/v1/credits", tags=["credits"])
 class CreditBalance(BaseModel):
     """User credit balance response"""
     user_id: str
-    balance: Decimal
-    allocated_monthly: Decimal
-    bonus_credits: Decimal
-    free_tier_used: Decimal
-    reset_date: datetime
-    last_updated: datetime
+    balance: Decimal  # maps to credits_remaining
+    allocated_monthly: Decimal  # maps to credits_allocated
+    bonus_credits: Decimal = Decimal("0.00")  # calculated field (not in DB)
+    free_tier_used: Decimal = Decimal("0.00")  # calculated field (not in DB)
+    reset_date: datetime  # maps to last_reset
+    last_updated: datetime  # maps to updated_at
+    tier: str  # subscription tier from DB
     created_at: datetime
 
 
 class CreditTransaction(BaseModel):
     """Credit transaction record"""
-    id: int
+    id: str  # UUID in database
     user_id: str
     amount: Decimal
     balance_after: Decimal
     transaction_type: str
-    service: Optional[str]
+    service: Optional[str]  # maps to 'provider' column
     model: Optional[str]
-    cost_breakdown: Optional[Dict[str, Any]]
-    metadata: Optional[Dict[str, Any]]
+    cost_breakdown: Optional[Decimal]  # maps to 'cost' column
+    metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
 
 

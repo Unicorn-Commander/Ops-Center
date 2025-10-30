@@ -1678,24 +1678,45 @@ async def get_openrouter_models(
 
             # Extract pricing info
             pricing = model.get('pricing', {})
+            prompt_cost = float(pricing.get('prompt', 0))
+            completion_cost = float(pricing.get('completion', 0))
+
+            # Extract provider name from top_provider object (with null safety)
+            top_provider = model.get('top_provider') or {}
+            provider_name = top_provider.get('name', 'OpenRouter') if isinstance(top_provider, dict) else 'OpenRouter'
+
+            # Extract performance metrics (if available from OpenRouter) - with null safety
+            per_request_limits = model.get('per_request_limits') or {}
+            architecture = model.get('architecture') or {}
 
             enriched_models.append({
                 'id': model_id,
-                'name': model.get('name', model_id),
+                'name': model_id,  # Model ID (e.g., "openai/gpt-4")
+                'display_name': model.get('name', model_id),  # Human-readable name
+                'provider_name': provider_name,  # Extracted from top_provider
                 'description': model.get('description', ''),
                 'context_length': model.get('context_length', 0),
-                'architecture': model.get('architecture', {}).get('modality', 'text'),
+                'architecture': architecture.get('modality', 'text') if isinstance(architecture, dict) else 'text',
+                # Flatten pricing for frontend compatibility
+                'cost_per_1m_input': prompt_cost * 1_000_000,  # Per 1M tokens
+                'cost_per_1m_output': completion_cost * 1_000_000,  # Per 1M tokens
+                # Keep nested pricing for backward compatibility
                 'pricing': {
-                    'prompt': float(pricing.get('prompt', 0)),  # Per token
-                    'completion': float(pricing.get('completion', 0)),  # Per token
-                    'prompt_per_1m': float(pricing.get('prompt', 0)) * 1_000_000,  # Per 1M tokens
-                    'completion_per_1m': float(pricing.get('completion', 0)) * 1_000_000  # Per 1M tokens
+                    'prompt': prompt_cost,  # Per token
+                    'completion': completion_cost,  # Per token
+                    'prompt_per_1m': prompt_cost * 1_000_000,
+                    'completion_per_1m': completion_cost * 1_000_000
                 },
-                'top_provider': model.get('top_provider', {}),
-                'is_active': db_model.get('enabled', False),  # Default to disabled
+                'top_provider': top_provider if isinstance(top_provider, dict) else {},  # Full provider object
+                'enabled': db_model.get('enabled', False),  # Renamed from is_active
+                # Performance metrics (null-safe)
+                'rating': model.get('rating'),  # Model quality rating (if available)
+                'latency_ms': top_provider.get('max_completion_tokens') if isinstance(top_provider, dict) else None,
+                'throughput': per_request_limits.get('prompt_tokens') if isinstance(per_request_limits, dict) else None,
+                # Capabilities (null-safe)
                 'supports_streaming': True,  # OpenRouter supports streaming
-                'supports_function_calling': 'tool' in model.get('architecture', {}).get('modality', '').lower(),
-                'supports_vision': 'vision' in model.get('architecture', {}).get('modality', '').lower()
+                'supports_function_calling': 'tool' in architecture.get('modality', '').lower() if isinstance(architecture, dict) else False,
+                'supports_vision': 'vision' in architecture.get('modality', '').lower() if isinstance(architecture, dict) else False
             })
 
         logger.info(f"Returning {len(enriched_models)} OpenRouter models to admin {user_id}")
@@ -1715,6 +1736,91 @@ async def get_openrouter_models(
     except Exception as e:
         logger.error(f"Error fetching OpenRouter models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch models: {str(e)}")
+
+
+@router.post("/admin/models/bulk-update")
+async def bulk_update_models(
+    request: Request,
+    update_request: dict,
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """
+    Bulk enable/disable models or update their settings
+
+    Request body:
+    {
+        "model_ids": ["openai/gpt-4", "anthropic/claude-3"],
+        "action": "enable" | "disable" | "update",
+        "updates": {  // Only for "update" action
+            "enabled": true/false,
+            // ... other fields
+        }
+    }
+    """
+    try:
+        user = await require_admin_from_session(request)
+        user_id = user.get("email", user.get("username", "unknown"))
+
+        model_ids = update_request.get('model_ids', [])
+        action = update_request.get('action', 'update')
+        updates = update_request.get('updates', {})
+
+        if not model_ids or not isinstance(model_ids, list):
+            raise HTTPException(status_code=400, detail="model_ids must be a non-empty list")
+
+        logger.info(f"Admin {user_id} bulk updating {len(model_ids)} models: action={action}")
+
+        # Get OpenRouter provider
+        async with credit_system.db_pool.acquire() as conn:
+            provider = await conn.fetchrow("""
+                SELECT id, name
+                FROM llm_providers
+                WHERE LOWER(name) = 'openrouter'
+            """)
+
+            if not provider:
+                raise HTTPException(status_code=404, detail="OpenRouter provider not found")
+
+            provider_id = provider['id']
+
+            # Determine enabled status based on action
+            if action == 'enable':
+                enabled = True
+            elif action == 'disable':
+                enabled = False
+            elif action == 'update':
+                enabled = updates.get('enabled', True)
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+            # Upsert models (insert if not exists, update if exists)
+            updated_count = 0
+            for model_id in model_ids:
+                result = await conn.execute("""
+                    INSERT INTO llm_models (name, provider_id, enabled, created_at, updated_at)
+                    VALUES ($1, $2, $3, NOW(), NOW())
+                    ON CONFLICT (name, provider_id)
+                    DO UPDATE SET
+                        enabled = $3,
+                        updated_at = NOW()
+                """, model_id, provider_id, enabled)
+                updated_count += 1
+
+        logger.info(f"Admin {user_id} bulk updated {updated_count} models to enabled={enabled}")
+
+        return {
+            'success': True,
+            'updated_count': updated_count,
+            'action': action,
+            'enabled': enabled,
+            'model_ids': model_ids
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk updating models: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to bulk update models: {str(e)}")
 
 
 @router.put("/admin/models/{model_id}/toggle")

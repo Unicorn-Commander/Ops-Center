@@ -119,25 +119,30 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/email-provider/",  # Email provider API (used for testing providers)
             "/api/v1/platform/",  # Platform settings API (credential management)
             "/api/v1/monitoring/grafana/",  # Grafana integration API (monitoring)
-            "/api/v1/admin/users/"  # User management and API key endpoints
+            "/api/v1/admin/users/",  # User management and API key endpoints
+            "/api/v1/org/",  # Organization management API
+            "/api/v1/org"    # Organization management API (without trailing slash)
         }
         self.enabled = enabled
         self.sessions_store = sessions_store or {}
 
     def is_exempt(self, path: str) -> bool:
         """Check if a URL path is exempt from CSRF protection"""
+        logger.info(f"CSRF exemption check for path: {path}")
+        logger.info(f"Exempt URLs: {self.exempt_urls}")
+
         # Check exact matches
         if path in self.exempt_urls:
-            logger.debug(f"Path {path} matched exact exempt URL")
+            logger.info(f"Path {path} matched exact exempt URL")
             return True
 
         # Check prefix matches for OAuth callbacks
         for exempt_url in self.exempt_urls:
             if path.startswith(exempt_url):
-                logger.debug(f"Path {path} matched exempt URL prefix: {exempt_url}")
+                logger.info(f"Path {path} matched exempt URL prefix: {exempt_url}")
                 return True
 
-        logger.debug(f"Path {path} not exempt. Exempt URLs: {self.exempt_urls}")
+        logger.warning(f"Path {path} NOT EXEMPT. Exempt URLs: {self.exempt_urls}")
         return False
 
     def get_token_from_request(self, request: Request) -> Optional[str]:

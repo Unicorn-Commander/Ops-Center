@@ -89,7 +89,10 @@ export function OrganizationProvider({ children }) {
       // If no current org set, default to first org
       if (!currentOrgId && data && data.length > 0) {
         const firstOrg = data[0];
-        switchOrganization(firstOrg.id);
+        // Set org ID without reloading (initial load)
+        setCurrentOrgId(firstOrg.id);
+        localStorage.setItem('currentOrgId', firstOrg.id);
+        console.log('[OrganizationContext] Set initial organization:', firstOrg.id);
       }
     } catch (err) {
       console.error('[OrganizationContext] Error fetching organizations:', err);
@@ -110,16 +113,9 @@ export function OrganizationProvider({ children }) {
       // Persist to localStorage
       localStorage.setItem('currentOrgId', orgId);
 
-      // Notify backend (for analytics)
-      try {
-        await fetch(`/api/v1/organizations/${orgId}/switch`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } catch (err) {
-        console.warn('[OrganizationContext] Failed to notify backend of org switch:', err);
-      }
+      // Notify backend (for analytics) - endpoint doesn't exist yet, so just skip
+      // TODO: Implement /api/v1/org/{orgId}/switch endpoint if analytics needed
+      console.log('[OrganizationContext] Organization switched to:', orgId);
 
       // Broadcast to other tabs
       if (orgChannel) {
@@ -159,6 +155,13 @@ export function OrganizationProvider({ children }) {
     return fetchOrganizations();
   };
 
+  // Set current organization without reloading
+  const setCurrentOrg = (orgId) => {
+    console.log('[OrganizationContext] Setting current org (no reload):', orgId);
+    setCurrentOrgId(orgId);
+    localStorage.setItem('currentOrgId', orgId);
+  };
+
   // Legacy compatibility
   const selectOrganization = (org) => {
     if (org && org.id) {
@@ -176,6 +179,7 @@ export function OrganizationProvider({ children }) {
     error,
     selectOrganization,
     switchOrganization,
+    setCurrentOrg,  // New: set org without reload
     getCurrentOrganization,
     getCurrentOrgRole,
     hasOrgRole,

@@ -182,12 +182,24 @@ export default function ProviderKeysSection({
 
       if (response.ok) {
         const data = await response.json();
-        setProviders(data.providers || []);
+        // Ensure providers is always an array
+        const providersData = data.providers || [];
+        if (Array.isArray(providersData)) {
+          setProviders(providersData);
+        } else {
+          console.error('Invalid providers data structure:', providersData);
+          setProviders([]);
+          showToast('error', 'Invalid data format received');
+        }
       } else {
-        showToast('error', 'Failed to load providers');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('API error:', response.status, errorData);
+        setProviders([]);
+        showToast('error', `Failed to load providers: ${errorData.detail || response.statusText}`);
       }
     } catch (error) {
       console.error('Error loading providers:', error);
+      setProviders([]);
       showToast('error', 'Network error loading providers');
     } finally {
       setLoading(false);
@@ -386,7 +398,7 @@ export default function ProviderKeysSection({
             <div>
               <h3 className={`text-lg font-semibold ${themeClasses.text}`}>Provider API Keys</h3>
               <p className={`text-sm ${themeClasses.subtext}`}>
-                {providers.filter(p => p.key_source !== 'not_set').length} providers configured
+                {Array.isArray(providers) ? providers.filter(p => p.key_source !== 'not_set').length : 0} providers configured
               </p>
             </div>
           </div>
@@ -444,7 +456,7 @@ export default function ProviderKeysSection({
 
           {/* Provider Cards Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {providers.map((provider) => {
+            {Array.isArray(providers) && providers.length > 0 ? providers.map((provider) => {
               const info = providerInfo[provider.id] || {
                 name: provider.id,
                 icon: '🔑',
@@ -570,7 +582,11 @@ export default function ProviderKeysSection({
                   </div>
                 </div>
               );
-            })}
+            }) : (
+              <div className={`col-span-2 text-center py-8 ${themeClasses.card} rounded-lg border`}>
+                <p className={themeClasses.subtext}>No providers found. Please check your configuration.</p>
+              </div>
+            )}
           </div>
 
           {/* Info Section */}

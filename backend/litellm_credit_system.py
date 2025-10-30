@@ -154,15 +154,18 @@ class CreditSystem:
                 )
 
                 if not result:
-                    # Create default entry for new user
+                    # AUTO-PROVISION: Create credit account for new user with trial tier
+                    # Default: trial tier with 5.0 credits
+                    logger.info(f"Auto-provisioning credit account for new user: {user_id}")
                     await conn.execute(
                         """
-                        INSERT INTO user_credits (user_id, credits_remaining, tier)
-                        VALUES ($1, $2, $3)
+                        INSERT INTO user_credits (user_id, credits_remaining, credits_allocated, tier)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (user_id) DO NOTHING
                         """,
-                        user_id, 0.0, "free"
+                        user_id, 5.0, 5.0, "trial"
                     )
-                    credits = 0.0
+                    credits = 5.0
                 else:
                     credits = float(result['credits_remaining'])
 

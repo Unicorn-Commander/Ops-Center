@@ -35,7 +35,8 @@ import {
   Payment,
   Key,
   Cloud,
-  Domain
+  Domain,
+  Code
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -59,6 +60,7 @@ const PlatformSettings = () => {
     keycloak: { icon: <Security />, color: '#00B8E3', label: 'Keycloak SSO' },
     cloudflare: { icon: <Cloud />, color: '#F38020', label: 'Cloudflare DNS' },
     namecheap: { icon: <Domain />, color: '#FF6C02', label: 'NameCheap Domains' },
+    forgejo: { icon: <Code />, color: '#609926', label: 'Forgejo Git' },
     other: { icon: <Key />, color: '#9CA3AF', label: 'Other' }
   };
 

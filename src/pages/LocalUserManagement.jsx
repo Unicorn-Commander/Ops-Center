@@ -54,9 +54,13 @@ import {
   Check,
   AlertTriangle,
   RefreshCw,
+  Users,
+  Info,
 } from 'lucide-react';
 import { alpha } from '@mui/material/styles';
 import { useToast } from '../components/Toast';
+import HelpTooltip from '../components/HelpTooltip';
+import { Link } from 'react-router-dom';
 
 const LocalUserManagement = () => {
   // Toast notifications
@@ -120,7 +124,9 @@ const LocalUserManagement = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/v1/admin/system/local-users');
+      const response = await fetch('/api/v1/admin/system/local-users', {
+        credentials: 'include'
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -147,7 +153,9 @@ const LocalUserManagement = () => {
 
   const fetchGroups = async () => {
     try {
-      const response = await fetch('/api/v1/admin/system/local-users/groups');
+      const response = await fetch('/api/v1/admin/system/local-users/groups', {
+        credentials: 'include'
+      });
       const data = await response.json();
       if (data.success) {
         setAvailableGroups(data.groups || []);
@@ -159,7 +167,9 @@ const LocalUserManagement = () => {
 
   const fetchUserSSHKeys = async (username) => {
     try {
-      const response = await fetch(`/api/v1/admin/system/local-users/${username}/ssh-keys`);
+      const response = await fetch(`/api/v1/admin/system/local-users/${username}/ssh-keys`, {
+        credentials: 'include'
+      });
       const data = await response.json();
       if (data.success) {
         setUserSSHKeys(data.keys || []);
@@ -257,6 +267,7 @@ const LocalUserManagement = () => {
     try {
       const response = await fetch('/api/v1/admin/system/local-users', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser),
       });
@@ -279,6 +290,7 @@ const LocalUserManagement = () => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${username}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -297,6 +309,7 @@ const LocalUserManagement = () => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${username}/sudo`, {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_sudo: !currentHasSudo }),
       });
@@ -330,6 +343,7 @@ const LocalUserManagement = () => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${selectedUser.username}/ssh-keys`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: newSSHKey }),
       });
@@ -349,6 +363,7 @@ const LocalUserManagement = () => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${selectedUser.username}/ssh-keys/${keyId}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -418,12 +433,80 @@ const LocalUserManagement = () => {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ mb: 1, fontWeight: 600 }}>
-          Local User Management
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            Local User Management
+          </Typography>
+          <HelpTooltip
+            title="What are Local Users?"
+            content={[
+              "This page shows Linux system users inside the Docker container (ops-center-direct).",
+              "These are NOT application users (for those, see User Management).",
+              "These are NOT Keycloak users (for SSO users, see User Management).",
+              "Purpose: Infrastructure management, process isolation, and SSH access control."
+            ]}
+            link={{
+              text: "View Application Users →",
+              href: "/admin/system/users"
+            }}
+            position="right"
+          />
+        </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Manage Linux system users, SSH keys, and sudo permissions
         </Typography>
+
+        {/* INFO BANNER - Clarifies what this page is for */}
+        <Alert
+          severity="info"
+          icon={<Info size={20} />}
+          sx={{
+            mb: 3,
+            '& .MuiAlert-message': {
+              width: '100%'
+            }
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+              📋 What This Page Shows
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1.5 }}>
+              This page manages <strong>container system users</strong> (Linux users inside the Docker container).
+              These are used for process isolation and security, not for logging into the application.
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                  <Users size={16} style={{ marginRight: 8, marginTop: 2, flexShrink: 0 }} />
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      For Application Users:
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Go to <Link to="/admin/system/users" style={{ textDecoration: 'underline' }}>
+                        User Management
+                      </Link> (Keycloak SSO users)
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                  <Terminal size={16} style={{ marginRight: 8, marginTop: 2, flexShrink: 0 }} />
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      What You See Here:
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Linux users like "nobody", "root", "www-data" (container internals)
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            </Grid>
+          </Box>
+        </Alert>
 
         <Button
           variant="contained"

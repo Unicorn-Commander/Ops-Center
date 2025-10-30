@@ -68,7 +68,14 @@ export default function CreditDashboard() {
     setRefreshing(false);
   };
 
+  const formatCredits = (amount) => {
+    if (amount === null || amount === undefined) return '0 credits';
+    // Format as whole number with commas, add "credits" label
+    return `${Math.floor(parseFloat(amount)).toLocaleString()} credits`;
+  };
+
   const formatCurrency = (amount) => {
+    // Keep this for any actual money amounts (like transactions)
     if (amount === null || amount === undefined) return '$0.00';
     return `$${parseFloat(amount).toFixed(2)}`;
   };
@@ -139,7 +146,7 @@ export default function CreditDashboard() {
                 </Typography>
               </Box>
               <Typography variant="h3" sx={{ mb: 2, fontWeight: 700 }}>
-                {formatCurrency(balance?.balance)}
+                {formatCredits(balance?.balance)}
               </Typography>
               <LinearProgress
                 variant="determinate"
@@ -165,7 +172,7 @@ export default function CreditDashboard() {
                 </Typography>
               </Box>
               <Typography variant="h3" sx={{ mb: 1, fontWeight: 700 }}>
-                {formatCurrency(balance?.allocated_monthly)}
+                {formatCredits(balance?.allocated_monthly)}
               </Typography>
               <Chip
                 label={`Resets on ${balance?.next_reset_date || 'N/A'}`}
@@ -188,7 +195,7 @@ export default function CreditDashboard() {
                 </Typography>
               </Box>
               <Typography variant="h3" sx={{ mb: 2, fontWeight: 700 }}>
-                {formatCurrency(usage?.this_month)}
+                {formatCredits(usage?.this_month)}
               </Typography>
               <LinearProgress
                 variant="determinate"
@@ -214,7 +221,7 @@ export default function CreditDashboard() {
                 </Typography>
               </Box>
               <Typography variant="h3" sx={{ mb: 1, fontWeight: 700 }}>
-                {formatCurrency(openRouterAccount?.free_credits_remaining || 0)}
+                {formatCredits(openRouterAccount?.free_credits_remaining || 0)}
               </Typography>
               <Chip
                 label={openRouterAccount?.openrouter_email ? 'Active' : 'Not Configured'}

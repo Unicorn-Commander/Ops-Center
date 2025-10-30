@@ -570,7 +570,7 @@ async def delete_provider(provider_id: str):
 # Model Management Endpoints
 # ============================================================================
 
-@router.get("/models", response_model=List[ModelResponse])
+@router.get("/models")
 async def list_models(
     provider_id: Optional[str] = None,
     enabled_only: bool = False,
@@ -688,20 +688,29 @@ async def list_models(
 
         result = []
         for m in models:
-            result.append(ModelResponse(
-                id=str(m['id']),
-                provider_id=str(m['provider_id']),
-                provider_name=m['provider_name'],
-                name=m['name'],
-                display_name=m['display_name'] or m['name'],
-                cost_per_1m_input=float(m['cost_per_1m_input_tokens']),
-                cost_per_1m_output=float(m['cost_per_1m_output_tokens']),
-                context_length=m['context_length'],
-                enabled=m['enabled'],
-                avg_latency_ms=m['avg_latency_ms']
-            ))
+            model_data = {
+                'id': m['name'],  # Use model name as ID (OpenAI standard)
+                'object': 'model',
+                'name': m['name'],
+                'display_name': m['display_name'] or m['name'],
+                'provider': m['provider_name'],
+                'provider_id': str(m['provider_id']),
+                'pricing': {
+                    'input': float(m['cost_per_1m_input_tokens']),
+                    'output': float(m['cost_per_1m_output_tokens'])
+                },
+                'context_length': m['context_length'],
+                'enabled': m['enabled'],
+                'avg_latency_ms': m['avg_latency_ms'],
+                '_uuid': str(m['id'])  # Keep UUID for internal use
+            }
+            result.append(model_data)
 
-        return result
+        # Return OpenAI-compatible format
+        return {
+            'object': 'list',
+            'data': result
+        }
 
     finally:
         cursor.close()

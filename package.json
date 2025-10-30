@@ -4,6 +4,10 @@
   "type": "module",
   "description": "Professional admin dashboard for UC-1 Pro",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
@@ -60,9 +64,13 @@
     "workbox-window": "^7.3.0"
   },
   "scripts": {
+    "verify": "bash scripts/verify-build-deps.sh",
+    "verify:fix": "bash scripts/verify-build-deps.sh --fix",
+    "prebuild": "bash scripts/verify-build-deps.sh",
     "dev": "vite",
     "build": "NODE_OPTIONS='--max-old-space-size=4096' vite build",
     "build:simple": "vite build",
+    "build:skip-verify": "NODE_OPTIONS='--max-old-space-size=4096' vite build",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",

@@ -8,9 +8,18 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 import logging
 from datetime import datetime
+import sys
+import os
+
+# Add parent directory to path to import from server.py
+if '/app' not in sys.path:
+    sys.path.insert(0, '/app')
 
 # Import organization manager
 from org_manager import org_manager, Organization, OrgUser
+
+# Import Keycloak user lookup
+from keycloak_integration import get_user_by_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/org", tags=["organizations"])
@@ -34,24 +43,46 @@ class OrganizationSettingsUpdate(BaseModel):
     settings: Dict[str, Any]
 
 
+class OrganizationCreate(BaseModel):
+    """Request model for creating a new organization"""
+    name: str
+    plan_tier: str = "founders_friend"
+
+
 # ==================== Helper Functions ====================
 
 async def get_current_user(request: Request) -> Dict:
-    """Get current user data from session"""
+    """Get current user data from session (uses Redis session manager)"""
+    from redis_session import RedisSessionManager
+
     session_token = request.cookies.get("session_token")
     if not session_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Get sessions from app state
-    sessions = getattr(request.app.state, "sessions", {})
-    session_data = sessions.get(session_token)
+    # Get Redis connection info
+    redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    if not session_data:
-        raise HTTPException(status_code=401, detail="Invalid session")
+    # Initialize session manager
+    sessions = RedisSessionManager(host=redis_host, port=redis_port)
 
+    # Get session data
+    if session_token not in sessions:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    session_data = sessions[session_token]
     user = session_data.get("user", {})
+
     if not user:
         raise HTTPException(status_code=401, detail="User not found in session")
+
+    # Ensure user_id field exists (map from Keycloak 'sub' field if needed)
+    if "user_id" not in user:
+        user["user_id"] = user.get("sub") or user.get("id", "unknown")
+
+    # Ensure id field exists
+    if "id" not in user:
+        user["id"] = user.get("sub") or user.get("user_id", "unknown")
 
     return user
 
@@ -116,6 +147,65 @@ async def verify_org_access(request: Request, org_id: str, required_role: Option
 
 
 # ==================== API Endpoints ====================
+
+@router.get("/my-orgs")
+async def get_my_organizations(request: Request):
+    """
+    Get list of organizations the current user is a member of
+
+    Returns:
+        List of organizations with user's role in each
+
+    Example:
+        GET /api/v1/org/my-orgs
+        Response: [
+            {
+                "id": "org_12345",
+                "name": "Magic Unicorn",
+                "role": "owner",
+                "plan_tier": "professional",
+                "status": "active",
+                "member_count": 5,
+                "joined_at": "2025-01-15T10:30:00Z"
+            },
+            ...
+        ]
+    """
+    user = await get_current_user(request)
+    user_id = user.get("id") or user.get("sub") or user.get("user_id")
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID not found in session")
+
+    # Get all organizations
+    all_orgs = org_manager.list_all_organizations()
+
+    # Filter to organizations where user is a member
+    user_orgs = []
+    for org in all_orgs:
+        # Check if user is a member
+        members = org_manager.get_org_users(org.id)
+        user_member = None
+        for member in members:
+            if member.user_id == user_id:
+                user_member = member
+                break
+
+        if user_member:
+            user_orgs.append({
+                "id": org.id,
+                "name": org.name,
+                "role": user_member.role,
+                "plan_tier": org.plan_tier,
+                "status": org.status,
+                "member_count": len(members),
+                "joined_at": user_member.joined_at.isoformat() if user_member.joined_at else None
+            })
+
+    logger.info(f"Found {len(user_orgs)} organizations for user {user_id}")
+
+    return user_orgs
+
 
 @router.get("/organizations")
 async def list_all_organizations(
@@ -198,17 +288,26 @@ async def list_all_organizations(
             members = org_manager.get_org_users(org.id)
             member_count = len(members)
 
-            # Find owner
-            owner_email = None
+            # Find owner and get their email from Keycloak
+            owner_display = "Unknown"
             for member in members:
                 if member.role == "owner":
-                    owner_email = member.user_id
+                    # Look up user in Keycloak to get email/username
+                    try:
+                        user_data = await get_user_by_id(member.user_id)
+                        if user_data:
+                            owner_display = user_data.get('email') or user_data.get('username') or member.user_id
+                        else:
+                            owner_display = member.user_id
+                    except Exception as e:
+                        logger.warning(f"Could not fetch owner details for {member.user_id}: {e}")
+                        owner_display = member.user_id
                     break
 
             enriched_orgs.append({
                 "id": org.id,
                 "name": org.name,
-                "owner": owner_email or "Unknown",
+                "owner": owner_display,
                 "member_count": member_count,
                 "created_at": org.created_at.isoformat(),
                 "subscription_tier": org.plan_tier,
@@ -229,6 +328,92 @@ async def list_all_organizations(
     except Exception as e:
         logger.error(f"Error listing organizations: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list organizations: {str(e)}")
+
+
+@router.post("")
+async def create_organization(
+    org_data: OrganizationCreate,
+    request: Request
+):
+    """
+    Create a new organization
+
+    Args:
+        org_data: Organization name and plan tier
+        request: FastAPI request object
+
+    Returns:
+        Created organization details including ID and owner info
+
+    Example:
+        POST /api/v1/org
+        Body: {"name": "Acme Corp", "plan_tier": "professional"}
+        Response: {
+            "success": true,
+            "organization": {
+                "id": "org_12345",
+                "name": "Acme Corp",
+                "plan_tier": "professional",
+                "status": "active",
+                "created_at": "2025-10-28T10:30:00Z",
+                "owner": "admin@example.com",
+                "member_count": 1
+            }
+        }
+    """
+    # Get current user
+    user = await get_current_user(request)
+    user_id = user.get("id") or user.get("email")
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Could not identify user")
+
+    try:
+        # Create organization using org_manager
+        org_id = org_manager.create_organization(
+            name=org_data.name,
+            plan_tier=org_data.plan_tier
+        )
+
+        # Add current user as owner
+        org_manager.add_user_to_org(
+            org_id=org_id,
+            user_id=user_id,
+            role="owner"
+        )
+
+        # Get created organization
+        org = org_manager.get_org(org_id)
+        if not org:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created organization")
+
+        # Get member count
+        members = org_manager.get_org_users(org_id)
+
+        logger.info(f"Created organization {org_id} ({org_data.name}) with owner {user_id}")
+
+        return {
+            "success": True,
+            "organization": {
+                "id": org.id,
+                "name": org.name,
+                "plan_tier": org.plan_tier,
+                "status": org.status,
+                "created_at": org.created_at.isoformat(),
+                "owner": user_id,
+                "member_count": len(members),
+                "lago_customer_id": org.lago_customer_id,
+                "stripe_customer_id": org.stripe_customer_id
+            }
+        }
+
+    except ValueError as e:
+        # Validation error (e.g., duplicate name)
+        logger.warning(f"Validation error creating organization: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating organization: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create organization: {str(e)}")
 
 
 @router.get("/roles")
@@ -289,28 +474,46 @@ async def list_available_roles():
 
 
 @router.get("/{org_id}/members")
-async def list_organization_members(org_id: str, request: Request):
+async def list_organization_members(
+    org_id: str,
+    request: Request,
+    offset: int = 0,
+    limit: int = 100,
+    search: str = ""
+):
     """
-    Get list of all members in an organization
+    Get list of all members in an organization with full user details
 
     Args:
         org_id: Organization ID
+        offset: Pagination offset (default: 0)
+        limit: Pagination limit (default: 100, max: 1000)
+        search: Search by email, username, or name
 
     Returns:
-        List of organization members with roles and join dates
+        List of organization members with roles, join dates, and user details from Keycloak
 
     Example:
-        GET /api/v1/org/org_12345/members
+        GET /api/v1/org/org_12345/members?offset=0&limit=10&search=aaron
         Response: {
             "members": [
                 {
-                    "user_id": "user@example.com",
-                    "role": "owner",
-                    "joined_at": "2025-01-15T10:30:00Z"
+                    "id": "7a6bfd31-0120-4a30-9e21-0fc3b8006579",
+                    "user_id": "7a6bfd31-0120-4a30-9e21-0fc3b8006579",
+                    "email": "aaron@magicunicorn.tech",
+                    "username": "aaron",
+                    "firstName": "Aaron",
+                    "lastName": "User",
+                    "org_role": "owner",
+                    "enabled": true,
+                    "emailVerified": true,
+                    "createdAt": "2025-01-15T10:30:00Z"
                 },
                 ...
             ],
-            "total": 5
+            "total": 5,
+            "offset": 0,
+            "limit": 10
         }
     """
     # Verify user has access to this organization
@@ -324,21 +527,82 @@ async def list_organization_members(org_id: str, request: Request):
     # Get all members
     members = org_manager.get_org_users(org_id)
 
-    # Format response
-    members_list = [
-        {
-            "user_id": member.user_id,
-            "role": member.role,
-            "joined_at": member.joined_at.isoformat()
-        }
-        for member in members
-    ]
+    # Enrich members with Keycloak user data
+    enriched_members = []
+    for member in members:
+        try:
+            # Fetch user details from Keycloak
+            user_data = await get_user_by_id(member.user_id)
 
-    logger.info(f"Listed {len(members_list)} members for org {org_id}")
+            if user_data:
+                enriched_member = {
+                    "id": member.user_id,
+                    "user_id": member.user_id,
+                    "email": user_data.get("email", ""),
+                    "username": user_data.get("username", ""),
+                    "firstName": user_data.get("firstName", ""),
+                    "lastName": user_data.get("lastName", ""),
+                    "org_role": member.role,
+                    "enabled": user_data.get("enabled", False),
+                    "emailVerified": user_data.get("emailVerified", False),
+                    "createdAt": member.joined_at.isoformat() if member.joined_at else None
+                }
+                enriched_members.append(enriched_member)
+            else:
+                # Fallback if Keycloak lookup fails
+                logger.warning(f"Could not fetch Keycloak data for user {member.user_id}")
+                enriched_members.append({
+                    "id": member.user_id,
+                    "user_id": member.user_id,
+                    "email": member.user_id,  # Fallback to user_id
+                    "username": member.user_id,
+                    "firstName": "",
+                    "lastName": "",
+                    "org_role": member.role,
+                    "enabled": True,
+                    "emailVerified": False,
+                    "createdAt": member.joined_at.isoformat() if member.joined_at else None
+                })
+        except Exception as e:
+            logger.error(f"Error enriching member {member.user_id}: {e}")
+            # Include basic data even if enrichment fails
+            enriched_members.append({
+                "id": member.user_id,
+                "user_id": member.user_id,
+                "email": member.user_id,
+                "username": member.user_id,
+                "firstName": "",
+                "lastName": "",
+                "org_role": member.role,
+                "enabled": True,
+                "emailVerified": False,
+                "createdAt": member.joined_at.isoformat() if member.joined_at else None
+            })
+
+    # Apply search filter if provided
+    if search:
+        search_lower = search.lower()
+        enriched_members = [
+            m for m in enriched_members
+            if search_lower in m.get("email", "").lower()
+            or search_lower in m.get("username", "").lower()
+            or search_lower in m.get("firstName", "").lower()
+            or search_lower in m.get("lastName", "").lower()
+        ]
+
+    # Get total count before pagination
+    total = len(enriched_members)
+
+    # Apply pagination
+    enriched_members = enriched_members[offset:offset + limit]
+
+    logger.info(f"Listed {len(enriched_members)} members (total: {total}) for org {org_id}")
 
     return {
-        "members": members_list,
-        "total": len(members_list)
+        "members": enriched_members,
+        "total": total,
+        "offset": offset,
+        "limit": limit
     }
 
 
@@ -526,8 +790,11 @@ async def get_organization_stats(org_id: str, request: Request):
     Example:
         GET /api/v1/org/org_12345/stats
         Response: {
-            "total_members": 5,
-            "members_by_role": {"owner": 1, "billing_admin": 1, "member": 3},
+            "totalMembers": 5,
+            "activeMembers": 5,
+            "admins": 2,
+            "pendingInvites": 0,
+            "members_by_role": {"owner": 1, "admin": 1, "member": 3},
             "created_at": "2025-01-01T00:00:00Z",
             "plan_tier": "professional",
             "status": "active"
@@ -546,10 +813,34 @@ async def get_organization_stats(org_id: str, request: Request):
 
     # Count members by role
     members_by_role = {}
+    active_members = 0
+    admins = 0
+
     for member in members:
         members_by_role[member.role] = members_by_role.get(member.role, 0) + 1
 
+        # Count admins and owners
+        if member.role in ["owner", "admin"]:
+            admins += 1
+
+        # Check if user is enabled in Keycloak
+        try:
+            user_data = await get_user_by_id(member.user_id)
+            if user_data and user_data.get("enabled", False):
+                active_members += 1
+        except Exception as e:
+            logger.warning(f"Could not check user status for {member.user_id}: {e}")
+            # Assume active if we can't check
+            active_members += 1
+
     stats = {
+        # Frontend expected fields
+        "totalMembers": len(members),
+        "activeMembers": active_members,
+        "admins": admins,
+        "pendingInvites": 0,  # TODO: Implement invitation system
+
+        # Additional legacy fields
         "total_members": len(members),
         "members_by_role": members_by_role,
         "created_at": org.created_at.isoformat(),
@@ -558,7 +849,7 @@ async def get_organization_stats(org_id: str, request: Request):
         "organization_name": org.name
     }
 
-    logger.info(f"Retrieved stats for org {org_id}")
+    logger.info(f"Retrieved stats for org {org_id}: {stats['totalMembers']} total, {stats['activeMembers']} active, {stats['admins']} admins")
 
     return stats
 

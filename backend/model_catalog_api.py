@@ -710,8 +710,10 @@ async def list_models(
         # Get unique providers
         providers = list(set(m['provider'] for m in all_models))
 
+        # Return OpenAI-compatible format
         return {
-            'models': paginated_models,
+            'object': 'list',
+            'data': paginated_models,
             'total': total,
             'limit': limit,
             'offset': offset,

@@ -1143,12 +1143,17 @@ export default function EmailSettings() {
                       <td className={`py-4 px-4 ${
                         currentTheme === 'unicorn' ? 'text-white' : currentTheme === 'light' ? 'text-gray-900' : 'text-white'
                       }`}>
-                        <div className="font-semibold">{provider.name}</div>
+                        <div className="font-semibold">{provider.name || 'Unnamed Provider'}</div>
+                        <div className={`text-xs mt-1 ${
+                          currentTheme === 'unicorn' ? 'text-purple-300' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-400'
+                        }`}>
+                          {PROVIDER_TYPES.find(p => p.id === provider.provider_type)?.name || provider.provider_type || 'Unknown Type'}
+                        </div>
                       </td>
                       <td className={`py-4 px-4 ${
                         currentTheme === 'unicorn' ? 'text-purple-200' : currentTheme === 'light' ? 'text-gray-700' : 'text-gray-300'
                       }`}>
-                        {provider.from_email}
+                        {provider.from_email || <span className="italic text-gray-400">Not configured</span>}
                       </td>
                       <td className="py-4 px-4">
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${

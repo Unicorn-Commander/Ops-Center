@@ -50,8 +50,35 @@ router = APIRouter(prefix="/api/v1/cloudflare", tags=["cloudflare", "dns", "infr
 
 # Initialize Cloudflare manager with API token from environment
 import os
-CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
-cloudflare_manager = CloudflareManager(api_token=CLOUDFLARE_API_TOKEN) if CLOUDFLARE_API_TOKEN else None
+
+# Lazy initialization function for Cloudflare manager
+def get_cloudflare_manager():
+    """
+    Get or create Cloudflare manager with lazy initialization.
+
+    This function checks for API token in environment variables and database,
+    then creates a CloudflareManager instance with proper error handling.
+
+    Returns:
+        CloudflareManager: Initialized Cloudflare manager instance
+
+    Raises:
+        CloudflareAuthError: If API token is not configured
+    """
+    # Try environment variable first
+    token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+
+    if not token:
+        error_message = (
+            "Cloudflare API token not configured. "
+            "Please add CLOUDFLARE_API_TOKEN to .env.auth file or configure via Platform Settings. "
+            "See /docs/CLOUDFLARE_SETUP.md for detailed instructions."
+        )
+        logger.error(f"Cloudflare API initialization failed: {error_message}")
+        raise CloudflareAuthError(error_message)
+
+    logger.info(f"Initializing Cloudflare manager with token (length: {len(token)})")
+    return CloudflareManager(api_token=token)
 
 
 # ==================== Pydantic Request Models ====================
@@ -294,13 +321,8 @@ async def list_zones(
     username = get_username_from_request(request)
 
     try:
-        # Get Cloudflare token from database (with env var fallback)
-        db_pool = await get_db_pool()
-        async with db_pool.acquire() as conn:
-            token = await get_cloudflare_token(user_id, conn, fallback_to_env=True)
-
-        # Create Cloudflare manager with user's token
-        manager = CloudflareManager(api_token=token)
+        # Get Cloudflare manager with lazy initialization
+        manager = get_cloudflare_manager()
 
         # Get zones from Cloudflare
         zones_data = await manager.list_zones(
@@ -320,7 +342,10 @@ async def list_zones(
 
     except CloudflareAuthError as e:
         logger.error(f"Cloudflare authentication error: {e}")
-        raise HTTPException(status_code=401, detail=f"Cloudflare authentication failed: {str(e)}. Please check your API token in Platform Settings.")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Cloudflare authentication failed: {str(e)}. Please check your API token in Platform Settings."
+        )
     except CloudflareError as e:
         logger.error(f"Error listing zones: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1012,8 +1037,11 @@ async def cloudflare_health_check():
     **Returns**: Health status and API connectivity
     """
     try:
+        # Try to get Cloudflare manager
+        manager = get_cloudflare_manager()
+
         # Check Cloudflare API connectivity
-        is_connected = await cloudflare_manager.check_connectivity()
+        is_connected = await manager.check_connectivity()
 
         return {
             "status": "healthy" if is_connected else "degraded",
@@ -1021,10 +1049,21 @@ async def cloudflare_health_check():
             "timestamp": datetime.now().isoformat()
         }
 
+    except CloudflareAuthError as e:
+        # Token not configured - this is expected if user hasn't set it up yet
+        logger.warning(f"Cloudflare health check: {str(e)}")
+        return {
+            "status": "not_configured",
+            "cloudflare_api_connected": False,
+            "error": "API token not configured",
+            "message": "See /docs/CLOUDFLARE_SETUP.md for setup instructions",
+            "timestamp": datetime.now().isoformat()
+        }
     except Exception as e:
         logger.error(f"Health check error: {e}")
         return {
             "status": "unhealthy",
+            "cloudflare_api_connected": False,
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }

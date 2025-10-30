@@ -75,11 +75,21 @@ export default function OrganizationTeam() {
   });
 
   useEffect(() => {
+    // Wait for OrganizationContext to finish loading
+    if (orgLoading) {
+      console.log('[OrganizationTeam] Waiting for organizations to load...');
+      return;
+    }
+
     if (currentOrg) {
+      console.log('[OrganizationTeam] Loading members for org:', currentOrg.id);
       fetchMembers();
       fetchStats();
+    } else {
+      console.log('[OrganizationTeam] No current organization set');
+      setLoading(false);
     }
-  }, [currentOrg, page, rowsPerPage, searchQuery]);
+  }, [currentOrg, orgLoading, page, rowsPerPage, searchQuery]);
 
   const fetchMembers = async () => {
     if (!currentOrg) return;
@@ -93,7 +103,9 @@ export default function OrganizationTeam() {
         search: searchQuery
       });
 
-      const response = await fetch(`/api/v1/org/${currentOrg.id}/members?${params}`);
+      const response = await fetch(`/api/v1/org/${currentOrg.id}/members?${params}`, {
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error('Failed to fetch team members');
 
       const data = await response.json();
@@ -110,7 +122,9 @@ export default function OrganizationTeam() {
     if (!currentOrg) return;
 
     try {
-      const response = await fetch(`/api/v1/org/${currentOrg.id}/stats`);
+      const response = await fetch(`/api/v1/org/${currentOrg.id}/stats`, {
+        credentials: 'include'
+      });
       if (!response.ok) {
         // If stats endpoint doesn't exist, derive from members
         console.warn('Stats endpoint not available, deriving from members');
@@ -144,6 +158,7 @@ export default function OrganizationTeam() {
     try {
       const response = await fetch(`/api/v1/org/${currentOrg.id}/members`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inviteData)
       });
@@ -169,6 +184,7 @@ export default function OrganizationTeam() {
     try {
       const response = await fetch(`/api/v1/org/${currentOrg.id}/members/${memberId}/role`, {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ org_role: newRole })
       });
@@ -188,7 +204,8 @@ export default function OrganizationTeam() {
 
     try {
       const response = await fetch(`/api/v1/org/${currentOrg.id}/members/${selectedMember.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
 
       if (!response.ok) throw new Error('Failed to remove member');

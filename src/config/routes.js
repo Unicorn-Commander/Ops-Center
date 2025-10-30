@@ -198,211 +198,292 @@ export const routes = {
     icon: 'CogIcon',
     roles: ['admin'],
     children: {
-      models: {
-        path: '/admin/system/models',
-        component: 'AIModelManagement',
+      // ========================================================================
+      // USERS & ORGANIZATIONS
+      // ========================================================================
+      usersOrgs: {
+        section: 'Users & Organizations',
+        icon: 'UsersIcon',
         roles: ['admin'],
-        name: 'AI Models',
-        description: 'Model registry, downloads, GPU allocation',
-        icon: 'CubeIcon'
-      },
-      services: {
-        path: '/admin/system/services',
-        component: 'Services',
-        roles: ['admin'],
-        name: 'Services',
-        description: 'Docker service management, health monitoring',
-        icon: 'ServerIcon'
-      },
-      resources: {
-        path: '/admin/system/resources',
-        component: 'System',
-        roles: ['admin'],
-        name: 'Resources',
-        description: 'CPU, Memory, GPU, Disk, performance graphs',
-        icon: 'ChartBarIcon'
-      },
-      hardware: {
-        path: '/admin/system/hardware',
-        component: 'HardwareManagement',
-        roles: ['admin'],
-        name: 'Hardware Management',
-        description: 'Real-time GPU, CPU, memory monitoring with historical charts',
-        icon: 'CpuChipIcon'
-      },
-      billing: {
-        path: '/admin/system/billing',
-        component: 'BillingDashboard',
-        roles: ['admin'],
-        name: 'Billing Analytics',
-        description: 'Platform-wide billing analytics, revenue metrics, payment tracking',
-        icon: 'CreditCardIcon'
-      },
-      users: {
-        path: '/admin/system/users',
-        component: 'UserManagement',
-        roles: ['admin'],
-        name: 'User Management',
-        description: 'Platform user administration, roles, permissions',
-        icon: 'UsersIcon'
-      },
-      network: {
-        path: '/admin/system/network',
-        component: 'Network',
-        roles: ['admin'],
-        name: 'Network',
-        description: 'Network configuration, firewall rules',
-        icon: 'WifiIcon'
-      },
-      cloudflare: {
-        path: '/admin/infrastructure/cloudflare',
-        component: 'CloudflareDNS',
-        roles: ['admin'],
-        name: 'Cloudflare DNS',
-        description: 'DNS management, zone configuration, record management',
-        icon: 'GlobeAltIcon'
-      },
-      traefik: {
-        section: 'Traefik',
-        icon: 'ServerIcon',
         children: {
-          dashboard: {
-            path: '/admin/traefik/dashboard',
-            component: 'TraefikDashboard',
+          users: {
+            path: '/admin/system/users',
+            component: 'UserManagement',
             roles: ['admin'],
-            name: 'Dashboard',
-            description: 'Reverse proxy configuration and monitoring',
-            icon: 'ChartBarIcon'
+            name: 'User Management',
+            description: 'Platform user administration, roles, permissions',
+            icon: 'UsersIcon'
           },
-          routes: {
-            path: '/admin/traefik/routes',
-            component: 'TraefikRoutes',
+          organizations: {
+            path: '/admin/organization/list',
+            component: 'OrganizationsList',
             roles: ['admin'],
-            name: 'Routes',
-            description: 'Manage routing rules and domains',
-            icon: 'GlobeAltIcon'
+            name: 'Organizations',
+            description: 'Platform organization administration, team management',
+            icon: 'BuildingOfficeIcon'
           },
-          services: {
-            path: '/admin/traefik/services',
-            component: 'TraefikServices',
+          billing: {
+            path: '/admin/system/billing',
+            component: 'BillingDashboard',
             roles: ['admin'],
-            name: 'Services',
-            description: 'Backend service management',
+            name: 'Billing Analytics',
+            description: 'Platform-wide billing analytics, revenue metrics, payment tracking',
+            icon: 'CreditCardIcon'
+          },
+          localUsers: {
+            path: '/admin/system/local-users',
+            component: 'LocalUserManagement',
+            roles: ['admin'],
+            name: 'Local Users',
+            description: 'Linux system user management, SSH keys, sudo permissions',
+            icon: 'UserCircleIcon'
+          }
+        }
+      },
+
+      // ========================================================================
+      // LLM & AI
+      // ========================================================================
+      llmAI: {
+        section: 'LLM & AI',
+        icon: 'SparklesIcon',
+        roles: ['admin'],
+        children: {
+          models: {
+            path: '/admin/system/models',
+            component: 'AIModelManagement',
+            roles: ['admin'],
+            name: 'AI Models',
+            description: 'Model registry, downloads, GPU allocation',
+            icon: 'CubeIcon'
+          },
+          litellm: {
+            path: '/admin/litellm-providers',
+            component: 'LiteLLMManagement',
+            roles: ['admin'],
+            name: 'LLM Providers',
+            description: 'Multi-provider LLM routing, cost optimization, BYOK',
             icon: 'ServerIcon'
           },
-          ssl: {
-            path: '/admin/traefik/ssl',
-            component: 'TraefikSSL',
+          openrouter: {
+            path: '/admin/openrouter-settings',
+            component: 'OpenRouterSettings',
             roles: ['admin'],
-            name: 'SSL Certificates',
-            description: 'Manage SSL/TLS certificates',
-            icon: 'LockClosedIcon'
+            name: 'OpenRouter',
+            description: 'OpenRouter API configuration and 348 model browser',
+            icon: 'GlobeAltIcon'
           },
-          metrics: {
-            path: '/admin/traefik/metrics',
-            component: 'TraefikMetrics',
-            roles: ['admin'],
-            name: 'Metrics',
-            description: 'Traffic metrics and analytics',
+          llmUsage: {
+            path: '/admin/llm/usage',
+            component: 'LLMUsage',
+            roles: ['admin', 'power_user', 'user', 'viewer'],
+            name: 'Usage Analytics',
+            description: 'LLM API usage analytics and cost tracking',
             icon: 'ChartBarIcon'
           }
         }
       },
-      storage: {
-        path: '/admin/system/storage',
-        component: 'StorageBackup',
+
+      // ========================================================================
+      // INFRASTRUCTURE
+      // ========================================================================
+      infrastructure: {
+        section: 'Infrastructure',
+        icon: 'ServerIcon',
         roles: ['admin'],
-        name: 'Storage & Backup',
-        description: 'Volume management, backup schedules',
-        icon: 'ArchiveBoxIcon'
+        children: {
+          services: {
+            path: '/admin/system/services',
+            component: 'Services',
+            roles: ['admin'],
+            name: 'Services',
+            description: 'Docker service management, health monitoring',
+            icon: 'ServerIcon'
+          },
+          resources: {
+            path: '/admin/system/resources',
+            component: 'System',
+            roles: ['admin'],
+            name: 'Resources',
+            description: 'CPU, Memory, GPU, Disk, performance graphs',
+            icon: 'ChartBarIcon'
+          },
+          hardware: {
+            path: '/admin/system/hardware',
+            component: 'HardwareManagement',
+            roles: ['admin'],
+            name: 'Hardware Monitoring',
+            description: 'Real-time GPU, CPU, memory monitoring with historical charts',
+            icon: 'CpuChipIcon'
+          },
+          network: {
+            path: '/admin/system/network',
+            component: 'Network',
+            roles: ['admin'],
+            name: 'Network',
+            description: 'Network configuration, firewall rules',
+            icon: 'WifiIcon'
+          },
+          storage: {
+            path: '/admin/system/storage',
+            component: 'StorageBackup',
+            roles: ['admin'],
+            name: 'Storage & Backup',
+            description: 'Volume management, backup schedules',
+            icon: 'ArchiveBoxIcon'
+          },
+          traefik: {
+            path: '/admin/system/traefik',
+            component: 'TraefikConfig',
+            roles: ['admin'],
+            name: 'Traefik',
+            description: 'Reverse proxy, SSL/TLS, routing configuration',
+            icon: 'ArrowsRightLeftIcon'
+          }
+        }
       },
+      // ========================================================================
+      // INTEGRATIONS
+      // ========================================================================
+      integrations: {
+        section: 'Integrations',
+        icon: 'LinkIcon',
+        roles: ['admin'],
+        children: {
+          credentials: {
+            path: '/admin/integrations/credentials',
+            component: 'PlatformSettings',
+            roles: ['admin'],
+            name: 'API Credentials',
+            description: 'Manage API keys for Stripe, Lago, Cloudflare, NameCheap, Forgejo',
+            icon: 'KeyIcon'
+          },
+          email: {
+            path: '/admin/integrations/email',
+            component: 'EmailSettings',
+            roles: ['admin'],
+            name: 'Email Providers',
+            description: 'Configure email providers for notifications',
+            icon: 'EnvelopeIcon'
+          },
+          dns: {
+            path: '/admin/integrations/cloudflare',
+            component: 'CloudflareDNS',
+            roles: ['admin'],
+            name: 'DNS Management',
+            description: 'Cloudflare DNS zones and record management',
+            icon: 'GlobeAltIcon'
+          }
+        }
+      },
+
+      // ========================================================================
+      // MONITORING & ANALYTICS
+      // ========================================================================
+      monitoring: {
+        section: 'Monitoring & Analytics',
+        icon: 'ChartBarIcon',
+        roles: ['admin'],
+        children: {
+          overview: {
+            path: '/admin/monitoring/overview',
+            component: 'MonitoringOverview',
+            roles: ['admin'],
+            name: 'Overview',
+            description: 'System health, metrics, and alerts dashboard',
+            icon: 'PresentationChartBarIcon',
+            status: 'planned'
+          },
+          grafana: {
+            path: '/admin/monitoring/grafana',
+            component: 'GrafanaConfig',
+            roles: ['admin'],
+            name: 'Grafana',
+            description: 'Grafana dashboard configuration and data sources',
+            icon: 'ChartBarIcon',
+            status: 'planned'
+          },
+          prometheus: {
+            path: '/admin/monitoring/prometheus',
+            component: 'PrometheusConfig',
+            roles: ['admin'],
+            name: 'Prometheus',
+            description: 'Metrics collection and scrape configuration',
+            icon: 'CircleStackIcon',
+            status: 'planned'
+          },
+          umami: {
+            path: '/admin/monitoring/umami',
+            component: 'UmamiConfig',
+            roles: ['admin'],
+            name: 'Umami Analytics',
+            description: 'Web analytics tracking and configuration',
+            icon: 'ChartPieIcon',
+            status: 'planned'
+          },
+          logs: {
+            path: '/admin/monitoring/logs',
+            component: 'Logs',
+            roles: ['admin'],
+            name: 'System Logs',
+            description: 'Service logs and error tracking',
+            icon: 'DocumentTextIcon'
+          }
+        }
+      },
+
+      // ========================================================================
+      // SECURITY & COMPLIANCE
+      // ========================================================================
       security: {
-        path: '/admin/system/security',
-        component: 'Security',
+        section: 'Security & Compliance',
+        icon: 'ShieldCheckIcon',
         roles: ['admin'],
-        name: 'Security',
-        description: 'Security policies, audit logs, compliance',
-        icon: 'ShieldCheckIcon'
+        children: {
+          authentication: {
+            path: '/admin/system/authentication',
+            component: 'Authentication',
+            roles: ['admin'],
+            name: 'Authentication',
+            description: 'Keycloak/SSO configuration, identity providers',
+            icon: 'KeyIcon'
+          },
+          securityPolicies: {
+            path: '/admin/system/security',
+            component: 'Security',
+            roles: ['admin'],
+            name: 'Security Policies',
+            description: 'Security policies, audit logs, compliance',
+            icon: 'ShieldCheckIcon'
+          }
+        }
       },
-      authentication: {
-        path: '/admin/system/authentication',
-        component: 'Authentication',
+
+      // ========================================================================
+      // CONFIGURATION
+      // ========================================================================
+      configuration: {
+        section: 'Configuration',
+        icon: 'CogIcon',
         roles: ['admin'],
-        name: 'Authentication',
-        description: 'Keycloak/SSO configuration, identity providers',
-        icon: 'KeyIcon'
-      },
-      localUsers: {
-        path: '/admin/system/local-user-management',
-        component: 'LocalUserManagement',
-        roles: ['admin'],
-        name: 'Local Users',
-        description: 'Linux system user management, SSH keys, sudo permissions',
-        icon: 'UsersIcon'
-      },
-      litellm: {
-        path: '/admin/litellm-providers',
-        component: 'LiteLLMManagement',
-        roles: ['admin'],
-        name: 'LLM Providers',
-        description: 'Multi-provider LLM routing, cost optimization, BYOK',
-        icon: 'SparklesIcon'
-      },
-      openrouter: {
-        path: '/admin/openrouter-settings',
-        component: 'OpenRouterSettings',
-        roles: ['admin'],
-        name: 'OpenRouter Settings',
-        description: 'OpenRouter API configuration and 348 model browser',
-        icon: 'SparklesIcon'
-      },
-      llmUsage: {
-        path: '/admin/llm/usage',
-        component: 'LLMUsage',
-        roles: ['admin', 'power_user', 'user', 'viewer'],
-        name: 'LLM Usage',
-        description: 'LLM API usage analytics and cost tracking',
-        icon: 'ChartBarIcon'
-      },
-      extensions: {
-        path: '/admin/system/extensions',
-        component: 'Extensions',
-        roles: ['admin'],
-        name: 'Extensions',
-        description: 'Plugin management',
-        icon: 'PuzzlePieceIcon'
-      },
-      logs: {
-        path: '/admin/system/logs',
-        component: 'Logs',
-        roles: ['admin'],
-        name: 'System Logs',
-        description: 'Service logs, error tracking',
-        icon: 'DocumentTextIcon'
-      },
-      landing: {
-        path: '/admin/system/landing',
-        component: 'LandingCustomization',
-        roles: ['admin'],
-        name: 'Landing Page',
-        description: 'Customize public landing page',
-        icon: 'PaintBrushIcon'
-      },
-      emailSettings: {
-        path: '/admin/platform/email-settings',
-        component: 'EmailSettings',
-        roles: ['admin'],
-        name: 'Email Settings',
-        description: 'Configure email providers for notifications',
-        icon: 'EnvelopeIcon'
-      },
-      platformSettings: {
-        path: '/admin/platform/settings',
-        component: 'PlatformSettings',
-        roles: ['admin'],
-        name: 'Platform Settings',
-        description: 'Manage API keys, secrets, and integration credentials',
-        icon: 'CogIcon'
+        children: {
+          landing: {
+            path: '/admin/system/landing',
+            component: 'LandingCustomization',
+            roles: ['admin'],
+            name: 'Landing Page',
+            description: 'Customize public landing page',
+            icon: 'PaintBrushIcon'
+          },
+          extensions: {
+            path: '/admin/system/extensions',
+            component: 'Extensions',
+            roles: ['admin'],
+            name: 'Extensions',
+            description: 'Plugin management',
+            icon: 'PuzzlePieceIcon'
+          }
+        }
       }
     }
   },
@@ -429,6 +510,16 @@ export const routes = {
 
     // Billing routes moved to /admin/subscription/* namespace
     { from: '/admin/billing', to: '/admin/subscription/plan', type: 'permanent' },
+
+    // Platform Settings renamed to Integrations
+    { from: '/admin/platform/settings', to: '/admin/integrations/credentials', type: 'permanent' },
+    { from: '/admin/platform/email-settings', to: '/admin/integrations/email', type: 'permanent' },
+
+    // Logs moved to Monitoring section
+    { from: '/admin/system/logs', to: '/admin/monitoring/logs', type: 'permanent' },
+
+    // Cloudflare DNS moved to Integrations
+    { from: '/admin/infrastructure/cloudflare', to: '/admin/integrations/cloudflare', type: 'permanent' },
   ],
 
   // ============================================================================

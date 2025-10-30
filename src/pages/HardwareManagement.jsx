@@ -73,6 +73,7 @@ const HardwareManagement = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [optimizeDialogOpen, setOptimizeDialogOpen] = useState(false);
+  const [error, setError] = useState(null);
 
   // Show snackbar notification
   const showNotification = (message, severity = 'success') => {
@@ -90,9 +91,15 @@ const HardwareManagement = () => {
       if (response.ok) {
         const data = await response.json();
         setHardwareStatus(data);
+        setError(null); // Clear any previous errors
+      } else {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
       }
     } catch (error) {
       console.error('Failed to fetch hardware status:', error);
+      setError(`Failed to load hardware data: ${error.message}`);
+      showNotification(`Failed to load hardware data: ${error.message}`, 'error');
     } finally {
       if (showLoading) setRefreshing(false);
     }
@@ -405,6 +412,22 @@ const HardwareManagement = () => {
           </Tooltip>
         </Box>
       </Box>
+
+      {/* Error Display */}
+      {error && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => fetchHardwareStatus(true)}>
+              Retry
+            </Button>
+          }
+        >
+          <AlertTitle>Failed to Load Hardware Data</AlertTitle>
+          {error}
+        </Alert>
+      )}
 
       {/* Alerts */}
       {alerts.length > 0 && (

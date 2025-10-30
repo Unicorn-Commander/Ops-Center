@@ -49,7 +49,7 @@ import { useOrganization } from '../../contexts/OrganizationContext';
 
 const OrganizationsList = () => {
   const navigate = useNavigate();
-  const { switchOrganization } = useOrganization();
+  const { setCurrentOrg } = useOrganization();
 
   // State for organization list
   const [organizations, setOrganizations] = useState([]);
@@ -168,9 +168,9 @@ const OrganizationsList = () => {
 
   // View organization details
   const handleViewOrganization = (org) => {
-    // Switch to this organization
-    if (switchOrganization) {
-      switchOrganization(org);
+    // Set current organization in context (without reloading)
+    if (setCurrentOrg) {
+      setCurrentOrg(org.id);
     }
     // Navigate to organization team page
     navigate(`/admin/organization/team?org=${org.id}`);
@@ -181,9 +181,9 @@ const OrganizationsList = () => {
     showToast('Organization created successfully');
     setCreateModalOpen(false);
 
-    // Switch to the new organization
-    if (switchOrganization) {
-      switchOrganization(newOrg);
+    // Set current organization in context (without reloading)
+    if (setCurrentOrg) {
+      setCurrentOrg(newOrg.id);
     }
 
     // Refresh the list

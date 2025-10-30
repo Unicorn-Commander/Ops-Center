@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { ServiceLogos, getServiceInfo } from '../components/ServiceLogos';
 import { EnhancedServiceLogos, EnhancedServiceCard, getEnhancedServiceInfo } from '../components/EnhancedServiceLogos';
 import UpdateModal from '../components/UpdateModal';
+import { getGlassmorphismStyles, getResourceColor, getServiceColorScheme } from '../styles/glassmorphism';
 import { 
   CpuChipIcon, 
   ServerStackIcon,
@@ -171,6 +172,9 @@ export default function Dashboard() {
   const [serviceViewMode, setServiceViewMode] = useState('cards'); // cards, circles, list
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  // Get glassmorphism styles based on current theme
+  const glassStyles = getGlassmorphismStyles(currentTheme);
   
   useEffect(() => {
     // Fetch initial data
@@ -457,297 +461,359 @@ export default function Dashboard() {
       animate="visible"
       className="space-y-6"
     >
-      {/* Page Header */}
-      <motion.div variants={itemVariants} className="relative">
+      {/* Page Header - Glassmorphism Style */}
+      <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-2xl ${glassStyles.cardHover.base}`}>
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className={`text-3xl font-bold ${theme.text.primary} flex items-center gap-3`}>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg">
-                <ComputerDesktopIcon className="h-6 w-6 text-white" />
-              </div>
-              {currentUser ? `Welcome back, ${currentUser.firstName || currentUser.username || 'User'}` : 'Operations Center'}
-            </h1>
-            <p className={`${theme.text.secondary} mt-1 ml-13`}>
-              {currentUser ? 'UC-1 Pro System Management Dashboard' : 'Loading...'}
-            </p>
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl transform hover:scale-110 transition-transform duration-300">
+              <ComputerDesktopIcon className="h-8 w-8 text-white" />
+            </div>
+            <div>
+              <h1 className={`text-3xl font-bold ${currentTheme === 'unicorn' ? 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400' : theme.text.primary}`}>
+                {currentUser ? `Welcome back, ${currentUser.firstName || currentUser.username || 'User'}` : 'Operations Center'}
+              </h1>
+              <p className={`${currentTheme === 'unicorn' ? 'text-purple-200/80' : theme.text.secondary} mt-1 text-base`}>
+                {currentUser ? 'UC-1 Pro System Management Dashboard' : 'Loading...'}
+              </p>
+            </div>
           </div>
-          <div className="text-right">
-            <div className={`text-sm ${theme.text.secondary}`}>System Status</div>
-            <div className="flex items-center gap-2 mt-1">
-              <div className={`w-2 h-2 ${systemStatus.color} rounded-full ${systemStatus.status === 'healthy' || systemStatus.status === 'unknown' ? 'animate-pulse' : ''}`}></div>
-              <span className={`text-sm font-semibold ${theme.text.primary}`}>{systemStatus.text}</span>
+          <div className={`text-right ${glassStyles.card} rounded-xl p-4 min-w-[200px]`}>
+            <div className={`text-sm font-medium ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary} mb-2`}>System Status</div>
+            <div className="flex items-center justify-end gap-3">
+              <div className={`w-3 h-3 ${systemStatus.color} rounded-full ${systemStatus.status === 'healthy' || systemStatus.status === 'unknown' ? 'animate-pulse shadow-lg' : ''}`}></div>
+              <span className={`text-base font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{systemStatus.text}</span>
             </div>
           </div>
         </div>
       </motion.div>
       
-      {/* Quick Actions - Top Priority */}
-      <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border border-blue-500/20`}>
-        <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4 flex items-center gap-2`}>
-          <BoltIcon className="h-5 w-5 text-blue-500" />
+      {/* Quick Actions - Glassmorphism Cards */}
+      <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
+        <h3 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-6 flex items-center gap-3`}>
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
+            <BoltIcon className="h-6 w-6 text-white" />
+          </div>
           Quick Actions
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: 1.05, y: -4 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => handleQuickAction('view-logs')}
-            className={`flex flex-col items-center gap-3 p-4 rounded-lg ${theme.button} hover:bg-blue-500/10 transition-all group border border-transparent hover:border-blue-500/30`}
+            className={`flex flex-col items-center gap-4 p-6 rounded-2xl ${glassStyles.card} ${glassStyles.cardHover.base} group relative overflow-hidden`}
           >
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center group-hover:shadow-lg transition-shadow">
-              <DocumentMagnifyingGlassIcon className="h-5 w-5 text-white" />
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-2xl group-hover:shadow-blue-500/50 transition-all">
+              <DocumentMagnifyingGlassIcon className="h-7 w-7 text-white" />
             </div>
-            <span className="text-sm font-medium">View Logs</span>
+            <span className={`relative text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>View Logs</span>
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: 1.05, y: -4 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => handleQuickAction('check-updates')}
-            className={`flex flex-col items-center gap-3 p-4 rounded-lg ${theme.button} hover:bg-green-500/10 transition-all group border border-transparent hover:border-green-500/30`}
+            className={`flex flex-col items-center gap-4 p-6 rounded-2xl ${glassStyles.card} ${glassStyles.cardHover.base} group relative overflow-hidden`}
           >
-            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center group-hover:shadow-lg transition-shadow">
-              <ArrowDownTrayIcon className="h-5 w-5 text-white" />
+            <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center shadow-2xl group-hover:shadow-green-500/50 transition-all">
+              <ArrowDownTrayIcon className="h-7 w-7 text-white" />
             </div>
-            <span className="text-sm font-medium">Check Updates</span>
+            <span className={`relative text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>Check Updates</span>
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: 1.05, y: -4 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => handleQuickAction('download-model')}
-            className={`flex flex-col items-center gap-3 p-4 rounded-lg ${theme.button} hover:bg-purple-500/10 transition-all group border border-transparent hover:border-purple-500/30`}
+            className={`flex flex-col items-center gap-4 p-6 rounded-2xl ${glassStyles.card} ${glassStyles.cardHover.base} group relative overflow-hidden`}
           >
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-lg flex items-center justify-center group-hover:shadow-lg transition-shadow">
-              <CloudArrowDownIcon className="h-5 w-5 text-white" />
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-600/10 to-indigo-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative w-14 h-14 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl group-hover:shadow-purple-500/50 transition-all">
+              <CloudArrowDownIcon className="h-7 w-7 text-white" />
             </div>
-            <span className="text-sm font-medium">Download Model</span>
+            <span className={`relative text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>Download Model</span>
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: 1.05, y: -4 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => handleQuickAction('system-info')}
-            className={`flex flex-col items-center gap-3 p-4 rounded-lg ${theme.button} hover:bg-orange-500/10 transition-all group border border-transparent hover:border-orange-500/30`}
+            className={`flex flex-col items-center gap-4 p-6 rounded-2xl ${glassStyles.card} ${glassStyles.cardHover.base} group relative overflow-hidden`}
           >
-            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center group-hover:shadow-lg transition-shadow">
-              <InformationCircleIcon className="h-5 w-5 text-white" />
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative w-14 h-14 bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl flex items-center justify-center shadow-2xl group-hover:shadow-orange-500/50 transition-all">
+              <InformationCircleIcon className="h-7 w-7 text-white" />
             </div>
-            <span className="text-sm font-medium">System Info</span>
+            <span className={`relative text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>System Info</span>
           </motion.button>
         </div>
       </motion.div>
       
-      {/* System Information Card */}
-      <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border border-purple-500/20`}>
-        <h2 className={`text-xl font-semibold ${theme.text.primary} mb-4 flex items-center gap-2`}>
-          <ComputerDesktopIcon className="h-6 w-6 text-purple-500" />
+      {/* System Information Card - Glassmorphism */}
+      <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
+        <h2 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-6 flex items-center gap-3`}>
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+            <ComputerDesktopIcon className="h-6 w-6 text-white" />
+          </div>
           System Specifications
         </h2>
         
         {hardwareInfo && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* CPU Info */}
-            <div className={`p-4 rounded-lg ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-800/50'}`}>
-              <div className={`text-sm font-semibold ${theme.text.accent} mb-2`}>CPU</div>
-              <div className={`text-sm ${theme.text.primary}`}>{hardwareInfo.cpu.model}</div>
-              <div className={`text-xs ${theme.text.secondary} mt-1`}>
-                {hardwareInfo.cpu.cores} cores, {hardwareInfo.cpu.threads} threads
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`${glassStyles.card} p-6 rounded-xl ${glassStyles.cardHover.base} border-l-4 border-blue-500`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <CpuChipIcon className="h-6 w-6 text-blue-500" />
+                <div className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`}>CPU</div>
               </div>
-              <div className={`text-xs ${theme.text.secondary}`}>
-                {hardwareInfo.cpu.baseFreq} - {hardwareInfo.cpu.maxFreq}
+              <div className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-2`}>{hardwareInfo.cpu.model}</div>
+              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary} space-y-1`}>
+                <div>{hardwareInfo.cpu.cores} cores, {hardwareInfo.cpu.threads} threads</div>
+                <div>{hardwareInfo.cpu.baseFreq} - {hardwareInfo.cpu.maxFreq}</div>
               </div>
-            </div>
-            
+            </motion.div>
+
             {/* GPU Info */}
-            <div className={`p-4 rounded-lg ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-800/50'}`}>
-              <div className={`text-sm font-semibold ${theme.text.accent} mb-2`}>GPU</div>
-              <div className={`text-sm ${theme.text.primary}`}>{hardwareInfo.gpu.model}</div>
-              <div className={`text-xs ${theme.text.secondary} mt-1`}>
-                VRAM: {hardwareInfo.gpu.vram}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`${glassStyles.card} p-6 rounded-xl ${glassStyles.cardHover.base} border-l-4 border-purple-500`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <FireIcon className="h-6 w-6 text-purple-500" />
+                <div className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`}>GPU</div>
               </div>
-              <div className={`text-xs ${theme.text.secondary}`}>
-                Driver: {hardwareInfo.gpu.driver}, CUDA: {hardwareInfo.gpu.cuda}
+              <div className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-2`}>{hardwareInfo.gpu.model}</div>
+              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary} space-y-1`}>
+                <div>VRAM: {hardwareInfo.gpu.vram}</div>
+                <div>Driver: {hardwareInfo.gpu.driver}, CUDA: {hardwareInfo.gpu.cuda}</div>
               </div>
-            </div>
-            
+            </motion.div>
+
             {/* iGPU Info */}
-            <div className={`p-4 rounded-lg ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-800/50'}`}>
-              <div className={`text-sm font-semibold ${theme.text.accent} mb-2`}>iGPU</div>
-              <div className={`text-sm ${theme.text.primary}`}>{hardwareInfo.igpu.model}</div>
-              <div className={`text-xs ${theme.text.secondary} mt-1`}>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`${glassStyles.card} p-6 rounded-xl ${glassStyles.cardHover.base} border-l-4 border-cyan-500`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <CpuChipIcon className="h-6 w-6 text-cyan-500" />
+                <div className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`}>iGPU</div>
+              </div>
+              <div className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-2`}>{hardwareInfo.igpu.model}</div>
+              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
                 Driver: {hardwareInfo.igpu.driver}
               </div>
-            </div>
-            
+            </motion.div>
+
             {/* Memory Info */}
-            <div className={`p-4 rounded-lg ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-800/50'}`}>
-              <div className={`text-sm font-semibold ${theme.text.accent} mb-2`}>Memory</div>
-              <div className={`text-sm ${theme.text.primary}`}>{hardwareInfo.memory.total} {hardwareInfo.memory.type}</div>
-              <div className={`text-xs ${theme.text.secondary} mt-1`}>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`${glassStyles.card} p-6 rounded-xl ${glassStyles.cardHover.base} border-l-4 border-green-500`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <ServerStackIcon className="h-6 w-6 text-green-500" />
+                <div className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`}>Memory</div>
+              </div>
+              <div className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-2`}>{hardwareInfo.memory.total} {hardwareInfo.memory.type}</div>
+              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
                 Configuration: {hardwareInfo.memory.slots}
               </div>
-            </div>
-            
+            </motion.div>
+
             {/* Storage Info */}
-            <div className={`p-4 rounded-lg ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-800/50'}`}>
-              <div className={`text-sm font-semibold ${theme.text.accent} mb-2`}>Storage</div>
-              <div className={`text-sm ${theme.text.primary}`}>{hardwareInfo.storage.primary}</div>
-              <div className={`text-xs ${theme.text.secondary} mt-1`}>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`${glassStyles.card} p-6 rounded-xl ${glassStyles.cardHover.base} border-l-4 border-amber-500`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <ServerStackIcon className="h-6 w-6 text-amber-500" />
+                <div className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`}>Storage</div>
+              </div>
+              <div className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-2`}>{hardwareInfo.storage.primary}</div>
+              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
                 Secondary: {hardwareInfo.storage.secondary}
               </div>
-            </div>
-            
+            </motion.div>
+
             {/* OS Info */}
-            <div className={`p-4 rounded-lg ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-800/50'}`}>
-              <div className={`text-sm font-semibold ${theme.text.accent} mb-2`}>Operating System</div>
-              <div className={`text-sm ${theme.text.primary}`}>{hardwareInfo.os.name} {hardwareInfo.os.version}</div>
-              <div className={`text-xs ${theme.text.secondary} mt-1`}>
-                Kernel: {hardwareInfo.os.kernel}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`${glassStyles.card} p-6 rounded-xl ${glassStyles.cardHover.base} border-l-4 border-pink-500`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <ComputerDesktopIcon className="h-6 w-6 text-pink-500" />
+                <div className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`}>Operating System</div>
               </div>
-              <div className={`text-xs ${theme.text.secondary}`}>
-                DE: {hardwareInfo.os.desktop}
+              <div className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-2`}>{hardwareInfo.os.name} {hardwareInfo.os.version}</div>
+              <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary} space-y-1`}>
+                <div>Kernel: {hardwareInfo.os.kernel}</div>
+                <div>DE: {hardwareInfo.os.desktop}</div>
               </div>
-            </div>
+            </motion.div>
           </div>
         )}
       </motion.div>
       
-      {/* Resource Utilization Graphs */}
-      <motion.div 
-        variants={itemVariants} 
-        className={`${theme.card} rounded-xl p-6 cursor-pointer hover:bg-opacity-80 transition-all border border-green-500/20 hover:border-green-500/40`}
+      {/* Resource Utilization Graphs - Glassmorphism with Enhanced Gradients */}
+      <motion.div
+        variants={itemVariants}
+        className={`${glassStyles.card} rounded-2xl p-8 cursor-pointer ${glassStyles.cardHover.base} shadow-xl relative overflow-hidden group`}
         onClick={() => window.location.href = '/admin/system'}
+        whileHover={{ scale: 1.01 }}
       >
-        <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4 flex items-center justify-between`}>
-          <div className="flex items-center gap-2">
-            <ChartBarIcon className="h-5 w-5 text-green-500" />
+        <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+        <h3 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-6 flex items-center justify-between relative z-10`}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg">
+              <ChartBarIcon className="h-6 w-6 text-white" />
+            </div>
             Resource Utilization
           </div>
-          <span className={`text-sm ${theme.text.secondary} flex items-center gap-1`}>
-            Click for details 
-            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+          <span className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary} flex items-center gap-2 group-hover:text-green-400 transition-colors`}>
+            Click for details
+            <ArrowTopRightOnSquareIcon className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
           </span>
         </h3>
-        <div className="space-y-4">
+        <div className="space-y-5 relative z-10">
           {/* GPU Usage */}
           <div>
-            <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>GPU {systemData?.gpu?.[0]?.name ? `(${systemData.gpu[0].name})` : ''}</span>
-              <span className={`text-sm ${theme.text.primary}`}>{gpuUsage.toFixed(1)}%</span>
+            <div className="flex justify-between mb-2">
+              <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
+                GPU {systemData?.gpu?.[0]?.name ? `(${systemData.gpu[0].name})` : ''}
+              </span>
+              <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{gpuUsage.toFixed(1)}%</span>
             </div>
-            <div className="w-full bg-gray-700/30 rounded-full h-3 shadow-inner">
-              <motion.div 
-                className={`h-3 rounded-full shadow-sm ${
-                  gpuUsage > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' : 
-                  gpuUsage > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
+            <div className={`w-full ${glassStyles.card} rounded-full h-4 shadow-inner relative overflow-hidden`}>
+              <motion.div
+                className={`h-4 rounded-full shadow-lg ${
+                  gpuUsage > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                  gpuUsage > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
                   'bg-gradient-to-r from-green-500 to-emerald-500'
-                }`}
+                } relative`}
                 initial={{ width: 0 }}
                 animate={{ width: `${gpuUsage}%` }}
                 transition={{ duration: 1, ease: "easeOut" }}
-              />
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
+              </motion.div>
             </div>
           </div>
-          
+
           {/* VRAM Usage */}
           <div>
-            <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>VRAM</span>
-              <span className={`text-sm ${theme.text.primary}`}>
+            <div className="flex justify-between mb-2">
+              <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>VRAM</span>
+              <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
                 {formatBytes(vramUsed)} / {formatBytes(vramTotal)} ({vramPercent.toFixed(1)}%)
               </span>
             </div>
-            <div className="w-full bg-gray-700/30 rounded-full h-3 shadow-inner">
-              <motion.div 
-                className={`h-3 rounded-full shadow-sm ${
-                  vramPercent > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' : 
-                  vramPercent > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
+            <div className={`w-full ${glassStyles.card} rounded-full h-4 shadow-inner relative overflow-hidden`}>
+              <motion.div
+                className={`h-4 rounded-full shadow-lg ${
+                  vramPercent > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                  vramPercent > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
                   'bg-gradient-to-r from-blue-500 to-cyan-500'
-                }`}
+                } relative`}
                 initial={{ width: 0 }}
                 animate={{ width: `${vramPercent}%` }}
                 transition={{ duration: 1 }}
-              />
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
+              </motion.div>
             </div>
           </div>
           
           {/* iGPU Usage - only show if data available */}
           {systemData?.igpu?.utilization !== undefined && (
             <div>
-              <div className="flex justify-between mb-1">
-                <span className={`text-sm ${theme.text.secondary}`}>
+              <div className="flex justify-between mb-2">
+                <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
                   iGPU ({systemData.igpu.model || 'Intel UHD 770'})
                 </span>
-                <span className={`text-sm ${theme.text.primary}`}>{systemData.igpu.utilization}%</span>
+                <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{systemData.igpu.utilization}%</span>
               </div>
-              <div className="w-full bg-gray-700/30 rounded-full h-3">
+              <div className={`w-full ${glassStyles.card} rounded-full h-4 shadow-inner relative overflow-hidden`}>
                 <motion.div
-                  className="h-3 rounded-full bg-blue-500"
+                  className="h-4 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 shadow-lg relative"
                   initial={{ width: 0 }}
                   animate={{ width: `${systemData.igpu.utilization}%` }}
                   transition={{ duration: 1 }}
-                />
+                >
+                  <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
+                </motion.div>
               </div>
             </div>
           )}
-          
+
           {/* CPU */}
           <div>
-            <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>CPU {hardwareInfo?.cpu?.model ? `(${hardwareInfo.cpu.model.split(' ').slice(0, 2).join(' ')})` : ''}</span>
-              <span className={`text-sm ${theme.text.primary}`}>{systemData?.cpu?.percent?.toFixed(1) || 0}%</span>
+            <div className="flex justify-between mb-2">
+              <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
+                CPU {hardwareInfo?.cpu?.model ? `(${hardwareInfo.cpu.model.split(' ').slice(0, 2).join(' ')})` : ''}
+              </span>
+              <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{systemData?.cpu?.percent?.toFixed(1) || 0}%</span>
             </div>
-            <div className="w-full bg-gray-700/30 rounded-full h-3">
-              <motion.div 
-                className={`h-3 rounded-full ${
-                  systemData?.cpu?.percent > 90 ? 'bg-red-500' : 
-                  systemData?.cpu?.percent > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                }`}
+            <div className={`w-full ${glassStyles.card} rounded-full h-4 shadow-inner relative overflow-hidden`}>
+              <motion.div
+                className={`h-4 rounded-full shadow-lg ${
+                  systemData?.cpu?.percent > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                  systemData?.cpu?.percent > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                  'bg-gradient-to-r from-green-500 to-emerald-500'
+                } relative`}
                 initial={{ width: 0 }}
                 animate={{ width: `${systemData?.cpu?.percent || 0}%` }}
                 transition={{ duration: 1 }}
-              />
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
+              </motion.div>
             </div>
           </div>
-          
+
           {/* Memory */}
           <div>
-            <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>Memory</span>
-              <span className={`text-sm ${theme.text.primary}`}>
+            <div className="flex justify-between mb-2">
+              <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>Memory</span>
+              <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
                 {formatBytes(systemData?.memory?.used)} / {formatBytes(systemData?.memory?.total)} ({systemData?.memory?.percent?.toFixed(1) || 0}%)
               </span>
             </div>
-            <div className="w-full bg-gray-700/30 rounded-full h-3">
-              <motion.div 
-                className={`h-3 rounded-full ${
-                  systemData?.memory?.percent > 90 ? 'bg-red-500' : 
-                  systemData?.memory?.percent > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                }`}
+            <div className={`w-full ${glassStyles.card} rounded-full h-4 shadow-inner relative overflow-hidden`}>
+              <motion.div
+                className={`h-4 rounded-full shadow-lg ${
+                  systemData?.memory?.percent > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                  systemData?.memory?.percent > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                  'bg-gradient-to-r from-green-500 to-emerald-500'
+                } relative`}
                 initial={{ width: 0 }}
                 animate={{ width: `${systemData?.memory?.percent || 0}%` }}
                 transition={{ duration: 1 }}
-              />
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
+              </motion.div>
             </div>
           </div>
-          
+
           {/* Disk */}
           <div>
-            <div className="flex justify-between mb-1">
-              <span className={`text-sm ${theme.text.secondary}`}>Storage</span>
-              <span className={`text-sm ${theme.text.primary}`}>
+            <div className="flex justify-between mb-2">
+              <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>Storage</span>
+              <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
                 {formatBytes(systemData?.disk?.used)} / {formatBytes(systemData?.disk?.total)} ({systemData?.disk?.percent?.toFixed(1) || 0}%)
               </span>
             </div>
-            <div className="w-full bg-gray-700/30 rounded-full h-3 shadow-inner">
-              <motion.div 
-                className={`h-3 rounded-full shadow-sm ${
-                  systemData?.disk?.percent > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' : 
-                  systemData?.disk?.percent > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 
+            <div className={`w-full ${glassStyles.card} rounded-full h-4 shadow-inner relative overflow-hidden`}>
+              <motion.div
+                className={`h-4 rounded-full shadow-lg ${
+                  systemData?.disk?.percent > 90 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                  systemData?.disk?.percent > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
                   'bg-gradient-to-r from-purple-500 to-indigo-500'
-                }`}
+                } relative`}
                 initial={{ width: 0 }}
                 animate={{ width: `${systemData?.disk?.percent || 0}%` }}
                 transition={{ duration: 1, ease: "easeOut" }}
-              />
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
+              </motion.div>
             </div>
           </div>
         </div>
@@ -775,13 +841,15 @@ export default function Dashboard() {
         </motion.div>
       )}
       
-      {/* Service Status Grid */}
-      <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border border-cyan-500/20`}>
+      {/* Service Status Grid - Glassmorphism */}
+      <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
         <div className="flex items-center justify-between mb-6">
-          <h3 className={`text-lg font-semibold ${theme.text.primary} flex items-center gap-2`}>
-            <ServerStackIcon className="h-5 w-5 text-cyan-500" />
+          <h3 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} flex items-center gap-3`}>
+            <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+              <ServerStackIcon className="h-6 w-6 text-white" />
+            </div>
             Service Status
-            <span className="ml-2 px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-full">
+            <span className={`ml-2 px-3 py-1 text-sm font-bold ${glassStyles.card} text-green-400 rounded-full shadow-lg`}>
               {services?.filter(s => s.status === 'running').length || 0} Running
             </span>
           </h3>
@@ -829,17 +897,19 @@ export default function Dashboard() {
         </div>
       </motion.div>
       
-      {/* Recent Activity */}
-      <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border border-amber-500/20`}>
-        <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4 flex items-center gap-2`}>
-          <ClockIcon className="h-5 w-5 text-amber-500" />
+      {/* Recent Activity - Glassmorphism Timeline */}
+      <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
+        <h3 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-6 flex items-center gap-3`}>
+          <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center shadow-lg">
+            <ClockIcon className="h-6 w-6 text-white" />
+          </div>
           Recent Activity
         </h3>
         {recentActivity.length === 0 ? (
-          <div className="text-center py-8">
-            <InformationCircleIcon className="h-12 w-12 text-gray-500 mx-auto mb-2 opacity-50" />
-            <p className={`text-sm ${theme.text.secondary}`}>No recent activity</p>
-            <p className={`text-xs ${theme.text.secondary} mt-1`}>System events will appear here</p>
+          <div className={`text-center py-12 ${glassStyles.card} rounded-xl`}>
+            <InformationCircleIcon className="h-16 w-16 text-gray-500 mx-auto mb-3 opacity-50" />
+            <p className={`text-base font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>No recent activity</p>
+            <p className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary} mt-2`}>System events will appear here</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -849,16 +919,21 @@ export default function Dashboard() {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="flex items-start gap-4 p-3 rounded-lg bg-gray-700/20 hover:bg-gray-700/30 transition-colors"
+                whileHover={{ scale: 1.01, x: 4 }}
+                className={`flex items-start gap-4 p-5 rounded-xl ${glassStyles.card} hover:shadow-lg transition-all group relative overflow-hidden`}
               >
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <activity.icon className="h-4 w-4 text-white" />
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="relative w-12 h-12 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:shadow-xl transition-shadow">
+                  <activity.icon className="h-6 w-6 text-white" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm ${theme.text.primary} font-medium`}>{activity.message}</p>
-                  <p className={`text-xs ${theme.text.secondary} mt-1`}>{activity.time}</p>
+                <div className="flex-1 min-w-0 relative">
+                  <p className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{activity.message}</p>
+                  <p className={`text-xs ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary} mt-2 flex items-center gap-2`}>
+                    <ClockIcon className="h-3 w-3" />
+                    {activity.time}
+                  </p>
                 </div>
-                <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0 mt-2"></div>
+                <div className="relative w-3 h-3 bg-green-500 rounded-full flex-shrink-0 mt-3 shadow-lg animate-pulse"></div>
               </motion.div>
             ))}
           </div>
