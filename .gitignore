@@ -24,6 +24,9 @@ Thumbs.db
 
 # Data files (may contain sensitive info)
 data/
+# But allow source code data files (service configs are not sensitive)
+!src/data/
+!src/data/*.js
 backend.log
 dev.log
 vite.logNVIDIA-Linux-x86_64-*.run
