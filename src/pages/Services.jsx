@@ -643,7 +643,7 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
             <div className="flex items-center gap-1">
               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200">
                 <ComputerDesktopIcon className="h-3 w-3 mr-1" />
-                {serviceInfo.gpu.type}
+                {serviceInfo?.gpu?.type || 'N/A'}
               </span>
               <HelpTooltip 
                 title={getTooltip('services', 'gpuIndicator').title}
@@ -713,7 +713,7 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
               />
             </div>
             <span className="font-medium text-gray-900 dark:text-white">
-              {serviceInfo.gpu.vram}
+              {serviceInfo?.gpu?.vram || 'N/A'}
             </span>
           </div>
         )}

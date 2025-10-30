@@ -318,12 +318,15 @@ async def list_zones(
 
         return zones_data
 
+    except CloudflareAuthError as e:
+        logger.error(f"Cloudflare authentication error: {e}")
+        raise HTTPException(status_code=401, detail=f"Cloudflare authentication failed: {str(e)}. Please check your API token in Platform Settings.")
     except CloudflareError as e:
         logger.error(f"Error listing zones: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error listing zones: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/zones/{zone_id}")

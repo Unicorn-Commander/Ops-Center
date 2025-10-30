@@ -259,7 +259,7 @@ const TraefikDashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <SummaryCard
             title="Requests/sec"
-            value={dashboardData.summary.requestRate.toFixed(1)}
+            value={dashboardData?.summary?.requestRate?.toFixed(1) ?? '0.0'}
             icon={ChartBarIcon}
             color="warning"
             onClick={() => navigate('/admin/traefik/metrics')}

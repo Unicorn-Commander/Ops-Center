@@ -60,6 +60,9 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import axios from 'axios';
 
+// Configure axios to send credentials
+axios.defaults.withCredentials = true;
+
 const CloudflareDNS = () => {
   const { currentTheme } = useTheme();
 
