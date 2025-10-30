@@ -502,6 +502,12 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
+                        name="Local Users"
+                        href="/admin/system/local-users"
+                        icon={iconMap.UsersIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Monitoring"
                         href="/admin/system"
                         icon={iconMap.ChartBarIcon}
@@ -514,24 +520,6 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
-                        name="LLM Management"
-                        href="/admin/llm-management"
-                        icon={iconMap.CubeIcon}
-                        indent={true}
-                      />
-                      <NavigationItem collapsed={sidebarCollapsed}
-                        name="LLM Providers"
-                        href="/admin/litellm-providers"
-                        icon={iconMap.SparklesIcon}
-                        indent={true}
-                      />
-                      <NavigationItem collapsed={sidebarCollapsed}
-                        name="LLM Usage"
-                        href="/admin/llm/usage"
-                        icon={iconMap.ChartBarIcon}
-                        indent={true}
-                      />
-                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Cloudflare DNS"
                         href="/admin/infrastructure/cloudflare"
                         icon={iconMap.GlobeAltIcon}
@@ -539,7 +527,9 @@ export default function Layout({ children }) {
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="Traefik"
+                        href="/admin/traefik/dashboard"
                         icon={iconMap.ServerIcon}
+                        indent={true}
                       >
                         <NavigationItem collapsed={sidebarCollapsed}
                           name="Dashboard"
@@ -609,14 +599,8 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
-                        name="Local Users"
-                        href="/admin/system/local-user-management"
-                        icon={iconMap.UsersIcon}
-                        indent={true}
-                      />
-                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Organizations"
-                        href="/admin/org/settings"
+                        href="/admin/organization/list"
                         icon={iconMap.BuildingOfficeIcon}
                         indent={true}
                       />

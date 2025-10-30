@@ -37,6 +37,12 @@ from admin_subscriptions_api import require_admin
 # Import rate limiting
 from rate_limiter import check_rate_limit_manual
 
+# Import credential integration
+from cloudflare_credentials_integration import get_cloudflare_token
+
+# Import database connection
+from database.connection import get_db_pool
+
 logger = logging.getLogger(__name__)
 
 # Initialize router
@@ -279,7 +285,8 @@ async def list_zones(
     **Returns**: List of zones with metadata
     """
     # Authentication required
-    await require_admin(request)
+    admin = await require_admin(request)
+    user_id = admin.get("user_id") or admin.get("sub") or admin.get("id", "unknown")
 
     # Rate limiting (read operations - 30/minute)
     await check_rate_limit_manual(request, category="read", is_admin=True)
@@ -287,8 +294,16 @@ async def list_zones(
     username = get_username_from_request(request)
 
     try:
+        # Get Cloudflare token from database (with env var fallback)
+        db_pool = await get_db_pool()
+        async with db_pool.acquire() as conn:
+            token = await get_cloudflare_token(user_id, conn, fallback_to_env=True)
+
+        # Create Cloudflare manager with user's token
+        manager = CloudflareManager(api_token=token)
+
         # Get zones from Cloudflare
-        zones_data = await cloudflare_manager.list_zones(
+        zones_data = await manager.list_zones(
             status=status,
             search=search,
             limit=limit,
