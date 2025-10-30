@@ -43,12 +43,15 @@ from cloudflare_credentials_integration import get_cloudflare_token
 # Import database connection
 from database.connection import get_db_pool
 
+# Import universal credential helper
+from get_credential import get_credential
+
 logger = logging.getLogger(__name__)
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/cloudflare", tags=["cloudflare", "dns", "infrastructure"])
 
-# Initialize Cloudflare manager with API token from environment
+# Initialize Cloudflare manager with API token from database or environment
 import os
 
 # Lazy initialization function for Cloudflare manager
@@ -56,7 +59,7 @@ def get_cloudflare_manager():
     """
     Get or create Cloudflare manager with lazy initialization.
 
-    This function checks for API token in environment variables and database,
+    This function checks for API token in database first, then environment variables,
     then creates a CloudflareManager instance with proper error handling.
 
     Returns:
@@ -65,13 +68,13 @@ def get_cloudflare_manager():
     Raises:
         CloudflareAuthError: If API token is not configured
     """
-    # Try environment variable first
-    token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+    # Try database first, then environment variable
+    token = get_credential("CLOUDFLARE_API_TOKEN")
 
     if not token:
         error_message = (
             "Cloudflare API token not configured. "
-            "Please add CLOUDFLARE_API_TOKEN to .env.auth file or configure via Platform Settings. "
+            "Please add CLOUDFLARE_API_TOKEN via Platform Settings or .env.auth file. "
             "See /docs/CLOUDFLARE_SETUP.md for detailed instructions."
         )
         logger.error(f"Cloudflare API initialization failed: {error_message}")

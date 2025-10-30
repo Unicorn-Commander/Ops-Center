@@ -10,6 +10,9 @@ import httpx
 import logging
 import os
 
+# Import universal credential helper
+from get_credential import get_credential
+
 from subscription_manager import (
     subscription_manager,
     SubscriptionPlan,
@@ -303,8 +306,8 @@ async def upgrade_subscription(request: Request):
             if getTierLevel(target_tier) <= getTierLevel(current_tier):
                 raise HTTPException(status_code=400, detail="Use /change endpoint for downgrades")
 
-        # Create Stripe checkout session
-        stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        # Create Stripe checkout session - read credentials from database first, then environment
+        stripe_key = get_credential("STRIPE_SECRET_KEY")
         if not stripe_key:
             raise HTTPException(status_code=500, detail="Stripe not configured")
 

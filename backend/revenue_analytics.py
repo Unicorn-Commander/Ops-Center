@@ -23,6 +23,9 @@ import redis.asyncio as redis
 import json
 import os
 
+# Import universal credential helper
+from get_credential import get_credential
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,9 +33,9 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/v1/analytics/revenue", tags=["Revenue Analytics"])
 
-# Lago API configuration
+# Lago API configuration - read credentials from database first, then environment
 LAGO_API_URL = os.getenv("LAGO_API_URL", "http://unicorn-lago-api:3000")
-LAGO_API_KEY = os.getenv("LAGO_API_KEY")
+LAGO_API_KEY = get_credential("LAGO_API_KEY")
 
 # Redis configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://unicorn-redis:6379/0")

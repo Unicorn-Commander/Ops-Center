@@ -39,6 +39,9 @@ from admin_subscriptions_api import require_admin
 # Import rate limiting
 from rate_limiter import check_rate_limit_manual
 
+# Import universal credential helper
+from get_credential import get_credential
+
 logger = logging.getLogger(__name__)
 
 # Initialize router
@@ -46,10 +49,11 @@ router = APIRouter(prefix="/api/v1/migration", tags=["migration", "namecheap", "
 
 # Initialize managers
 import os
-NAMECHEAP_API_KEY = os.getenv("NAMECHEAP_API_KEY", "")
-NAMECHEAP_USERNAME = os.getenv("NAMECHEAP_USERNAME", "")
-NAMECHEAP_CLIENT_IP = os.getenv("NAMECHEAP_CLIENT_IP", "")
-CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
+# Read credentials from database first, then environment
+NAMECHEAP_API_KEY = get_credential("NAMECHEAP_API_KEY")
+NAMECHEAP_USERNAME = get_credential("NAMECHEAP_USERNAME")
+NAMECHEAP_CLIENT_IP = get_credential("NAMECHEAP_CLIENT_IP")
+CLOUDFLARE_API_TOKEN = get_credential("CLOUDFLARE_API_TOKEN")
 
 namecheap_manager = None
 cloudflare_manager = None

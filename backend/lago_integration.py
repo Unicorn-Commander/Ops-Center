@@ -10,11 +10,14 @@ import logging
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 
+# Import universal credential helper
+from get_credential import get_credential
+
 logger = logging.getLogger(__name__)
 
-# Lago Configuration
+# Lago Configuration - read credentials from database first, then environment
 LAGO_API_URL = os.getenv("LAGO_API_URL", "http://unicorn-lago-api:3000")
-LAGO_API_KEY = os.getenv("LAGO_API_KEY", "")
+LAGO_API_KEY = get_credential("LAGO_API_KEY")
 
 # Timeout for API calls
 API_TIMEOUT = 30.0

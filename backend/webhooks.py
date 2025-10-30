@@ -18,12 +18,15 @@ from lago_integration import (
 from keycloak_integration import update_user_attributes, get_user_by_email
 from email_notifications import EmailNotificationService
 
+# Import universal credential helper
+from get_credential import get_credential
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 
-# Initialize Stripe
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+# Initialize Stripe - read credentials from database first, then environment
+STRIPE_WEBHOOK_SECRET = get_credential("STRIPE_WEBHOOK_SECRET")
+stripe.api_key = get_credential("STRIPE_SECRET_KEY")
 
 # Email service
 email_service = EmailNotificationService()

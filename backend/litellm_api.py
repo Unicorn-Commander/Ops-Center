@@ -29,10 +29,13 @@ from byok_manager import BYOKManager
 from usage_metering import usage_meter
 from cryptography.fernet import Fernet
 
+# Import universal credential helper
+from get_credential import get_credential
+
 logger = logging.getLogger(__name__)
 
-# Initialize Stripe
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+# Initialize Stripe - read credentials from database first, then environment
+stripe.api_key = get_credential('STRIPE_SECRET_KEY')
 
 # Router
 router = APIRouter(prefix="/api/v1/llm", tags=["LLM"])

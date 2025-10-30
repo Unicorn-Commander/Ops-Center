@@ -13,16 +13,19 @@ import httpx
 # Import Keycloak integration for user management
 from keycloak_integration import update_user_attributes, get_user_by_email
 
+# Import universal credential helper
+from get_credential import get_credential
+
 logger = logging.getLogger(__name__)
 
-# Initialize Stripe
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# Initialize Stripe - read credentials from database first, then environment
+STRIPE_SECRET_KEY = get_credential("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = get_credential("STRIPE_WEBHOOK_SECRET")
 # Redirect back to signup-flow page after payment (success or cancel)
 STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://unicorncommander.ai/signup-flow.html?success=true")
 STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "https://unicorncommander.ai/signup-flow.html?canceled=true")
 LAGO_API_URL = os.getenv("LAGO_API_URL", "http://lago-api:3000")
-LAGO_API_KEY = os.getenv("LAGO_API_KEY", "")
+LAGO_API_KEY = get_credential("LAGO_API_KEY")
 
 # Configure Stripe
 stripe.api_key = STRIPE_SECRET_KEY
