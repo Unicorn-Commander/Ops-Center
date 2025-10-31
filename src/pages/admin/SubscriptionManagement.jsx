@@ -55,7 +55,8 @@ import {
   People as PeopleIcon,
   TrendingUp as TrendingUpIcon,
   Sync as SyncIcon,
-  ExpandMore as ExpandMoreIcon
+  ExpandMore as ExpandMoreIcon,
+  LocalOffer as TagIcon
 } from '@mui/icons-material';
 
 const SubscriptionManagement = () => {
@@ -100,22 +101,7 @@ const SubscriptionManagement = () => {
 
   // Features data
   const [features, setFeatures] = useState([]);
-  const [featureDefinitions, setFeatureDefinitions] = useState([
-    { key: 'chat_access', name: 'Open-WebUI Access', category: 'services' },
-    { key: 'search_enabled', name: 'Center-Deep Search', category: 'services' },
-    { key: 'tts_enabled', name: 'Text-to-Speech', category: 'services' },
-    { key: 'stt_enabled', name: 'Speech-to-Text', category: 'services' },
-    { key: 'billing_dashboard', name: 'Billing Dashboard', category: 'services' },
-    { key: 'litellm_access', name: 'LiteLLM Gateway', category: 'services' },
-    { key: 'brigade_access', name: 'Brigade Agents', category: 'services' },
-    { key: 'bolt_access', name: 'Bolt.DIY', category: 'services' },
-    { key: 'priority_support', name: 'Priority Support', category: 'support' },
-    { key: 'dedicated_support', name: 'Dedicated Support', category: 'support' },
-    { key: 'sso_enabled', name: 'SSO Integration', category: 'enterprise' },
-    { key: 'audit_logs', name: 'Audit Logs', category: 'enterprise' },
-    { key: 'custom_integrations', name: 'Custom Integrations', category: 'enterprise' },
-    { key: 'white_label', name: 'White Label', category: 'enterprise' }
-  ]);
+  const [featureDefinitions, setFeatureDefinitions] = useState([]);
 
   // Migration data
   const [migrationData, setMigrationData] = useState({
@@ -141,7 +127,7 @@ const SubscriptionManagement = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/v1/admin/tiers');
+      const response = await fetch('/api/v1/admin/tiers/', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch tiers');
       const data = await response.json();
       setTiers(data);
@@ -153,9 +139,25 @@ const SubscriptionManagement = () => {
     }
   };
 
+  const fetchFeatureDefinitions = async () => {
+    try {
+      const response = await fetch('/api/v1/admin/features/?active_only=true', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch feature definitions');
+      const data = await response.json();
+      setFeatureDefinitions(data.map(f => ({
+        key: f.feature_key,
+        name: f.feature_name,
+        category: f.category
+      })));
+    } catch (err) {
+      console.error('Error fetching feature definitions:', err);
+      // Keep empty array if fetch fails
+    }
+  };
+
   const fetchTierFeatures = async (tierId) => {
     try {
-      const response = await fetch(`/api/v1/admin/tiers/${tierId}/features`);
+      const response = await fetch(`/api/v1/admin/tiers/${tierId}/features`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch features');
       const data = await response.json();
       setFeatures(data);
@@ -167,7 +169,7 @@ const SubscriptionManagement = () => {
 
   const fetchAuditLog = async () => {
     try {
-      const response = await fetch('/api/v1/admin/tiers/migrations');
+      const response = await fetch('/api/v1/admin/tiers/migrations', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch audit log');
       const data = await response.json();
       setAuditLog(data);
@@ -182,6 +184,7 @@ const SubscriptionManagement = () => {
       const response = await fetch('/api/v1/admin/tiers/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
 
@@ -207,6 +210,7 @@ const SubscriptionManagement = () => {
       const response = await fetch(`/api/v1/admin/tiers/${selectedTier.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
 
@@ -232,7 +236,8 @@ const SubscriptionManagement = () => {
 
     try {
       const response = await fetch(`/api/v1/admin/tiers/${tierId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
 
       if (!response.ok) throw new Error('Failed to delete tier');
@@ -252,6 +257,7 @@ const SubscriptionManagement = () => {
       const response = await fetch(`/api/v1/admin/tiers/${selectedTier.id}/features`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ features })
       });
 
@@ -271,6 +277,7 @@ const SubscriptionManagement = () => {
       const response = await fetch(`/api/v1/admin/tiers/users/${migrationData.user_id}/migrate-tier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(migrationData)
       });
 
@@ -369,6 +376,7 @@ const SubscriptionManagement = () => {
 
   useEffect(() => {
     fetchTiers();
+    fetchFeatureDefinitions();
   }, []);
 
   // ============================================
@@ -402,11 +410,26 @@ const SubscriptionManagement = () => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1">
-          Subscription Management
-        </Typography>
+      <Box
+        sx={{
+          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+          borderRadius: 2,
+          p: 3,
+          mb: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}
+      >
         <Box>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
+            Subscription Management
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage subscription tiers, features, and user migrations
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant="outlined"
             startIcon={<HistoryIcon />}
@@ -414,7 +437,14 @@ const SubscriptionManagement = () => {
               fetchAuditLog();
               setAuditLogDialogOpen(true);
             }}
-            sx={{ mr: 2 }}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: 2
+              }
+            }}
           >
             Audit Log
           </Button>
@@ -422,7 +452,14 @@ const SubscriptionManagement = () => {
             variant="outlined"
             startIcon={<PeopleIcon />}
             onClick={() => setMigrationDialogOpen(true)}
-            sx={{ mr: 2 }}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: 2
+              }
+            }}
           >
             Migrate User
           </Button>
@@ -432,6 +469,16 @@ const SubscriptionManagement = () => {
             onClick={() => {
               resetForm();
               setCreateDialogOpen(true);
+            }}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: 4,
+                background: 'linear-gradient(135deg, #7e8fef 0%, #8a5bb2 100%)'
+              }
             }}
           >
             Create Tier
@@ -454,78 +501,156 @@ const SubscriptionManagement = () => {
       {/* Analytics Cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} md={3}>
-          <Card>
+          <Card
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 12px 24px rgba(102, 126, 234, 0.3)'
+              }
+            }}
+          >
             <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Total Tiers
-              </Typography>
-              <Typography variant="h4">{tiers.length}</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box>
+                  <Typography sx={{ opacity: 0.9, fontSize: '0.875rem', mb: 1 }}>
+                    Total Tiers
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 700 }}>
+                    {tiers.length}
+                  </Typography>
+                </Box>
+                <TagIcon sx={{ fontSize: 48, opacity: 0.3 }} />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={3}>
-          <Card>
+          <Card
+            sx={{
+              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              color: 'white',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 12px 24px rgba(240, 147, 251, 0.3)'
+              }
+            }}
+          >
             <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Active Tiers
-              </Typography>
-              <Typography variant="h4">
-                {tiers.filter(t => t.is_active).length}
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box>
+                  <Typography sx={{ opacity: 0.9, fontSize: '0.875rem', mb: 1 }}>
+                    Active Tiers
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 700 }}>
+                    {tiers.filter(t => t.is_active).length}
+                  </Typography>
+                </Box>
+                <CheckIcon sx={{ fontSize: 48, opacity: 0.3 }} />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={3}>
-          <Card>
+          <Card
+            sx={{
+              background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+              color: 'white',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 12px 24px rgba(79, 172, 254, 0.3)'
+              }
+            }}
+          >
             <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Total Users
-              </Typography>
-              <Typography variant="h4">
-                {tiers.reduce((sum, t) => sum + t.active_user_count, 0)}
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box>
+                  <Typography sx={{ opacity: 0.9, fontSize: '0.875rem', mb: 1 }}>
+                    Total Users
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 700 }}>
+                    {tiers.reduce((sum, t) => sum + t.active_user_count, 0)}
+                  </Typography>
+                </Box>
+                <PeopleIcon sx={{ fontSize: 48, opacity: 0.3 }} />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={3}>
-          <Card>
+          <Card
+            sx={{
+              background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+              color: 'white',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 12px 24px rgba(250, 112, 154, 0.3)'
+              }
+            }}
+          >
             <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Monthly Revenue
-              </Typography>
-              <Typography variant="h4">
-                {formatPrice(tiers.reduce((sum, t) => sum + t.monthly_revenue, 0))}
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box>
+                  <Typography sx={{ opacity: 0.9, fontSize: '0.875rem', mb: 1 }}>
+                    Monthly Revenue
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 700 }}>
+                    {formatPrice(tiers.reduce((sum, t) => sum + t.monthly_revenue, 0))}
+                  </Typography>
+                </Box>
+                <MoneyIcon sx={{ fontSize: 48, opacity: 0.3 }} />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
       {/* Tier Table */}
-      <Paper>
+      <Paper
+        sx={{
+          borderRadius: 2,
+          overflow: 'hidden',
+          boxShadow: 2
+        }}
+      >
         <TableContainer>
           <Table>
             <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Code</TableCell>
-                <TableCell align="right">Price (Monthly)</TableCell>
-                <TableCell align="right">Price (Yearly)</TableCell>
-                <TableCell align="center">Status</TableCell>
-                <TableCell align="center">Invite Only</TableCell>
-                <TableCell align="right">API Limit</TableCell>
-                <TableCell align="right">Seats</TableCell>
-                <TableCell align="right">Users</TableCell>
-                <TableCell align="right">Revenue</TableCell>
-                <TableCell align="center">Features</TableCell>
-                <TableCell align="center">Actions</TableCell>
+              <TableRow sx={{ background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)' }}>
+                <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Code</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Price (Monthly)</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Price (Yearly)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Invite Only</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>API Limit</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Seats</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Users</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Features</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {tiers
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((tier) => (
-                  <TableRow key={tier.id} hover>
+                  <TableRow
+                    key={tier.id}
+                    hover
+                    sx={{
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        backgroundColor: 'rgba(102, 126, 234, 0.04)',
+                        transform: 'scale(1.002)'
+                      }
+                    }}
+                  >
                     <TableCell>
                       <Typography variant="body1" fontWeight="bold">
                         {tier.tier_name}
@@ -772,9 +897,33 @@ const SubscriptionManagement = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-          <Button onClick={createTier} variant="contained">
+        <DialogActions sx={{ p: 3, gap: 1 }}>
+          <Button
+            onClick={() => setCreateDialogOpen(false)}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)'
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={createTier}
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: 4,
+                background: 'linear-gradient(135deg, #7e8fef 0%, #8a5bb2 100%)'
+              }
+            }}
+          >
             Create Tier
           </Button>
         </DialogActions>
@@ -916,9 +1065,33 @@ const SubscriptionManagement = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-          <Button onClick={updateTier} variant="contained">
+        <DialogActions sx={{ p: 3, gap: 1 }}>
+          <Button
+            onClick={() => setEditDialogOpen(false)}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)'
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={updateTier}
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: 4,
+                background: 'linear-gradient(135deg, #5fbcff 0%, #10ffff 100%)'
+              }
+            }}
+          >
             Save Changes
           </Button>
         </DialogActions>
@@ -969,9 +1142,33 @@ const SubscriptionManagement = () => {
             ))}
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setFeaturesDialogOpen(false)}>Cancel</Button>
-          <Button onClick={updateTierFeatures} variant="contained">
+        <DialogActions sx={{ p: 3, gap: 1 }}>
+          <Button
+            onClick={() => setFeaturesDialogOpen(false)}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)'
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={updateTierFeatures}
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: 4,
+                background: 'linear-gradient(135deg, #ff9fff 0%, #ff677c 100%)'
+              }
+            }}
+          >
             Save Features
           </Button>
         </DialogActions>
@@ -1040,12 +1237,36 @@ const SubscriptionManagement = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMigrationDialogOpen(false)}>Cancel</Button>
+        <DialogActions sx={{ p: 3, gap: 1 }}>
+          <Button
+            onClick={() => setMigrationDialogOpen(false)}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)'
+              }
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={migrateUser}
             variant="contained"
             disabled={!migrationData.user_id || !migrationData.new_tier_code || migrationData.reason.length < 10}
+            sx={{
+              background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: 4,
+                background: 'linear-gradient(135deg, #ff80aa 0%, #fff150 100%)'
+              },
+              '&:disabled': {
+                background: '#ccc'
+              }
+            }}
           >
             Migrate User
           </Button>
@@ -1124,8 +1345,21 @@ const SubscriptionManagement = () => {
             }}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAuditLogDialogOpen(false)}>Close</Button>
+        <DialogActions sx={{ p: 3 }}>
+          <Button
+            onClick={() => setAuditLogDialogOpen(false)}
+            variant="outlined"
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: 2
+              }
+            }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

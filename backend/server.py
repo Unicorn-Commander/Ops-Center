@@ -90,6 +90,7 @@ from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
 from redis_session import redis_session_manager
 from subscription_tiers_api import router as subscription_tiers_router
+from feature_definitions_api import router as feature_definitions_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -603,6 +604,10 @@ logger.info("User Management API endpoints registered at /api/v1/admin/users")
 # Subscription Tier Management API (Epic 4.4)
 app.include_router(subscription_tiers_router)
 logger.info("Subscription Tier Management API endpoints registered at /api/v1/admin/tiers")
+
+# Feature Definitions Management API
+app.include_router(feature_definitions_router)
+logger.info("Feature Definitions API endpoints registered at /api/v1/admin/features")
 
 # LiteLLM Routing and Provider Management API
 app.include_router(admin_local_users_router)
@@ -5045,9 +5050,17 @@ async def serve_admin(request: Request, path: str = ""):
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str, request: Request):
     """Serve the React app for all routes (excluding API paths)"""
-    # Skip API routes - let them be handled by registered routers
+    # API routes should be handled by their specific routers
+    # This catch-all should NEVER match API paths - if it does, there's a routing issue
+    # Simply skip API paths and let them fall through to FastAPI's normal 404 handling
     if full_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
+        # This should never be reached for registered API routes
+        # If we're here, the route truly doesn't exist
+        from fastapi import status
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"API endpoint /{full_path} not found"
+        )
 
     # Skip empty path as it's handled by the root redirect
     if full_path == "":

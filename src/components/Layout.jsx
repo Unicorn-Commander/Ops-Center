@@ -662,9 +662,15 @@ export default function Layout({ children }) {
                       onToggle={() => toggleSection('billingUsage')}
                     >
                       <NavigationItem collapsed={sidebarCollapsed}
-                        name="Credits & Tiers"
-                        href="/admin/credits"
+                        name="Subscription Management"
+                        href="/admin/system/subscription-management"
                         icon={iconMap.CreditCardIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Feature Management"
+                        href="/admin/system/feature-management"
+                        icon={iconMap.AdjustmentsHorizontalIcon}
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
