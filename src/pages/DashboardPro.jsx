@@ -4,6 +4,7 @@ import { useSystem } from '../contexts/SystemContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { EnhancedServiceLogos, EnhancedServiceCard, getEnhancedServiceInfo } from '../components/EnhancedServiceLogos';
 import UpdateModal from '../components/UpdateModal';
+import DynamicServiceCards from '../components/DynamicServiceCards';
 import { 
   CpuChipIcon, 
   ServerStackIcon,
@@ -554,9 +555,12 @@ export default function DashboardPro() {
           )}
         </motion.div>
       </div>
-      
+
+      {/* Dynamic Application Cards - Loaded from landing_config.json */}
+      <DynamicServiceCards theme={theme} />
+
       {/* Services Status */}
-      <motion.div 
+      <motion.div
         variants={itemVariants}
         className={`
           p-6 rounded-2xl
