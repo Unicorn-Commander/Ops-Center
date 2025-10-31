@@ -241,7 +241,8 @@ export default function MobileNavigation({ user, currentPath }) {
       icon: <PaymentIcon />,
       visible: userRole === 'admin',
       children: [
-        { label: 'Credits & Tiers', path: '/admin/credits', icon: <CreditCardIcon /> },
+        { label: 'Subscription Management', path: '/admin/system/subscription-management', icon: <CreditCardIcon /> },
+        { label: 'Feature Management', path: '/admin/system/feature-management', icon: <SettingsIcon /> },
         { label: 'Billing Dashboard', path: '/admin/system/billing', icon: <AttachMoneyIcon /> },
         { label: 'Analytics', path: '/admin/system/analytics', icon: <AnalyticsIcon /> },
         { label: 'Usage Metrics', path: '/admin/system/usage-metrics', icon: <PieChartIcon /> },

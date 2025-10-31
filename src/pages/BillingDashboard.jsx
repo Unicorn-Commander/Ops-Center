@@ -391,19 +391,19 @@ const UserView = ({ theme }) => {
               <div className="flex items-center justify-between mb-2">
                 <span className={`text-sm ${theme.text.secondary}`}>API Calls</span>
                 <span className={`text-sm font-medium ${theme.text.primary}`}>
-                  {usage.api_calls_used.toLocaleString()} / {usage.api_calls_limit === -1 ? '∞' : usage.api_calls_limit.toLocaleString()}
+                  {(usage?.api_calls_used ?? 0).toLocaleString()} / {usage?.api_calls_limit === -1 ? '∞' : (usage?.api_calls_limit ?? 0).toLocaleString()}
                 </span>
               </div>
               <div className="w-full bg-slate-700 rounded-full h-2">
                 <div
                   className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all"
                   style={{
-                    width: `${usage.api_calls_limit === -1 ? 0 : Math.min((usage.api_calls_used / usage.api_calls_limit) * 100, 100)}%`
+                    width: `${usage?.api_calls_limit === -1 ? 0 : Math.min(((usage?.api_calls_used ?? 0) / (usage?.api_calls_limit ?? 1)) * 100, 100)}%`
                   }}
                 />
               </div>
               <p className={`text-xs ${theme.text.secondary} mt-1`}>
-                {usage.api_calls_limit === -1 ? 'Unlimited' : `${Math.round((usage.api_calls_used / usage.api_calls_limit) * 100)}% used`}
+                {usage?.api_calls_limit === -1 ? 'Unlimited' : `${Math.round(((usage?.api_calls_used ?? 0) / (usage?.api_calls_limit ?? 1)) * 100)}% used`}
               </p>
             </div>
 
@@ -412,19 +412,19 @@ const UserView = ({ theme }) => {
               <div className="flex items-center justify-between mb-2">
                 <span className={`text-sm ${theme.text.secondary}`}>Credits</span>
                 <span className={`text-sm font-medium ${theme.text.primary}`}>
-                  {usage.credits_remaining.toLocaleString()} remaining
+                  {(usage?.credits_remaining ?? 0).toLocaleString()} remaining
                 </span>
               </div>
               <div className="w-full bg-slate-700 rounded-full h-2">
                 <div
                   className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all"
                   style={{
-                    width: `${Math.min((usage.credits_remaining / (usage.credits_used + usage.credits_remaining)) * 100, 100)}%`
+                    width: `${Math.min(((usage?.credits_remaining ?? 0) / ((usage?.credits_used ?? 0) + (usage?.credits_remaining ?? 0) || 1)) * 100, 100)}%`
                   }}
                 />
               </div>
               <p className={`text-xs ${theme.text.secondary} mt-1`}>
-                {usage.credits_used.toLocaleString()} credits used this month
+                {(usage?.credits_used ?? 0).toLocaleString()} credits used this month
               </p>
             </div>
           </div>
