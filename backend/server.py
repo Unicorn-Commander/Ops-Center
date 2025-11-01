@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, HTMLResponse
 import psutil
 import docker
 import asyncio
@@ -3354,33 +3354,64 @@ async def login(credentials: LoginCredentials, request: Request):
 async def logout(request: Request, current_user: dict = Depends(get_current_user)):
     """Logout and invalidate session"""
     try:
-        # Audit log logout
+        # Get session token from cookie
+        session_token = request.cookies.get("session_token")
+
+        # Audit log logout (wrapped in try/except to prevent logout failure if audit fails)
         if AUDIT_ENABLED:
-            await log_logout(
-                request,
-                user_id=current_user.get("user_id", "unknown"),
-                username=current_user.get("username", "unknown"),
-                metadata={"method": "legacy_api_logout"}
-            )
+            try:
+                await log_logout(
+                    request,
+                    user_id=current_user.get("user_id", "unknown"),
+                    username=current_user.get("username", "unknown"),
+                    metadata={"method": "api_logout"}
+                )
+            except Exception as audit_error:
+                # Log the error but don't fail the logout
+                print(f"Warning: Audit logging failed during logout: {audit_error}")
 
-        # Clear local session
-        auth_manager.logout(current_user.get("session_id"))
+        # Get id_token from session (needed for proper logout without confirmation page)
+        id_token = None
+        if session_token:
+            try:
+                session_data = sessions.get(session_token)
+                if session_data and isinstance(session_data, dict):
+                    id_token = session_data.get("id_token")
+            except Exception as e:
+                print(f"Warning: Could not retrieve id_token from session: {e}")
 
-        # Build Keycloak SSO logout URL
-        keycloak_url = os.getenv("KEYCLOAK_URL", "https://auth.unicorncommander.ai")
-        keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
-        redirect_uri = os.getenv("FRONTEND_URL", "https://unicorncommander.ai")
+        # Delete session from Redis
+        if session_token and session_token in sessions:
+            del sessions[session_token]
 
-        sso_logout_url = (
-            f"{keycloak_url}/realms/{keycloak_realm}/protocol/openid-connect/logout"
-            f"?redirect_uri={redirect_uri}"
+        # Build Keycloak logout URL with id_token_hint (required for auto-logout)
+        keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", "https://auth.unicorncommander.ai")
+        keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
+        external_host = os.getenv("EXTERNAL_HOST", "unicorncommander.ai")
+        external_protocol = os.getenv("EXTERNAL_PROTOCOL", "https")
+
+        # Our logout confirmation page URL (where Keycloak will redirect after clearing session)
+        logout_confirmation_url = f"{external_protocol}://{external_host}/auth/logged-out"
+
+        # Keycloak logout URL - using simple redirect_uri (not post_logout_redirect_uri)
+        # This avoids the strict validation that comes with id_token_hint
+        keycloak_logout_url = (
+            f"{keycloak_external_url}/realms/{keycloak_realm}/protocol/openid-connect/logout"
+            f"?client_id={os.getenv('KEYCLOAK_CLIENT_ID', 'ops-center')}"
+            f"&redirect_uri={logout_confirmation_url}"
         )
+
+        print(f"Logout URL: {keycloak_logout_url}")
 
         return {
             "message": "Logged out successfully",
-            "sso_logout_url": sso_logout_url
+            "logout_url": keycloak_logout_url
         }
     except Exception as e:
+        # Log the full exception details
+        import traceback
+        print(f"ERROR in logout endpoint: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/auth/me")
@@ -4822,11 +4853,12 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     email = user_info.get('email')
                     org_context = await get_user_org_context(user_id, email)
 
-                    # Create session with org data
+                    # Create session with org data (store id_token for logout!)
                     session_token = secrets.token_urlsafe(32)
                     sessions[session_token] = {
                         "user": user_info,
                         "access_token": access_token,
+                        "id_token": tokens.get("id_token"),  # Store id_token for proper logout
                         "created": time.time(),
                         "org_id": org_context.get("org_id"),
                         "org_name": org_context.get("org_name"),
@@ -4939,6 +4971,101 @@ async def logout(request: Request):
 
     # Redirect to root, which will trigger auth flow again
     response = RedirectResponse(url="/")
+    response.delete_cookie("session_token")
+    return response
+
+@app.get("/auth/logged-out")
+async def logged_out(request: Request):
+    """Logout confirmation page that auto-redirects to login"""
+    # Delete any remaining session from Redis
+    session_token = request.cookies.get("session_token")
+    if session_token and session_token in sessions:
+        del sessions[session_token]
+
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Logged Out - Unicorn Commander</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .card {
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                padding: 60px 80px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                text-align: center;
+                max-width: 500px;
+            }
+            .icon {
+                font-size: 64px;
+                margin-bottom: 20px;
+            }
+            h1 {
+                color: #667eea;
+                font-size: 32px;
+                margin-bottom: 10px;
+            }
+            p {
+                color: #666;
+                font-size: 18px;
+                margin-bottom: 30px;
+            }
+            .spinner {
+                display: inline-block;
+                width: 40px;
+                height: 40px;
+                border: 4px solid rgba(102, 126, 234, 0.2);
+                border-top-color: #667eea;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            .redirect-info {
+                color: #999;
+                font-size: 14px;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="icon">👋</div>
+            <h1>Logged Out Successfully</h1>
+            <p>You have been signed out of your account.</p>
+            <div class="spinner"></div>
+            <div class="redirect-info">Redirecting to home page...</div>
+        </div>
+        <script>
+            // Clear Keycloak session via hidden iframe
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = 'https://auth.unicorncommander.ai/realms/uchub/protocol/openid-connect/logout';
+            document.body.appendChild(iframe);
+
+            // Redirect to home page after 2 seconds (not /auth/login to avoid auto-login)
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+        </script>
+    </body>
+    </html>
+    """
+    # Create response and delete the session cookie
+    response = HTMLResponse(content=html_content)
     response.delete_cookie("session_token")
     return response
 

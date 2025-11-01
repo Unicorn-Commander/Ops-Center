@@ -151,20 +151,36 @@ export default function PublicLanding() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/v1/auth/logout', {
+      const response = await fetch('/api/v1/auth/logout', {
         method: 'POST',
         credentials: 'include'
       });
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      window.location.href = '/';
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Clear local storage
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userInfo');
+
+        // Redirect to Keycloak logout (clears SSO session, then shows our confirmation page)
+        if (data.logout_url) {
+          window.location.href = data.logout_url;
+          return;
+        }
+      }
     } catch (error) {
       console.error('Logout failed:', error);
-      // Force logout anyway
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      window.location.href = '/';
     }
+
+    // Fallback: Clear local storage and redirect to home
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userInfo');
+    window.location.href = '/';
   };
 
   // Check if user has access to a service based on tier

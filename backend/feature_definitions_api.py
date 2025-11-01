@@ -34,8 +34,9 @@ async def get_current_admin(request: Request) -> str:
     username = user.get("username") or user.get("email", "unknown")
 
     # Check if user has admin role
-    roles = user.get("roles", [])
-    if "admin" not in roles:
+    # Session stores role as singular string (not plural list)
+    role = user.get("role", "").lower()
+    if role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     return username

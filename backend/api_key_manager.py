@@ -329,7 +329,10 @@ class APIKeyManager:
         except jwt.ExpiredSignatureError:
             logger.warning("JWT token expired")
             return None
-        except jwt.JWTError as e:
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"JWT validation error: {e}")
+            return None
+        except Exception as e:
             logger.warning(f"JWT validation error: {e}")
             return None
 

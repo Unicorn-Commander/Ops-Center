@@ -398,20 +398,43 @@ async def get_user_id(authorization: Optional[str] = Header(None)) -> str:
     """
     Extract user ID from authorization header
 
-    Supports two authentication methods:
+    Supports three authentication methods:
     1. API Key: Bearer uc_<hex-key>
     2. JWT Token: Bearer <jwt-token>
+    3. Service Key: Bearer sk-<service-name>-service-key-<year>
     """
     if not authorization:
+        logger.warning("No Authorization header received")
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     if not authorization.startswith('Bearer '):
+        logger.warning(f"Invalid auth format: {authorization[:20]}...")
         raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Authorization: Bearer <api-key>")
 
     # Extract token
     token = authorization[7:]
+    logger.info(f"🔍 Auth token received - Length: {len(token)}, Prefix: {token[:10]}...")
 
-    # Try API key validation first (format: uc_<hex>)
+    # Check for service key (format: sk-<service>-service-key-<year>)
+    if token.startswith('sk-'):
+        logger.info(f"🔑 Token starts with 'sk-', checking service keys...")
+        # Service keys are pre-configured trusted keys for internal services
+        service_keys = {
+            'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
+            'sk-presenton-service-key-2025': 'presenton-service',
+            'sk-brigade-service-key-2025': 'brigade-service'
+        }
+
+        if token in service_keys:
+            logger.info(f"✅ Service key authenticated: {service_keys[token]}")
+            return service_keys[token]
+        else:
+            logger.warning(f"❌ Unknown service key: {token[:20]}... (full length: {len(token)})")
+            raise HTTPException(status_code=401, detail="Invalid service key")
+    else:
+        logger.info(f"ℹ️ Token does NOT start with 'sk-', will try API key or JWT validation")
+
+    # Try API key validation (format: uc_<hex>)
     if token.startswith('uc_'):
         from api_key_manager import get_api_key_manager
         try:

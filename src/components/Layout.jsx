@@ -181,21 +181,35 @@ export default function Layout({ children }) {
   const handleLogout = async () => {
     try {
       // Call backend logout endpoint
-      await fetch('/api/v1/auth/logout', {
+      const response = await fetch('/api/v1/auth/logout', {
         method: 'POST',
         credentials: 'include'
       });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Clear local storage
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userInfo');
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+
+        // Redirect to Keycloak logout (clears SSO session, then shows our confirmation page)
+        if (data.logout_url) {
+          window.location.href = data.logout_url;
+          return;
+        }
+      }
     } catch (error) {
       console.error('Logout API call failed:', error);
     }
 
-    // Clear local storage
+    // Fallback: Clear local storage and redirect to home
     localStorage.removeItem('authToken');
     localStorage.removeItem('userInfo');
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-
-    // Redirect to home page (will trigger OAuth login)
     window.location.href = '/';
   };
 

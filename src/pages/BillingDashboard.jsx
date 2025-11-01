@@ -110,9 +110,12 @@ const StatusBadge = ({ status }) => {
     failed: 'bg-red-500/20 text-red-400 border-red-500/30'
   };
 
+  // Null-safe status formatting
+  const displayStatus = status ? status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ') : 'Pending';
+
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium border ${colors[status] || colors.pending}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
+      {displayStatus}
     </span>
   );
 };
