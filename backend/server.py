@@ -4753,9 +4753,10 @@ async def oauth_callback(request: Request, code: str, state: str = None):
     # Keycloak realm (default to "uchub" for ops-center)
     keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
 
-    # Use Keycloak token endpoint (EXTERNAL URL to match redirect_uri)
-    # This ensures consistency in OAuth flow and JWT validation
-    token_url = f"https://auth.{EXTERNAL_HOST}/realms/{keycloak_realm}/protocol/openid-connect/token"
+    # Use Keycloak token endpoint (INTERNAL URL for server-to-server communication)
+    # Token exchange happens backend-to-backend, not via browser
+    keycloak_url = os.getenv("KEYCLOAK_URL", "http://centerdeep-keycloak:8080")
+    token_url = f"{keycloak_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
 
     # Exchange code for token
     async with httpx.AsyncClient() as client:
