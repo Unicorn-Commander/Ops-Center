@@ -41,6 +41,8 @@ export default function PublicLanding() {
     // Load from localStorage on init
     return localStorage.getItem('showAdminTools') === 'true';
   });
+  const [myApps, setMyApps] = useState([]);
+  const [isLoadingApps, setIsLoadingApps] = useState(true);
   const { theme, currentTheme, switchTheme, availableThemes } = useTheme();
   
   // Theme display configurations
@@ -116,6 +118,31 @@ export default function PublicLanding() {
     };
 
     fetchUserSession();
+
+    // Fetch user's authorized apps
+    const fetchMyApps = async () => {
+      try {
+        const response = await fetch('/api/v1/my-apps/authorized', {
+          credentials: 'include'
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setMyApps(data);
+        } else {
+          // Fallback to empty array on error
+          console.debug('Failed to load apps, using empty array');
+          setMyApps([]);
+        }
+      } catch (error) {
+        console.debug('Error loading apps:', error);
+        setMyApps([]);
+      } finally {
+        setIsLoadingApps(false);
+      }
+    };
+
+    fetchMyApps();
   }, []);
 
   // Handle click outside dropdown to close it
@@ -202,8 +229,37 @@ export default function PublicLanding() {
     }
   };
 
-  // Service quick access cards (user-facing services)
-  const services = [
+  // Map API app data to service card format with appropriate styling
+  const getServiceColorForCategory = (category) => {
+    const categoryColors = {
+      'AI & Chat': { color: 'from-blue-500 to-blue-700', textColor: 'text-blue-100' },
+      'Search & Research': { color: 'from-green-500 to-green-700', textColor: 'text-green-100' },
+      'Development': { color: 'from-purple-500 to-purple-700', textColor: 'text-purple-100' },
+      'AI Agents': { color: 'from-purple-600 to-pink-600', textColor: 'text-purple-100' },
+      'Productivity': { color: 'from-orange-500 to-orange-700', textColor: 'text-orange-100' },
+      'Voice Services': { color: 'from-pink-500 to-pink-700', textColor: 'text-pink-100' }
+    };
+    return categoryColors[category] || { color: 'from-gray-500 to-gray-700', textColor: 'text-gray-100' };
+  };
+
+  // Convert API apps to service card format
+  const services = myApps.map(app => {
+    const colorScheme = getServiceColorForCategory(app.category);
+    return {
+      title: app.name,
+      description: app.description,
+      icon: null, // Use iconImage instead
+      iconImage: app.icon_url,
+      url: app.launch_url,
+      color: colorScheme.color,
+      textColor: colorScheme.textColor,
+      accessType: app.access_type,
+      featureKey: app.feature_key
+    };
+  });
+
+  // Fallback static services array (used if API fails to load)
+  const fallbackServices = [
     {
       title: 'Open-WebUI',
       description: 'Chat with AI models and explore advanced language capabilities',
@@ -720,11 +776,31 @@ export default function PublicLanding() {
         className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12"
       >
         <h2 className={`text-3xl font-bold text-center mb-8 ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
-          Quick Access
+          My Apps
         </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {services.map((service, index) => {
+
+        {isLoadingApps ? (
+          /* Loading State */
+          <div className="flex justify-center items-center py-12">
+            <div className={`text-center ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary}`}>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-current mx-auto mb-4"></div>
+              <p>Loading your apps...</p>
+            </div>
+          </div>
+        ) : services.length === 0 ? (
+          /* Empty State */
+          <div className={`${styles.cardOverlay} rounded-xl p-12 text-center`}>
+            <ServerIcon className={`h-16 w-16 mx-auto mb-4 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary}`} />
+            <h3 className={`text-xl font-semibold mb-2 ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
+              No Apps Available
+            </h3>
+            <p className={styles.subText}>
+              Upgrade your subscription to access apps, or contact support if you believe this is an error.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {services.map((service, index) => {
             const isLocked = !hasAccess(service.title);
             const requiredTier = serviceTiers[service.title];
 
@@ -791,9 +867,17 @@ export default function PublicLanding() {
 
                       {/* Content Section */}
                       <div>
-                        <h3 className="text-2xl font-bold text-white mb-3 leading-tight">
-                          {service.title}
-                        </h3>
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="text-2xl font-bold text-white leading-tight flex-1">
+                            {service.title}
+                          </h3>
+                          {/* Access Type Badge */}
+                          {service.accessType === 'tier_included' && (
+                            <span className="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-green-500/20 text-green-100 border border-green-400/30 whitespace-nowrap">
+                              ✓ Included
+                            </span>
+                          )}
+                        </div>
                         <p className="text-white/90 text-base leading-relaxed font-light">
                           {service.description}
                         </p>
@@ -807,7 +891,8 @@ export default function PublicLanding() {
               </motion.div>
             );
           })}
-        </div>
+          </div>
+        )}
       </motion.div>
 
       {/* Admin Tools Section - Only visible to admin/moderator users */}
