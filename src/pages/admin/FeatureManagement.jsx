@@ -53,6 +53,7 @@ import {
 const FeatureManagement = () => {
   // State management
   const [features, setFeatures] = useState([]);
+  const [tierFeatures, setTierFeatures] = useState([]); // NEW: Tier-feature associations
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -100,6 +101,18 @@ const FeatureManagement = () => {
       console.error('Error fetching features:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // NEW: Fetch tier-feature associations
+  const fetchTierFeatures = async () => {
+    try {
+      const response = await fetch('/api/v1/admin/tiers/features/detailed', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch tier-feature associations');
+      const data = await response.json();
+      setTierFeatures(data);
+    } catch (err) {
+      console.error('Error fetching tier-feature associations:', err);
     }
   };
 
@@ -238,11 +251,36 @@ const FeatureManagement = () => {
 
   useEffect(() => {
     fetchFeatures();
+    fetchTierFeatures(); // NEW: Also fetch tier associations
   }, []);
 
   // ============================================
   // Render Helpers
   // ============================================
+
+  // NEW: Helper to get tiers for a feature
+  const getTiersForFeature = (featureKey) => {
+    return tierFeatures
+      .filter(tf => tf.feature_key === featureKey && tf.enabled)
+      .map(tf => ({
+        tier_code: tf.tier_code,
+        tier_name: tf.tier_name
+      }));
+  };
+
+  // NEW: Get tier badge color
+  const getTierBadgeColor = (tierCode) => {
+    switch (tierCode) {
+      case 'vip_founder':
+        return { bg: 'rgba(255, 215, 0, 0.15)', color: '#FFD700', border: '#FFD700' };
+      case 'byok':
+        return { bg: 'rgba(124, 58, 237, 0.15)', color: '#7c3aed', border: '#7c3aed' };
+      case 'managed':
+        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '#3b82f6' };
+      default:
+        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', border: '#94a3b8' };
+    }
+  };
 
   const getCategoryColor = (category) => {
     switch (category) {
@@ -523,6 +561,7 @@ const FeatureManagement = () => {
                 <TableCell sx={{ fontWeight: 700 }}>Key</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Subscription Tiers</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Sort Order</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Actions</TableCell>
@@ -586,6 +625,33 @@ const FeatureManagement = () => {
                         >
                           {feature.description || '-'}
                         </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {getTiersForFeature(feature.feature_key).length > 0 ? (
+                            getTiersForFeature(feature.feature_key).map((tier) => {
+                              const tierStyle = getTierBadgeColor(tier.tier_code);
+                              return (
+                                <Chip
+                                  key={tier.tier_code}
+                                  label={tier.tier_name}
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: tierStyle.bg,
+                                    color: tierStyle.color,
+                                    border: `1px solid ${tierStyle.border}`,
+                                    fontWeight: 600,
+                                    fontSize: '0.7rem'
+                                  }}
+                                />
+                              );
+                            })
+                          ) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                              No tiers
+                            </Typography>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell align="center">
                         <Chip
