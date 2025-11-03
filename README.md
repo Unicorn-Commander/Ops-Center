@@ -16,14 +16,16 @@ Ops-Center is the **AWS Console equivalent** for UC-Cloud - a comprehensive admi
 ## Features
 
 ### Core Capabilities
-- 👥 **User Management** - Advanced filtering, bulk operations, role management
-- 💳 **Billing Integration** - Lago + Stripe subscription management
-- 🏢 **Organization Management** - Multi-tenant organization control
-- 🤖 **LLM Provider Management** - 100+ models via LiteLLM proxy
-- 🔐 **Keycloak SSO** - Google, GitHub, Microsoft authentication
-- 📊 **Analytics Dashboard** - Real-time metrics and usage tracking
-- 🔑 **API Key Management** - User API key generation and management
-- 👤 **User Impersonation** - Admin "login as user" capability
+- 👥 **User Management** - Advanced filtering, bulk operations, role management, 6-tab detailed user profiles
+- 💳 **Billing Integration** - Lago + Stripe subscription management with 4 tiers (Trial → Enterprise)
+- 💰 **Credit System** - Usage-based billing with credit tracking and LLM cost management
+- 🔑 **BYOK (Bring Your Own Key)** - Users can add their own OpenRouter, OpenAI, Anthropic API keys
+- 🏢 **Organization Management** - Multi-tenant organization control with team hierarchies
+- 🤖 **LLM Provider Management** - 100+ models via LiteLLM proxy with centralized cost tracking
+- 🔐 **Keycloak SSO** - Google, GitHub, Microsoft authentication in uchub realm
+- 📊 **Analytics Dashboard** - Real-time metrics, usage tracking, and activity timelines
+- 🔧 **API Key Management** - User API key generation with bcrypt hashing
+- 👤 **User Impersonation** - Admin "login as user" capability with 24hr sessions
 
 ### Technical Stack
 - **Backend**: FastAPI (Python 3.10+)
@@ -47,6 +49,9 @@ cd UC-Cloud
 
 # Ops-Center will be at services/ops-center/
 docker compose up -d
+
+# Access at https://unicorncommander.ai (with Traefik SSL)
+# Or http://localhost:8084 (direct access)
 \`\`\`
 
 ### Standalone Deployment
@@ -92,11 +97,87 @@ pip install -r requirements.txt
 uvicorn server:app --reload --port 8084
 \`\`\`
 
+## Key Features in Detail
+
+### BYOK (Bring Your Own Key) System
+
+Users can add their own API keys for multiple LLM providers:
+- **Supported Providers**: OpenRouter, OpenAI, Anthropic, Google AI, Cohere, Groq
+- **Encrypted Storage**: Fernet encryption (256-bit) in PostgreSQL
+- **Key Testing**: Built-in validation to test keys before use
+- **Usage Tracking**: Monitor API usage per provider
+- **Access**: `/admin/account/api-keys`
+
+**What's Working** ✅:
+- Add/remove API keys through intuitive GUI
+- Automatic key encryption before database storage
+- Test connection to verify key validity
+- View all configured keys with masked previews
+- Stats showing configured, tested, and valid providers
+
+### Credit System
+
+Usage-based billing with flexible credit allocation:
+- **Credit Dashboard**: Real-time credit balance and usage tracking
+- **Transaction History**: Detailed log of all credit operations
+- **Tier-Based Credits**: Different credit allocations per subscription tier
+- **LLM Cost Tracking**: Automatic deduction based on model usage
+- **OpenRouter Integration**: Seamless API call routing with cost tracking
+- **Access**: `/admin/credits` (Admin) or Dashboard stats (Users)
+
+### User Management
+
+Advanced user administration with enterprise-grade features:
+- **Bulk Operations**: CSV import/export, bulk role changes, bulk suspend/delete
+- **Advanced Filtering**: 10+ filters (tier, role, status, org, date ranges, BYOK status)
+- **User Detail Page**: 6-tab comprehensive view (Overview, Activity, API Keys, Sessions, Permissions, Audit)
+- **Role Management**: Visual permission matrix with hierarchical roles
+- **Activity Timeline**: Color-coded audit log with expandable details
+- **Impersonation**: Admin can "login as user" for troubleshooting
+
+### Billing & Subscriptions
+
+Complete subscription lifecycle management:
+- **4 Subscription Tiers**: Trial ($1/week), Starter ($19/mo), Professional ($49/mo), Enterprise ($99/mo)
+- **Stripe Integration**: Secure payment processing with webhook support
+- **Lago Billing**: Advanced usage metering and invoice generation
+- **Self-Service Portal**: Users can upgrade/downgrade their own plans
+- **Invoice History**: Automatic invoice generation and payment tracking
+
+## API Endpoints
+
+### BYOK API
+```
+GET  /api/v1/byok/keys              # List user's API keys
+POST /api/v1/byok/keys/add          # Add new API key
+POST /api/v1/byok/keys/test/{provider}  # Test API key
+GET  /api/v1/byok/stats             # BYOK statistics
+```
+
+### Credit API
+```
+GET  /api/v1/credits/balance        # Get user credit balance
+GET  /api/v1/credits/transactions   # Credit transaction history
+POST /api/v1/credits/allocate       # Allocate credits (admin)
+```
+
+### User Management API
+```
+GET    /api/v1/admin/users                  # List users (with filtering)
+POST   /api/v1/admin/users/comprehensive    # Create user
+GET    /api/v1/admin/users/{id}             # Get user details
+PUT    /api/v1/admin/users/{id}             # Update user
+DELETE /api/v1/admin/users/{id}             # Delete user
+POST   /api/v1/admin/users/bulk/import      # Bulk import from CSV
+```
+
 ## Documentation
 
 - **Complete Guide**: See \`CLAUDE.md\` for comprehensive documentation
 - **Admin Guide**: \`ADMIN_QUICKSTART.md\` for admin operations
-- **Billing Setup**: \`BILLING_QUICK_START.md\` for Lago + Stripe
+- **Billing Setup**: \`BILLING_QUICK_START.md\` for Lago + Stripe configuration
+- **BYOK Documentation**: `/tmp/BYOK_FINAL_FIX.md` for BYOK system details
+- **Credit System**: `/tmp/CREDIT_BALANCE_EXPLAINED.md` for credit management
 
 ## Architecture
 
