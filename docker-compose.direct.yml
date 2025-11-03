@@ -66,6 +66,15 @@ services:
       - "traefik.http.routers.ops-center-http.rule=Host(`unicorncommander.ai`)"
       - "traefik.http.routers.ops-center-http.entrypoints=http"
       - "traefik.http.routers.ops-center-http.service=ops-center-svc"
+      # API subdomain HTTPS route
+      - "traefik.http.routers.ops-center-api.rule=Host(`api.unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-api.entrypoints=https"
+      - "traefik.http.routers.ops-center-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center-api.service=ops-center-svc"
+      # API subdomain HTTP route
+      - "traefik.http.routers.ops-center-api-http.rule=Host(`api.unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-api-http.entrypoints=http"
+      - "traefik.http.routers.ops-center-api-http.service=ops-center-svc"
       # Note: No redirect middleware - Cloudflare handles HTTP→HTTPS redirect
 
 networks:

@@ -146,7 +146,29 @@ Complete subscription lifecycle management:
 
 ## API Endpoints
 
-### BYOK API
+### Public API (For Developers)
+
+**Base URL**: `https://api.unicorncommander.ai`
+
+**LLM Inference** (OpenAI-compatible):
+```
+POST https://api.unicorncommander.ai/v1/llm/chat/completions
+GET  https://api.unicorncommander.ai/v1/llm/models
+```
+
+**Quick Start**:
+```bash
+curl -X POST https://api.unicorncommander.ai/v1/llm/chat/completions \
+  -H "Authorization: Bearer REMOVED" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-4", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+📚 **Complete API Documentation**: See [`docs/API_INTEGRATION_GUIDE.md`](docs/API_INTEGRATION_GUIDE.md)
+
+### Internal APIs
+
+**BYOK API**:
 ```
 GET  /api/v1/byok/keys              # List user's API keys
 POST /api/v1/byok/keys/add          # Add new API key
@@ -154,14 +176,14 @@ POST /api/v1/byok/keys/test/{provider}  # Test API key
 GET  /api/v1/byok/stats             # BYOK statistics
 ```
 
-### Credit API
+**Credit API**:
 ```
 GET  /api/v1/credits/balance        # Get user credit balance
 GET  /api/v1/credits/transactions   # Credit transaction history
 POST /api/v1/credits/allocate       # Allocate credits (admin)
 ```
 
-### User Management API
+**User Management API**:
 ```
 GET    /api/v1/admin/users                  # List users (with filtering)
 POST   /api/v1/admin/users/comprehensive    # Create user
@@ -173,6 +195,7 @@ POST   /api/v1/admin/users/bulk/import      # Bulk import from CSV
 
 ## Documentation
 
+- **API Integration Guide**: See [`docs/API_INTEGRATION_GUIDE.md`](docs/API_INTEGRATION_GUIDE.md) - Complete API reference for developers
 - **Complete Guide**: See \`CLAUDE.md\` for comprehensive documentation
 - **Admin Guide**: \`ADMIN_QUICKSTART.md\` for admin operations
 - **Billing Setup**: \`BILLING_QUICK_START.md\` for Lago + Stripe configuration
