@@ -256,7 +256,7 @@ export default function SubscriptionManagement() {
             Subscription Plans
           </h1>
           <p className={`mt-2 ${theme.text.secondary}`}>
-            Manage subscription tiers, pricing, and feature access
+            Manage subscription tiers, pricing, and app/feature access
           </p>
         </div>
         <button
@@ -401,7 +401,7 @@ export default function SubscriptionManagement() {
                   <div className={`p-3 rounded-lg ${
                     currentTheme === 'light' ? 'bg-gray-50' : 'bg-gray-700/30'
                   }`}>
-                    <div className={`text-xs ${theme.text.secondary} mb-1`}>Services</div>
+                    <div className={`text-xs ${theme.text.secondary} mb-1`}>Apps</div>
                     <div className={`text-lg font-bold ${theme.text.primary}`}>
                       {plan.services?.length || 0}
                     </div>
@@ -430,10 +430,10 @@ export default function SubscriptionManagement() {
                   </div>
                 )}
 
-                {/* Services */}
+                {/* Apps */}
                 {plan.services && plan.services.length > 0 && (
                   <div>
-                    <h4 className={`text-sm font-semibold ${theme.text.primary} mb-2`}>Available Services:</h4>
+                    <h4 className={`text-sm font-semibold ${theme.text.primary} mb-2`}>Available Apps:</h4>
                     <div className="flex flex-wrap gap-2">
                       {plan.services.map((serviceId, idx) => {
                         const service = availableServices.find(s => s.id === serviceId);
@@ -688,10 +688,10 @@ export default function SubscriptionManagement() {
                   </div>
                 </div>
 
-                {/* Services */}
+                {/* Apps/Services */}
                 <div>
                   <label className={`block text-sm font-medium ${theme.text.secondary} mb-3`}>
-                    Available Services
+                    Available Apps
                   </label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {availableServices.map((service) => {

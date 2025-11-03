@@ -26,10 +26,26 @@ const queryClient = new QueryClient({
 // Import touch optimization utilities
 import { initTouchOptimizations } from './utils/touchOptimization';
 
+// Import Extensions Context Provider
+import { ExtensionsProvider } from './contexts/ExtensionsContext';
+
 // Lazy load all pages (loaded on-demand when route is accessed)
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
 const Login = lazy(() => import('./pages/Login'));
 const DashboardPro = lazy(() => import('./pages/DashboardPro'));
+
+// Apps Marketplace pages (user-facing) - lazy loaded
+const AppsLauncher = lazy(() => import('./pages/AppsLauncher'));
+const AppMarketplace = lazy(() => import('./pages/AppMarketplace'));
+const MyApps = lazy(() => import('./pages/MyApps'));
+
+// Extensions Marketplace pages (admin-only) - lazy loaded
+const ExtensionsMarketplace = lazy(() => import('./pages/ExtensionsMarketplace'));
+const CheckoutPage = lazy(() => import('./pages/extensions/CheckoutPage'));
+const ProductDetailPage = lazy(() => import('./pages/extensions/ProductDetailPage'));
+const SuccessPage = lazy(() => import('./pages/extensions/SuccessPage'));
+const CancelledPage = lazy(() => import('./pages/extensions/CancelledPage'));
+const PurchaseHistory = lazy(() => import('./pages/extensions/PurchaseHistory'));
 
 // Account pages (lazy loaded)
 const AccountProfile = lazy(() => import('./pages/account/AccountProfile'));
@@ -178,7 +194,7 @@ function ProtectedRoute({ children }) {
 function AdminContent({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   useEffect(() => {
     // Simple check if backend is available
     fetch('/api/v1/system/status')
@@ -191,11 +207,11 @@ function AdminContent({ children }) {
         setLoading(false);
       });
   }, []);
-  
+
   if (loading) {
     return <LoadingScreen />;
   }
-  
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -207,13 +223,13 @@ function AdminContent({ children }) {
       </div>
     );
   }
-  
+
   return (
     <SystemProvider>
       <OrganizationProvider>
-        <ToastProvider>
+        <ExtensionsProvider>
           {children}
-        </ToastProvider>
+        </ExtensionsProvider>
       </OrganizationProvider>
     </SystemProvider>
   );
@@ -260,8 +276,11 @@ function AppRoutes() {
             <AdminContent>
               <Layout>
                 <Routes>
-                  {/* Dashboard */}
-                  <Route path="/" element={<DashboardPro />} />
+                  {/* Default Landing - Apps Launcher */}
+                  <Route path="/" element={<AppsLauncher />} />
+
+                  {/* Dashboard (legacy - still accessible) */}
+                  <Route path="dashboard" element={<DashboardPro />} />
 
                   {/* ============================================================ */}
                   {/* ACCOUNT SECTION - Personal user settings */}
@@ -396,6 +415,23 @@ function AppRoutes() {
                   <Route path="plans" element={<TierComparison />} />
 
                   {/* ============================================================ */}
+                  {/* APPS LAUNCHER & MARKETPLACE - User-Facing Apps */}
+                  {/* ============================================================ */}
+                  <Route path="apps" element={<AppsLauncher />} />
+                  <Route path="apps/marketplace" element={<AppMarketplace />} />
+                  <Route path="apps/my" element={<MyApps />} />
+
+                  {/* ============================================================ */}
+                  {/* EXTENSIONS MARKETPLACE - Admin Add-ons & Purchases */}
+                  {/* ============================================================ */}
+                  <Route path="extensions" element={<ExtensionsMarketplace />} />
+                  <Route path="extensions/:id" element={<ProductDetailPage />} />
+                  <Route path="extensions/checkout" element={<CheckoutPage />} />
+                  <Route path="extensions/success" element={<SuccessPage />} />
+                  <Route path="extensions/cancelled" element={<CancelledPage />} />
+                  <Route path="purchases" element={<PurchaseHistory />} />
+
+                  {/* ============================================================ */}
                   {/* LEGACY ROUTES - Backwards compatibility (DEPRECATED) */}
                   {/* Will be removed after November 13, 2025 */}
                   {/* ============================================================ */}
@@ -458,20 +494,22 @@ function App() {
       setTimeout(() => setShowOnboarding(true), 1000);
     }
   }, []);
-  
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <DeploymentProvider>
           <ThemeProvider>
-            <Router>
-              <AppRoutes />
-              {showOnboarding && (
-                <Suspense fallback={null}>
-                  <OnboardingTour onComplete={() => setShowOnboarding(false)} />
-                </Suspense>
-              )}
-            </Router>
+            <ToastProvider>
+              <Router>
+                <AppRoutes />
+                {showOnboarding && (
+                  <Suspense fallback={null}>
+                    <OnboardingTour onComplete={() => setShowOnboarding(false)} />
+                  </Suspense>
+                )}
+              </Router>
+            </ToastProvider>
           </ThemeProvider>
         </DeploymentProvider>
       </QueryClientProvider>

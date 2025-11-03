@@ -142,6 +142,10 @@ from llm_provider_settings_api import router as llm_provider_settings_router
 # LLM Provider Keys API (Epic 3.2 - Unified LLM Management)
 from provider_keys_api import router as provider_keys_router
 
+# UC API Keys & Platform Keys Management (November 2025)
+from uc_api_keys import router as uc_api_keys_router
+from platform_keys_api import router as platform_keys_router
+
 # LLM Testing Lab API (Epic 3.2 - Unified LLM Management)
 from testing_lab_api import router as testing_lab_router
 
@@ -653,6 +657,12 @@ app.include_router(provider_keys_router)
 logger.info("Provider Keys API endpoints registered at /api/v1/llm/providers (keys management)")
 app.include_router(testing_lab_router)
 logger.info("Testing Lab API endpoints registered at /api/v1/llm/test (interactive testing)")
+
+# UC API Keys & Platform Keys Management (November 2025)
+app.include_router(uc_api_keys_router)
+logger.info("UC API Keys endpoints registered at /api/v1/account/uc-api-keys")
+app.include_router(platform_keys_router)
+logger.info("Platform Keys Management endpoints registered at /api/v1/admin/platform-keys (Admin only)")
 
 # Platform Settings API
 app.include_router(platform_settings_router)

@@ -155,15 +155,17 @@ const SubscriptionManagement = () => {
     }
   };
 
-  const fetchTierFeatures = async (tierId) => {
+  const fetchTierFeatures = async (tierCode) => {
     try {
-      const response = await fetch(`/api/v1/admin/tiers/${tierId}/features`, { credentials: 'include' });
+      const response = await fetch(`/api/v1/tiers/${tierCode}/features`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch features');
       const data = await response.json();
-      setFeatures(data);
+      // API returns { tier_id, tier_code, tier_name, features: [...] }
+      return data.features || [];
     } catch (err) {
       setError(err.message);
       console.error('Error fetching features:', err);
+      return [];
     }
   };
 
@@ -254,16 +256,23 @@ const SubscriptionManagement = () => {
     if (!selectedTier) return;
 
     try {
-      const response = await fetch(`/api/v1/admin/tiers/${selectedTier.id}/features`, {
+      // Format features for the new API: array of { feature_key, enabled }
+      const updates = features.map(f => ({
+        feature_key: f.feature_key,
+        enabled: f.enabled
+      }));
+
+      const response = await fetch(`/api/v1/admin/tiers/${selectedTier.tier_code}/features`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ features })
+        body: JSON.stringify(updates)
       });
 
       if (!response.ok) throw new Error('Failed to update features');
 
-      setSuccess('Features updated successfully');
+      const result = await response.json();
+      setSuccess(result.message || 'Features updated successfully');
       setFeaturesDialogOpen(false);
       fetchTiers();
     } catch (err) {
@@ -353,13 +362,19 @@ const SubscriptionManagement = () => {
 
   const handleManageFeatures = async (tier) => {
     setSelectedTier(tier);
-    await fetchTierFeatures(tier.id);
 
-    // Initialize features with all definitions
+    // Fetch currently enabled features for this tier
+    const enabledFeatures = await fetchTierFeatures(tier.tier_code);
+
+    // Initialize features with all definitions, marking which ones are enabled
     const initialFeatures = featureDefinitions.map(def => {
-      const existing = features.find(f => f.feature_key === def.key);
-      return existing || { feature_key: def.key, feature_value: 'true', enabled: false };
+      const isEnabled = enabledFeatures.some(f => f.feature_key === def.key);
+      return {
+        feature_key: def.key,
+        enabled: isEnabled
+      };
     });
+
     setFeatures(initialFeatures);
     setFeaturesDialogOpen(true);
   };
@@ -849,7 +864,11 @@ const SubscriptionManagement = () => {
               />
             </Grid>
             <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
+              <Divider sx={{ my: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Plan Attributes
+                </Typography>
+              </Divider>
             </Grid>
             <Grid item xs={12} md={3}>
               <FormControlLabel
@@ -1017,7 +1036,11 @@ const SubscriptionManagement = () => {
               />
             </Grid>
             <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
+              <Divider sx={{ my: 2 }}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Plan Attributes
+                </Typography>
+              </Divider>
             </Grid>
             <Grid item xs={12} md={3}>
               <FormControlLabel

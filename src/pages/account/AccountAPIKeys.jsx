@@ -31,7 +31,11 @@ import {
   UserGroupIcon,
   XMarkIcon,
   ArrowPathIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  ClipboardDocumentIcon,
+  CodeBracketIcon,
+  PencilIcon,
+  BeakerIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -50,6 +54,17 @@ export default function AccountAPIKeys() {
   const [toast, setToast] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [stats, setStats] = useState(null);
+
+  // UC API Keys state
+  const [ucApiKeys, setUcApiKeys] = useState([]);
+  const [loadingUcKeys, setLoadingUcKeys] = useState(false);
+  const [showCodeSnippet, setShowCodeSnippet] = useState(false);
+
+  // Platform keys state (admin only)
+  const [platformKeys, setPlatformKeys] = useState(null);
+  const [loadingPlatformKeys, setLoadingPlatformKeys] = useState(false);
+  const [editingPlatformKey, setEditingPlatformKey] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Theme classes
   const themeClasses = {
@@ -212,6 +227,8 @@ export default function AccountAPIKeys() {
 
   useEffect(() => {
     loadData();
+    loadUcApiKeys();
+    checkAdminRole();
   }, []);
 
   const loadData = async () => {
@@ -227,6 +244,58 @@ export default function AccountAPIKeys() {
       showToast('error', 'Failed to load API keys');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkAdminRole = async () => {
+    try {
+      const response = await fetch('/api/v1/auth/user', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const user = await response.json();
+        const roles = user.roles || [];
+        setIsAdmin(roles.includes('admin'));
+        if (roles.includes('admin')) {
+          loadPlatformKeys();
+        }
+      }
+    } catch (error) {
+      console.error('Error checking admin role:', error);
+    }
+  };
+
+  const loadUcApiKeys = async () => {
+    setLoadingUcKeys(true);
+    try {
+      const response = await fetch('/api/v1/user/api-keys', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUcApiKeys(data);
+      }
+    } catch (error) {
+      console.error('Error loading UC API keys:', error);
+    } finally {
+      setLoadingUcKeys(false);
+    }
+  };
+
+  const loadPlatformKeys = async () => {
+    setLoadingPlatformKeys(true);
+    try {
+      const response = await fetch('/api/v1/admin/platform-keys', {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setPlatformKeys(data);
+      }
+    } catch (error) {
+      console.error('Error loading platform keys:', error);
+    } finally {
+      setLoadingPlatformKeys(false);
     }
   };
 
@@ -367,6 +436,86 @@ export default function AccountAPIKeys() {
     return byokKeys.find(k => k.provider === providerId);
   };
 
+  const handleRegenerateUcKey = async (keyId) => {
+    try {
+      const response = await fetch(`/api/v1/user/api-keys/${keyId}/regenerate`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (response.ok) {
+        showToast('success', 'API key regenerated successfully');
+        await loadUcApiKeys();
+      } else {
+        showToast('error', 'Failed to regenerate API key');
+      }
+    } catch (error) {
+      console.error('Error regenerating UC API key:', error);
+      showToast('error', 'Network error. Please try again.');
+    }
+  };
+
+  const handleCopyToClipboard = (text, label = 'API key') => {
+    navigator.clipboard.writeText(text);
+    showToast('success', `${label} copied to clipboard!`);
+  };
+
+  const handleTestPlatformKey = async (keyType) => {
+    try {
+      const response = await fetch(`/api/v1/admin/platform-keys/${keyType}/test`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const result = await response.json();
+      if (response.ok && result.valid) {
+        showToast('success', `${keyType} key is valid!`);
+      } else {
+        showToast('error', result.message || 'Key validation failed');
+      }
+    } catch (error) {
+      console.error('Error testing platform key:', error);
+      showToast('error', 'Network error during test');
+    }
+  };
+
+  const getCodeSnippet = (apiKey) => {
+    return {
+      python: `import requests
+
+# Unicorn Commander API
+BASE_URL = "https://api.unicorncommander.ai"
+API_KEY = "${apiKey}"
+
+# Example: Chat completion
+response = requests.post(
+    f"{BASE_URL}/v1/chat/completions",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    json={
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "Hello!"}]
+    }
+)
+print(response.json())`,
+      javascript: `// Unicorn Commander API
+const BASE_URL = "https://api.unicorncommander.ai";
+const API_KEY = "${apiKey}";
+
+// Example: Chat completion
+fetch(\`\${BASE_URL}/v1/chat/completions\`, {
+  method: "POST",
+  headers: {
+    "Authorization": \`Bearer \${API_KEY}\`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    model: "gpt-4",
+    messages: [{role: "user", content: "Hello!"}]
+  })
+})
+.then(res => res.json())
+.then(data => console.log(data));`
+    };
+  };
+
   if (loading) {
     return (
       <div className={`flex items-center justify-center py-12 ${themeClasses.text}`}>
@@ -423,6 +572,148 @@ export default function AccountAPIKeys() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* UC API Keys Section */}
+      <div className={`rounded-xl border p-6 ${themeClasses.card}`}>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className={`text-2xl font-bold ${themeClasses.text} flex items-center gap-2`}>
+              <KeyIcon className="h-6 w-6" />
+              Your Unicorn Commander API Keys
+            </h2>
+            <p className={`mt-2 ${themeClasses.subtext}`}>
+              Use these keys to call our API from other systems
+            </p>
+          </div>
+        </div>
+
+        {loadingUcKeys ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto"></div>
+          </div>
+        ) : ucApiKeys.length === 0 ? (
+          <div className={`rounded-lg border-2 border-dashed p-8 text-center ${themeClasses.card}`}>
+            <KeyIcon className={`h-12 w-12 mx-auto mb-3 ${themeClasses.subtext}`} />
+            <p className={themeClasses.subtext}>No API keys yet. Contact support to get started.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Base URL */}
+            <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-blue-50 border-blue-200' : 'bg-blue-500/10 border-blue-500/30'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-sm font-medium ${themeClasses.text} mb-1`}>Base URL:</p>
+                  <code className={`text-sm ${themeClasses.text} font-mono`}>https://api.unicorncommander.ai</code>
+                </div>
+                <button
+                  onClick={() => handleCopyToClipboard('https://api.unicorncommander.ai', 'Base URL')}
+                  className={`p-2 rounded-lg ${themeClasses.subtext} hover:bg-gray-700/30`}
+                >
+                  <ClipboardDocumentIcon className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* API Keys List */}
+            {ucApiKeys.map((key) => (
+              <div key={key.id} className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'}`}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-sm font-medium ${themeClasses.text}`}>API Key:</span>
+                      <code className={`text-sm ${themeClasses.text} font-mono`}>
+                        {key.key_preview || 'uc_sk_••••••••••••••••'}
+                      </code>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className={`${themeClasses.subtext}`}>Created:</span>
+                        <span className={`ml-2 ${themeClasses.text}`}>
+                          {key.created_at ? new Date(key.created_at).toLocaleDateString() : 'Nov 3, 2025'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`${themeClasses.subtext}`}>Last Used:</span>
+                        <span className={`ml-2 ${themeClasses.text}`}>
+                          {key.last_used ? new Date(key.last_used).toLocaleDateString() : 'Never'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCopyToClipboard(key.key || 'uc_sk_example', 'API key')}
+                      className={`p-2 rounded-lg ${themeClasses.button} text-sm`}
+                      title="Copy API key"
+                    >
+                      <ClipboardDocumentIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleRegenerateUcKey(key.id)}
+                      className="p-2 rounded-lg border border-orange-500/50 text-orange-400 hover:bg-orange-500/10 text-sm"
+                      title="Regenerate key"
+                    >
+                      <ArrowPathIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Start Code Snippet */}
+                <button
+                  onClick={() => setShowCodeSnippet(showCodeSnippet === key.id ? null : key.id)}
+                  className={`flex items-center gap-2 text-sm ${themeClasses.subtext} hover:${themeClasses.text}`}
+                >
+                  <CodeBracketIcon className="h-4 w-4" />
+                  {showCodeSnippet === key.id ? 'Hide' : 'Show'} Quick Start
+                </button>
+
+                {showCodeSnippet === key.id && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="mt-4"
+                  >
+                    <div className="space-y-3">
+                      {/* Python Example */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-xs font-semibold ${themeClasses.text}`}>Python</span>
+                          <button
+                            onClick={() => handleCopyToClipboard(getCodeSnippet(key.key || 'uc_sk_your_key_here').python, 'Python code')}
+                            className={`text-xs ${themeClasses.subtext} hover:${themeClasses.text}`}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <pre className={`text-xs p-3 rounded-lg overflow-x-auto ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-900'}`}>
+                          <code className={themeClasses.text}>{getCodeSnippet(key.key || 'uc_sk_your_key_here').python}</code>
+                        </pre>
+                      </div>
+
+                      {/* JavaScript Example */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-xs font-semibold ${themeClasses.text}`}>JavaScript</span>
+                          <button
+                            onClick={() => handleCopyToClipboard(getCodeSnippet(key.key || 'uc_sk_your_key_here').javascript, 'JavaScript code')}
+                            className={`text-xs ${themeClasses.subtext} hover:${themeClasses.text}`}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <pre className={`text-xs p-3 rounded-lg overflow-x-auto ${currentTheme === 'light' ? 'bg-gray-100' : 'bg-gray-900'}`}>
+                          <code className={themeClasses.text}>{getCodeSnippet(key.key || 'uc_sk_your_key_here').javascript}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Benefits Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -651,6 +942,118 @@ export default function AccountAPIKeys() {
           </div>
         )}
       </div>
+
+      {/* Platform Configuration Section (Admin Only) */}
+      {isAdmin && (
+        <div className={`rounded-xl border-2 p-6 ${themeClasses.card} border-purple-500/50`}>
+          <div className="flex items-center gap-2 mb-6">
+            <ShieldCheckIcon className="h-6 w-6 text-purple-400" />
+            <h2 className={`text-2xl font-bold ${themeClasses.text}`}>
+              Platform Configuration
+            </h2>
+            <span className="px-3 py-1 bg-purple-500/20 text-purple-400 text-xs font-semibold rounded-full">
+              Admin Only
+            </span>
+          </div>
+
+          {loadingPlatformKeys ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto"></div>
+            </div>
+          ) : !platformKeys ? (
+            <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'}`}>
+              <p className={themeClasses.subtext}>No platform keys configured.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Platform OpenRouter Key */}
+              {platformKeys.openrouter && (
+                <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-orange-50 border-orange-200' : 'bg-orange-500/10 border-orange-500/30'}`}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ServerIcon className="h-5 w-5 text-orange-400" />
+                        <span className={`text-sm font-semibold ${themeClasses.text}`}>Platform OpenRouter Key</span>
+                      </div>
+                      <code className={`text-sm ${themeClasses.text} font-mono block mb-2`}>
+                        {platformKeys.openrouter.key_preview || 'sk-or-v1-••••••••••••••••'}
+                      </code>
+                      <div className="text-xs space-y-1">
+                        <div>
+                          <span className={`${themeClasses.subtext}`}>Added:</span>
+                          <span className={`ml-2 ${themeClasses.text}`}>
+                            {platformKeys.openrouter.created_at
+                              ? new Date(platformKeys.openrouter.created_at).toLocaleDateString()
+                              : 'Unknown'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className={`${themeClasses.subtext}`}>Status:</span>
+                          <span className={`ml-2 ${platformKeys.openrouter.valid ? 'text-green-400' : 'text-red-400'}`}>
+                            {platformKeys.openrouter.valid ? 'Valid' : 'Needs Testing'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setEditingPlatformKey('openrouter')}
+                        className="p-2 rounded-lg border border-gray-500/50 text-gray-400 hover:bg-gray-500/10 text-sm"
+                        title="Edit key"
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleTestPlatformKey('openrouter')}
+                        className={`p-2 rounded-lg ${themeClasses.button} text-sm`}
+                        title="Test connection"
+                      >
+                        <BeakerIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className={`text-xs ${themeClasses.subtext}`}>
+                    Used for managed tier users and as fallback for BYOK users
+                  </p>
+                </div>
+              )}
+
+              {/* Provisioning Key */}
+              {platformKeys.provisioning && (
+                <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-purple-50 border-purple-200' : 'bg-purple-500/10 border-purple-500/30'}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <KeyIcon className="h-5 w-5 text-purple-400" />
+                        <span className={`text-sm font-semibold ${themeClasses.text}`}>Provisioning Key</span>
+                      </div>
+                      <code className={`text-sm ${themeClasses.text} font-mono block mb-2`}>
+                        {visibleKeys.provisioning
+                          ? (platformKeys.provisioning.key || 'pk_••••••••••••••••')
+                          : (platformKeys.provisioning.key_preview || 'pk_••••••••••••••••')}
+                      </code>
+                      <p className={`text-xs ${themeClasses.subtext}`}>
+                        Internal key for service provisioning and orchestration
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => toggleKeyVisibility('provisioning')}
+                      className={`p-2 rounded-lg ${themeClasses.subtext} hover:bg-gray-700/30`}
+                      title={visibleKeys.provisioning ? 'Hide key' : 'Show key'}
+                    >
+                      {visibleKeys.provisioning ? (
+                        <EyeSlashIcon className="h-4 w-4" />
+                      ) : (
+                        <EyeIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* What is BYOK? Section */}
       <div className={`rounded-xl border p-6 ${themeClasses.card}`}>

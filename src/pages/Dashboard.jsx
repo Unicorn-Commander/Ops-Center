@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { useSystem } from '../contexts/SystemContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { ServiceLogos, getServiceInfo } from '../components/ServiceLogos';
 import { EnhancedServiceLogos, EnhancedServiceCard, getEnhancedServiceInfo } from '../components/EnhancedServiceLogos';
 import UpdateModal from '../components/UpdateModal';
 import { getGlassmorphismStyles, getResourceColor, getServiceColorScheme } from '../styles/glassmorphism';
-import { 
-  CpuChipIcon, 
+import {
+  CpuChipIcon,
   ServerStackIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
@@ -29,7 +30,11 @@ import {
   StopIcon,
   DocumentMagnifyingGlassIcon,
   ArrowDownTrayIcon,
-  WrenchScrewdriverIcon
+  WrenchScrewdriverIcon,
+  ArrowRightIcon,
+  SparklesIcon,
+  MagnifyingGlassIcon,
+  CubeIcon
 } from '@heroicons/react/24/outline';
 
 const containerVariants = {
@@ -162,6 +167,21 @@ const ServiceModal = ({ service, isOpen, onClose, theme }) => {
   );
 };
 
+// Feature to service mapping - controls which services are visible based on user's tier features
+const FEATURE_SERVICE_MAP = {
+  chat_access: ['webui', 'openwebui'],
+  search_enabled: ['searxng', 'centerdeep'],
+  tts_enabled: ['tts', 'orator'],
+  stt_enabled: ['whisperx', 'amanuensis'],
+  billing_dashboard: ['lago'],
+  litellm_access: ['litellm', 'vllm'],
+  brigade_access: ['brigade'],
+  bolt_access: ['bolt'],
+  presenton_access: ['presenton'],
+  // Infrastructure services always visible
+  _base_services: ['redis', 'postgresql', 'qdrant', 'embeddings', 'reranker']
+};
+
 export default function Dashboard() {
   const { systemData, services, fetchSystemStatus, fetchServices } = useSystem();
   const { theme, currentTheme } = useTheme();
@@ -172,6 +192,8 @@ export default function Dashboard() {
   const [serviceViewMode, setServiceViewMode] = useState('cards'); // cards, circles, list
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [userFeatures, setUserFeatures] = useState([]);
+  const [loadingFeatures, setLoadingFeatures] = useState(true);
 
   // Get glassmorphism styles based on current theme
   const glassStyles = getGlassmorphismStyles(currentTheme);
@@ -183,6 +205,7 @@ export default function Dashboard() {
     fetchHardwareInfo();
     fetchCurrentUser();
     fetchRecentActivity();
+    loadUserFeatures();
 
     // Set up polling
     const interval = setInterval(() => {
@@ -198,6 +221,46 @@ export default function Dashboard() {
       clearInterval(activityInterval);
     };
   }, []);
+
+  // Load user features to control service visibility
+  const loadUserFeatures = async () => {
+    try {
+      // Get current user
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+      // Admin users see all services
+      if (user.role === 'admin') {
+        setUserFeatures([]);
+        setLoadingFeatures(false);
+        return;
+      }
+
+      // If no tier, user sees base services only
+      if (!user.subscription_tier) {
+        setUserFeatures([]);
+        setLoadingFeatures(false);
+        return;
+      }
+
+      // Fetch features for user's tier
+      const response = await fetch(`/api/v1/tiers/${user.subscription_tier}/features`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Extract feature keys from the response
+        const featureKeys = (data.features || []).map(f => f.feature_key);
+        setUserFeatures(featureKeys);
+      }
+    } catch (error) {
+      console.error('Error loading user features:', error);
+      // On error, show base services only (fail-safe)
+      setUserFeatures([]);
+    } finally {
+      setLoadingFeatures(false);
+    }
+  };
   
   // Fetch hardware information
   const fetchHardwareInfo = async () => {
@@ -254,12 +317,47 @@ export default function Dashboard() {
       });
       if (response.ok) {
         const userData = await response.json();
-        setCurrentUser(userData.user || userData);
+        const user = userData.user || userData;
+        setCurrentUser(user);
+        // Also store in localStorage for feature checking
+        localStorage.setItem('user', JSON.stringify(user));
       }
     } catch (error) {
       console.error('Failed to fetch current user:', error);
     }
   };
+
+  // Filter services based on user features
+  const getVisibleServices = () => {
+    // Admin users see all services
+    if (currentUser?.role === 'admin') {
+      return Object.keys(EnhancedServiceLogos);
+    }
+
+    // If features still loading, show base services only
+    if (loadingFeatures) {
+      return FEATURE_SERVICE_MAP._base_services;
+    }
+
+    // If user has no features, show base services only
+    if (userFeatures.length === 0) {
+      return FEATURE_SERVICE_MAP._base_services;
+    }
+
+    // Build list of visible services based on enabled features
+    const visibleServices = new Set(FEATURE_SERVICE_MAP._base_services);
+
+    userFeatures.forEach(featureKey => {
+      const services = FEATURE_SERVICE_MAP[featureKey];
+      if (services) {
+        services.forEach(service => visibleServices.add(service));
+      }
+    });
+
+    return Array.from(visibleServices);
+  };
+
+  const visibleServiceKeys = getVisibleServices();
 
   // Fetch recent activity from audit logs
   const fetchRecentActivity = async () => {
@@ -546,7 +644,106 @@ export default function Dashboard() {
           </motion.button>
         </div>
       </motion.div>
-      
+
+      {/* Available Apps Widget */}
+      <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} flex items-center gap-3`}>
+            <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg">
+              <CubeIcon className="h-6 w-6 text-white" />
+            </div>
+            Available Apps
+          </h3>
+          <Link
+            to="/apps"
+            className={`text-sm ${theme.text.accent} hover:underline flex items-center gap-1`}
+          >
+            View All
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <p className={`text-sm ${theme.text.secondary} mb-6`}>
+          Discover powerful AI apps and tools to enhance your workflow
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Featured App Cards */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className={`${glassStyles.card} rounded-xl p-5 flex items-start gap-4 cursor-pointer`}
+            onClick={() => window.location.href = '/apps'}
+          >
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-lg">
+              <SparklesIcon className="h-6 w-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-base font-bold ${theme.text.primary} mb-1`}>
+                AI Chat
+              </div>
+              <div className={`text-xs ${theme.text.secondary} mb-2`}>
+                FREE - Included in your plan
+              </div>
+              <div className={`text-xs ${theme.text.secondary}`}>
+                Advanced conversational AI interface
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className={`${glassStyles.card} rounded-xl p-5 flex items-start gap-4 cursor-pointer`}
+            onClick={() => window.location.href = '/apps'}
+          >
+            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-lg">
+              <MagnifyingGlassIcon className="h-6 w-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-base font-bold ${theme.text.primary} mb-1`}>
+                AI Search
+              </div>
+              <div className={`text-xs ${theme.text.secondary} mb-2`}>
+                FREE - Included in your plan
+              </div>
+              <div className={`text-xs ${theme.text.secondary}`}>
+                Privacy-focused metasearch engine
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className={`${glassStyles.card} rounded-xl p-5 flex items-start gap-4 cursor-pointer`}
+            onClick={() => window.location.href = '/apps'}
+          >
+            <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-lg">
+              <ServerStackIcon className="h-6 w-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-base font-bold ${theme.text.primary} mb-1`}>
+                Voice Services
+              </div>
+              <div className={`text-xs text-blue-400 mb-2`}>
+                $5/month - Add-on
+              </div>
+              <div className={`text-xs ${theme.text.secondary}`}>
+                Text-to-Speech & Speech-to-Text
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="mt-6 flex justify-center">
+          <Link
+            to="/apps"
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+          >
+            Browse All Apps
+            <ArrowRightIcon className="h-5 w-5" />
+          </Link>
+        </div>
+      </motion.div>
+
       {/* System Information Card - Glassmorphism */}
       <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
         <h2 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-6 flex items-center gap-3`}>
@@ -873,27 +1070,29 @@ export default function Dashboard() {
         </div>
         
         <div className={`grid ${serviceViewMode === 'circles' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'} gap-3`}>
-          {Object.keys(EnhancedServiceLogos).map(serviceKey => {
-            const serviceData = services?.find(s => s.name.includes(serviceKey));
-            const status = serviceData?.status || 'unknown';
-            
-            return (
-              <motion.div
-                key={serviceKey}
-                whileHover={{ scale: 1.05 }}
-              >
-                <EnhancedServiceCard
-                  serviceKey={serviceKey}
-                  serviceData={serviceData}
-                  status={status}
-                  onClick={setSelectedService}
-                  theme={theme}
-                  currentTheme={currentTheme}
-                  viewMode={serviceViewMode}
-                />
-              </motion.div>
-            );
-          })}
+          {Object.keys(EnhancedServiceLogos)
+            .filter(serviceKey => visibleServiceKeys.includes(serviceKey))
+            .map(serviceKey => {
+              const serviceData = services?.find(s => s.name.includes(serviceKey));
+              const status = serviceData?.status || 'unknown';
+
+              return (
+                <motion.div
+                  key={serviceKey}
+                  whileHover={{ scale: 1.05 }}
+                >
+                  <EnhancedServiceCard
+                    serviceKey={serviceKey}
+                    serviceData={serviceData}
+                    status={status}
+                    onClick={setSelectedService}
+                    theme={theme}
+                    currentTheme={currentTheme}
+                    viewMode={serviceViewMode}
+                  />
+                </motion.div>
+              );
+            })}
         </div>
       </motion.div>
       

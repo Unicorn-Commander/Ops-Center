@@ -56,7 +56,8 @@ import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
   LockClosedIcon,
-  CpuChipIcon
+  CpuChipIcon,
+  ShoppingBagIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
@@ -99,7 +100,8 @@ const iconMap = {
   GlobeAltIcon,
   CodeBracketIcon,
   LockClosedIcon,
-  CpuChipIcon
+  CpuChipIcon,
+  ShoppingBagIcon
 };
 
 export default function Layout({ children }) {
@@ -321,6 +323,16 @@ export default function Layout({ children }) {
                   name="Dashboard"
                   href="/admin/"
                   icon={iconMap.HomeIcon}
+                />
+
+                {/* ============================ */}
+                {/* MARKETPLACE - Browse & Purchase Apps */}
+                {/* ============================ */}
+                <NavigationItem collapsed={sidebarCollapsed}
+                  name="Marketplace"
+                  href="/admin/apps/marketplace"
+                  icon={iconMap.ShoppingBagIcon}
+                  badge="New"
                 />
 
                 {/* ============================ */}
@@ -682,7 +694,7 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
-                        name="Feature Management"
+                        name="App Management"
                         href="/admin/system/feature-management"
                         icon={iconMap.AdjustmentsHorizontalIcon}
                         indent={true}

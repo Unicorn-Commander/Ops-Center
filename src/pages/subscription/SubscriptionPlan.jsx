@@ -71,48 +71,14 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// Plan features data
-const planFeatures = {
-  trial: [
-    { name: '100 API calls per day', included: true },
-    { name: 'Open-WebUI access', included: true },
-    { name: 'Basic AI models', included: true },
-    { name: 'Community support', included: true },
-    { name: 'Center-Deep access', included: false },
-    { name: 'BYOK support', included: false }
-  ],
-  starter: [
-    { name: '1,000 API calls per month', included: true },
-    { name: 'Open-WebUI + Center-Deep', included: true },
-    { name: 'All AI models', included: true },
-    { name: 'BYOK support', included: true },
-    { name: 'Email support', included: true },
-    { name: 'Priority support', included: false }
-  ],
-  professional: [
-    { name: '10,000 API calls per month', included: true },
-    { name: 'All services (Chat, Search, TTS, STT)', included: true },
-    { name: 'Billing dashboard access', included: true },
-    { name: 'BYOK support', included: true },
-    { name: 'Priority support', included: true },
-    { name: 'Team management', included: false }
-  ],
-  enterprise: [
-    { name: 'Unlimited API calls', included: true },
-    { name: 'Team management (5 seats)', included: true },
-    { name: 'Custom integrations', included: true },
-    { name: '24/7 dedicated support', included: true },
-    { name: 'White-label options', included: true },
-    { name: 'SLA guarantees', included: true }
-  ]
-};
+// Plan features will be loaded from API dynamically
+// No hardcoded features - fetched from /api/v1/tiers/features
 
-// Available plans for comparison
+// Available subscription tiers (just basic info, features loaded from API)
 const availablePlans = [
-  { tier: 'trial', name: 'Trial', price: 1.0, period: 'week', description: '7-day trial period' },
-  { tier: 'starter', name: 'Starter', price: 19.0, period: 'month', description: 'For individuals' },
-  { tier: 'professional', name: 'Professional', price: 49.0, period: 'month', description: 'Most popular', popular: true },
-  { tier: 'enterprise', name: 'Enterprise', price: 99.0, period: 'month', description: 'For teams' }
+  { tier: 'vip_founder', tier_code: 'vip_founder', name: 'VIP / Founder', price: 0.0, period: 'month', description: 'Invite-only tier' },
+  { tier: 'byok', tier_code: 'byok', name: 'BYOK', price: 30.0, period: 'month', description: 'Bring Your Own Key' },
+  { tier: 'managed', tier_code: 'managed', name: 'Managed', price: 50.0, period: 'month', description: 'Recommended', popular: true }
 ];
 
 export default function SubscriptionPlan() {
@@ -124,10 +90,12 @@ export default function SubscriptionPlan() {
   const [showComparison, setShowComparison] = useState(false);
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [tierFeatures, setTierFeatures] = useState([]); // Real features from API
   const maxRetries = 3;
 
   useEffect(() => {
     loadSubscription();
+    loadTierFeatures();
 
     // Check for canceled checkout
     const urlParams = new URLSearchParams(window.location.search);
@@ -185,6 +153,42 @@ export default function SubscriptionPlan() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadTierFeatures = async () => {
+    try {
+      const res = await fetch('/api/v1/tiers/features', {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        }
+      });
+
+      if (!res.ok) {
+        console.error('Failed to load tier features:', res.status);
+        return;
+      }
+
+      const data = await res.json();
+      setTierFeatures(data);
+      console.log('Loaded tier features:', data);
+    } catch (error) {
+      console.error('Error loading tier features:', error);
+    }
+  };
+
+  // Helper function to get features for a tier
+  const getFeaturesForTier = (tierCode) => {
+    const tierData = tierFeatures.find(t => t.tier_code === tierCode);
+    if (!tierData || !tierData.features) return [];
+
+    // Return features in display format with included: true
+    return tierData.features.map(f => ({
+      name: f.feature_name,
+      included: true,
+      category: f.category,
+      description: f.description
+    }));
   };
 
   const handleUpgrade = async (targetTier, attempt = 1) => {
@@ -426,7 +430,7 @@ export default function SubscriptionPlan() {
     );
   }
 
-  const currentFeatures = subscription ? planFeatures[subscription.tier] || [] : [];
+  const currentFeatures = subscription ? getFeaturesForTier(subscription.tier_code || subscription.tier) : [];
 
   return (
     <div className="space-y-6">
@@ -619,7 +623,7 @@ export default function SubscriptionPlan() {
                 </div>
 
                 <div className="space-y-2 mb-6">
-                  {planFeatures[plan.tier]?.slice(0, 4).map((feature, index) => (
+                  {getFeaturesForTier(plan.tier_code || plan.tier)?.slice(0, 4).map((feature, index) => (
                     <div key={index} className="flex items-start gap-2">
                       {feature.included ? (
                         <CheckCircleIcon className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
