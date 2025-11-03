@@ -90,12 +90,20 @@ from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
 from redis_session import redis_session_manager
 from subscription_tiers_api import router as subscription_tiers_router
+from tier_features_api import router as tier_features_router
 from feature_definitions_api import router as feature_definitions_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
 from email_notification_api import router as notification_router
 from email_provider_api import router as email_provider_router
+
+# Extensions Marketplace API - Phase 1 MVP (NEW)
+from extensions_catalog_api import router as extensions_catalog_router
+from my_apps_api import router as my_apps_router
+from extensions_cart_api import router as extensions_cart_router
+from extensions_purchase_api import router as extensions_purchase_router
+from extensions_admin_api import router as extensions_admin_api_router
 
 # System Metrics & Health Monitoring (Epic 2.5)
 from system_metrics_api import router as system_metrics_router
@@ -531,6 +539,10 @@ if AUDIT_ENABLED:
 
 # Register BYOK router
 app.include_router(byok_router)
+
+# Pass sessions store to BYOK router for authentication
+from byok_api import set_sessions_store
+set_sessions_store(sessions)
 logger.info("BYOK API endpoints registered at /api/v1/keys")
 
 # Register Lago webhooks router
@@ -564,6 +576,21 @@ logger.info("Stripe payment API endpoints registered at /api/v1/billing")
 # Register Lago billing/invoice endpoints
 app.include_router(billing_router)
 logger.info("Lago billing/invoice API endpoints registered at /api/v1/billing")
+
+# Extensions Marketplace API - Phase 1 MVP (NEW)
+# NOTE: Purchase & Admin routers registered BEFORE catalog to avoid /{addon_id} catching specific routes
+app.include_router(extensions_purchase_router)
+logger.info("Extensions Purchase API endpoints registered at /api/v1/extensions/checkout, /api/v1/extensions/purchases")
+app.include_router(extensions_admin_api_router)
+logger.info("Extensions Admin API endpoints registered at /api/v1/admin/extensions")
+app.include_router(extensions_cart_router)
+logger.info("Extensions Cart API endpoints registered at /api/v1/cart")
+app.include_router(extensions_catalog_router)
+logger.info("Extensions Catalog API endpoints registered at /api/v1/extensions (includes /{addon_id})")
+
+# My Apps API - Tier-filtered apps for authenticated users
+app.include_router(my_apps_router)
+logger.info("My Apps API endpoints registered at /api/v1/my-apps (RBAC-filtered)")
 
 # Epic 1.8: Credit & Usage Metering System
 app.include_router(credit_router)
@@ -604,6 +631,10 @@ logger.info("User Management API endpoints registered at /api/v1/admin/users")
 # Subscription Tier Management API (Epic 4.4)
 app.include_router(subscription_tiers_router)
 logger.info("Subscription Tier Management API endpoints registered at /api/v1/admin/tiers")
+
+# Tier Features Association API
+app.include_router(tier_features_router)
+logger.info("Tier Features API endpoints registered at /api/v1/tiers/features")
 
 # Feature Definitions Management API
 app.include_router(feature_definitions_router)

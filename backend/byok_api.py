@@ -17,8 +17,22 @@ from tier_middleware import require_tier
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/byok", tags=["byok"])
 
+# Access to sessions store (set by server.py when registering this router)
+sessions = {}
+
+def set_sessions_store(sessions_dict):
+    """Set reference to server's sessions store"""
+    global sessions
+    sessions = sessions_dict
+
 # Supported providers
 SUPPORTED_PROVIDERS = {
+    "openrouter": {
+        "name": "OpenRouter",
+        "test_url": "https://openrouter.ai/api/v1/models",
+        "auth_type": "bearer",
+        "key_format": "sk-or-v1-"
+    },
     "openai": {
         "name": "OpenAI",
         "test_url": "https://api.openai.com/v1/models",
@@ -121,11 +135,20 @@ class ProviderInfo(BaseModel):
 # Helper functions
 
 async def get_user_email(request: Request) -> str:
-    """Extract user email from session"""
-    user = request.session.get("user")
-    if not user or not user.get("email"):
+    """Extract user email from session using session_token cookie"""
+    session_token = request.cookies.get("session_token")
+
+    if not session_token or session_token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return user["email"]
+
+    session = sessions[session_token]
+    user_data = session.get("user", {})
+
+    email = user_data.get("email")
+    if not email:
+        raise HTTPException(status_code=401, detail="User email not found in session")
+
+    return email
 
 async def get_user_from_keycloak(email: str) -> Optional[Dict[str, Any]]:
     """Fetch user data from Keycloak"""
@@ -284,36 +307,98 @@ async def list_keys(request: Request):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        attributes = user.get("attributes", {})
+        user_id = user.get("id")
+        if not user_id:
+            raise HTTPException(status_code=404, detail="User ID not found")
+
         encryption = get_encryption()
-
-        # Helper to extract first value from Keycloak array
-        def get_attr(key, default=None):
-            val = attributes.get(key, [default])
-            return val[0] if isinstance(val, list) and val else default
-
         keys = []
-        for provider_id in SUPPORTED_PROVIDERS.keys():
-            encrypted_key = get_attr(f"byok_{provider_id}_key")
 
-            if encrypted_key:
+        # Query database for BYOK keys
+        import asyncpg
+
+        # Get database pool from app state
+        db_pool = request.app.state.db_pool
+        if not db_pool:
+            logger.warning("Database connection not available, BYOK keys cannot be retrieved")
+            return []
+
+        try:
+            # Get connection from pool
+            async with db_pool.acquire() as conn:
+                # Fetch user provider keys from database
+                db_keys = await conn.fetch("""
+                    SELECT provider, api_key_encrypted, metadata, enabled, created_at, updated_at
+                    FROM user_provider_keys
+                    WHERE user_id = $1 AND enabled = true
+                """, user_id)
+
+            # Process database keys
+            for row in db_keys:
+                provider_id = row['provider']
+
+                # Only show supported providers
+                if provider_id not in SUPPORTED_PROVIDERS:
+                    continue
+
                 try:
                     # Decrypt to mask properly
-                    decrypted = encryption.decrypt_key(encrypted_key)
+                    decrypted = encryption.decrypt_key(row['api_key_encrypted'])
                     key_preview = encryption.mask_key(decrypted)
                 except Exception as e:
                     logger.error(f"Error decrypting key for {provider_id}: {e}")
                     key_preview = "***error***"
 
+                # Parse metadata JSON string to dict
+                import json
+                metadata_raw = row.get('metadata')
+                if isinstance(metadata_raw, str):
+                    try:
+                        metadata = json.loads(metadata_raw)
+                    except:
+                        metadata = {}
+                else:
+                    metadata = metadata_raw or {}
+
                 keys.append(APIKeyResponse(
                     provider=provider_id,
                     provider_name=SUPPORTED_PROVIDERS[provider_id]["name"],
                     key_preview=key_preview,
-                    label=get_attr(f"byok_{provider_id}_label"),
-                    added_date=get_attr(f"byok_{provider_id}_added_date", "Unknown"),
-                    last_tested=get_attr(f"byok_{provider_id}_last_tested"),
-                    test_status=get_attr(f"byok_{provider_id}_test_status")
+                    label=metadata.get('name'),
+                    added_date=row['created_at'].isoformat() if row['created_at'] else "Unknown",
+                    last_tested=metadata.get('last_tested'),
+                    test_status=metadata.get('test_status')
                 ))
+
+        except Exception as e:
+            logger.error(f"Error querying database for BYOK keys: {e}")
+            # Fall back to Keycloak attributes for backward compatibility
+            attributes = user.get("attributes", {})
+
+            def get_attr(key, default=None):
+                val = attributes.get(key, [default])
+                return val[0] if isinstance(val, list) and val else default
+
+            for provider_id in SUPPORTED_PROVIDERS.keys():
+                encrypted_key = get_attr(f"byok_{provider_id}_key")
+
+                if encrypted_key:
+                    try:
+                        decrypted = encryption.decrypt_key(encrypted_key)
+                        key_preview = encryption.mask_key(decrypted)
+                    except Exception as e:
+                        logger.error(f"Error decrypting key for {provider_id}: {e}")
+                        key_preview = "***error***"
+
+                    keys.append(APIKeyResponse(
+                        provider=provider_id,
+                        provider_name=SUPPORTED_PROVIDERS[provider_id]["name"],
+                        key_preview=key_preview,
+                        label=get_attr(f"byok_{provider_id}_label"),
+                        added_date=get_attr(f"byok_{provider_id}_added_date", "Unknown"),
+                        last_tested=get_attr(f"byok_{provider_id}_last_tested"),
+                        test_status=get_attr(f"byok_{provider_id}_test_status")
+                    ))
 
         return keys
 
@@ -324,9 +409,9 @@ async def list_keys(request: Request):
         raise HTTPException(status_code=500, detail="Failed to list API keys")
 
 @router.post("/keys/add")
-@require_tier(["starter", "professional", "enterprise"])
+# @require_tier(["starter", "professional", "enterprise"])  # Disabled: Flask decorator incompatible with FastAPI
 async def add_key(key_data: APIKeyAdd, request: Request):
-    """Add or update an API key (requires Starter tier or above)"""
+    """Add or update an API key (stores in PostgreSQL database)"""
     try:
         user_email = await get_user_email(request)
         user = await get_user_from_keycloak(user_email)
@@ -334,35 +419,60 @@ async def add_key(key_data: APIKeyAdd, request: Request):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
+        user_id = user.get("id")
+        if not user_id:
+            raise HTTPException(status_code=404, detail="User ID not found")
+
         # Encrypt the key
         encryption = get_encryption()
         encrypted_key = encryption.encrypt_key(key_data.key)
 
-        # Build attributes (as arrays for Keycloak)
-        attributes = {
-            f"byok_{key_data.provider}_key": [encrypted_key],
-            f"byok_{key_data.provider}_added_date": [datetime.utcnow().isoformat()]
+        # Build metadata JSON
+        metadata = {
+            "name": key_data.label or f"{SUPPORTED_PROVIDERS[key_data.provider]['name']} Key",
+            "added_date": datetime.utcnow().isoformat()
         }
-
-        if key_data.label:
-            attributes[f"byok_{key_data.provider}_label"] = [key_data.label]
 
         if key_data.endpoint:
-            attributes[f"byok_{key_data.provider}_endpoint"] = [key_data.endpoint]
+            metadata["endpoint"] = key_data.endpoint
 
-        # Update user in Keycloak
-        success = await update_user_attributes_keycloak(user_email, attributes)
+        # Store in PostgreSQL database
+        import asyncpg
+        import json
 
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to store API key")
+        # Get database pool from app state
+        db_pool = request.app.state.db_pool
+        if not db_pool:
+            raise HTTPException(status_code=500, detail="Database connection not available")
 
-        logger.info(f"Added BYOK key for {user_email}: {key_data.provider}")
+        try:
+            # Get connection from pool
+            async with db_pool.acquire() as conn:
+                # Upsert: Insert or update if exists
+                await conn.execute("""
+                    INSERT INTO user_provider_keys (
+                        user_id, provider, api_key_encrypted, metadata, enabled,
+                        created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4::jsonb, true, NOW(), NOW())
+                    ON CONFLICT (user_id, provider)
+                    DO UPDATE SET
+                        api_key_encrypted = EXCLUDED.api_key_encrypted,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                """, user_id, key_data.provider, encrypted_key, json.dumps(metadata))
 
-        return {
-            "message": "API key added successfully",
-            "provider": key_data.provider,
-            "provider_name": SUPPORTED_PROVIDERS[key_data.provider]["name"]
-        }
+            logger.info(f"Added BYOK key for {user_email} (user_id: {user_id}): {key_data.provider}")
+
+            return {
+                "message": "API key added successfully",
+                "provider": key_data.provider,
+                "provider_name": SUPPORTED_PROVIDERS[key_data.provider]["name"]
+            }
+
+        except Exception as e:
+            logger.error(f"Database error adding key: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to store API key in database: {str(e)}")
 
     except HTTPException:
         raise
@@ -415,7 +525,7 @@ async def delete_key(provider: str, request: Request):
 
 @router.post("/keys/test/{provider}", response_model=APIKeyTestResult)
 async def test_key(provider: str, request: Request):
-    """Test if an API key is valid"""
+    """Test if an API key is valid (reads from PostgreSQL database)"""
     try:
         if provider not in SUPPORTED_PROVIDERS:
             raise HTTPException(status_code=400, detail="Invalid provider")
@@ -426,33 +536,64 @@ async def test_key(provider: str, request: Request):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        attributes = user.get("attributes", {})
+        user_id = user.get("id")
+        if not user_id:
+            raise HTTPException(status_code=404, detail="User ID not found")
 
-        # Helper to extract from array
-        def get_attr(key, default=None):
-            val = attributes.get(key, [default])
-            return val[0] if isinstance(val, list) and val else default
+        # Get key from database
+        import asyncpg
+        import json
 
-        encrypted_key = get_attr(f"byok_{provider}_key")
-        if not encrypted_key:
-            raise HTTPException(status_code=404, detail="API key not found for this provider")
+        db_pool = request.app.state.db_pool
+        if not db_pool:
+            raise HTTPException(status_code=500, detail="Database connection not available")
+
+        encrypted_key = None
+        endpoint = None
+
+        async with db_pool.acquire() as conn:
+            # Fetch the specific provider key
+            row = await conn.fetchrow("""
+                SELECT api_key_encrypted, metadata
+                FROM user_provider_keys
+                WHERE user_id = $1 AND provider = $2 AND enabled = true
+            """, user_id, provider)
+
+            if not row:
+                raise HTTPException(status_code=404, detail="API key not found for this provider")
+
+            encrypted_key = row['api_key_encrypted']
+
+            # Parse metadata for endpoint
+            metadata_raw = row.get('metadata')
+            if isinstance(metadata_raw, str):
+                try:
+                    metadata = json.loads(metadata_raw)
+                    endpoint = metadata.get('endpoint')
+                except:
+                    pass
 
         # Decrypt key
         encryption = get_encryption()
         api_key = encryption.decrypt_key(encrypted_key)
 
-        # Get custom endpoint if exists
-        endpoint = get_attr(f"byok_{provider}_endpoint")
-
         # Test the key
         result = await test_api_key(provider, api_key, endpoint)
 
-        # Update test results in attributes (as arrays)
-        test_attrs = {
-            f"byok_{provider}_last_tested": [datetime.utcnow().isoformat()],
-            f"byok_{provider}_test_status": [result.status]
-        }
-        await update_user_attributes_keycloak(user_email, test_attrs)
+        # Update test results in database
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE user_provider_keys
+                SET metadata = jsonb_set(
+                    jsonb_set(
+                        COALESCE(metadata::jsonb, '{}'::jsonb),
+                        '{last_tested}', $3::jsonb
+                    ),
+                    '{test_status}', $4::jsonb
+                ),
+                updated_at = NOW()
+                WHERE user_id = $1 AND provider = $2
+            """, user_id, provider, json.dumps(datetime.utcnow().isoformat()), json.dumps(result.status))
 
         return result
 
@@ -464,7 +605,7 @@ async def test_key(provider: str, request: Request):
 
 @router.get("/stats")
 async def get_byok_stats(request: Request):
-    """Get statistics about user's BYOK configuration"""
+    """Get statistics about user's BYOK configuration (from PostgreSQL database)"""
     try:
         user_email = await get_user_email(request)
         user = await get_user_from_keycloak(user_email)
@@ -472,29 +613,50 @@ async def get_byok_stats(request: Request):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        attributes = user.get("attributes", {})
-
-        # Helper to extract from array
-        def get_attr(key, default=None):
-            val = attributes.get(key, [default])
-            return val[0] if isinstance(val, list) and val else default
+        user_id = user.get("id")
+        if not user_id:
+            raise HTTPException(status_code=404, detail="User ID not found")
 
         configured_count = 0
         tested_count = 0
         valid_count = 0
 
-        for provider_id in SUPPORTED_PROVIDERS.keys():
-            # Check if key exists and has value
-            if f"byok_{provider_id}_key" in attributes:
-                key_val = attributes.get(f"byok_{provider_id}_key", [])
-                if key_val and key_val[0]:
-                    configured_count += 1
+        # Query database for stats
+        import asyncpg
 
-                    if get_attr(f"byok_{provider_id}_last_tested"):
-                        tested_count += 1
+        db_pool = request.app.state.db_pool
+        if db_pool:
+            try:
+                async with db_pool.acquire() as conn:
+                    # Count configured providers
+                    db_keys = await conn.fetch("""
+                        SELECT provider, metadata
+                        FROM user_provider_keys
+                        WHERE user_id = $1 AND enabled = true
+                    """, user_id)
 
-                        if get_attr(f"byok_{provider_id}_test_status") == "valid":
+                    configured_count = len(db_keys)
+
+                    # Count tested and valid providers
+                    for row in db_keys:
+                        # Parse metadata JSON string to dict
+                        import json
+                        metadata_raw = row.get('metadata')
+                        if isinstance(metadata_raw, str):
+                            try:
+                                metadata = json.loads(metadata_raw)
+                            except:
+                                metadata = {}
+                        else:
+                            metadata = metadata_raw or {}
+
+                        if metadata.get('last_tested'):
+                            tested_count += 1
+                        if metadata.get('test_status') == 'valid':
                             valid_count += 1
+
+            except Exception as e:
+                logger.error(f"Error getting BYOK stats: {e}")
 
         return {
             "total_providers": len(SUPPORTED_PROVIDERS),
