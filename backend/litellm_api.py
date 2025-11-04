@@ -218,6 +218,24 @@ class ToggleBYOKRequest(BaseModel):
     enabled: bool = Field(..., description="Enable or disable key")
 
 
+class ImageGenerationRequest(BaseModel):
+    """Request model for image generation"""
+    prompt: str = Field(..., description="Text description of the image to generate", min_length=1)
+    model: Optional[str] = Field(None, description="Model to use (dall-e-3, dall-e-2, stable-diffusion-xl, etc.)")
+    n: int = Field(1, description="Number of images to generate", ge=1, le=10)
+    size: Optional[str] = Field("1024x1024", description="Image size (256x256, 512x512, 1024x1024, 1792x1024, 1024x1792)")
+    quality: Optional[str] = Field("standard", description="Image quality (standard, hd)")
+    style: Optional[str] = Field(None, description="Style preset (vivid, natural)")
+    response_format: Optional[str] = Field("url", description="Response format (url, b64_json)")
+
+
+class ImageGenerationResponse(BaseModel):
+    """Response model for image generation"""
+    created: int
+    data: List[Dict]
+    _metadata: Optional[Dict] = None
+
+
 # ============================================================================
 # System Key Manager (Admin Provider Keys)
 # ============================================================================
@@ -242,22 +260,68 @@ class SystemKeyManager:
         """
         Encrypt and store system API key
 
+        If provider doesn't exist in database (MD5 hash ID), creates it first.
+
         Args:
-            provider_id: Provider UUID
+            provider_id: Provider UUID or MD5 hash
             api_key: Plain text API key
             source: 'database' or 'environment'
         """
         try:
+            import hashlib
             encrypted = self.cipher.encrypt(api_key.encode()).decode()
+
             async with self.pool.acquire() as conn:
-                await conn.execute("""
-                    UPDATE llm_providers
-                    SET api_key_encrypted = $1,
-                        api_key_source = $2,
-                        api_key_updated_at = NOW()
-                    WHERE id = $3
-                """, encrypted, source, provider_id)
-                logger.info(f"Updated system key for provider {provider_id}")
+                # Check if this is an MD5 hash (temp ID for provider not in DB)
+                if len(provider_id) == 32 and all(c in '0123456789abcdef' for c in provider_id):
+                    # This is a temp ID - need to find or create the provider
+                    ALL_PROVIDERS = [
+                        {'type': 'openrouter', 'name': 'OpenRouter'},
+                        {'type': 'openai', 'name': 'OpenAI'},
+                        {'type': 'anthropic', 'name': 'Anthropic'},
+                        {'type': 'google', 'name': 'Google'},
+                        {'type': 'cohere', 'name': 'Cohere'},
+                        {'type': 'groq', 'name': 'Groq'},
+                        {'type': 'together', 'name': 'Together'},
+                        {'type': 'mistral', 'name': 'Mistral'},
+                        {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
+                        {'type': 'huggingface', 'name': 'HuggingFace'},
+                        {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
+                        {'type': 'custom', 'name': 'Custom Provider'}
+                    ]
+
+                    # Find which provider this MD5 represents
+                    provider_type = None
+                    provider_name = None
+                    for p in ALL_PROVIDERS:
+                        if hashlib.md5(p['type'].encode()).hexdigest() == provider_id:
+                            provider_type = p['type']
+                            provider_name = p['name']
+                            break
+
+                    if not provider_type:
+                        raise HTTPException(status_code=400, detail="Invalid provider ID")
+
+                    # Insert or update provider
+                    await conn.execute("""
+                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, created_at, updated_at, api_key_updated_at)
+                        VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW(), NOW())
+                        ON CONFLICT (name) DO UPDATE
+                        SET api_key_encrypted = $3,
+                            api_key_source = $4,
+                            api_key_updated_at = NOW()
+                    """, provider_name, provider_type, encrypted, source)
+                    logger.info(f"Created/updated provider {provider_name} ({provider_type}) with system key")
+                else:
+                    # Regular UUID - update existing provider
+                    await conn.execute("""
+                        UPDATE llm_providers
+                        SET api_key_encrypted = $1,
+                            api_key_source = $2,
+                            api_key_updated_at = NOW()
+                        WHERE id = $3
+                    """, encrypted, source, provider_id)
+                    logger.info(f"Updated system key for provider {provider_id}")
         except Exception as e:
             logger.error(f"Failed to set system key: {e}")
             raise HTTPException(status_code=500, detail="Failed to store system key")
@@ -322,10 +386,27 @@ class SystemKeyManager:
         """
         Get all providers with masked keys
 
-        Returns:
-            List of provider dicts with key status
+        Returns ALL available providers (from code), not just ones in database.
+        Merges with database records to show key status.
         """
         try:
+            # Define all available providers
+            ALL_PROVIDERS = [
+                {'type': 'openrouter', 'name': 'OpenRouter'},
+                {'type': 'openai', 'name': 'OpenAI'},
+                {'type': 'anthropic', 'name': 'Anthropic'},
+                {'type': 'google', 'name': 'Google'},
+                {'type': 'cohere', 'name': 'Cohere'},
+                {'type': 'groq', 'name': 'Groq'},
+                {'type': 'together', 'name': 'Together'},
+                {'type': 'mistral', 'name': 'Mistral'},
+                {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
+                {'type': 'huggingface', 'name': 'HuggingFace'},
+                {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
+                {'type': 'custom', 'name': 'Custom Provider'}
+            ]
+
+            # Get providers from database
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT id, name, type as provider_type, api_key_encrypted,
@@ -335,32 +416,51 @@ class SystemKeyManager:
                     ORDER BY name
                 """)
 
-                result = []
-                for row in rows:
-                    has_db_key = bool(row['api_key_encrypted'])
-                    env_var = f"{row['name'].upper().replace('-', '_')}_API_KEY"
-                    has_env_key = bool(os.getenv(env_var))
+                # Create dict of database providers by type
+                db_providers = {row['provider_type']: row for row in rows}
 
-                    # Determine key_source for frontend
-                    if has_db_key:
-                        key_source = 'database'
-                    elif has_env_key:
-                        key_source = 'environment'
-                    else:
-                        key_source = 'not_set'
+            # Merge: show ALL providers, with database status if available
+            result = []
+            for provider_def in ALL_PROVIDERS:
+                provider_type = provider_def['type']
+                db_row = db_providers.get(provider_type)
 
-                    result.append({
-                        'id': str(row['id']),
-                        'name': row['name'],
-                        'provider_type': row['provider_type'],
-                        'has_db_key': has_db_key,
-                        'has_env_key': has_env_key,
-                        'key_source': key_source,  # Frontend expects 'key_source' not 'api_key_source'
-                        'last_tested': row['api_key_last_tested'].isoformat() if row['api_key_last_tested'] else None,
-                        'test_status': row['api_key_test_status'],
-                        'key_preview': self._mask_key(row['api_key_encrypted']) if has_db_key else None  # Frontend expects 'key_preview' not 'masked_key'
-                    })
-                return result
+                # Check environment variables
+                env_var = f"{provider_def['name'].upper().replace('-', '_').replace(' ', '_')}_API_KEY"
+                has_env_key = bool(os.getenv(env_var))
+
+                if db_row:
+                    # Provider exists in database
+                    has_db_key = bool(db_row['api_key_encrypted'])
+                    provider_id = str(db_row['id'])
+                else:
+                    # Provider not in database - generate temp ID from type
+                    import hashlib
+                    provider_id = hashlib.md5(provider_type.encode()).hexdigest()
+                    has_db_key = False
+
+                # Determine key_source for frontend
+                if has_db_key:
+                    key_source = 'database'
+                elif has_env_key:
+                    key_source = 'environment'
+                else:
+                    key_source = 'not_set'
+
+                result.append({
+                    'id': provider_id,
+                    'name': provider_def['name'],
+                    'type': provider_type,
+                    'provider_type': provider_type,  # Keep for backwards compatibility
+                    'has_db_key': has_db_key,
+                    'has_env_key': has_env_key,
+                    'key_source': key_source,
+                    'last_tested': db_row['api_key_last_tested'].isoformat() if db_row and db_row['api_key_last_tested'] else None,
+                    'test_status': db_row['api_key_test_status'] if db_row else None,
+                    'key_preview': self._mask_key(db_row['api_key_encrypted']) if db_row and has_db_key else None
+                })
+
+            return result
 
         except Exception as e:
             logger.error(f"Failed to get providers with keys: {e}")
@@ -767,6 +867,343 @@ async def chat_completions(
         raise
     except Exception as e:
         logger.error(f"Chat completion error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ============================================================================
+# Image Generation Endpoint
+# ============================================================================
+
+def calculate_image_cost(model: str, size: str, quality: str, n: int, user_tier: str) -> float:
+    """
+    Calculate cost for image generation based on model, size, quality, and tier
+
+    Pricing based on OpenAI/OpenRouter rates (in credits, where 1 credit = $0.001):
+    - DALL-E 3: 40 credits (standard 1024x1024), 80 credits (HD 1024x1024)
+    - DALL-E 2: 16 credits (512x512), 18 credits (1024x1024)
+    - Stable Diffusion: 2-5 credits (varies by size)
+    """
+    # Base costs per image in dollars
+    base_costs = {
+        'dall-e-3': {
+            'standard': {'1024x1024': 0.040, '1792x1024': 0.080, '1024x1792': 0.080},
+            'hd': {'1024x1024': 0.080, '1792x1024': 0.120, '1024x1792': 0.120}
+        },
+        'dall-e-2': {
+            'standard': {'256x256': 0.016, '512x512': 0.016, '1024x1024': 0.018}
+        },
+        'stable-diffusion-xl': {
+            'standard': {'512x512': 0.002, '1024x1024': 0.005, '1536x1536': 0.008}
+        },
+        'stable-diffusion-3': {
+            'standard': {'512x512': 0.003, '1024x1024': 0.006, '1536x1536': 0.010}
+        }
+    }
+
+    # Normalize model name
+    model_lower = model.lower() if model else 'dall-e-3'
+
+    # Detect model family
+    if 'dall-e-3' in model_lower or 'dalle-3' in model_lower:
+        model_family = 'dall-e-3'
+    elif 'dall-e-2' in model_lower or 'dalle-2' in model_lower:
+        model_family = 'dall-e-2'
+    elif 'stable-diffusion-xl' in model_lower or 'sdxl' in model_lower:
+        model_family = 'stable-diffusion-xl'
+    elif 'stable-diffusion-3' in model_lower or 'sd3' in model_lower:
+        model_family = 'stable-diffusion-3'
+    else:
+        model_family = 'dall-e-3'  # Default
+
+    # Get base cost
+    quality_key = quality if quality in ['standard', 'hd'] else 'standard'
+
+    if model_family not in base_costs:
+        model_family = 'dall-e-3'
+
+    if quality_key not in base_costs[model_family]:
+        quality_key = 'standard'
+
+    if size not in base_costs[model_family][quality_key]:
+        size = '1024x1024'  # Default size
+
+    cost_per_image = base_costs[model_family][quality_key][size]
+
+    # Tier multipliers
+    tier_multipliers = {
+        'free': 1.5,        # 50% markup for free tier
+        'byok': 1.0,        # No markup (BYOK users pay provider directly)
+        'managed': 1.2,     # 20% markup for managed tier
+        'vip_founder': 1.0  # No markup for VIP founders
+    }
+
+    multiplier = tier_multipliers.get(user_tier, 1.2)
+
+    # Total cost in dollars
+    total_cost_dollars = cost_per_image * n * multiplier
+
+    # Convert to credits (1 credit = $0.001)
+    total_cost_credits = total_cost_dollars * 1000
+
+    return total_cost_credits
+
+
+@router.post("/image/generations", response_model=ImageGenerationResponse)
+async def generate_image(
+    request: ImageGenerationRequest,
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system),
+    byok_manager: BYOKManager = Depends(get_byok_manager)
+):
+    """
+    OpenAI-compatible image generation endpoint
+
+    Supports multiple providers:
+    - OpenAI DALL-E 2/3
+    - OpenRouter (proxies to multiple image models)
+    - Stable Diffusion (via OpenRouter)
+
+    Usage:
+        POST /api/v1/llm/image/generations
+        {
+            "prompt": "A cute cat wearing a wizard hat",
+            "model": "dall-e-3",
+            "size": "1024x1024",
+            "quality": "standard",
+            "n": 1
+        }
+
+    Returns:
+        OpenAI-compatible response with image URLs
+
+    Credits:
+        - DALL-E 3 (standard 1024x1024): ~40 credits
+        - DALL-E 3 (HD 1024x1024): ~80 credits
+        - DALL-E 2 (1024x1024): ~18 credits
+        - Stable Diffusion XL: ~2-5 credits
+    """
+    try:
+        # Validate model (default to dall-e-3)
+        model = request.model or "dall-e-3"
+
+        # Get user tier for cost calculation
+        user_tier = await credit_system.get_user_tier(user_id)
+
+        # Check if user has BYOK for image generation providers
+        user_keys = await byok_manager.get_all_user_keys(user_id)
+
+        # Determine BYOK routing
+        using_byok = False
+        user_byok_key = None
+        detected_provider = None
+
+        if 'openrouter' in user_keys:
+            using_byok = True
+            user_byok_key = user_keys['openrouter']
+            detected_provider = 'openrouter'
+            logger.info(f"User {user_id} using OpenRouter BYOK for image generation")
+        elif 'openai' in user_keys and ('dall-e' in model.lower() or 'dalle' in model.lower()):
+            using_byok = True
+            user_byok_key = user_keys['openai']
+            detected_provider = 'openai'
+            logger.info(f"User {user_id} using OpenAI BYOK for DALL-E")
+
+        # Calculate estimated cost
+        estimated_cost = calculate_image_cost(
+            model=model,
+            size=request.size,
+            quality=request.quality,
+            n=request.n,
+            user_tier=user_tier
+        )
+
+        # Check credits BEFORE making request (skip if using BYOK)
+        if not using_byok and user_tier != 'free':
+            current_balance = await credit_system.get_user_credits(user_id)
+
+            if current_balance < estimated_cost:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Insufficient credits. Balance: {current_balance:.2f}, Estimated cost: {estimated_cost:.2f} credits"
+                )
+
+            # Check monthly cap
+            within_cap = await credit_system.check_monthly_cap(user_id, estimated_cost)
+            if not within_cap:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Monthly spending cap exceeded"
+                )
+
+        # Prepare request for provider API
+        image_request = {
+            "prompt": request.prompt,
+            "model": model,
+            "n": request.n,
+            "size": request.size,
+            "response_format": request.response_format
+        }
+
+        # Add optional parameters
+        if request.quality and 'dall-e-3' in model.lower():
+            image_request["quality"] = request.quality
+        if request.style and 'dall-e-3' in model.lower():
+            image_request["style"] = request.style
+
+        # Determine API endpoint and headers based on BYOK or system key
+        if using_byok:
+            logger.info(f"Using BYOK for image generation: {user_id} with provider {detected_provider}")
+
+            if detected_provider == 'openrouter':
+                base_url = 'https://openrouter.ai/api/v1'
+                if 'dall-e' in model.lower():
+                    image_request["model"] = f"openai/{model}"
+            else:  # OpenAI
+                base_url = 'https://api.openai.com/v1'
+
+            api_key = user_byok_key
+            provider_name = detected_provider.title()
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            if detected_provider == 'openrouter':
+                headers["HTTP-Referer"] = "https://unicorncommander.ai"
+                headers["X-Title"] = "UC-1 Pro Ops Center"
+
+        else:
+            # Using system key (charge credits)
+            logger.info(f"Using system key for image generation: {user_id}")
+
+            system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+
+            async with credit_system.db_pool.acquire() as conn:
+                provider = await conn.fetchrow("""
+                    SELECT id, name, type, api_key_encrypted, config
+                    FROM llm_providers
+                    WHERE enabled = true AND type = 'openrouter'
+                    ORDER BY priority DESC
+                    LIMIT 1
+                """)
+
+                if not provider:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="No image generation providers configured. Please configure OpenRouter or OpenAI in Platform Settings."
+                    )
+
+                provider_db_config = provider['config'] or {}
+                if isinstance(provider_db_config, str):
+                    provider_db_config = json.loads(provider_db_config)
+
+                base_url = provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
+                provider_name = provider['name']
+
+                api_key = await system_key_manager.get_system_key(provider['id'])
+                if not api_key:
+                    api_key = provider['api_key_encrypted']
+                    if not api_key:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="No API key configured for image generation provider."
+                        )
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://unicorncommander.ai",
+                "X-Title": "UC-1 Pro Ops Center"
+            }
+
+            if provider['type'] == 'openrouter' and 'dall-e' in model.lower():
+                image_request["model"] = f"openai/{model}"
+
+        # Call provider API
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                f"{base_url}/images/generations",
+                json=image_request,
+                headers=headers
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Image generation API error: {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Image generation provider error: {response.text}"
+                )
+
+            response_data = response.json()
+
+        # Calculate actual cost
+        actual_cost = estimated_cost
+
+        # Debit credits (skip if using BYOK)
+        if using_byok:
+            new_balance = await credit_system.get_user_credits(user_id)
+            transaction_id = None
+            actual_cost = 0.0
+            logger.info(f"BYOK image generation for {user_id} - no credits charged")
+        elif user_tier != 'free' or actual_cost > 0:
+            new_balance, transaction_id = await credit_system.debit_credits(
+                user_id=user_id,
+                amount=actual_cost,
+                metadata={
+                    'provider': provider_name,
+                    'model': model,
+                    'image_count': request.n,
+                    'size': request.size,
+                    'quality': request.quality,
+                    'cost': actual_cost
+                }
+            )
+        else:
+            new_balance = await credit_system.get_user_credits(user_id)
+            transaction_id = None
+
+        # Track usage event
+        try:
+            await usage_meter.track_usage(
+                user_id=user_id,
+                service="image_generation",
+                model=model,
+                tokens=0,
+                cost=actual_cost,
+                is_free=(user_tier == 'free' and actual_cost == 0),
+                metadata={
+                    'image_count': request.n,
+                    'size': request.size,
+                    'quality': request.quality,
+                    'provider': provider_name if not using_byok else detected_provider,
+                    'transaction_id': transaction_id,
+                    'using_byok': using_byok
+                }
+            )
+        except Exception as usage_error:
+            logger.error(f"Failed to track image generation usage: {usage_error}")
+
+        # Add metadata to response
+        response_data['_metadata'] = {
+            'provider_used': provider_name if not using_byok else detected_provider,
+            'cost_incurred': actual_cost,
+            'credits_remaining': new_balance,
+            'transaction_id': transaction_id,
+            'user_tier': user_tier,
+            'using_byok': using_byok,
+            'byok_provider': detected_provider if using_byok else None,
+            'images_generated': request.n,
+            'size': request.size,
+            'quality': request.quality
+        }
+
+        return response_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image generation error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
@@ -1418,6 +1855,42 @@ async def list_supported_providers():
                 'signup_url': 'https://aistudio.google.com/apikey',
                 'docs_url': 'https://ai.google.dev/docs',
                 'supports_test': True
+            },
+            {
+                'name': 'ollama-cloud',
+                'display_name': 'Ollama Cloud',
+                'description': 'Self-hosted and managed Ollama models with cloud API',
+                'key_format': 'xxx.yyy',
+                'signup_url': 'https://ollama.ai/cloud',
+                'docs_url': 'https://docs.ollama.ai/cloud',
+                'supports_test': False
+            },
+            {
+                'name': 'huggingface',
+                'display_name': 'HuggingFace',
+                'description': 'Access 350,000+ models via HuggingFace Inference API',
+                'key_format': 'hf_...',
+                'signup_url': 'https://huggingface.co/settings/tokens',
+                'docs_url': 'https://huggingface.co/docs/api-inference',
+                'supports_test': False
+            },
+            {
+                'name': 'unicorn-commander',
+                'display_name': 'Unicorn Commander',
+                'description': 'This platform - local vLLM models (Qwen 2.5 32B, etc.)',
+                'key_format': 'internal',
+                'signup_url': 'https://unicorncommander.ai',
+                'docs_url': 'https://docs.unicorncommander.ai',
+                'supports_test': True
+            },
+            {
+                'name': 'custom',
+                'display_name': 'Custom Provider',
+                'description': 'Any OpenAI-compatible endpoint (LM Studio, vLLM, LocalAI, etc.)',
+                'key_format': 'varies',
+                'signup_url': '',
+                'docs_url': '',
+                'supports_test': False
             }
         ]
     }
