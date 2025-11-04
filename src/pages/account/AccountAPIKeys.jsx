@@ -222,6 +222,82 @@ export default function AccountAPIKeys() {
       getKeyUrl: 'https://www.perplexity.ai/settings/api',
       keyFormat: 'pplx-...',
       description: 'AI search with citations'
+    },
+    unicorncommander: {
+      name: 'Unicorn Commander',
+      icon: '🦄',
+      color: 'from-purple-500 to-pink-500',
+      models: 100,
+      recommended: false,
+      benefits: [
+        'Access to 100+ LLM models',
+        'Centralized billing and usage tracking',
+        'OpenAI-compatible API',
+        'Perfect for multi-server deployments'
+      ],
+      getKeyUrl: 'https://unicorncommander.ai/admin/account/api-keys',
+      keyFormat: 'uc_sk_...',
+      description: 'Unicorn Commander API (this platform or remote instance)'
+    },
+    ollama: {
+      name: 'Ollama',
+      icon: '🏠',
+      color: 'from-gray-700 to-gray-900',
+      models: 50,
+      benefits: [
+        'Run models locally on your hardware',
+        'Privacy-first (no data leaves your machine)',
+        'Free and open source',
+        'Supports Llama, Mistral, Gemma, etc.'
+      ],
+      getKeyUrl: 'http://localhost:11434 (no key needed)',
+      keyFormat: 'Not required',
+      description: 'Local model hosting'
+    },
+    ollamacloud: {
+      name: 'Ollama Cloud',
+      icon: '☁️',
+      color: 'from-sky-500 to-blue-600',
+      models: 50,
+      benefits: [
+        'Hosted Ollama models in the cloud',
+        'No local GPU required',
+        'Same API as local Ollama',
+        'Managed infrastructure'
+      ],
+      getKeyUrl: 'https://ollama.com/cloud/keys',
+      keyFormat: 'ollama-...',
+      description: 'Hosted Ollama service'
+    },
+    huggingface: {
+      name: 'Hugging Face',
+      icon: '🤗',
+      color: 'from-yellow-500 to-amber-600',
+      models: 1000,
+      benefits: [
+        'Access to 1000+ open-source models',
+        'Model inference API',
+        'Free tier available',
+        'Cutting-edge research models'
+      ],
+      getKeyUrl: 'https://huggingface.co/settings/tokens',
+      keyFormat: 'hf_...',
+      description: 'Open-source model hub'
+    },
+    custom: {
+      name: 'Custom OpenAI-Compatible',
+      icon: '⚙️',
+      color: 'from-slate-500 to-zinc-600',
+      models: null,
+      benefits: [
+        'Connect to any OpenAI-compatible API',
+        'Use with vLLM, LocalAI, text-generation-webui',
+        'Self-hosted or third-party endpoints',
+        'Full control over your infrastructure'
+      ],
+      getKeyUrl: 'Your custom endpoint',
+      keyFormat: 'Depends on your API',
+      description: 'Custom OpenAI-compatible endpoint'
     }
   };
 
@@ -268,7 +344,7 @@ export default function AccountAPIKeys() {
   const loadUcApiKeys = async () => {
     setLoadingUcKeys(true);
     try {
-      const response = await fetch('/api/v1/user/api-keys', {
+      const response = await fetch('/api/v1/account/uc-api-keys', {
         credentials: 'include'
       });
       if (response.ok) {
@@ -277,6 +353,36 @@ export default function AccountAPIKeys() {
       }
     } catch (error) {
       console.error('Error loading UC API keys:', error);
+    } finally {
+      setLoadingUcKeys(false);
+    }
+  };
+
+  const handleGenerateUcKey = async () => {
+    setLoadingUcKeys(true);
+    try {
+      const response = await fetch('/api/v1/account/uc-api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: 'API Key ' + new Date().toLocaleDateString()
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        showToast('success', 'API key generated successfully!');
+        // Show the full key in an alert since it won't be shown again
+        if (data.key) {
+          alert(`Your new API key (copy it now!):\n\n${data.key}\n\nThis is the only time you'll see the full key.`);
+        }
+        await loadUcApiKeys();
+      } else {
+        showToast('error', 'Failed to generate API key');
+      }
+    } catch (error) {
+      console.error('Error generating UC API key:', error);
+      showToast('error', 'Failed to generate API key');
     } finally {
       setLoadingUcKeys(false);
     }
@@ -438,11 +544,15 @@ export default function AccountAPIKeys() {
 
   const handleRegenerateUcKey = async (keyId) => {
     try {
-      const response = await fetch(`/api/v1/user/api-keys/${keyId}/regenerate`, {
+      const response = await fetch(`/api/v1/account/uc-api-keys/${keyId}/regenerate`, {
         method: 'POST',
         credentials: 'include'
       });
       if (response.ok) {
+        const data = await response.json();
+        if (data.key) {
+          alert(`Your regenerated API key (copy it now!):\n\n${data.key}\n\nThis is the only time you'll see the full key.`);
+        }
         showToast('success', 'API key regenerated successfully');
         await loadUcApiKeys();
       } else {
@@ -591,15 +701,10 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto"></div>
           </div>
-        ) : ucApiKeys.length === 0 ? (
-          <div className={`rounded-lg border-2 border-dashed p-8 text-center ${themeClasses.card}`}>
-            <KeyIcon className={`h-12 w-12 mx-auto mb-3 ${themeClasses.subtext}`} />
-            <p className={themeClasses.subtext}>No API keys yet. Contact support to get started.</p>
-          </div>
         ) : (
-          <div className="space-y-4">
-            {/* Base URL */}
-            <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-blue-50 border-blue-200' : 'bg-blue-500/10 border-blue-500/30'}`}>
+          <>
+            {/* Base URL - Always show */}
+            <div className={`rounded-lg border p-4 mb-4 ${currentTheme === 'light' ? 'bg-blue-50 border-blue-200' : 'bg-blue-500/10 border-blue-500/30'}`}>
               <div className="flex items-center justify-between">
                 <div>
                   <p className={`text-sm font-medium ${themeClasses.text} mb-1`}>Base URL:</p>
@@ -614,6 +719,25 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
               </div>
             </div>
 
+            {ucApiKeys.length === 0 ? (
+              <div className={`rounded-lg border-2 border-dashed p-8 text-center ${themeClasses.card}`}>
+                <KeyIcon className={`h-12 w-12 mx-auto mb-3 ${themeClasses.subtext}`} />
+                <p className={`${themeClasses.subtext} mb-4`}>No API keys yet. Generate your first key to get started.</p>
+                <button
+                  onClick={handleGenerateUcKey}
+                  disabled={loadingUcKeys}
+                  className={`px-4 py-2 rounded-lg ${themeClasses.button} flex items-center gap-2 mx-auto`}
+                >
+                  {loadingUcKeys ? (
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <PlusIcon className="h-5 w-5" />
+                  )}
+                  Generate API Key
+                </button>
+              </div>
+            ) : (
+          <div className="space-y-4">
             {/* API Keys List */}
             {ucApiKeys.map((key) => (
               <div key={key.id} className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'}`}>
@@ -712,6 +836,8 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
               </div>
             ))}
           </div>
+          )}
+          </>
         )}
       </div>
 
@@ -942,118 +1068,6 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
           </div>
         )}
       </div>
-
-      {/* Platform Configuration Section (Admin Only) */}
-      {isAdmin && (
-        <div className={`rounded-xl border-2 p-6 ${themeClasses.card} border-purple-500/50`}>
-          <div className="flex items-center gap-2 mb-6">
-            <ShieldCheckIcon className="h-6 w-6 text-purple-400" />
-            <h2 className={`text-2xl font-bold ${themeClasses.text}`}>
-              Platform Configuration
-            </h2>
-            <span className="px-3 py-1 bg-purple-500/20 text-purple-400 text-xs font-semibold rounded-full">
-              Admin Only
-            </span>
-          </div>
-
-          {loadingPlatformKeys ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto"></div>
-            </div>
-          ) : !platformKeys ? (
-            <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'}`}>
-              <p className={themeClasses.subtext}>No platform keys configured.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Platform OpenRouter Key */}
-              {platformKeys.openrouter && (
-                <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-orange-50 border-orange-200' : 'bg-orange-500/10 border-orange-500/30'}`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <ServerIcon className="h-5 w-5 text-orange-400" />
-                        <span className={`text-sm font-semibold ${themeClasses.text}`}>Platform OpenRouter Key</span>
-                      </div>
-                      <code className={`text-sm ${themeClasses.text} font-mono block mb-2`}>
-                        {platformKeys.openrouter.key_preview || 'sk-or-v1-••••••••••••••••'}
-                      </code>
-                      <div className="text-xs space-y-1">
-                        <div>
-                          <span className={`${themeClasses.subtext}`}>Added:</span>
-                          <span className={`ml-2 ${themeClasses.text}`}>
-                            {platformKeys.openrouter.created_at
-                              ? new Date(platformKeys.openrouter.created_at).toLocaleDateString()
-                              : 'Unknown'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className={`${themeClasses.subtext}`}>Status:</span>
-                          <span className={`ml-2 ${platformKeys.openrouter.valid ? 'text-green-400' : 'text-red-400'}`}>
-                            {platformKeys.openrouter.valid ? 'Valid' : 'Needs Testing'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setEditingPlatformKey('openrouter')}
-                        className="p-2 rounded-lg border border-gray-500/50 text-gray-400 hover:bg-gray-500/10 text-sm"
-                        title="Edit key"
-                      >
-                        <PencilIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleTestPlatformKey('openrouter')}
-                        className={`p-2 rounded-lg ${themeClasses.button} text-sm`}
-                        title="Test connection"
-                      >
-                        <BeakerIcon className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                  <p className={`text-xs ${themeClasses.subtext}`}>
-                    Used for managed tier users and as fallback for BYOK users
-                  </p>
-                </div>
-              )}
-
-              {/* Provisioning Key */}
-              {platformKeys.provisioning && (
-                <div className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-purple-50 border-purple-200' : 'bg-purple-500/10 border-purple-500/30'}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <KeyIcon className="h-5 w-5 text-purple-400" />
-                        <span className={`text-sm font-semibold ${themeClasses.text}`}>Provisioning Key</span>
-                      </div>
-                      <code className={`text-sm ${themeClasses.text} font-mono block mb-2`}>
-                        {visibleKeys.provisioning
-                          ? (platformKeys.provisioning.key || 'pk_••••••••••••••••')
-                          : (platformKeys.provisioning.key_preview || 'pk_••••••••••••••••')}
-                      </code>
-                      <p className={`text-xs ${themeClasses.subtext}`}>
-                        Internal key for service provisioning and orchestration
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => toggleKeyVisibility('provisioning')}
-                      className={`p-2 rounded-lg ${themeClasses.subtext} hover:bg-gray-700/30`}
-                      title={visibleKeys.provisioning ? 'Hide key' : 'Show key'}
-                    >
-                      {visibleKeys.provisioning ? (
-                        <EyeSlashIcon className="h-4 w-4" />
-                      ) : (
-                        <EyeIcon className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* What is BYOK? Section */}
       <div className={`rounded-xl border p-6 ${themeClasses.card}`}>

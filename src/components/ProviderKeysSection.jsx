@@ -176,8 +176,15 @@ export default function ProviderKeysSection({
   const loadProviders = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/llm/admin/system-keys', {
-        credentials: 'include'
+      // Add timestamp to prevent caching
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/v1/llm/admin/system-keys?_t=${timestamp}`, {
+        credentials: 'include',
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
       });
 
       if (response.ok) {
