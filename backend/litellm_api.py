@@ -1385,6 +1385,137 @@ async def list_models(
         raise HTTPException(status_code=500, detail="Failed to list models")
 
 
+@router.get("/models/categorized")
+async def list_models_categorized(
+    user_id: str = Depends(get_user_id),
+    byok_manager: BYOKManager = Depends(get_byok_manager)
+):
+    """
+    List models categorized by access method (BYOK vs Platform)
+
+    This endpoint helps users understand:
+    - Which models they can use for free (via their BYOK keys)
+    - Which models will charge credits (via platform keys)
+    - How many models are available in each category
+
+    Returns:
+        {
+            "byok_models": [...],    # Models using user's API keys
+            "platform_models": [...], # Models using platform keys
+            "summary": {...}          # Statistics and provider list
+        }
+    """
+    try:
+        # Get user's BYOK providers
+        byok_providers_list = await byok_manager.list_user_providers(user_id)
+        byok_provider_names = {p['provider'].lower() for p in byok_providers_list if p.get('enabled')}
+
+        # Get all models from database
+        async with get_db_pool().acquire() as conn:
+            # Get providers with their model counts
+            providers_query = """
+                SELECT
+                    p.id,
+                    p.name,
+                    p.type,
+                    p.enabled,
+                    COUNT(m.id) as model_count
+                FROM llm_providers p
+                LEFT JOIN llm_models m ON p.id = m.provider_id AND m.enabled = true
+                WHERE p.enabled = true
+                GROUP BY p.id, p.name, p.type, p.enabled
+            """
+            providers = await conn.fetch(providers_query)
+
+            byok_models = []
+            platform_models = []
+
+            for provider in providers:
+                provider_name = provider['name'].lower()
+                model_count = provider['model_count']
+
+                if model_count == 0:
+                    continue
+
+                # Get models for this provider
+                models_query = """
+                    SELECT
+                        m.id::text as _uuid,
+                        m.name,
+                        m.display_name,
+                        m.cost_per_1m_input_tokens,
+                        m.cost_per_1m_output_tokens,
+                        m.context_length,
+                        m.enabled,
+                        m.avg_latency_ms
+                    FROM llm_models m
+                    WHERE m.provider_id = $1 AND m.enabled = true
+                    ORDER BY m.name
+                """
+                models = await conn.fetch(models_query, provider['id'])
+
+                models_list = []
+                for model in models:
+                    input_cost = float(model['cost_per_1m_input_tokens'] or 0)
+                    output_cost = float(model['cost_per_1m_output_tokens'] or 0)
+                    model_dict = {
+                        'id': model['name'],
+                        'object': 'model',
+                        'name': model['name'],
+                        'display_name': model['display_name'],
+                        'provider': provider['name'],
+                        'provider_id': str(provider['id']),
+                        'pricing': {
+                            'input': input_cost / 1000000,
+                            'output': output_cost / 1000000
+                        },
+                        'context_length': model['context_length'],
+                        'enabled': model['enabled'],
+                        '_uuid': model['_uuid']
+                    }
+                    models_list.append(model_dict)
+
+                # Determine if this provider uses BYOK or platform keys
+                is_byok = provider_name in byok_provider_names
+
+                provider_info = {
+                    'provider': provider['name'],
+                    'provider_type': provider['type'],
+                    'models': models_list,
+                    'count': len(models_list)
+                }
+
+                if is_byok:
+                    provider_info['free'] = True
+                    provider_info['note'] = f"Using your {provider['name']} API key - no credits charged"
+                    provider_info['source'] = 'byok'
+                    byok_models.append(provider_info)
+                else:
+                    provider_info['note'] = f"Charged with credits from your account"
+                    provider_info['source'] = 'platform'
+                    platform_models.append(provider_info)
+
+            # Build summary
+            total_byok = sum(p['count'] for p in byok_models)
+            total_platform = sum(p['count'] for p in platform_models)
+
+            return {
+                'byok_models': byok_models,
+                'platform_models': platform_models,
+                'summary': {
+                    'total_models': total_byok + total_platform,
+                    'byok_count': total_byok,
+                    'platform_count': total_platform,
+                    'has_byok_keys': len(byok_provider_names) > 0,
+                    'byok_providers': list(byok_provider_names)
+                }
+            }
+
+    except Exception as e:
+        logger.error(f"Error categorizing models: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to categorize models")
+
+
 @router.get("/usage", response_model=UsageStats)
 async def get_usage_stats(
     days: int = 30,
