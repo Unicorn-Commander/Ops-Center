@@ -360,6 +360,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
         "/api/llmcall",  # Bolt.DIY LLM proxy endpoint - external integration
+        "/api/github-template",  # Bolt.DIY GitHub template proxy - external integration
         "/api/v1/email-provider/",  # Email provider API - testing and management
         "/api/v1/platform/",  # Platform settings API - credential management
         "/api/v1/monitoring/grafana/",  # Grafana integration API - monitoring endpoints
@@ -832,6 +833,97 @@ async def bolt_llm_proxy(request: Request):
 
     except Exception as e:
         logger.error(f"Bolt LLM proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# Bolt.DIY GitHub Template Proxy Endpoint
+# ============================================================================
+# Fetches GitHub repository contents for Bolt starter templates
+
+@app.get("/api/github-template", include_in_schema=False)
+async def bolt_github_template_proxy(repo: str):
+    """
+    Proxy endpoint for Bolt.DIY GitHub template fetching
+    Fetches repository contents from GitHub API and returns files
+    """
+    import httpx
+    import base64
+
+    try:
+        logger.info(f"Fetching GitHub template: {repo}")
+
+        # Parse repo (format: owner/repo)
+        if "/" not in repo:
+            raise HTTPException(status_code=400, detail="Invalid repo format. Expected: owner/repo")
+
+        owner, repo_name = repo.split("/", 1)
+
+        # GitHub API endpoint
+        github_api_url = f"https://api.github.com/repos/{owner}/{repo_name}/contents"
+
+        async def fetch_repo_contents(path=""):
+            """Recursively fetch all files from repo"""
+            url = f"{github_api_url}/{path}" if path else github_api_url
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url,
+                    headers={
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Unicorn-Commander-Bolt"
+                    },
+                    timeout=30.0
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"GitHub API error: {response.status_code} - {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"GitHub API error: {response.text}"
+                    )
+
+                items = response.json()
+                files = []
+
+                for item in items:
+                    if item["type"] == "file":
+                        # Fetch file content
+                        file_response = await client.get(
+                            item["url"],
+                            headers={
+                                "Accept": "application/vnd.github.v3+json",
+                                "User-Agent": "Unicorn-Commander-Bolt"
+                            },
+                            timeout=30.0
+                        )
+
+                        if file_response.status_code == 200:
+                            file_data = file_response.json()
+                            # Decode base64 content
+                            content = base64.b64decode(file_data.get("content", "")).decode("utf-8", errors="ignore")
+                            files.append({
+                                "name": item["name"],
+                                "path": item["path"],
+                                "content": content
+                            })
+
+                    elif item["type"] == "dir":
+                        # Recursively fetch directory contents
+                        subfiles = await fetch_repo_contents(item["path"])
+                        files.extend(subfiles)
+
+                return files
+
+        # Fetch all files
+        files = await fetch_repo_contents()
+
+        logger.info(f"Successfully fetched {len(files)} files from {repo}")
+        return files
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GitHub template proxy error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Root redirect must be defined early to take precedence
