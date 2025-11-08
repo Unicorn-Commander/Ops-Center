@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, HTMLResponse, Response, RedirectResponse
 import psutil
 import docker
 import asyncio
@@ -81,6 +81,7 @@ from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
 from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
 from model_catalog_api import router as model_catalog_router  # Model catalog API
+from model_access_api import router as model_access_router  # Model access control (Epic 3.3)
 from litellm_credit_system import CreditSystem
 from byok_manager import BYOKManager
 import asyncpg
@@ -358,6 +359,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
+        "/api/llmcall",  # Bolt.DIY LLM proxy endpoint - external integration
         "/api/v1/email-provider/",  # Email provider API - testing and management
         "/api/v1/platform/",  # Platform settings API - credential management
         "/api/v1/monitoring/grafana/",  # Grafana integration API - monitoring endpoints
@@ -439,6 +441,11 @@ async def startup_event():
         byok_manager = BYOKManager(db_pool)
         app.state.byok_manager = byok_manager
         logger.info("BYOK manager initialized successfully")
+
+        # Initialize Model Access API dependencies (Epic 3.3)
+        from model_access_api import init_dependencies as init_model_access_deps
+        init_model_access_deps(db_pool, credit_system, byok_manager)
+        logger.info("Model Access API dependencies initialized successfully")
 
         # Initialize API Key Manager (Epic: External App Authentication)
         from api_key_manager import initialize_api_key_manager
@@ -535,6 +542,10 @@ async def shutdown_event():
     #     logger.info("Backup scheduler stopped")
     # except Exception as e:
     #     logger.error(f"Error stopping backup scheduler: {e}")
+
+# Register Model Access Control FIRST - Epic 3.3 (HIGH PRIORITY)
+app.include_router(model_access_router)
+logger.info("⭐ Model Access Control API registered at /api/v1/models (PRIORITY ROUTE)")
 
 # Register audit logs router
 if AUDIT_ENABLED:
@@ -653,6 +664,7 @@ app.include_router(litellm_api_router)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
 app.include_router(model_catalog_router)
 logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")
+# model_access_router already registered earlier (line ~547) - REMOVED DUPLICATE
 app.include_router(provider_keys_router)
 logger.info("Provider Keys API endpoints registered at /api/v1/llm/providers (keys management)")
 app.include_router(testing_lab_router)
@@ -737,9 +749,12 @@ logger.info("User Analytics API endpoints registered at /api/v1/analytics/users"
 app.include_router(usage_analytics_router)
 logger.info("Usage Analytics API endpoints registered at /api/v1/analytics/usage")
 
-# Model Management API (Sprint 6-7)
-app.include_router(model_management_router)
-logger.info("Model Management API endpoints registered at /api/v1/models")
+# Model Management API (Sprint 6-7) - TEMPORARILY DISABLED for Epic 3.3 testing
+# CONFLICT: Both model_management_router and model_access_router use /api/v1/models prefix
+# model_management_router has root route "/" which may interfere with model_access_router
+# TODO: After Epic 3.3 works, either change prefix or merge routers
+# app.include_router(model_management_router)
+# logger.info("Model Management API endpoints registered at /api/v1/models")
 
 # Permissions Management API (Sprint 6-7)
 app.include_router(permissions_management_router)
@@ -768,6 +783,56 @@ logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
 logger.info("API Documentation endpoints registered at /api/v1/docs")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
+
+# ============================================================================
+# Bolt.DIY LLM Proxy Endpoint
+# ============================================================================
+# Provides a simple /api/llmcall endpoint that forwards to LiteLLM API
+# This allows Bolt.DIY to make LLM calls without changing its configuration
+
+@app.post("/api/llmcall", include_in_schema=False)
+async def bolt_llm_proxy(request: Request):
+    """
+    Proxy endpoint for Bolt.DIY LLM calls
+    Forwards POST /api/llmcall to /api/v1/llm/chat/completions
+    """
+    try:
+        # Get request body
+        body = await request.json()
+
+        # Get Authorization header if present
+        auth_header = request.headers.get("Authorization", "")
+
+        # Import the chat completions handler from litellm_api
+        from litellm_api import router as litellm_router
+
+        # Forward to the LiteLLM chat completions endpoint
+        # Create a new request with the same body and headers
+        from fastapi import HTTPException
+        import httpx
+
+        # Call the internal LiteLLM API
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"http://localhost:8084/api/v1/llm/chat/completions",
+                json=body,
+                headers={
+                    "Authorization": auth_header,
+                    "Content-Type": "application/json"
+                },
+                timeout=300.0  # 5 minute timeout for long generations
+            )
+
+            # Return the response from LiteLLM
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+
+    except Exception as e:
+        logger.error(f"Bolt LLM proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Root redirect must be defined early to take precedence
 @app.get("/", include_in_schema=False)
@@ -5219,16 +5284,15 @@ async def serve_admin(request: Request, path: str = ""):
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str, request: Request):
     """Serve the React app for all routes (excluding API paths)"""
-    # API routes should be handled by their specific routers
-    # This catch-all should NEVER match API paths - if it does, there's a routing issue
-    # Simply skip API paths and let them fall through to FastAPI's normal 404 handling
+    # CRITICAL FIX: Skip API routes BEFORE processing anything else
+    # This allows FastAPI routers to handle API requests naturally
     if full_path.startswith("api/"):
-        # This should never be reached for registered API routes
-        # If we're here, the route truly doesn't exist
+        # Don't handle API routes here - let them fall through to 404
+        # which will be caught by the registered routers
         from fastapi import status
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API endpoint /{full_path} not found"
+            detail="Not Found"
         )
 
     # Skip empty path as it's handled by the root redirect
