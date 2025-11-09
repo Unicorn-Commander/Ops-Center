@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useToast } from '../components/Toast';
 import LogsViewer from '../components/LogsViewer';
 import ServiceDetailsModal from '../components/ServiceDetailsModal';
+import ForgejoCard from '../components/ForgejoCard';
 import { getServiceInfo, getGPUUsageSummary } from '../data/serviceDescriptions';
 import { getTooltip, tooltipPresets } from '../data/tooltipContent';
 import HelpTooltip from '../components/HelpTooltip';
@@ -477,6 +478,9 @@ export default function Services() {
                         serviceUrls={serviceUrls}
                       />
                     ))}
+
+                    {/* Forgejo Git Server Card */}
+                    <ForgejoCard />
                   </div>
                 </div>
               )}
