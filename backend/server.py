@@ -93,8 +93,7 @@ from redis_session import redis_session_manager
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
-# Temporarily commented out - forgejo router module not yet available
-# from routers.forgejo import router as forgejo_router
+from routers.forgejo import router as forgejo_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -669,9 +668,9 @@ logger.info("Admin Local User Management API endpoints registered at /api/v1/adm
 app.include_router(litellm_routing_router)
 logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
 
-# Forgejo integration (temporarily commented out - module not yet available)
-# app.include_router(forgejo_router)
-# logger.info("Forgejo API endpoints registered at /api/v1/forgejo")
+# Forgejo integration
+app.include_router(forgejo_router)
+logger.info("Forgejo API endpoints registered at /api/v1/forgejo")
 
 # Register LiteLLM API router
 app.include_router(litellm_api_router)
