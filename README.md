@@ -44,7 +44,7 @@ Ops-Center is designed to work as part of the UC-Cloud ecosystem:
 
 \`\`\`bash
 # Clone UC-Cloud with submodules
-git clone --recurse-submodules https://github.com/Unicorn-Commander/UC-Cloud.git
+git clone --recurse-submodules https://git.unicorncommander.ai/UnicornCommander/UC-Cloud.git
 cd UC-Cloud
 
 # Ops-Center will be at services/ops-center/
@@ -58,7 +58,7 @@ docker compose up -d
 
 \`\`\`bash
 # Clone repository
-git clone https://github.com/Unicorn-Commander/Ops-Center.git
+git clone https://git.unicorncommander.ai/UnicornCommander/Ops-Center.git
 cd Ops-Center
 
 # Configure environment
@@ -218,7 +218,13 @@ MIT License - see LICENSE file for details
 ## Part of UC-Cloud
 
 This repository is part of the larger **UC-Cloud ecosystem**. For the complete system, see:
-https://github.com/Unicorn-Commander/UC-Cloud
+https://git.unicorncommander.ai/UnicornCommander/UC-Cloud
+
+### Git Repository
+
+**Forgejo**: https://git.unicorncommander.ai/UnicornCommander/Ops-Center
+**Issues**: https://git.unicorncommander.ai/UnicornCommander/Ops-Center/issues
+**Pull Requests**: https://git.unicorncommander.ai/UnicornCommander/Ops-Center/pulls
 
 ---
 
