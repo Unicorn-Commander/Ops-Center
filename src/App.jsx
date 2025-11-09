@@ -94,6 +94,7 @@ const UsageAnalytics = lazy(() => import('./pages/UsageAnalytics'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
 const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
+const WhiteLabelBuilder = lazy(() => import('./pages/admin/WhiteLabelBuilder'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
 // Consolidated: Using LocalUserManagement for all local user operations
@@ -351,6 +352,7 @@ function AppRoutes() {
                   <Route path="system/billing" element={<BillingDashboard />} />
                   <Route path="system/subscription-management" element={<SubscriptionManagement />} />
                   <Route path="system/app-management" element={<AppManagement />} />
+                  <Route path="platform/white-label" element={<WhiteLabelBuilder />} />
                   <Route path="system/users" element={<UserManagement />} />
                   <Route path="system/users/:userId" element={<UserDetail />} />
                   {/* Local User Management - consolidated to single route */}

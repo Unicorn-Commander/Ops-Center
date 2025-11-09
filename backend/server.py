@@ -182,6 +182,9 @@ from brigade_api import router as brigade_router
 from system_metrics_api import router as system_metrics_router
 from metrics_collector import MetricsCollector
 
+# White-Label Configuration API
+from white_label_api import router as white_label_router
+
 # Keycloak SSO integration
 try:
     from keycloak_integration import (
@@ -795,6 +798,10 @@ logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
 app.include_router(api_docs_router)
 logger.info("API Documentation endpoints registered at /api/v1/docs (Epic 2.8)")
 logger.info("API Documentation endpoints registered at /api/v1/docs")
+
+# White-Label Configuration API
+app.include_router(white_label_router)
+logger.info("White-Label Configuration API endpoints registered at /api/v1/admin/white-label")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 

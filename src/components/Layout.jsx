@@ -839,6 +839,12 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
+                        name="White-Label Config"
+                        href="/admin/platform/white-label"
+                        icon={iconMap.PaintBrushIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="API Documentation"
                         href="/admin/platform/api-docs"
                         icon={iconMap.CodeBracketIcon}
