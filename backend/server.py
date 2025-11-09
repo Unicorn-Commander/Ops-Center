@@ -668,7 +668,13 @@ logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
 # Forgejo integration
 app.include_router(forgejo_router)
 logger.info("Forgejo API endpoints registered at /api/v1/forgejo")
+
+# Register LiteLLM API router
 app.include_router(litellm_api_router)
+
+# Pass sessions store to LiteLLM router for session-based authentication
+from litellm_api import set_sessions_store as litellm_set_sessions_store
+litellm_set_sessions_store(sessions)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
 app.include_router(model_catalog_router)
 logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")

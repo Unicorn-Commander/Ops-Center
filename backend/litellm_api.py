@@ -40,6 +40,14 @@ stripe.api_key = get_credential('STRIPE_SECRET_KEY')
 # Router
 router = APIRouter(prefix="/api/v1/llm", tags=["LLM"])
 
+# Access to sessions store (set by server.py when registering this router)
+sessions = {}
+
+def set_sessions_store(sessions_dict):
+    """Set reference to server's sessions store"""
+    global sessions
+    sessions = sessions_dict
+
 # LiteLLM proxy URL
 LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://unicorn-litellm-wilmer:4000')
 
@@ -494,19 +502,42 @@ async def get_byok_manager(request: Request) -> BYOKManager:
     return request.app.state.byok_manager
 
 
-async def get_user_id(authorization: Optional[str] = Header(None)) -> str:
+async def get_user_id(
+    request: Request,
+    authorization: Optional[str] = Header(None)
+) -> str:
     """
-    Extract user ID from authorization header
+    Extract user ID from authorization header OR session cookie
 
-    Supports three authentication methods:
-    1. API Key: Bearer uc_<hex-key>
-    2. JWT Token: Bearer <jwt-token>
-    3. Service Key: Bearer sk-<service-name>-service-key-<year>
+    Supports four authentication methods:
+    1. Session Cookie: session_token cookie (for browser-based requests)
+    2. API Key: Bearer uc_<hex-key>
+    3. JWT Token: Bearer <jwt-token>
+    4. Service Key: Bearer sk-<service-name>-service-key-<year>
     """
+    # Try session-based authentication first (for browser requests)
     if not authorization:
-        logger.warning("No Authorization header received")
-        raise HTTPException(status_code=401, detail="Authorization header required")
+        logger.info("No Authorization header, trying session cookie authentication")
+        session_token = request.cookies.get("session_token")
 
+        if session_token and session_token in sessions:
+            session = sessions[session_token]
+            user_data = session.get("user", {})
+
+            # Try to get user_id from session
+            user_id = user_data.get("user_id") or user_data.get("sub") or user_data.get("id")
+
+            if user_id:
+                logger.info(f"✅ Session authenticated: user_id={user_id}")
+                return user_id
+            else:
+                logger.warning("Session found but no user_id in session data")
+                raise HTTPException(status_code=401, detail="Invalid session: user_id not found")
+        else:
+            logger.warning("No Authorization header and no valid session")
+            raise HTTPException(status_code=401, detail="Authentication required (Authorization header or session cookie)")
+
+    # Authorization header provided - use existing token-based auth
     if not authorization.startswith('Bearer '):
         logger.warning(f"Invalid auth format: {authorization[:20]}...")
         raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Authorization: Bearer <api-key>")
@@ -1393,15 +1424,13 @@ async def list_models_categorized(
     """
     List models categorized by access method (BYOK vs Platform)
 
-    This endpoint helps users understand:
-    - Which models they can use for free (via their BYOK keys)
-    - Which models will charge credits (via platform keys)
-    - How many models are available in each category
+    Dynamically fetches models from LiteLLM proxy and categorizes them based on
+    user's BYOK providers (OpenRouter, HuggingFace, etc.)
 
     Returns:
         {
-            "byok_models": [...],    # Models using user's API keys
-            "platform_models": [...], # Models using platform keys
+            "byok_models": [...],    # Models using user's API keys (free)
+            "platform_models": [...], # Models using platform keys (charged)
             "summary": {...}          # Statistics and provider list
         }
     """
@@ -1410,110 +1439,193 @@ async def list_models_categorized(
         byok_providers_list = await byok_manager.list_user_providers(user_id)
         byok_provider_names = {p['provider'].lower() for p in byok_providers_list if p.get('enabled')}
 
-        # Get all models from database
-        async with get_db_pool().acquire() as conn:
-            # Get providers with their model counts
-            providers_query = """
-                SELECT
-                    p.id,
-                    p.name,
-                    p.type,
-                    p.enabled,
-                    COUNT(m.id) as model_count
-                FROM llm_providers p
-                LEFT JOIN llm_models m ON p.id = m.provider_id AND m.enabled = true
-                WHERE p.enabled = true
-                GROUP BY p.id, p.name, p.type, p.enabled
-            """
-            providers = await conn.fetch(providers_query)
+        # Fetch models from LiteLLM proxy
+        import httpx
+        litellm_url = os.getenv("LITELLM_PROXY_URL", "http://uchub-litellm:4000")
+        litellm_key = os.getenv("LITELLM_MASTER_KEY", "REMOVED")
 
-            byok_models = []
-            platform_models = []
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Fetch base model list from LiteLLM
+            response = await client.get(
+                f"{litellm_url}/v1/models",
+                headers={"Authorization": f"Bearer {litellm_key}"}
+            )
+            response.raise_for_status()
+            models_data = response.json()
 
-            for provider in providers:
-                provider_name = provider['name'].lower()
-                model_count = provider['model_count']
+            # Fetch detailed model info from OpenRouter (pricing, context, descriptions)
+            openrouter_models = {}
+            try:
+                or_response = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {litellm_key}"},
+                    timeout=10.0
+                )
+                if or_response.status_code == 200:
+                    or_data = or_response.json()
+                    for model in or_data.get('data', []):
+                        model_id = model.get('id', '')
+                        openrouter_models[model_id] = {
+                            'context_length': model.get('context_length', 0),
+                            'pricing': model.get('pricing', {}),
+                            'description': model.get('description', ''),
+                            'architecture': model.get('architecture', {}),
+                            'top_provider': model.get('top_provider', {}),
+                        }
+                    logger.info(f"Fetched metadata for {len(openrouter_models)} OpenRouter models")
+            except Exception as e:
+                logger.warning(f"Failed to fetch OpenRouter model metadata: {e}")
 
-                if model_count == 0:
-                    continue
+        # Process models
+        all_models = models_data.get('data', [])
 
-                # Get models for this provider
-                models_query = """
-                    SELECT
-                        m.id::text as _uuid,
-                        m.name,
-                        m.display_name,
-                        m.cost_per_1m_input_tokens,
-                        m.cost_per_1m_output_tokens,
-                        m.context_length,
-                        m.enabled,
-                        m.avg_latency_ms
-                    FROM llm_models m
-                    WHERE m.provider_id = $1 AND m.enabled = true
-                    ORDER BY m.name
-                """
-                models = await conn.fetch(models_query, provider['id'])
+        # Group models by provider
+        provider_models = {}
+        for model in all_models:
+            model_id = model.get('id', '')
 
-                models_list = []
-                for model in models:
-                    input_cost = float(model['cost_per_1m_input_tokens'] or 0)
-                    output_cost = float(model['cost_per_1m_output_tokens'] or 0)
-                    model_dict = {
-                        'id': model['name'],
-                        'object': 'model',
-                        'name': model['name'],
-                        'display_name': model['display_name'],
-                        'provider': provider['name'],
-                        'provider_id': str(provider['id']),
-                        'pricing': {
-                            'input': input_cost / 1000000,
-                            'output': output_cost / 1000000
-                        },
-                        'context_length': model['context_length'],
-                        'enabled': model['enabled'],
-                        '_uuid': model['_uuid']
-                    }
-                    models_list.append(model_dict)
+            # Skip wildcard entries
+            if '/*' in model_id or model_id == '*/*':
+                continue
 
-                # Determine if this provider uses BYOK or platform keys
-                is_byok = provider_name in byok_provider_names
+            # Determine provider from model ID
+            provider = None
+            if model_id.startswith('gpt-') or model_id.startswith('o1-'):
+                provider = 'openai'
+            elif model_id.startswith('claude-'):
+                provider = 'anthropic'
+            elif model_id.startswith('gemini-'):
+                provider = 'google'
+            elif model_id.startswith('llama-'):
+                provider = 'meta'
+            elif model_id.startswith('mistral-') or model_id.startswith('mixtral-'):
+                provider = 'mistral'
+            elif model_id.startswith('deepseek-'):
+                provider = 'deepseek'
+            elif '/' in model_id:
+                # Format like "openrouter/anthropic/claude-3.5-sonnet"
+                parts = model_id.split('/')
+                if len(parts) >= 2:
+                    provider = parts[0].lower()
+            else:
+                provider = 'other'
 
-                provider_info = {
-                    'provider': provider['name'],
-                    'provider_type': provider['type'],
-                    'models': models_list,
-                    'count': len(models_list)
-                }
+            if provider not in provider_models:
+                provider_models[provider] = []
 
-                if is_byok:
-                    provider_info['free'] = True
-                    provider_info['note'] = f"Using your {provider['name']} API key - no credits charged"
-                    provider_info['source'] = 'byok'
-                    byok_models.append(provider_info)
-                else:
-                    provider_info['note'] = f"Charged with credits from your account"
-                    provider_info['source'] = 'platform'
-                    platform_models.append(provider_info)
-
-            # Build summary
-            total_byok = sum(p['count'] for p in byok_models)
-            total_platform = sum(p['count'] for p in platform_models)
-
-            return {
-                'byok_models': byok_models,
-                'platform_models': platform_models,
-                'summary': {
-                    'total_models': total_byok + total_platform,
-                    'byok_count': total_byok,
-                    'platform_count': total_platform,
-                    'has_byok_keys': len(byok_provider_names) > 0,
-                    'byok_providers': list(byok_provider_names)
-                }
+            # Build model info with metadata
+            model_info = {
+                'id': model_id,
+                'object': 'model',
+                'name': model_id,
+                'display_name': model_id.replace('/', ' / '),
+                'created': model.get('created', 0)
             }
+
+            # Add OpenRouter metadata if available
+            if model_id in openrouter_models:
+                or_meta = openrouter_models[model_id]
+                model_info['context_length'] = or_meta.get('context_length', 0)
+                model_info['description'] = or_meta.get('description', '')
+
+                # Add pricing info (convert from per-token to per-1M-tokens)
+                pricing = or_meta.get('pricing', {})
+                if pricing:
+                    try:
+                        # OpenRouter returns price per token (e.g., "0.000003")
+                        # Convert to price per 1M tokens
+                        prompt_price = float(pricing.get('prompt', '0'))
+                        completion_price = float(pricing.get('completion', '0'))
+
+                        model_info['cost_per_1m_input'] = prompt_price * 1_000_000
+                        model_info['cost_per_1m_output'] = completion_price * 1_000_000
+
+                        # Keep raw pricing for reference
+                        model_info['pricing'] = {
+                            'prompt': pricing.get('prompt', '0'),
+                            'completion': pricing.get('completion', '0'),
+                            'request': pricing.get('request', '0'),
+                            'image': pricing.get('image', '0')
+                        }
+                    except (ValueError, TypeError):
+                        logger.warning(f"Failed to parse pricing for {model_id}")
+                        model_info['cost_per_1m_input'] = 0
+                        model_info['cost_per_1m_output'] = 0
+
+                # Add architecture info (modality, instruct type)
+                arch = or_meta.get('architecture', {})
+                if arch:
+                    model_info['architecture'] = {
+                        'modality': arch.get('modality', 'text'),
+                        'tokenizer': arch.get('tokenizer', ''),
+                        'instruct_type': arch.get('instruct_type', '')
+                    }
+
+            provider_models[provider].append(model_info)
+
+        # Categorize by BYOK vs Platform
+        byok_models = []
+        platform_models = []
+
+        # Provider display names
+        provider_names = {
+            'openai': 'OpenAI',
+            'anthropic': 'Anthropic',
+            'google': 'Google',
+            'meta': 'Meta',
+            'mistral': 'Mistral AI',
+            'deepseek': 'DeepSeek',
+            'openrouter': 'OpenRouter',
+            'huggingface': 'HuggingFace',
+            'cohere': 'Cohere',
+            'together': 'Together AI',
+            'groq': 'Groq',
+            'other': 'Other'
+        }
+
+        for provider_key, models_list in provider_models.items():
+            if not models_list:
+                continue
+
+            provider_display = provider_names.get(provider_key, provider_key.title())
+            is_byok = provider_key in byok_provider_names or 'openrouter' in byok_provider_names
+
+            provider_info = {
+                'provider': provider_display,
+                'provider_type': provider_key,
+                'models': models_list,
+                'count': len(models_list)
+            }
+
+            if is_byok:
+                provider_info['free'] = True
+                provider_info['note'] = f"Using your {provider_display} API key - no credits charged"
+                provider_info['source'] = 'byok'
+                byok_models.append(provider_info)
+            else:
+                provider_info['note'] = f"Charged with credits from your account"
+                provider_info['source'] = 'platform'
+                platform_models.append(provider_info)
+
+        # Build summary
+        total_byok = sum(p['count'] for p in byok_models)
+        total_platform = sum(p['count'] for p in platform_models)
+
+        return {
+            'byok_models': byok_models,
+            'platform_models': platform_models,
+            'summary': {
+                'total_models': total_byok + total_platform,
+                'byok_count': total_byok,
+                'platform_count': total_platform,
+                'has_byok_keys': len(byok_provider_names) > 0,
+                'byok_providers': list(byok_provider_names)
+            }
+        }
 
     except Exception as e:
         logger.error(f"Error categorizing models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to categorize models")
+        raise HTTPException(status_code=500, detail=f"Failed to categorize models: {str(e)}")
 
 
 @router.get("/usage", response_model=UsageStats)
