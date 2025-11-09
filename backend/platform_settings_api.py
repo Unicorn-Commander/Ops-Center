@@ -123,6 +123,27 @@ PLATFORM_SETTINGS = {
         "required": False,
         "test_connection": True
     },
+    "CLOUDFLARE_ZONE_ID": {
+        "description": "Cloudflare Zone ID for the domain",
+        "category": "cloudflare",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False
+    },
+    "CLOUDFLARE_DOMAIN": {
+        "description": "Cloudflare managed domain name",
+        "category": "cloudflare",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False
+    },
+    "CLOUDFLARE_SERVER_IP": {
+        "description": "Server IP address for DNS records",
+        "category": "cloudflare",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False
+    },
 
     # NameCheap Settings
     "NAMECHEAP_API_USERNAME": {
