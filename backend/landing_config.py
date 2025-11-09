@@ -12,6 +12,7 @@ class LandingPageConfig:
     """Manages landing page customization settings"""
     
     CONFIG_FILE = "/app/config/landing_config.json"
+    TEMPLATES_DIR = "/app/config/templates"
     DEFAULT_CONFIG = {
         "theme": {
             "preset": "dashboard",  # dashboard, magic-unicorn, professional, dark, ocean, sunset
@@ -179,8 +180,23 @@ class LandingPageConfig:
         self.config = self.load_config()
     
     def load_config(self) -> Dict[str, Any]:
-        """Load configuration from file or create default"""
+        """Load configuration from file or template"""
         try:
+            # Check for template selection via environment variable
+            template_name = os.getenv('LANDING_CONFIG_TEMPLATE', '')
+
+            if template_name:
+                # Load from template directory
+                template_path = Path(self.TEMPLATES_DIR) / f"landing_config.{template_name}.json"
+                if template_path.exists():
+                    print(f"Loading landing config from template: {template_name}")
+                    with open(template_path, 'r') as f:
+                        config = json.load(f)
+                        return self._merge_configs(self.DEFAULT_CONFIG, config)
+                else:
+                    print(f"Warning: Template '{template_name}' not found at {template_path}")
+
+            # Fall back to default config file
             if self.config_path.exists():
                 with open(self.config_path, 'r') as f:
                     config = json.load(f)
