@@ -92,7 +92,8 @@ from user_management_api import router as user_management_router
 from redis_session import redis_session_manager
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
-from feature_definitions_api import router as feature_definitions_router
+from app_definitions_api import router as app_definitions_router
+from routers.forgejo import router as forgejo_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -423,11 +424,13 @@ async def startup_event():
         logger.info("PostgreSQL connection pool created")
 
         # Create Redis client
+        redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-lago-redis')}:{os.getenv('REDIS_PORT', '6379')}")
         redis_client = aioredis.from_url(
-            f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}",
+            redis_url,
             encoding="utf-8",
             decode_responses=True
         )
+        logger.info(f"Connecting to Redis at: {redis_url}")
         await redis_client.ping()  # Test connection
         logger.info("Redis client connected")
 
@@ -652,15 +655,19 @@ logger.info("Subscription Tier Management API endpoints registered at /api/v1/ad
 app.include_router(tier_features_router)
 logger.info("Tier Features API endpoints registered at /api/v1/tiers/features")
 
-# Feature Definitions Management API
-app.include_router(feature_definitions_router)
-logger.info("Feature Definitions API endpoints registered at /api/v1/admin/features")
+# App Definitions Management API
+app.include_router(app_definitions_router)
+logger.info("App Definitions API endpoints registered at /api/v1/admin/apps")
 
 # LiteLLM Routing and Provider Management API
 app.include_router(admin_local_users_router)
 logger.info("Admin Local User Management API endpoints registered at /api/v1/admin/system/local-users")
 app.include_router(litellm_routing_router)
 logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
+
+# Forgejo integration
+app.include_router(forgejo_router)
+logger.info("Forgejo API endpoints registered at /api/v1/forgejo")
 app.include_router(litellm_api_router)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
 app.include_router(model_catalog_router)

@@ -1,6 +1,6 @@
 """
-Tier Features API
-Manage feature associations with subscription tiers.
+Tier Apps API
+Manage app associations with subscription tiers.
 """
 
 import os
@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 
 # Router configuration
-router = APIRouter(prefix="/api/v1", tags=["subscriptions", "features"])
+router = APIRouter(prefix="/api/v1", tags=["subscriptions", "apps"])
 
 
 # =============================================================================
@@ -45,42 +45,42 @@ async def get_current_admin(request: Request) -> str:
 # Pydantic Models
 # =============================================================================
 
-class FeatureInfo(BaseModel):
-    """Feature information"""
+class AppInfo(BaseModel):
+    """App information"""
     id: int
-    feature_key: str
-    feature_name: str
+    app_key: str
+    app_name: str
     category: str
     description: Optional[str] = None
     is_active: bool
     sort_order: int
 
 
-class TierFeatureResponse(BaseModel):
-    """Tier feature association"""
+class TierAppResponse(BaseModel):
+    """Tier app association"""
     tier_id: int
     tier_code: str
     tier_name: str
-    feature_id: int
-    feature_key: str
-    feature_name: str
+    app_id: int
+    app_key: str
+    app_name: str
     category: str
     enabled: bool
     description: Optional[str] = None
 
 
-class TierFeaturesListResponse(BaseModel):
-    """Complete list of features for a tier"""
+class TierAppsListResponse(BaseModel):
+    """Complete list of apps for a tier"""
     tier_id: int
     tier_code: str
     tier_name: str
-    features: List[FeatureInfo]
+    apps: List[AppInfo]
 
 
-class UpdateTierFeatureRequest(BaseModel):
-    """Request to update a tier-feature association"""
-    feature_key: str = Field(..., description="Feature key to update")
-    enabled: bool = Field(..., description="Whether to enable or disable this feature")
+class UpdateTierAppRequest(BaseModel):
+    """Request to update a tier-app association"""
+    app_key: str = Field(..., description="App key to update")
+    enabled: bool = Field(..., description="Whether to enable or disable this app")
 
 
 # =============================================================================
@@ -102,10 +102,10 @@ async def get_db_connection():
 # Public Endpoints (No Auth Required)
 # =============================================================================
 
-@router.get("/tiers/features", response_model=List[TierFeaturesListResponse])
+@router.get("/tiers/features", response_model=List[TierAppsListResponse])
 async def list_all_tier_features():
     """
-    Get all subscription tiers with their associated features.
+    Get all subscription tiers with their associated apps.
     This endpoint is public - no authentication required.
     """
     conn = await get_db_connection()
@@ -121,28 +121,28 @@ async def list_all_tier_features():
 
         result = []
         for tier in tiers:
-            # Get features for this tier
-            features_query = """
+            # Get apps for this tier
+            apps_query = """
                 SELECT
-                    fd.id,
-                    fd.feature_key,
-                    fd.feature_name,
-                    fd.category,
-                    fd.description,
-                    fd.is_active,
-                    fd.sort_order
-                FROM tier_features tf
-                JOIN feature_definitions fd ON tf.feature_key = fd.feature_key
-                WHERE tf.tier_id = $1 AND tf.enabled = TRUE AND fd.is_active = TRUE
-                ORDER BY fd.category, fd.sort_order, fd.feature_name
+                    ad.id,
+                    ad.app_key,
+                    ad.app_name,
+                    ad.category,
+                    ad.description,
+                    ad.is_active,
+                    ad.sort_order
+                FROM tier_apps ta
+                JOIN app_definitions ad ON ta.app_key = ad.app_key
+                WHERE ta.tier_id = $1 AND ta.enabled = TRUE AND ad.is_active = TRUE
+                ORDER BY ad.category, ad.sort_order, ad.app_name
             """
-            features = await conn.fetch(features_query, tier['id'])
+            apps = await conn.fetch(apps_query, tier['id'])
 
             result.append({
                 "tier_id": tier['id'],
                 "tier_code": tier['tier_code'],
                 "tier_name": tier['tier_name'],
-                "features": [dict(f) for f in features]
+                "apps": [dict(a) for a in apps]
             })
 
         return result
@@ -150,10 +150,10 @@ async def list_all_tier_features():
         await conn.close()
 
 
-@router.get("/tiers/{tier_code}/features", response_model=TierFeaturesListResponse)
+@router.get("/tiers/{tier_code}/features", response_model=TierAppsListResponse)
 async def get_tier_features(tier_code: str):
     """
-    Get all features for a specific tier by tier code.
+    Get all apps for a specific tier by tier code.
     This endpoint is public - no authentication required.
 
     - **tier_code**: Tier code (e.g., 'vip_founder', 'byok', 'managed')
@@ -171,28 +171,28 @@ async def get_tier_features(tier_code: str):
         if not tier:
             raise HTTPException(status_code=404, detail=f"Tier '{tier_code}' not found")
 
-        # Get features for this tier
-        features_query = """
+        # Get apps for this tier
+        apps_query = """
             SELECT
-                fd.id,
-                fd.feature_key,
-                fd.feature_name,
-                fd.category,
-                fd.description,
-                fd.is_active,
-                fd.sort_order
-            FROM tier_features tf
-            JOIN feature_definitions fd ON tf.feature_key = fd.feature_key
-            WHERE tf.tier_id = $1 AND tf.enabled = TRUE AND fd.is_active = TRUE
-            ORDER BY fd.category, fd.sort_order, fd.feature_name
+                ad.id,
+                ad.app_key,
+                ad.app_name,
+                ad.category,
+                ad.description,
+                ad.is_active,
+                ad.sort_order
+            FROM tier_apps ta
+            JOIN app_definitions ad ON ta.app_key = ad.app_key
+            WHERE ta.tier_id = $1 AND ta.enabled = TRUE AND ad.is_active = TRUE
+            ORDER BY ad.category, ad.sort_order, ad.app_name
         """
-        features = await conn.fetch(features_query, tier['id'])
+        apps = await conn.fetch(apps_query, tier['id'])
 
         return {
             "tier_id": tier['id'],
             "tier_code": tier['tier_code'],
             "tier_name": tier['tier_name'],
-            "features": [dict(f) for f in features]
+            "apps": [dict(a) for a in apps]
         }
     finally:
         await conn.close()
@@ -202,12 +202,12 @@ async def get_tier_features(tier_code: str):
 # Admin Endpoints (Auth Required)
 # =============================================================================
 
-@router.get("/admin/tiers/features/detailed", response_model=List[TierFeatureResponse])
+@router.get("/admin/tiers/features/detailed", response_model=List[TierAppResponse])
 async def list_all_tier_features_detailed(
     admin: str = Depends(get_current_admin)
 ):
     """
-    Get detailed view of all tier-feature associations.
+    Get detailed view of all tier-app associations.
     Admin only.
     """
     conn = await get_db_connection()
@@ -217,17 +217,17 @@ async def list_all_tier_features_detailed(
                 st.id as tier_id,
                 st.tier_code,
                 st.tier_name,
-                fd.id as feature_id,
-                fd.feature_key,
-                fd.feature_name,
-                fd.category,
-                fd.description,
-                tf.enabled
-            FROM tier_features tf
-            JOIN subscription_tiers st ON tf.tier_id = st.id
-            JOIN feature_definitions fd ON tf.feature_key = fd.feature_key
-            WHERE st.is_active = TRUE AND fd.is_active = TRUE
-            ORDER BY st.sort_order, fd.category, fd.sort_order, fd.feature_name
+                ad.id as app_id,
+                ad.app_key,
+                ad.app_name,
+                ad.category,
+                ad.description,
+                ta.enabled
+            FROM tier_apps ta
+            JOIN subscription_tiers st ON ta.tier_id = st.id
+            JOIN app_definitions ad ON ta.app_key = ad.app_key
+            WHERE st.is_active = TRUE AND ad.is_active = TRUE
+            ORDER BY st.sort_order, ad.category, ad.sort_order, ad.app_name
         """
         rows = await conn.fetch(query)
         return [dict(row) for row in rows]
@@ -238,15 +238,15 @@ async def list_all_tier_features_detailed(
 @router.put("/admin/tiers/{tier_code}/features")
 async def update_tier_features(
     tier_code: str,
-    updates: List[UpdateTierFeatureRequest],
+    updates: List[UpdateTierAppRequest],
     admin: str = Depends(get_current_admin)
 ):
     """
-    Update which features are enabled for a specific tier.
+    Update which apps are enabled for a specific tier.
     Admin only.
 
     - **tier_code**: Tier code to update
-    - **updates**: List of feature updates
+    - **updates**: List of app updates
     """
     conn = await get_db_connection()
     try:
@@ -260,34 +260,34 @@ async def update_tier_features(
 
         tier_id = tier['id']
 
-        # Update each feature
+        # Update each app
         updated_count = 0
         for update in updates:
             # Check if association exists
             existing = await conn.fetchrow(
-                "SELECT id FROM tier_features WHERE tier_id = $1 AND feature_key = $2",
-                tier_id, update.feature_key
+                "SELECT id FROM tier_apps WHERE tier_id = $1 AND app_key = $2",
+                tier_id, update.app_key
             )
 
             if existing:
                 # Update existing
                 await conn.execute(
                     """
-                    UPDATE tier_features
+                    UPDATE tier_apps
                     SET enabled = $1, updated_at = NOW()
-                    WHERE tier_id = $2 AND feature_key = $3
+                    WHERE tier_id = $2 AND app_key = $3
                     """,
-                    update.enabled, tier_id, update.feature_key
+                    update.enabled, tier_id, update.app_key
                 )
                 updated_count += 1
             else:
                 # Insert new
                 await conn.execute(
                     """
-                    INSERT INTO tier_features (tier_id, feature_key, enabled)
+                    INSERT INTO tier_apps (tier_id, app_key, enabled)
                     VALUES ($1, $2, $3)
                     """,
-                    tier_id, update.feature_key, update.enabled
+                    tier_id, update.app_key, update.enabled
                 )
                 updated_count += 1
 
@@ -295,7 +295,7 @@ async def update_tier_features(
             "success": True,
             "tier_code": tier_code,
             "updated_count": updated_count,
-            "message": f"Updated {updated_count} feature(s) for tier '{tier_code}'"
+            "message": f"Updated {updated_count} app(s) for tier '{tier_code}'"
         }
     finally:
         await conn.close()
@@ -304,17 +304,17 @@ async def update_tier_features(
 @router.post("/admin/tiers/{tier_code}/features/bulk")
 async def bulk_set_tier_features(
     tier_code: str,
-    feature_keys: List[str],
+    app_keys: List[str],
     enabled: bool = True,
     admin: str = Depends(get_current_admin)
 ):
     """
-    Bulk enable/disable multiple features for a tier.
+    Bulk enable/disable multiple apps for a tier.
     Admin only.
 
     - **tier_code**: Tier code to update
-    - **feature_keys**: List of feature keys to update
-    - **enabled**: Whether to enable or disable these features
+    - **app_keys**: List of app keys to update
+    - **enabled**: Whether to enable or disable these apps
     """
     conn = await get_db_connection()
     try:
@@ -328,25 +328,25 @@ async def bulk_set_tier_features(
 
         tier_id = tier['id']
 
-        # Update all features
-        for feature_key in feature_keys:
+        # Update all apps
+        for app_key in app_keys:
             # Upsert (insert or update)
             await conn.execute(
                 """
-                INSERT INTO tier_features (tier_id, feature_key, enabled)
+                INSERT INTO tier_apps (tier_id, app_key, enabled)
                 VALUES ($1, $2, $3)
-                ON CONFLICT (tier_id, feature_key)
+                ON CONFLICT (tier_id, app_key)
                 DO UPDATE SET enabled = $3, updated_at = NOW()
                 """,
-                tier_id, feature_key, enabled
+                tier_id, app_key, enabled
             )
 
         return {
             "success": True,
             "tier_code": tier_code,
-            "feature_count": len(feature_keys),
+            "app_count": len(app_keys),
             "enabled": enabled,
-            "message": f"Bulk {'enabled' if enabled else 'disabled'} {len(feature_keys)} feature(s) for tier '{tier_code}'"
+            "message": f"Bulk {'enabled' if enabled else 'disabled'} {len(app_keys)} app(s) for tier '{tier_code}'"
         }
     finally:
         await conn.close()

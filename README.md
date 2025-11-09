@@ -22,10 +22,20 @@ Ops-Center is the **AWS Console equivalent** for UC-Cloud - a comprehensive admi
 - 🔑 **BYOK (Bring Your Own Key)** - Users can add their own OpenRouter, OpenAI, Anthropic API keys
 - 🏢 **Organization Management** - Multi-tenant organization control with team hierarchies
 - 🤖 **LLM Provider Management** - 100+ models via LiteLLM proxy with centralized cost tracking
+- 🎨 **Image Generation** - DALL-E 2/3, Stable Diffusion XL/3 via OpenAI-compatible API
+- 📦 **App Management** - Tier-based app assignment system (formerly "Feature Management")
 - 🔐 **Keycloak SSO** - Google, GitHub, Microsoft authentication in uchub realm
 - 📊 **Analytics Dashboard** - Real-time metrics, usage tracking, and activity timelines
 - 🔧 **API Key Management** - User API key generation with bcrypt hashing
 - 👤 **User Impersonation** - Admin "login as user" capability with 24hr sessions
+
+### Recent Updates (v2.3.0)
+- 🔄 **Feature → App Refactoring**: Renamed all "feature" terminology to "app" for clarity
+  - Eliminates confusion between tier properties and user-facing applications
+  - Backward-compatible views maintain old API endpoints during transition
+  - Database: `app_definitions`, `tier_apps` (formerly `feature_definitions`, `tier_features`)
+  - API: `/api/v1/admin/apps` (formerly `/api/v1/admin/features`)
+  - UI: App Management page at `/admin/system/app-management`
 
 ### Technical Stack
 - **Backend**: FastAPI (Python 3.10+)

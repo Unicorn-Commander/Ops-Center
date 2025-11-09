@@ -1,6 +1,6 @@
 /**
  * Subscription Management Page
- * Admin interface for managing subscription tiers, features, and user migrations
+ * Admin interface for managing subscription tiers, apps, and user migrations
  * Epic 4.4: Subscription Management GUI
  */
 
@@ -73,7 +73,7 @@ const SubscriptionManagement = () => {
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [featuresDialogOpen, setFeaturesDialogOpen] = useState(false);
+  const [appsDialogOpen, setAppsDialogOpen] = useState(false);
   const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
   const [auditLogDialogOpen, setAuditLogDialogOpen] = useState(false);
 
@@ -100,8 +100,8 @@ const SubscriptionManagement = () => {
   });
 
   // Features data
-  const [features, setFeatures] = useState([]);
-  const [featureDefinitions, setFeatureDefinitions] = useState([]);
+  const [apps, setApps] = useState([]);
+  const [appDefinitions, setAppDefinitions] = useState([]);
 
   // Migration data
   const [migrationData, setMigrationData] = useState({
@@ -141,30 +141,30 @@ const SubscriptionManagement = () => {
 
   const fetchFeatureDefinitions = async () => {
     try {
-      const response = await fetch('/api/v1/admin/features/?active_only=true', { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch feature definitions');
+      const response = await fetch('/api/v1/admin/apps/?active_only=true', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch app definitions');
       const data = await response.json();
-      setFeatureDefinitions(data.map(f => ({
-        key: f.feature_key,
-        name: f.feature_name,
+      setAppDefinitions(data.map(f => ({
+        key: f.app_key,
+        name: f.app_name,
         category: f.category
       })));
     } catch (err) {
-      console.error('Error fetching feature definitions:', err);
+      console.error('Error fetching app definitions:', err);
       // Keep empty array if fetch fails
     }
   };
 
   const fetchTierFeatures = async (tierCode) => {
     try {
-      const response = await fetch(`/api/v1/tiers/${tierCode}/features`, { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch features');
+      const response = await fetch(`/api/v1/tiers/${tierCode}/apps`, { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch apps');
       const data = await response.json();
       // API returns { tier_id, tier_code, tier_name, features: [...] }
       return data.features || [];
     } catch (err) {
       setError(err.message);
-      console.error('Error fetching features:', err);
+      console.error('Error fetching apps:', err);
       return [];
     }
   };
@@ -256,28 +256,28 @@ const SubscriptionManagement = () => {
     if (!selectedTier) return;
 
     try {
-      // Format features for the new API: array of { feature_key, enabled }
+      // Format apps for the new API: array of { app_key, enabled }
       const updates = features.map(f => ({
-        feature_key: f.feature_key,
+        app_key: f.app_key,
         enabled: f.enabled
       }));
 
-      const response = await fetch(`/api/v1/admin/tiers/${selectedTier.tier_code}/features`, {
+      const response = await fetch(`/api/v1/admin/tiers/${selectedTier.tier_code}/apps`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(updates)
       });
 
-      if (!response.ok) throw new Error('Failed to update features');
+      if (!response.ok) throw new Error('Failed to update apps');
 
       const result = await response.json();
-      setSuccess(result.message || 'Features updated successfully');
-      setFeaturesDialogOpen(false);
+      setSuccess(result.message || 'Apps updated successfully');
+      setAppsDialogOpen(false);
       fetchTiers();
     } catch (err) {
       setError(err.message);
-      console.error('Error updating features:', err);
+      console.error('Error updating apps:', err);
     }
   };
 
@@ -367,21 +367,21 @@ const SubscriptionManagement = () => {
     const enabledFeatures = await fetchTierFeatures(tier.tier_code);
 
     // Initialize features with all definitions, marking which ones are enabled
-    const initialFeatures = featureDefinitions.map(def => {
-      const isEnabled = enabledFeatures.some(f => f.feature_key === def.key);
+    const initialFeatures = appDefinitions.map(def => {
+      const isEnabled = enabledFeatures.some(f => f.app_key === def.key);
       return {
-        feature_key: def.key,
+        app_key: def.key,
         enabled: isEnabled
       };
     });
 
-    setFeatures(initialFeatures);
-    setFeaturesDialogOpen(true);
+    setApps(initialFeatures);
+    setAppsDialogOpen(true);
   };
 
   const toggleFeature = (featureKey) => {
-    setFeatures(prev => prev.map(f =>
-      f.feature_key === featureKey ? { ...f, enabled: !f.enabled } : f
+    setApps(prev => prev.map(f =>
+      f.app_key === featureKey ? { ...f, enabled: !f.enabled } : f
     ));
   };
 
@@ -441,7 +441,7 @@ const SubscriptionManagement = () => {
             Subscription Management
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Manage subscription tiers, features, and user migrations
+            Manage subscription tiers, apps, and user migrations
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -713,7 +713,7 @@ const SubscriptionManagement = () => {
                       />
                     </TableCell>
                     <TableCell align="center">
-                      <Tooltip title="Manage Features">
+                      <Tooltip title="Manage Apps">
                         <IconButton
                           size="small"
                           onClick={() => handleManageFeatures(tier)}
@@ -1122,13 +1122,13 @@ const SubscriptionManagement = () => {
 
       {/* Features Dialog */}
       <Dialog
-        open={featuresDialogOpen}
-        onClose={() => setFeaturesDialogOpen(false)}
+        open={appsDialogOpen}
+        onClose={() => setAppsDialogOpen(false)}
         maxWidth="md"
         fullWidth
       >
         <DialogTitle>
-          Manage Features: {selectedTier?.tier_name}
+          Manage Apps: {selectedTier?.tier_name}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
@@ -1141,10 +1141,10 @@ const SubscriptionManagement = () => {
                 </AccordionSummary>
                 <AccordionDetails>
                   <Grid container spacing={2}>
-                    {featureDefinitions
+                    {appDefinitions
                       .filter(def => def.category === category)
                       .map(def => {
-                        const feature = features.find(f => f.feature_key === def.key);
+                        const feature = features.find(f => f.app_key === def.key);
                         return (
                           <Grid item xs={12} md={6} key={def.key}>
                             <FormControlLabel
@@ -1167,7 +1167,7 @@ const SubscriptionManagement = () => {
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 1 }}>
           <Button
-            onClick={() => setFeaturesDialogOpen(false)}
+            onClick={() => setAppsDialogOpen(false)}
             sx={{
               borderRadius: 2,
               transition: 'all 0.2s',

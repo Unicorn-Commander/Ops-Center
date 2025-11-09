@@ -1,7 +1,7 @@
 /**
- * Feature Management Page
- * Admin interface for managing feature definitions available for subscription tiers
- * Epic 4.4: Subscription Management - Feature Definitions
+ * App Management Page
+ * Admin interface for managing app definitions available for subscription tiers
+ * Epic 4.4: Subscription Management - App Definitions
  */
 
 import React, { useState, useEffect } from 'react';
@@ -50,10 +50,10 @@ import {
   DragIndicator as DragIcon
 } from '@mui/icons-material';
 
-const FeatureManagement = () => {
+const AppManagement = () => {
   // State management
-  const [features, setFeatures] = useState([]);
-  const [tierFeatures, setTierFeatures] = useState([]); // NEW: Tier-feature associations
+  const [apps, setApps] = useState([]);
+  const [tierApps, setTierApps] = useState([]); // NEW: Tier-app associations
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -67,8 +67,8 @@ const FeatureManagement = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  // Selected feature for editing/deleting
-  const [selectedFeature, setSelectedFeature] = useState(null);
+  // Selected app for editing/deleting
+  const [selectedApp, setSelectedApp] = useState(null);
 
   // Filter states
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -76,8 +76,8 @@ const FeatureManagement = () => {
 
   // Form data
   const [formData, setFormData] = useState({
-    feature_key: '',
-    feature_name: '',
+    app_key: '',
+    app_name: '',
     category: 'services',
     description: '',
     is_active: true,
@@ -88,37 +88,37 @@ const FeatureManagement = () => {
   // API Functions
   // ============================================
 
-  const fetchFeatures = async () => {
+  const fetchApps = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/v1/admin/features/?active_only=false', { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch features');
+      const response = await fetch('/api/v1/admin/apps/?active_only=false', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch apps');
       const data = await response.json();
-      setFeatures(data);
+      setApps(data);
     } catch (err) {
       setError(err.message);
-      console.error('Error fetching features:', err);
+      console.error('Error fetching apps:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // NEW: Fetch tier-feature associations
-  const fetchTierFeatures = async () => {
+  // NEW: Fetch tier-app associations
+  const fetchTierApps = async () => {
     try {
-      const response = await fetch('/api/v1/admin/tiers/features/detailed', { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch tier-feature associations');
+      const response = await fetch('/api/v1/admin/tiers/apps/detailed', { credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to fetch tier-app associations');
       const data = await response.json();
-      setTierFeatures(data);
+      setTierApps(data);
     } catch (err) {
-      console.error('Error fetching tier-feature associations:', err);
+      console.error('Error fetching tier-app associations:', err);
     }
   };
 
-  const createFeature = async () => {
+  const createApp = async () => {
     try {
-      const response = await fetch('/api/v1/admin/features/', {
+      const response = await fetch('/api/v1/admin/apps/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -127,24 +127,24 @@ const FeatureManagement = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to create feature');
+        throw new Error(errorData.detail || 'Failed to create app');
       }
 
-      setSuccess('Feature created successfully');
+      setSuccess('App created successfully');
       setCreateDialogOpen(false);
-      fetchFeatures();
+      fetchApps();
       resetForm();
     } catch (err) {
       setError(err.message);
-      console.error('Error creating feature:', err);
+      console.error('Error creating app:', err);
     }
   };
 
-  const updateFeature = async () => {
-    if (!selectedFeature) return;
+  const updateApp = async () => {
+    if (!selectedApp) return;
 
     try {
-      const response = await fetch(`/api/v1/admin/features/${selectedFeature.id}`, {
+      const response = await fetch(`/api/v1/admin/apps/${selectedApp.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -153,56 +153,56 @@ const FeatureManagement = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to update feature');
+        throw new Error(errorData.detail || 'Failed to update app');
       }
 
-      setSuccess('Feature updated successfully');
+      setSuccess('App updated successfully');
       setEditDialogOpen(false);
-      fetchFeatures();
+      fetchApps();
       resetForm();
     } catch (err) {
       setError(err.message);
-      console.error('Error updating feature:', err);
+      console.error('Error updating app:', err);
     }
   };
 
-  const deleteFeature = async () => {
-    if (!selectedFeature) return;
+  const deleteApp = async () => {
+    if (!selectedApp) return;
 
     try {
-      const response = await fetch(`/api/v1/admin/features/${selectedFeature.id}`, {
+      const response = await fetch(`/api/v1/admin/apps/${selectedApp.id}`, {
         method: 'DELETE',
         credentials: 'include'
       });
 
-      if (!response.ok) throw new Error('Failed to delete feature');
+      if (!response.ok) throw new Error('Failed to delete app');
 
-      setSuccess('Feature deleted successfully');
+      setSuccess('App deleted successfully');
       setDeleteDialogOpen(false);
-      fetchFeatures();
+      fetchApps();
       setSelectedFeature(null);
     } catch (err) {
       setError(err.message);
-      console.error('Error deleting feature:', err);
+      console.error('Error deleting app:', err);
     }
   };
 
-  const toggleFeatureStatus = async (feature) => {
+  const toggleAppStatus = async (feature) => {
     try {
-      const response = await fetch(`/api/v1/admin/features/${feature.id}`, {
+      const response = await fetch(`/api/v1/admin/apps/${feature.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ ...feature, is_active: !feature.is_active })
       });
 
-      if (!response.ok) throw new Error('Failed to update feature status');
+      if (!response.ok) throw new Error('Failed to update app status');
 
-      setSuccess(`Feature ${feature.is_active ? 'deactivated' : 'activated'} successfully`);
-      fetchFeatures();
+      setSuccess(`App ${feature.is_active ? 'deactivated' : 'activated'} successfully`);
+      fetchApps();
     } catch (err) {
       setError(err.message);
-      console.error('Error toggling feature status:', err);
+      console.error('Error toggling app status:', err);
     }
   };
 
@@ -212,8 +212,8 @@ const FeatureManagement = () => {
 
   const resetForm = () => {
     setFormData({
-      feature_key: '',
-      feature_name: '',
+      app_key: '',
+      app_name: '',
       category: 'services',
       description: '',
       is_active: true,
@@ -221,11 +221,11 @@ const FeatureManagement = () => {
     });
   };
 
-  const handleEditFeature = (feature) => {
+  const handleEditApp = (feature) => {
     setSelectedFeature(feature);
     setFormData({
-      feature_key: feature.feature_key,
-      feature_name: feature.feature_name,
+      app_key: feature.app_key,
+      app_name: feature.app_name,
       category: feature.category,
       description: feature.description || '',
       is_active: feature.is_active,
@@ -234,12 +234,12 @@ const FeatureManagement = () => {
     setEditDialogOpen(true);
   };
 
-  const handleDeleteFeature = (feature) => {
+  const handleDeleteApp = (feature) => {
     setSelectedFeature(feature);
     setDeleteDialogOpen(true);
   };
 
-  const validateFeatureKey = (key) => {
+  const validateAppKey = (key) => {
     // Must be lowercase with underscores only
     const regex = /^[a-z_]+$/;
     return regex.test(key);
@@ -250,8 +250,8 @@ const FeatureManagement = () => {
   // ============================================
 
   useEffect(() => {
-    fetchFeatures();
-    fetchTierFeatures(); // NEW: Also fetch tier associations
+    fetchApps();
+    fetchTierApps(); // NEW: Also fetch tier associations
   }, []);
 
   // ============================================
@@ -259,9 +259,9 @@ const FeatureManagement = () => {
   // ============================================
 
   // NEW: Helper to get tiers for a feature
-  const getTiersForFeature = (featureKey) => {
-    return tierFeatures
-      .filter(tf => tf.feature_key === featureKey && tf.enabled)
+  const getTiersForApp = (featureKey) => {
+    return tierApps
+      .filter(tf => tf.app_key === featureKey && tf.enabled)
       .map(tf => ({
         tier_code: tf.tier_code,
         tier_name: tf.tier_name
@@ -297,14 +297,14 @@ const FeatureManagement = () => {
 
   const getCategoryStats = () => {
     const stats = {
-      services: features.filter(f => f.category === 'services').length,
-      support: features.filter(f => f.category === 'support').length,
-      enterprise: features.filter(f => f.category === 'enterprise').length
+      services: apps.filter(f => f.category === 'services').length,
+      support: apps.filter(f => f.category === 'support').length,
+      enterprise: apps.filter(f => f.category === 'enterprise').length
     };
     return stats;
   };
 
-  const filteredFeatures = features
+  const filteredApps = apps
     .filter(f => categoryFilter === 'all' || f.category === categoryFilter)
     .filter(f => statusFilter === 'all' || (statusFilter === 'active' ? f.is_active : !f.is_active))
     .sort((a, b) => a.sort_order - b.sort_order);
@@ -313,7 +313,7 @@ const FeatureManagement = () => {
   // Main Render
   // ============================================
 
-  if (loading && features.length === 0) {
+  if (loading && apps.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <CircularProgress />
@@ -321,7 +321,7 @@ const FeatureManagement = () => {
     );
   }
 
-  const activeFeatures = features.filter(f => f.is_active).length;
+  const activeApps = apps.filter(f => f.is_active).length;
   const categoryStats = getCategoryStats();
 
   return (
@@ -340,10 +340,10 @@ const FeatureManagement = () => {
       >
         <Box>
           <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
-            Feature Management
+            App Management
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Define available features for subscription tiers
+            Define available apps for subscription tiers
           </Typography>
         </Box>
         <Button
@@ -364,7 +364,7 @@ const FeatureManagement = () => {
             }
           }}
         >
-          Create Feature
+          Create App
         </Button>
       </Box>
 
@@ -398,10 +398,10 @@ const FeatureManagement = () => {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box>
                   <Typography sx={{ opacity: 0.9, fontSize: '0.875rem', mb: 1 }}>
-                    Total Features
+                    Total Apps
                   </Typography>
                   <Typography variant="h3" sx={{ fontWeight: 700 }}>
-                    {features.length}
+                    {apps.length}
                   </Typography>
                 </Box>
                 <TuneIcon sx={{ fontSize: 48, opacity: 0.3 }} />
@@ -425,10 +425,10 @@ const FeatureManagement = () => {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box>
                   <Typography sx={{ opacity: 0.9, fontSize: '0.875rem', mb: 1 }}>
-                    Active Features
+                    Active Apps
                   </Typography>
                   <Typography variant="h3" sx={{ fontWeight: 700 }}>
-                    {activeFeatures}
+                    {activeApps}
                   </Typography>
                 </Box>
                 <CheckIcon sx={{ fontSize: 48, opacity: 0.3 }} />
@@ -539,13 +539,13 @@ const FeatureManagement = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <Typography variant="body2" color="text.secondary" textAlign="right">
-              Showing {filteredFeatures.length} of {features.length} features
+              Showing {filteredApps.length} of {apps.length} apps
             </Typography>
           </Grid>
         </Grid>
       </Paper>
 
-      {/* Features Table */}
+      {/* Apps Table */}
       <Paper
         sx={{
           borderRadius: 2,
@@ -557,7 +557,7 @@ const FeatureManagement = () => {
           <Table>
             <TableHead>
               <TableRow sx={{ background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)' }}>
-                <TableCell sx={{ fontWeight: 700 }}>Feature Name</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>App Name</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Key</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
@@ -568,7 +568,7 @@ const FeatureManagement = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredFeatures
+              {filteredApps
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((feature) => {
                   const categoryStyle = getCategoryColor(feature.category);
@@ -586,12 +586,12 @@ const FeatureManagement = () => {
                     >
                       <TableCell>
                         <Typography variant="body1" fontWeight="bold">
-                          {feature.feature_name}
+                          {feature.app_name}
                         </Typography>
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={feature.feature_key}
+                          label={feature.app_key}
                           size="small"
                           sx={{
                             fontFamily: 'monospace',
@@ -628,8 +628,8 @@ const FeatureManagement = () => {
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                          {getTiersForFeature(feature.feature_key).length > 0 ? (
-                            getTiersForFeature(feature.feature_key).map((tier) => {
+                          {getTiersForApp(feature.app_key).length > 0 ? (
+                            getTiersForApp(feature.app_key).map((tier) => {
                               const tierStyle = getTierBadgeColor(tier.tier_code);
                               return (
                                 <Chip
@@ -672,7 +672,7 @@ const FeatureManagement = () => {
                         <Tooltip title={feature.is_active ? 'Deactivate' : 'Activate'}>
                           <IconButton
                             size="small"
-                            onClick={() => toggleFeatureStatus(feature)}
+                            onClick={() => toggleAppStatus(feature)}
                             sx={{
                               color: feature.is_active ? 'error.main' : 'success.main'
                             }}
@@ -683,7 +683,7 @@ const FeatureManagement = () => {
                         <Tooltip title="Edit">
                           <IconButton
                             size="small"
-                            onClick={() => handleEditFeature(feature)}
+                            onClick={() => handleEditApp(feature)}
                           >
                             <EditIcon />
                           </IconButton>
@@ -691,7 +691,7 @@ const FeatureManagement = () => {
                         <Tooltip title="Delete">
                           <IconButton
                             size="small"
-                            onClick={() => handleDeleteFeature(feature)}
+                            onClick={() => handleDeleteApp(feature)}
                             color="error"
                           >
                             <DeleteIcon />
@@ -707,7 +707,7 @@ const FeatureManagement = () => {
         <TablePagination
           rowsPerPageOptions={[5, 10, 25, 50]}
           component="div"
-          count={filteredFeatures.length}
+          count={filteredApps.length}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={(e, newPage) => setPage(newPage)}
@@ -718,7 +718,7 @@ const FeatureManagement = () => {
         />
       </Paper>
 
-      {/* Create Feature Dialog */}
+      {/* Create App Dialog */}
       <Dialog
         open={createDialogOpen}
         onClose={() => setCreateDialogOpen(false)}
@@ -731,20 +731,20 @@ const FeatureManagement = () => {
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Feature Key"
-                value={formData.feature_key}
-                onChange={(e) => setFormData({ ...formData, feature_key: e.target.value.toLowerCase().replace(/[^a-z_]/g, '') })}
+                label="App Key"
+                value={formData.app_key}
+                onChange={(e) => setFormData({ ...formData, app_key: e.target.value.toLowerCase().replace(/[^a-z_]/g, '') })}
                 helperText="Lowercase with underscores only (e.g., 'chat_access')"
-                error={formData.feature_key && !validateFeatureKey(formData.feature_key)}
+                error={formData.app_key && !validateAppKey(formData.app_key)}
                 required
               />
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Feature Name"
-                value={formData.feature_name}
-                onChange={(e) => setFormData({ ...formData, feature_name: e.target.value })}
+                label="App Name"
+                value={formData.app_name}
+                onChange={(e) => setFormData({ ...formData, app_name: e.target.value })}
                 helperText="Display name (e.g., 'Open-WebUI Access')"
                 required
               />
@@ -781,7 +781,7 @@ const FeatureManagement = () => {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 multiline
                 rows={3}
-                helperText="Optional description of what this feature provides"
+                helperText="Optional description of what this app provides"
               />
             </Grid>
             <Grid item xs={12}>
@@ -811,9 +811,9 @@ const FeatureManagement = () => {
             Cancel
           </Button>
           <Button
-            onClick={createFeature}
+            onClick={createApp}
             variant="contained"
-            disabled={!formData.feature_key || !formData.feature_name || !validateFeatureKey(formData.feature_key)}
+            disabled={!formData.app_key || !formData.app_name || !validateAppKey(formData.app_key)}
             sx={{
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               borderRadius: 2,
@@ -828,36 +828,36 @@ const FeatureManagement = () => {
               }
             }}
           >
-            Create Feature
+            Create App
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Edit Feature Dialog */}
+      {/* Edit App Dialog */}
       <Dialog
         open={editDialogOpen}
         onClose={() => setEditDialogOpen(false)}
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>Edit Feature</DialogTitle>
+        <DialogTitle>Edit App</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Feature Key"
-                value={formData.feature_key}
+                label="App Key"
+                value={formData.app_key}
                 disabled
-                helperText="Cannot change feature key"
+                helperText="Cannot change app key"
               />
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Feature Name"
-                value={formData.feature_name}
-                onChange={(e) => setFormData({ ...formData, feature_name: e.target.value })}
+                label="App Name"
+                value={formData.app_name}
+                onChange={(e) => setFormData({ ...formData, app_name: e.target.value })}
                 required
               />
             </Grid>
@@ -921,9 +921,9 @@ const FeatureManagement = () => {
             Cancel
           </Button>
           <Button
-            onClick={updateFeature}
+            onClick={updateApp}
             variant="contained"
-            disabled={!formData.feature_name}
+            disabled={!formData.app_name}
             sx={{
               background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
               borderRadius: 2,
@@ -949,10 +949,10 @@ const FeatureManagement = () => {
         onClose={() => setDeleteDialogOpen(false)}
         maxWidth="sm"
       >
-        <DialogTitle>Delete Feature</DialogTitle>
+        <DialogTitle>Delete App</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete the feature <strong>{selectedFeature?.feature_name}</strong>?
+            Are you sure you want to delete the app <strong>{selectedApp?.app_name}</strong>?
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             This will remove it from all subscription tiers. This action cannot be undone.
@@ -972,7 +972,7 @@ const FeatureManagement = () => {
             Cancel
           </Button>
           <Button
-            onClick={deleteFeature}
+            onClick={deleteApp}
             variant="contained"
             color="error"
             sx={{
@@ -984,7 +984,7 @@ const FeatureManagement = () => {
               }
             }}
           >
-            Delete Feature
+            Delete App
           </Button>
         </DialogActions>
       </Dialog>
@@ -992,4 +992,4 @@ const FeatureManagement = () => {
   );
 };
 
-export default FeatureManagement;
+export default AppManagement;

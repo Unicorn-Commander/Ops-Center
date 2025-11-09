@@ -93,7 +93,7 @@ const AdvancedAnalytics = lazy(() => import('./pages/AdvancedAnalytics'));
 const UsageAnalytics = lazy(() => import('./pages/UsageAnalytics'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
-const FeatureManagement = lazy(() => import('./pages/admin/FeatureManagement'));
+const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
 // Consolidated: Using LocalUserManagement for all local user operations
@@ -107,6 +107,7 @@ const Extensions = lazy(() => import('./pages/Extensions'));
 const Logs = lazy(() => import('./pages/Logs'));
 const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
 const Settings = lazy(() => import('./pages/Settings'));
+const ForgejoManagement = lazy(() => import('./pages/admin/ForgejoManagement'));
 
 // Infrastructure pages (lazy loaded)
 const CloudflareDNS = lazy(() => import('./components/CloudflareDNS'));
@@ -349,7 +350,7 @@ function AppRoutes() {
                   <Route path="system/usage-analytics" element={<UsageAnalytics />} />
                   <Route path="system/billing" element={<BillingDashboard />} />
                   <Route path="system/subscription-management" element={<SubscriptionManagement />} />
-                  <Route path="system/feature-management" element={<FeatureManagement />} />
+                  <Route path="system/app-management" element={<AppManagement />} />
                   <Route path="system/users" element={<UserManagement />} />
                   <Route path="system/users/:userId" element={<UserDetail />} />
                   {/* Local User Management - consolidated to single route */}
@@ -362,6 +363,7 @@ function AppRoutes() {
                   <Route path="system/extensions" element={<Extensions />} />
                   <Route path="system/landing" element={<LandingCustomization />} />
                   <Route path="system/settings" element={<Settings />} />
+                  <Route path="system/forgejo" element={<ForgejoManagement />} />
 
                   {/* ============================================================ */}
                   {/* MONITORING & ANALYTICS SECTION - Metrics, Logs, Analytics */}

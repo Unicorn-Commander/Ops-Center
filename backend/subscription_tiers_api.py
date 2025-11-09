@@ -207,9 +207,9 @@ async def list_tiers(
                 st.byok_enabled, st.priority_support,
                 st.lago_plan_code, st.stripe_price_monthly, st.stripe_price_yearly,
                 st.created_at, st.updated_at, st.created_by, st.updated_by,
-                COALESCE(COUNT(DISTINCT tf.id), 0) AS feature_count
+                COALESCE(COUNT(DISTINCT ta.id), 0) AS app_count
             FROM subscription_tiers st
-            LEFT JOIN tier_features tf ON st.id = tf.tier_id AND tf.enabled = TRUE
+            LEFT JOIN tier_apps ta ON st.id = ta.tier_id AND ta.enabled = TRUE
         """
 
         if active_only:
@@ -260,9 +260,9 @@ async def get_tier(
                 st.byok_enabled, st.priority_support,
                 st.lago_plan_code, st.stripe_price_monthly, st.stripe_price_yearly,
                 st.created_at, st.updated_at, st.created_by, st.updated_by,
-                COALESCE(COUNT(DISTINCT tf.id), 0) AS feature_count
+                COALESCE(COUNT(DISTINCT ta.id), 0) AS app_count
             FROM subscription_tiers st
-            LEFT JOIN tier_features tf ON st.id = tf.tier_id AND tf.enabled = TRUE
+            LEFT JOIN tier_apps ta ON st.id = ta.tier_id AND ta.enabled = TRUE
             WHERE st.id = $1
             GROUP BY st.id
         """
@@ -496,10 +496,10 @@ async def get_tier_features(
     """
     try:
         query = """
-            SELECT feature_key, feature_value, enabled
-            FROM tier_features
+            SELECT app_key, app_value, enabled
+            FROM tier_apps
             WHERE tier_id = $1
-            ORDER BY feature_key
+            ORDER BY app_key
         """
 
         rows = await conn.fetch(query, tier_id)
@@ -507,8 +507,8 @@ async def get_tier_features(
         return [TierFeature(**dict(row)) for row in rows]
 
     except Exception as e:
-        logger.error(f"Error getting features for tier {tier_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get features: {str(e)}")
+        logger.error(f"Error getting apps for tier {tier_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get apps: {str(e)}")
 
 
 @router.put("/{tier_id}/features")
@@ -536,14 +536,14 @@ async def update_tier_features(
 
         # Start transaction
         async with conn.transaction():
-            # Delete existing features
-            await conn.execute("DELETE FROM tier_features WHERE tier_id = $1", tier_id)
+            # Delete existing apps
+            await conn.execute("DELETE FROM tier_apps WHERE tier_id = $1", tier_id)
 
-            # Insert new features
+            # Insert new apps
             for feature in features.features:
                 await conn.execute(
                     """
-                    INSERT INTO tier_features (tier_id, feature_key, feature_value, enabled)
+                    INSERT INTO tier_apps (tier_id, app_key, app_value, enabled)
                     VALUES ($1, $2, $3, $4)
                     """,
                     tier_id, feature.feature_key, feature.feature_value, feature.enabled

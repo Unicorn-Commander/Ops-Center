@@ -1,6 +1,6 @@
 """
 My Apps API - Returns apps filtered by user's subscription tier
-Integrates with existing RBAC system (feature_definitions + tier_features)
+Integrates with existing RBAC system (app_definitions + tier_apps)
 """
 
 import os
@@ -131,7 +131,7 @@ def get_tier_level(tier_name: str) -> int:
 
 
 async def get_user_tier_features(user_tier: str, conn) -> set:
-    """Get all feature keys enabled for user's tier"""
+    """Get all app keys enabled for user's tier"""
     # Get tier_id from subscription_tiers (using tier_code which matches Keycloak attribute)
     tier_row = await conn.fetchrow(
         "SELECT id FROM subscription_tiers WHERE tier_code = $1",
@@ -143,13 +143,13 @@ async def get_user_tier_features(user_tier: str, conn) -> set:
 
     tier_id = tier_row['id']
 
-    # Get all enabled features for this tier
-    feature_rows = await conn.fetch(
-        "SELECT feature_key FROM tier_features WHERE tier_id = $1 AND enabled = TRUE",
+    # Get all enabled apps for this tier
+    app_rows = await conn.fetch(
+        "SELECT app_key FROM tier_apps WHERE tier_id = $1 AND enabled = TRUE",
         tier_id
     )
 
-    return {row['feature_key'] for row in feature_rows}
+    return {row['app_key'] for row in app_rows}
 
 
 # =============================================================================

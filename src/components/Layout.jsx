@@ -524,6 +524,12 @@ export default function Layout({ children }) {
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
+                        name="Forgejo (Git)"
+                        href="/admin/system/forgejo"
+                        icon={iconMap.CodeBracketIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
                         name="Hardware Management"
                         href="/admin/infrastructure/hardware"
                         icon={iconMap.WrenchIcon}
@@ -695,7 +701,7 @@ export default function Layout({ children }) {
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="App Management"
-                        href="/admin/system/feature-management"
+                        href="/admin/system/app-management"
                         icon={iconMap.AdjustmentsHorizontalIcon}
                         indent={true}
                       />
