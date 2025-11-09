@@ -122,8 +122,8 @@ export default function ModelCatalog() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch real model catalog from OpenRouter
-      const response = await fetch('/api/v1/llm/admin/models/openrouter', {
+      // Fetch categorized model list (BYOK vs Platform)
+      const response = await fetch('/api/v1/llm/models/categorized', {
         credentials: 'include'
       });
       if (!response.ok) {
@@ -133,15 +133,33 @@ export default function ModelCatalog() {
 
       const data = await response.json();
 
-      // Ensure data is always an array
+      // Extract all models from categorized response
       let modelsArray = [];
-      if (Array.isArray(data)) {
-        modelsArray = data;
-      } else if (data && Array.isArray(data.models)) {
-        modelsArray = data.models;
-      } else if (data && typeof data === 'object') {
-        console.warn('Unexpected API response structure:', data);
-        modelsArray = [];
+      if (data && data.byok_models) {
+        // Flatten BYOK models from all providers
+        data.byok_models.forEach(provider => {
+          if (Array.isArray(provider.models)) {
+            modelsArray = modelsArray.concat(provider.models.map(m => ({
+              ...m,
+              source: 'byok',
+              provider_name: provider.provider,
+              cost_note: 'Free (using your API key)'
+            })));
+          }
+        });
+      }
+      if (data && data.platform_models) {
+        // Flatten Platform models from all providers
+        data.platform_models.forEach(provider => {
+          if (Array.isArray(provider.models)) {
+            modelsArray = modelsArray.concat(provider.models.map(m => ({
+              ...m,
+              source: 'platform',
+              provider_name: provider.provider,
+              cost_note: 'Charged with credits'
+            })));
+          }
+        });
       }
 
       setModels(modelsArray);

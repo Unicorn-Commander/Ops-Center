@@ -75,6 +75,18 @@ SUPPORTED_PROVIDERS = {
         "auth_type": "bearer",
         "key_format": "gsk_"
     },
+    "ollama": {
+        "name": "Ollama",
+        "test_url": "http://localhost:11434/api/tags",
+        "auth_type": "none",
+        "key_format": None
+    },
+    "ollama_cloud": {
+        "name": "Ollama Cloud",
+        "test_url": "https://ollama.com/api/tags",
+        "auth_type": "bearer",
+        "key_format": None
+    },
     "custom": {
         "name": "Custom Endpoint",
         "test_url": None,
@@ -214,6 +226,9 @@ async def test_api_key(provider: str, api_key: str, endpoint: Optional[str] = No
             elif auth_type == "x-api-key":
                 headers["x-api-key"] = api_key
                 headers["anthropic-version"] = "2023-06-01"
+            elif auth_type == "none":
+                # Ollama local doesn't require authentication
+                pass
 
             # Special handling for different providers
             if provider == "anthropic":

@@ -85,6 +85,16 @@ PROVIDER_CONFIGS = {
         'base_url': 'https://generativelanguage.googleapis.com/v1beta',
         'model_prefixes': ['google/', 'gemini-'],
         'default_headers': {}
+    },
+    'ollama': {
+        'base_url': 'http://localhost:11434/v1',
+        'model_prefixes': ['ollama/'],
+        'default_headers': {}
+    },
+    'ollama_cloud': {
+        'base_url': 'https://ollama.com/api/v1',
+        'model_prefixes': ['ollama-cloud/'],
+        'default_headers': {}
     }
 }
 

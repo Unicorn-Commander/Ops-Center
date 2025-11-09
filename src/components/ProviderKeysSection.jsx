@@ -158,6 +158,24 @@ export default function ProviderKeysSection({
       getKeyUrl: 'https://console.mistral.ai/api-keys',
       keyFormat: 'mistral-...'
     },
+    ollama: {
+      name: 'Ollama (Local)',
+      icon: '🦙',
+      color: 'from-green-500 to-lime-500',
+      description: 'Local Ollama instance - Llama 3, Mistral, Gemma (localhost:11434)',
+      getKeyUrl: 'https://ollama.com/download',
+      keyFormat: 'No key needed (local)',
+      customUrl: false
+    },
+    ollama_cloud: {
+      name: 'Ollama Cloud',
+      icon: '☁️',
+      color: 'from-sky-500 to-blue-500',
+      description: 'Ollama Cloud - Hosted models with API access',
+      getKeyUrl: 'https://ollama.com/cloud',
+      keyFormat: 'API key from Ollama Cloud',
+      customUrl: false
+    },
     custom: {
       name: 'Custom Provider',
       icon: '⚙️',
@@ -178,7 +196,9 @@ export default function ProviderKeysSection({
     try {
       // Add timestamp to prevent caching
       const timestamp = new Date().getTime();
-      const response = await fetch(`/api/v1/llm/admin/system-keys?_t=${timestamp}`, {
+
+      // Fetch all supported providers (including unconfigured ones)
+      const providersResponse = await fetch(`/api/v1/byok/providers?_t=${timestamp}`, {
         credentials: 'include',
         cache: 'no-cache',
         headers: {
@@ -187,23 +207,47 @@ export default function ProviderKeysSection({
         }
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        // Ensure providers is always an array
-        const providersData = data.providers || [];
-        if (Array.isArray(providersData)) {
-          setProviders(providersData);
-        } else {
-          console.error('Invalid providers data structure:', providersData);
-          setProviders([]);
-          showToast('error', 'Invalid data format received');
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('API error:', response.status, errorData);
+      if (!providersResponse.ok) {
+        const errorData = await providersResponse.json().catch(() => ({}));
+        console.error('Failed to load providers:', providersResponse.status, errorData);
         setProviders([]);
-        showToast('error', `Failed to load providers: ${errorData.detail || response.statusText}`);
+        showToast('error', `Failed to load providers: ${errorData.detail || providersResponse.statusText}`);
+        return;
       }
+
+      const allProviders = await providersResponse.json();
+
+      // Fetch configured keys for details (key preview, test status)
+      const keysResponse = await fetch(`/api/v1/byok/keys?_t=${timestamp}`, {
+        credentials: 'include',
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      const configuredKeys = keysResponse.ok ? await keysResponse.json() : [];
+
+      // Merge providers with key details
+      const providersWithStatus = allProviders.map(provider => {
+        const keyDetails = Array.isArray(configuredKeys)
+          ? configuredKeys.find(k => k.provider === provider.id)
+          : null;
+
+        return {
+          id: provider.id,
+          provider_type: provider.id,
+          name: provider.name,
+          key_source: provider.configured ? 'database' : 'not_set',
+          key_preview: keyDetails?.key_preview || null,
+          last_tested: keyDetails?.last_tested || null,
+          test_status: keyDetails?.test_status || null,
+          configured: provider.configured
+        };
+      });
+
+      setProviders(providersWithStatus);
     } catch (error) {
       console.error('Error loading providers:', error);
       setProviders([]);
@@ -244,17 +288,18 @@ export default function ProviderKeysSection({
     setSavingKey(true);
     try {
       const requestBody = {
-        api_key: apiKeyInput.trim()
+        provider: selectedProvider.id,
+        key: apiKeyInput.trim()
       };
 
       // Add custom provider fields if applicable
       if (selectedProvider.id === 'custom') {
-        requestBody.custom_name = customProviderName.trim();
-        requestBody.custom_url = customProviderUrl.trim();
+        requestBody.label = customProviderName.trim();
+        requestBody.endpoint = customProviderUrl.trim();
       }
 
-      const response = await fetch(`/api/v1/llm/admin/system-keys/${selectedProvider.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/v1/byok/keys/add`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(requestBody)
@@ -292,7 +337,7 @@ export default function ProviderKeysSection({
   const handleTestKey = async (providerId) => {
     setTestingProvider(providerId);
     try {
-      const response = await fetch(`/api/v1/llm/admin/system-keys/${providerId}/test`, {
+      const response = await fetch(`/api/v1/byok/keys/test/${providerId}`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -318,7 +363,7 @@ export default function ProviderKeysSection({
       const provider = providers.find(p => p.id === providerId);
       const providerName = provider ? (providerInfo[provider.provider_type]?.name || provider.name) : 'Provider';
 
-      const response = await fetch(`/api/v1/llm/admin/system-keys/${providerId}`, {
+      const response = await fetch(`/api/v1/byok/keys/${providerId}`, {
         method: 'DELETE',
         credentials: 'include'
       });
