@@ -18,12 +18,12 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, validator
 import asyncpg
 
 from pricing_engine import get_pricing_engine, PricingEngine
-from keycloak_integration import require_admin_from_request, get_user_from_request
+from dependencies import get_db_pool, require_admin, get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ router = APIRouter(prefix="/api/v1/pricing", tags=["Dynamic Pricing"])
 # ============================================================================
 
 class BYOKRuleCreate(BaseModel):
-    provider: str = Field(..., regex=r'^[a-z0-9_*]+$', max_length=50)
-    markup_type: str = Field('percentage', regex=r'^(percentage|fixed|none)$')
+    provider: str = Field(..., pattern=r'^[a-z0-9_*]+$', max_length=50)
+    markup_type: str = Field('percentage', pattern=r'^(percentage|fixed|none)$')
     markup_value: Decimal = Field(..., ge=0, le=1.0)
     min_charge: Decimal = Field(0.001, ge=0.0001, le=1.0)
     free_credits_monthly: Decimal = Field(0.0, ge=0)
@@ -69,7 +69,7 @@ class PlatformRuleUpdate(BaseModel):
 
 
 class CreditPackageCreate(BaseModel):
-    package_code: str = Field(..., regex=r'^[a-z0-9_]+$', max_length=50)
+    package_code: str = Field(..., pattern=r'^[a-z0-9_]+$', max_length=50)
     package_name: str = Field(..., max_length=100)
     description: Optional[str] = None
     credits: int = Field(..., gt=0)
@@ -102,7 +102,7 @@ class CostCalculationRequest(BaseModel):
     provider: str
     model: str
     tokens_used: int = Field(..., gt=0)
-    user_tier: str = Field('professional', regex=r'^(trial|starter|professional|enterprise)$')
+    user_tier: str = Field('professional', pattern=r'^(trial|starter|professional|enterprise)$')
 
 
 # ============================================================================
@@ -114,8 +114,8 @@ async def list_byok_rules(
     provider: Optional[str] = Query(None, description="Filter by provider"),
     is_active: bool = Query(True, description="Filter by active status"),
     include_inactive: bool = Query(False, description="Include inactive rules"),
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """List all BYOK pricing rules."""
     async with db_pool.acquire() as conn:
@@ -146,8 +146,9 @@ async def list_byok_rules(
 @router.post("/rules/byok")
 async def create_byok_rule(
     rule: BYOKRuleCreate,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    current_user: dict = Depends(get_current_user),
+    admin: bool = Depends(require_admin)
 ):
     """Create new BYOK pricing rule."""
     async with db_pool.acquire() as conn:
@@ -175,8 +176,9 @@ async def create_byok_rule(
 async def update_byok_rule(
     rule_id: UUID,
     updates: BYOKRuleUpdate,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    current_user: dict = Depends(get_current_user),
+    admin: bool = Depends(require_admin)
 ):
     """Update existing BYOK pricing rule."""
     async with db_pool.acquire() as conn:
@@ -223,8 +225,8 @@ async def update_byok_rule(
 @router.delete("/rules/byok/{rule_id}")
 async def delete_byok_rule(
     rule_id: UUID,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """Delete BYOK pricing rule."""
     async with db_pool.acquire() as conn:
@@ -250,8 +252,8 @@ async def delete_byok_rule(
 async def list_platform_rules(
     tier_code: Optional[str] = Query(None, description="Filter by tier"),
     is_active: bool = Query(True, description="Filter by active status"),
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """List all Platform pricing rules."""
     async with db_pool.acquire() as conn:
@@ -282,8 +284,9 @@ async def list_platform_rules(
 async def update_platform_rule(
     tier_code: str,
     updates: PlatformRuleUpdate,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    current_user: dict = Depends(get_current_user),
+    admin: bool = Depends(require_admin)
 ):
     """Update Platform pricing rule for specific tier."""
     async with db_pool.acquire() as conn:
@@ -334,8 +337,9 @@ async def update_platform_rule(
 @router.post("/calculate/byok")
 async def calculate_byok_cost_preview(
     request: CostCalculationRequest,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    current_user: dict = Depends(get_current_user),
+    admin: bool = Depends(require_admin)
 ):
     """Calculate BYOK cost preview (admin testing)."""
     engine = await get_pricing_engine(db_pool)
@@ -358,8 +362,8 @@ async def calculate_byok_cost_preview(
 @router.post("/calculate/platform")
 async def calculate_platform_cost_preview(
     request: CostCalculationRequest,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """Calculate Platform cost preview (admin testing)."""
     engine = await get_pricing_engine(db_pool)
@@ -377,8 +381,8 @@ async def calculate_platform_cost_preview(
 @router.post("/calculate/comparison")
 async def calculate_cost_comparison(
     request: CostCalculationRequest,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(get_user_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    current_user: dict = Depends(get_current_user)
 ):
     """Calculate side-by-side BYOK vs Platform cost comparison."""
     engine = await get_pricing_engine(db_pool)
@@ -404,7 +408,7 @@ async def list_credit_packages(
     include_inactive: bool = Query(False, description="Include inactive packages"),
     tier: Optional[str] = Query(None, description="Filter by available tier"),
     tags: Optional[str] = Query(None, description="Filter by tags (comma-separated)"),
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool)
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """List all credit packages."""
     async with db_pool.acquire() as conn:
@@ -437,8 +441,8 @@ async def list_credit_packages(
 @router.post("/packages")
 async def create_credit_package(
     package: CreditPackageCreate,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """Create new credit package."""
     async with db_pool.acquire() as conn:
@@ -465,8 +469,8 @@ async def create_credit_package(
 async def update_credit_package(
     package_id: UUID,
     updates: CreditPackageUpdate,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """Update credit package."""
     async with db_pool.acquire() as conn:
@@ -509,8 +513,8 @@ async def update_credit_package(
 async def add_promotional_pricing(
     package_id: UUID,
     promo: PromotionalPricing,
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """Add promotional pricing to package."""
     async with db_pool.acquire() as conn:
@@ -541,8 +545,8 @@ async def add_promotional_pricing(
 
 @router.get("/dashboard/overview")
 async def get_pricing_overview(
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(require_admin_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    admin: bool = Depends(require_admin)
 ):
     """Get pricing dashboard overview."""
     async with db_pool.acquire() as conn:
@@ -587,8 +591,8 @@ async def get_pricing_overview(
 async def get_user_byok_balance(
     user_id: str,
     tier_code: str = Query(..., description="User's tier code"),
-    db_pool: asyncpg.Pool = Depends(lambda: router.app.state.db_pool),
-    current_user: dict = Depends(get_user_from_request)
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get user's BYOK credit balance."""
     # Verify user can only access their own data (unless admin)

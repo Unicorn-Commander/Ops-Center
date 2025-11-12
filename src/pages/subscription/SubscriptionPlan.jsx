@@ -534,13 +534,22 @@ export default function SubscriptionPlan() {
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-4 border-t border-slate-700">
-              {subscription.tier !== 'enterprise' && (
+              {subscription.tier !== 'enterprise' && subscription.tier !== 'founders-friend' && (
                 <button
-                  onClick={() => setShowComparison(!showComparison)}
+                  onClick={() => window.location.href = '/admin/subscription/upgrade'}
                   className={`flex-1 ${theme.button} rounded-lg py-2 px-4 text-sm font-medium transition-all`}
                 >
                   <ArrowUpIcon className="w-4 h-4 inline mr-2" />
                   Upgrade Plan
+                </button>
+              )}
+              {subscription.tier !== 'trial' && subscription.tier !== 'starter' && (
+                <button
+                  onClick={() => window.location.href = '/admin/subscription/downgrade'}
+                  className="flex-1 border border-amber-600 text-amber-400 hover:bg-amber-500/10 rounded-lg py-2 px-4 text-sm font-medium transition-colors"
+                >
+                  <ArrowDownIcon className="w-4 h-4 inline mr-2" />
+                  Downgrade Plan
                 </button>
               )}
               <button
@@ -551,7 +560,7 @@ export default function SubscriptionPlan() {
               </button>
               {subscription.status === 'active' && (
                 <button
-                  onClick={handleCancelSubscription}
+                  onClick={() => window.location.href = '/admin/subscription/cancel'}
                   className="border border-red-600 text-red-400 hover:bg-red-500/10 rounded-lg py-2 px-4 text-sm font-medium transition-colors"
                 >
                   Cancel

@@ -51,6 +51,7 @@ from role_mapper import add_role_to_user_info, map_keycloak_role
 from csrf_protection import create_csrf_protection, get_csrf_token
 from rate_limiter import rate_limiter, rate_limit, check_rate_limit_manual
 from audit_logger import audit_logger
+from request_id_middleware import RequestIDMiddleware
 from audit_endpoints import router as audit_router
 from audit_helpers import (
     log_auth_success, log_auth_failure, log_logout,
@@ -67,8 +68,10 @@ from usage_api import router as usage_router
 from admin_subscriptions_api import router as admin_subscriptions_router
 from tier_check_middleware import router as tier_check_router
 from subscription_api import router as subscription_router
+from subscription_management_api import router as subscription_management_router
 from stripe_api import router as stripe_router
 from billing_api import router as billing_router
+from payment_methods_api import router as payment_methods_router
 from credit_api import router as credit_router
 from credit_purchase_api import router as credit_purchase_router
 from local_user_api import router as local_user_router
@@ -319,23 +322,52 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
             "org_role": None
         }
 
-# CORS configuration
+# CORS configuration (Security Team - Nov 12, 2025)
+# Restrict origins to known domains for security
+allowed_origins = [
+    "https://unicorncommander.ai",
+    "https://api.unicorncommander.ai",
+    "https://auth.unicorncommander.ai",
+    "http://localhost:8084",
+    "http://localhost:3000",
+    "http://localhost:5173",  # Vite dev server
+]
+
+# Allow additional origins from environment variable
+additional_origins = os.environ.get("ADDITIONAL_CORS_ORIGINS", "").split(",")
+if additional_origins and additional_origins[0]:  # Check if not empty
+    allowed_origins.extend([origin.strip() for origin in additional_origins if origin.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*", "X-CSRF-Token"],
-    expose_headers=["X-CSRF-Token"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*", "X-CSRF-Token", "Authorization", "Content-Type"],
+    expose_headers=["X-CSRF-Token", "X-Request-ID"],
 )
 
 # Enable GZip compression for faster response times
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Request ID tracking middleware (Security Team - Nov 12, 2025)
+app.add_middleware(RequestIDMiddleware)
+logger.info("Request ID tracking middleware enabled")
+
 # Cache middleware for performance optimization (Epic 3.1)
 app.add_middleware(CacheHeaderMiddleware)
 app.add_middleware(CompressionMiddleware)
 logger.info("Cache middleware registered (Epic 3.1)")
+
+# Rate limiting setup (Security Team - Nov 12, 2025)
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+logger.info("Rate limiting enabled (1000 requests/hour default)")
 
 # Session Management Middleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -373,6 +405,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/github-template",  # Bolt.DIY GitHub template proxy - external integration
         "/api/v1/email-provider/",  # Email provider API - testing and management
         "/api/v1/platform/",  # Platform settings API - credential management
+        "/api/v1/pricing/",  # Dynamic pricing API - calculation endpoints (Nov 12, 2025)
         "/api/v1/monitoring/grafana/",  # Grafana integration API - monitoring endpoints
         "/api/v1/admin/users/",  # User management and API key endpoints - REST API operations
         "/api/v1/org/",  # Organization management API - CRUD operations
@@ -597,6 +630,10 @@ logger.info("Tier check ForwardAuth endpoints registered at /api/v1/tier-check")
 app.include_router(subscription_router)
 logger.info("Subscription management API endpoints registered at /api/v1/subscriptions")
 
+# Register subscription change management (upgrade/downgrade/cancel)
+app.include_router(subscription_management_router)
+logger.info("Subscription change management endpoints registered at /api/v1/subscriptions (upgrade/downgrade/cancel)")
+
 # Register Stripe payment integration router
 app.include_router(stripe_router)
 logger.info("Stripe payment API endpoints registered at /api/v1/billing")
@@ -604,6 +641,10 @@ logger.info("Stripe payment API endpoints registered at /api/v1/billing")
 # Register Lago billing/invoice endpoints
 app.include_router(billing_router)
 logger.info("Lago billing/invoice API endpoints registered at /api/v1/billing")
+
+# Register payment methods management
+app.include_router(payment_methods_router)
+logger.info("Payment methods API endpoints registered at /api/v1/payment-methods")
 
 # Extensions Marketplace API - Phase 1 MVP (NEW)
 # NOTE: Purchase & Admin routers registered BEFORE catalog to avoid /{addon_id} catching specific routes
@@ -822,6 +863,11 @@ logger.info("API Documentation endpoints registered at /api/v1/docs")
 # White-Label Configuration API
 app.include_router(white_label_router)
 logger.info("White-Label Configuration API endpoints registered at /api/v1/admin/white-label")
+
+# Dynamic Pricing Management API
+from dynamic_pricing_api import router as dynamic_pricing_router
+app.include_router(dynamic_pricing_router)
+logger.info("Dynamic Pricing Management API endpoints registered at /api/v1/pricing")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 

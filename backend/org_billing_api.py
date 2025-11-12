@@ -24,8 +24,18 @@ import asyncpg
 # Database connection (shared)
 from database import get_db_connection
 
+# Authentication dependencies (fix auth order issue)
+from auth_dependencies import require_authenticated_user, require_admin_user
+
+# Rate limiting
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/org-billing", tags=["organization-billing"])
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ==================== Pydantic Models ====================
@@ -189,9 +199,11 @@ async def check_system_admin(user: Dict) -> bool:
 # ==================== Organization Subscription Endpoints ====================
 
 @router.post("/subscriptions", response_model=OrganizationSubscriptionResponse)
+@limiter.limit("20/minute")  # Rate limit: 20 POST requests per minute
 async def create_organization_subscription(
-    subscription: OrganizationSubscriptionCreate,
-    request: Request
+    request: Request,
+    user: Dict = Depends(require_authenticated_user),  # ← Auth checked FIRST
+    subscription: OrganizationSubscriptionCreate = None  # ← Validation happens AFTER auth
 ):
     """
     Create organization-level subscription
@@ -202,8 +214,10 @@ async def create_organization_subscription(
     - `platform` ($50/mo): Managed credits with 1.5x markup
     - `byok` ($30/mo): Bring Your Own Keys with passthrough pricing
     - `hybrid` ($99/mo): Mix of managed and BYOK credits
+
+    **Security**: Authentication checked before request body validation
     """
-    user = await get_current_user(request)
+    # User is already authenticated via dependency
 
     conn = await get_db_connection()
     try:
@@ -497,11 +511,13 @@ async def get_organization_credit_pool(org_id: str, request: Request):
 
 
 @router.post("/credits/{org_id}/add")
+@limiter.limit("20/minute")  # Rate limit: 20 POST requests per minute
 async def add_credits_to_pool(
+    request: Request,
     org_id: str,
+    user: Dict = Depends(require_authenticated_user),  # ← Auth checked FIRST
     credits: int = Query(..., ge=1, description="Number of credits to add"),
-    purchase_amount: Decimal = Query(default=Decimal('0.00'), description="Purchase amount ($)"),
-    request: Request = None
+    purchase_amount: Decimal = Query(default=Decimal('0.00'), description="Purchase amount ($)")
 ):
     """
     Add credits to organization pool
@@ -513,8 +529,10 @@ async def add_credits_to_pool(
     - Subscription renewal
     - Bonus credits
     - Refund credits
+
+    **Security**: Authentication checked before query parameter validation
     """
-    user = await get_current_user(request)
+    # User is already authenticated via dependency
 
     conn = await get_db_connection()
     try:
@@ -565,10 +583,12 @@ async def add_credits_to_pool(
 
 
 @router.post("/credits/{org_id}/allocate", response_model=UserCreditAllocationResponse)
+@limiter.limit("20/minute")  # Rate limit: 20 POST requests per minute
 async def allocate_credits_to_user(
+    request: Request,
     org_id: str,
-    allocation: UserCreditAllocationCreate,
-    request: Request
+    user: Dict = Depends(require_authenticated_user),  # ← Auth checked FIRST
+    allocation: UserCreditAllocationCreate = None  # ← Validation happens AFTER auth
 ):
     """
     Allocate credits from org pool to specific user
@@ -579,8 +599,10 @@ async def allocate_credits_to_user(
     - Cannot exceed available credits in pool
     - Can set daily/weekly/monthly reset periods
     - Can add notes for tracking
+
+    **Security**: Authentication checked before request body validation
     """
-    user = await get_current_user(request)
+    # User is already authenticated via dependency
 
     conn = await get_db_connection()
     try:
@@ -824,6 +846,7 @@ async def get_organization_credit_usage(
 # ==================== Billing Screen Endpoints ====================
 
 @router.get("/billing/user", response_model=Dict)
+@limiter.limit("100/minute")  # Rate limit: 100 GET requests per minute
 async def get_user_billing_dashboard(request: Request):
     """
     User billing dashboard - shows all organizations user belongs to

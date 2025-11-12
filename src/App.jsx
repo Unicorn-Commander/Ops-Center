@@ -59,6 +59,10 @@ const SubscriptionPlan = lazy(() => import('./pages/subscription/SubscriptionPla
 const SubscriptionUsage = lazy(() => import('./pages/subscription/SubscriptionUsage'));
 const SubscriptionBilling = lazy(() => import('./pages/subscription/SubscriptionBilling'));
 const SubscriptionPayment = lazy(() => import('./pages/subscription/SubscriptionPayment'));
+const PaymentMethods = lazy(() => import('./pages/subscription/PaymentMethods'));
+const SubscriptionUpgrade = lazy(() => import('./pages/subscription/SubscriptionUpgrade'));
+const SubscriptionDowngrade = lazy(() => import('./pages/subscription/SubscriptionDowngrade'));
+const SubscriptionCancel = lazy(() => import('./pages/subscription/SubscriptionCancel'));
 
 // Organization pages (lazy loaded)
 const OrganizationsList = lazy(() => import('./pages/organization/OrganizationsList'));
@@ -66,6 +70,7 @@ const OrganizationTeam = lazy(() => import('./pages/organization/OrganizationTea
 const OrganizationRoles = lazy(() => import('./pages/organization/OrganizationRoles'));
 const OrganizationSettings = lazy(() => import('./pages/organization/OrganizationSettings'));
 const OrganizationBilling = lazy(() => import('./pages/organization/OrganizationBilling'));
+const OrganizationBillingPro = lazy(() => import('./pages/organization/OrganizationBillingPro'));
 
 // Services pages (lazy loaded)
 const Brigade = lazy(() => import('./pages/Brigade'));
@@ -95,6 +100,7 @@ const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
 const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
 const WhiteLabelBuilder = lazy(() => import('./pages/admin/WhiteLabelBuilder'));
+const DynamicPricingManagement = lazy(() => import('./pages/admin/DynamicPricingManagement'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
 // Consolidated: Using LocalUserManagement for all local user operations
@@ -109,6 +115,8 @@ const Logs = lazy(() => import('./pages/Logs'));
 const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
 const Settings = lazy(() => import('./pages/Settings'));
 const ForgejoManagement = lazy(() => import('./pages/admin/ForgejoManagement'));
+const InviteCodesManagement = lazy(() => import('./pages/admin/InviteCodesManagement'));
+const SystemBillingOverview = lazy(() => import('./pages/admin/SystemBillingOverview'));
 
 // Infrastructure pages (lazy loaded)
 const CloudflareDNS = lazy(() => import('./components/CloudflareDNS'));
@@ -127,6 +135,7 @@ const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
 const CreditPurchase = lazy(() => import('./pages/CreditPurchase'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
 const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
+const UserBillingDashboard = lazy(() => import('./pages/billing/UserBillingDashboard'));
 
 // Monitoring & Analytics pages (lazy loaded)
 const MonitoringOverview = lazy(() => import('./pages/MonitoringOverview'));
@@ -297,9 +306,12 @@ function AppRoutes() {
                   {/* SUBSCRIPTION SECTION - Personal billing & usage */}
                   {/* ============================================================ */}
                   <Route path="subscription/plan" element={<SubscriptionPlan />} />
+                  <Route path="subscription/upgrade" element={<SubscriptionUpgrade />} />
+                  <Route path="subscription/downgrade" element={<SubscriptionDowngrade />} />
+                  <Route path="subscription/cancel" element={<SubscriptionCancel />} />
                   <Route path="subscription/usage" element={<SubscriptionUsage />} />
                   <Route path="subscription/billing" element={<SubscriptionBilling />} />
-                  <Route path="subscription/payment" element={<SubscriptionPayment />} />
+                  <Route path="subscription/payment" element={<PaymentMethods />} />
 
                   {/* ============================================================ */}
                   {/* ORGANIZATION SECTION - Team & org management */}
@@ -309,6 +321,7 @@ function AppRoutes() {
                   <Route path="organization/roles" element={<OrganizationRoles />} />
                   <Route path="organization/settings" element={<OrganizationSettings />} />
                   <Route path="organization/billing" element={<OrganizationBilling />} />
+                  <Route path="organization/:orgId/billing" element={<OrganizationBillingPro />} />
                   {/* Legacy routes for backwards compatibility */}
                   <Route path="org/team" element={<OrganizationTeam />} />
                   <Route path="org/roles" element={<OrganizationRoles />} />
@@ -353,6 +366,7 @@ function AppRoutes() {
                   <Route path="system/billing" element={<BillingDashboard />} />
                   <Route path="system/subscription-management" element={<SubscriptionManagement />} />
                   <Route path="system/app-management" element={<AppManagement />} />
+                  <Route path="system/pricing-management" element={<DynamicPricingManagement />} />
                   <Route path="platform/white-label" element={<WhiteLabelBuilder />} />
                   <Route path="system/users" element={<UserManagement />} />
                   <Route path="system/users/:userId" element={<UserDetail />} />
@@ -367,6 +381,7 @@ function AppRoutes() {
                   <Route path="system/landing" element={<LandingCustomization />} />
                   <Route path="system/settings" element={<Settings />} />
                   <Route path="system/forgejo" element={<ForgejoManagement />} />
+                  <Route path="system/invite-codes" element={<InviteCodesManagement />} />
 
                   {/* ============================================================ */}
                   {/* MONITORING & ANALYTICS SECTION - Metrics, Logs, Analytics */}
@@ -411,6 +426,12 @@ function AppRoutes() {
                   <Route path="credits" element={<CreditDashboard />} />
                   <Route path="credits/purchase" element={<CreditPurchase />} />
                   <Route path="credits/tiers" element={<TierComparison />} />
+
+                  {/* ============================================================ */}
+                  {/* BILLING SECTION - Organization billing dashboards */}
+                  {/* ============================================================ */}
+                  <Route path="billing/dashboard" element={<UserBillingDashboard />} />
+                  <Route path="billing/overview" element={<SystemBillingOverview />} />
 
                   {/* ============================================================ */}
                   {/* UPGRADE & PLANS SECTION - Subscription management */}

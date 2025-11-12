@@ -8,6 +8,15 @@ from pydantic import BaseModel
 from enum import Enum
 import json
 import os
+import stripe
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 class ServiceType(str, Enum):
     """Available services in UC-1 Pro"""
@@ -403,3 +412,122 @@ class SubscriptionManager:
 
 # Global subscription manager instance
 subscription_manager = SubscriptionManager()
+
+
+# ============================================================================
+# Stripe Checkout Helper Functions
+# ============================================================================
+
+def create_upgrade_checkout_session(
+    user_email: str,
+    plan_code: str,
+    success_url: str,
+    cancel_url: str,
+    user_metadata: Optional[Dict] = None
+) -> Dict:
+    """
+    Create Stripe Checkout session for subscription upgrade
+
+    Args:
+        user_email: User's email address
+        plan_code: Target subscription plan code
+        success_url: URL to redirect after successful payment
+        cancel_url: URL to redirect if user cancels
+        user_metadata: Additional metadata to attach to session
+
+    Returns:
+        Dict with checkout_url and session_id
+
+    Raises:
+        ValueError: If plan not found or Stripe Price ID not configured
+        stripe.error.StripeError: If Stripe API call fails
+    """
+    # Find plan by code
+    plan = subscription_manager.get_plan(plan_code)
+    if not plan:
+        raise ValueError(f"Plan '{plan_code}' not found")
+
+    if not plan.stripe_price_id:
+        raise ValueError(f"Stripe Price ID not configured for plan '{plan_code}'")
+
+    # Prepare metadata
+    metadata = {
+        "plan_code": plan.id,
+        "plan_name": plan.display_name,
+        "user_email": user_email
+    }
+    if user_metadata:
+        metadata.update(user_metadata)
+
+    try:
+        # Create Stripe Checkout Session
+        session = stripe.checkout.Session.create(
+            customer_email=user_email,
+            payment_method_types=["card"],
+            line_items=[{
+                "price": plan.stripe_price_id,
+                "quantity": 1
+            }],
+            mode="subscription",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata,
+            subscription_data={
+                "metadata": metadata
+            }
+        )
+
+        logger.info(f"Created Stripe Checkout session for {user_email}: {session.id}")
+
+        return {
+            "checkout_url": session.url,
+            "session_id": session.id,
+            "plan": plan.dict()
+        }
+
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error creating checkout session: {str(e)}")
+        raise
+
+
+def get_stripe_price_ids() -> Dict[str, str]:
+    """
+    Get mapping of plan codes to Stripe Price IDs
+
+    Returns:
+        Dict mapping plan_code -> stripe_price_id
+    """
+    price_ids = {}
+    for plan in subscription_manager.get_all_plans():
+        if plan.stripe_price_id:
+            price_ids[plan.id] = plan.stripe_price_id
+    return price_ids
+
+
+def validate_stripe_webhook_signature(payload: bytes, sig_header: str, webhook_secret: str) -> Dict:
+    """
+    Validate and parse Stripe webhook event
+
+    Args:
+        payload: Raw request body bytes
+        sig_header: Stripe-Signature header value
+        webhook_secret: Webhook signing secret
+
+    Returns:
+        Parsed Stripe event object
+
+    Raises:
+        ValueError: If signature validation fails
+    """
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, webhook_secret
+        )
+        logger.info(f"Validated Stripe webhook event: {event['type']}")
+        return event
+    except ValueError as e:
+        logger.error(f"Invalid Stripe webhook payload: {str(e)}")
+        raise
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Invalid Stripe webhook signature: {str(e)}")
+        raise ValueError("Invalid webhook signature")

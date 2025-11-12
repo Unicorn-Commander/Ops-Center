@@ -94,7 +94,30 @@ export default function SubscriptionUsage() {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      const data = await response.json();
+      const result = await response.json();
+
+      // Extract data from new API response format
+      const data = result.success && result.data ? {
+        // Map new API format to component state
+        api_calls_used: result.data.usage?.used || 0,
+        api_calls_limit: result.data.usage?.limit || -1,
+        credits_used: result.data.usage?.used * 0.01 || 0,  // Rough credit calculation
+        credits_remaining: Math.max(0, (result.data.usage?.limit || 0) - (result.data.usage?.used || 0)) * 0.01,
+        reset_date: result.data.reset?.date,
+        services: {
+          chat: result.data.usage?.used * 0.7 || 0,  // Estimate breakdown
+          search: result.data.usage?.used * 0.2 || 0,
+          tts: result.data.usage?.used * 0.05 || 0,
+          stt: result.data.usage?.used * 0.05 || 0
+        },
+        peak_usage: result.data.daily?.used || 0,
+        peak_date: new Date().toISOString(),
+        subscription: {
+          tier: result.data.tier,
+          status: result.data.status
+        }
+      } : result;
+
       setUsage(data);
       setErrors(prev => ({ ...prev, current: null }));
       setRetryCount(prev => ({ ...prev, current: 0 }));
@@ -119,23 +142,31 @@ export default function SubscriptionUsage() {
 
   const fetchUsageHistory = async () => {
     try {
-      // Convert period to days: week=7, month=30, year=365
-      const periodToDays = { week: 7, month: 30, year: 365 };
-      const days = periodToDays[period] || 30;
+      // Map period to API format: daily, weekly, monthly
+      const periodMap = { week: 'weekly', month: 'monthly', year: 'monthly' };
+      const apiPeriod = periodMap[period] || 'weekly';
 
-      const response = await fetch(`/api/v1/usage/history?days=${days}`);
+      const response = await fetch(`/api/v1/usage/history?period=${apiPeriod}`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const result = await response.json();
 
-      // Backend returns placeholder data with empty array
-      // Generate mock data until backend implements full tracking
-      if (!result.data || result.data.length === 0) {
+      // Process new API response format
+      if (result.success && result.data && result.data.history && result.data.history.length > 0) {
+        // Transform API data to chart format
+        const historyData = result.data.history.map(item => ({
+          date: item.date,
+          api_calls: item.calls || 0,
+          credits_used: item.cost || 0
+        }));
+        setUsageHistory(historyData);
+      } else {
+        // Fallback to mock data if no history available
+        const periodToDays = { week: 7, month: 30, year: 365 };
+        const days = periodToDays[period] || 30;
         const mockData = generateMockHistoryData(days, usage?.api_calls_used || 0);
         setUsageHistory(mockData);
-      } else {
-        setUsageHistory(result.data);
       }
 
       setErrors(prev => ({ ...prev, history: null }));
@@ -145,7 +176,9 @@ export default function SubscriptionUsage() {
       console.error('Failed to fetch usage history:', error);
       const errorMsg = `Failed to load usage history: ${error.message}`;
       setErrors(prev => ({ ...prev, history: errorMsg }));
-      setUsageHistory([]); // Fallback to empty array
+
+      // Fallback to empty array
+      setUsageHistory([]);
 
       // Retry logic for transient failures
       if (retryCount.history < maxRetries) {
