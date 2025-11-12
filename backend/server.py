@@ -74,6 +74,7 @@ from credit_purchase_api import router as credit_purchase_router
 from local_user_api import router as local_user_router
 from org_api import router as org_router
 from org_manager import org_manager
+from org_billing_api import router as org_billing_router
 from firewall_api import router as firewall_router
 from cloudflare_api import router as cloudflare_router
 from migration_api import router as migration_router
@@ -634,6 +635,10 @@ logger.info("Local User Management API endpoints registered at /api/v1/local-use
 # Register Organization Management endpoints
 app.include_router(org_router)
 logger.info("Organization Management API endpoints registered at /api/v1/org")
+
+# Register Organization Billing endpoints
+app.include_router(org_billing_router)
+logger.info("Organization Billing API endpoints registered at /api/v1/org-billing")
 
 # Register Firewall Management endpoints
 app.include_router(firewall_router)
