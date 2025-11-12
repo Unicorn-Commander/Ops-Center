@@ -124,6 +124,7 @@ const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
 
 // Credit & Usage pages (lazy loaded)
 const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
+const CreditPurchase = lazy(() => import('./pages/CreditPurchase'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
 const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
 
@@ -408,6 +409,7 @@ function AppRoutes() {
                   {/* CREDITS & USAGE SECTION - Credit metering system */}
                   {/* ============================================================ */}
                   <Route path="credits" element={<CreditDashboard />} />
+                  <Route path="credits/purchase" element={<CreditPurchase />} />
                   <Route path="credits/tiers" element={<TierComparison />} />
 
                   {/* ============================================================ */}

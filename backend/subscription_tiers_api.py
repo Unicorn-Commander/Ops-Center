@@ -476,23 +476,159 @@ async def delete_tier(
         raise HTTPException(status_code=500, detail=f"Failed to delete tier: {str(e)}")
 
 
+@router.post("/{tier_code}/clone", response_model=SubscriptionTierResponse, status_code=201)
+async def clone_tier(
+    tier_code: str,
+    new_tier_code: str,
+    new_tier_name: str,
+    price_monthly: Optional[float] = None,
+    admin: str = Depends(get_current_admin),
+    conn = Depends(get_db_connection)
+):
+    """
+    Clone an existing subscription tier with all its settings and apps.
+
+    Args:
+        tier_code: Source tier code to clone
+        new_tier_code: New tier code (must be unique)
+        new_tier_name: New tier display name
+        price_monthly: Optional new monthly price (defaults to source tier price)
+
+    Returns:
+        Created tier with cloned settings
+
+    Raises:
+        HTTPException: If source tier not found or new tier_code already exists
+    """
+    try:
+        # Get source tier
+        source_tier = await conn.fetchrow(
+            "SELECT * FROM subscription_tiers WHERE tier_code = $1",
+            tier_code
+        )
+
+        if not source_tier:
+            raise HTTPException(status_code=404, detail=f"Source tier '{tier_code}' not found")
+
+        # Check if new tier_code already exists
+        existing = await conn.fetchrow(
+            "SELECT id FROM subscription_tiers WHERE tier_code = $1",
+            new_tier_code.lower().strip()
+        )
+
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Tier code '{new_tier_code}' already exists")
+
+        # Use provided price or copy from source
+        final_price = price_monthly if price_monthly is not None else source_tier['price_monthly']
+
+        # Start transaction to clone tier and apps atomically
+        async with conn.transaction():
+            # Insert cloned tier
+            query = """
+                INSERT INTO subscription_tiers (
+                    tier_code, tier_name, description, price_monthly, price_yearly,
+                    is_active, is_invite_only, sort_order, api_calls_limit, team_seats,
+                    byok_enabled, priority_support, lago_plan_code,
+                    stripe_price_monthly, stripe_price_yearly, created_by
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                RETURNING id, created_at, updated_at
+            """
+
+            row = await conn.fetchrow(
+                query,
+                new_tier_code.lower().strip(),
+                new_tier_name,
+                source_tier['description'],
+                final_price,
+                source_tier['price_yearly'],
+                source_tier['is_active'],
+                source_tier['is_invite_only'],
+                source_tier['sort_order'] + 1,  # Place after source tier
+                source_tier['api_calls_limit'],
+                source_tier['team_seats'],
+                source_tier['byok_enabled'],
+                source_tier['priority_support'],
+                None,  # Don't clone Lago plan code
+                None,  # Don't clone Stripe price ID
+                None,  # Don't clone Stripe yearly price ID
+                admin
+            )
+
+            new_tier_id = row['id']
+
+            # Clone all tier-app associations
+            clone_apps_query = """
+                INSERT INTO tier_apps (tier_id, app_key, enabled)
+                SELECT $1, app_key, enabled
+                FROM tier_apps
+                WHERE tier_id = $2
+            """
+
+            await conn.execute(clone_apps_query, new_tier_id, source_tier['id'])
+
+            # Get app count
+            app_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM tier_apps WHERE tier_id = $1 AND enabled = TRUE",
+                new_tier_id
+            )
+
+        logger.info(f"Cloned tier '{tier_code}' to '{new_tier_code}' with {app_count} apps by {admin}")
+
+        # Return created tier
+        created_tier = SubscriptionTierResponse(
+            id=new_tier_id,
+            tier_code=new_tier_code.lower().strip(),
+            tier_name=new_tier_name,
+            description=source_tier['description'],
+            price_monthly=final_price,
+            price_yearly=source_tier['price_yearly'],
+            is_active=source_tier['is_active'],
+            is_invite_only=source_tier['is_invite_only'],
+            sort_order=source_tier['sort_order'] + 1,
+            api_calls_limit=source_tier['api_calls_limit'],
+            team_seats=source_tier['team_seats'],
+            byok_enabled=source_tier['byok_enabled'],
+            priority_support=source_tier['priority_support'],
+            lago_plan_code=None,
+            stripe_price_monthly=None,
+            stripe_price_yearly=None,
+            feature_count=app_count,
+            active_user_count=0,
+            monthly_revenue=0.0,
+            created_at=row['created_at'],
+            updated_at=row['updated_at'],
+            created_by=admin,
+            updated_by=admin
+        )
+
+        return created_tier
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cloning tier '{tier_code}': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to clone tier: {str(e)}")
+
+
 # ============================================
-# Feature Management
+# App Management
 # ============================================
 
-@router.get("/{tier_id}/features", response_model=List[TierFeature])
-async def get_tier_features(
+@router.get("/{tier_id}/apps", response_model=List[TierFeature])
+async def get_tier_apps(
     tier_id: int,
     conn = Depends(get_db_connection)
 ):
     """
-    Get features for a tier.
+    Get apps for a tier.
 
     Args:
         tier_id: Tier ID
 
     Returns:
-        List of tier features
+        List of tier apps
     """
     try:
         query = """
@@ -511,19 +647,19 @@ async def get_tier_features(
         raise HTTPException(status_code=500, detail=f"Failed to get apps: {str(e)}")
 
 
-@router.put("/{tier_id}/features")
-async def update_tier_features(
+@router.put("/{tier_id}/apps")
+async def update_tier_apps(
     tier_id: int,
-    features: TierFeatureUpdate,
+    apps: TierFeatureUpdate,
     admin: str = Depends(get_current_admin),
     conn = Depends(get_db_connection)
 ):
     """
-    Update tier features (replace all).
+    Update tier apps (replace all).
 
     Args:
         tier_id: Tier ID
-        features: Feature list
+        apps: App list
 
     Returns:
         Success message
@@ -540,27 +676,27 @@ async def update_tier_features(
             await conn.execute("DELETE FROM tier_apps WHERE tier_id = $1", tier_id)
 
             # Insert new apps
-            for feature in features.features:
+            for app in apps.features:
                 await conn.execute(
                     """
                     INSERT INTO tier_apps (tier_id, app_key, app_value, enabled)
                     VALUES ($1, $2, $3, $4)
                     """,
-                    tier_id, feature.feature_key, feature.feature_value, feature.enabled
+                    tier_id, app.feature_key, app.feature_value, app.enabled
                 )
 
-        logger.info(f"Updated {len(features.features)} features for tier {tier_id} by {admin}")
+        logger.info(f"Updated {len(apps.features)} apps for tier {tier_id} by {admin}")
 
         return {
             "success": True,
-            "message": f"Updated {len(features.features)} features for tier '{existing['tier_code']}'"
+            "message": f"Updated {len(apps.features)} apps for tier '{existing['tier_code']}'"
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating features for tier {tier_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update features: {str(e)}")
+        logger.error(f"Error updating apps for tier {tier_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update apps: {str(e)}")
 
 
 # ============================================

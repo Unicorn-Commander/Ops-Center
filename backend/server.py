@@ -70,6 +70,7 @@ from subscription_api import router as subscription_router
 from stripe_api import router as stripe_router
 from billing_api import router as billing_router
 from credit_api import router as credit_router
+from credit_purchase_api import router as credit_purchase_router
 from local_user_api import router as local_user_router
 from org_api import router as org_router
 from org_manager import org_manager
@@ -94,6 +95,10 @@ from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
 from routers.forgejo import router as forgejo_router
+
+# Invite Code System (VIP Founder)
+from invite_codes_api import admin_router as invite_codes_admin_router
+from invite_codes_api import user_router as invite_codes_user_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -618,6 +623,10 @@ logger.info("My Apps API endpoints registered at /api/v1/my-apps (RBAC-filtered)
 app.include_router(credit_router)
 logger.info("Credit & Usage Metering API endpoints registered at /api/v1/credits")
 
+# Credit Purchase System (One-time purchases via Stripe)
+app.include_router(credit_purchase_router)
+logger.info("Credit Purchase API endpoints registered at /api/v1/billing/credits")
+
 # Register Local User Management endpoints
 app.include_router(local_user_router)
 logger.info("Local User Management API endpoints registered at /api/v1/local-users")
@@ -641,6 +650,12 @@ logger.info("Migration API endpoints registered at /api/v1/migration")
 # Epic 1.6/1.7: Service Credential Management
 app.include_router(credential_router)
 logger.info("Credential management API endpoints registered at /api/v1/credentials")
+
+# Invite Code System (Admin & User)
+app.include_router(invite_codes_admin_router)
+logger.info("Invite Codes Admin API endpoints registered at /api/v1/admin/invite-codes")
+app.include_router(invite_codes_user_router)
+logger.info("Invite Codes User API endpoints registered at /api/v1/invite-codes")
 
 # Keycloak Status API
 app.include_router(keycloak_status_router)

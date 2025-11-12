@@ -56,7 +56,8 @@ import {
   TrendingUp as TrendingUpIcon,
   Sync as SyncIcon,
   ExpandMore as ExpandMoreIcon,
-  LocalOffer as TagIcon
+  LocalOffer as TagIcon,
+  ContentCopy as CloneIcon
 } from '@mui/icons-material';
 
 const SubscriptionManagement = () => {
@@ -73,6 +74,7 @@ const SubscriptionManagement = () => {
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [appsDialogOpen, setAppsDialogOpen] = useState(false);
   const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
   const [auditLogDialogOpen, setAuditLogDialogOpen] = useState(false);
@@ -160,12 +162,37 @@ const SubscriptionManagement = () => {
       const response = await fetch(`/api/v1/tiers/${tierCode}/apps`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch apps');
       const data = await response.json();
-      // API returns { tier_id, tier_code, tier_name, features: [...] }
-      return data.features || [];
+      // API returns { tier_id, tier_code, tier_name, apps: [...] }
+      return data.apps || [];
     } catch (err) {
       setError(err.message);
       console.error('Error fetching apps:', err);
       return [];
+    }
+  };
+
+  const fetchFeatureCounts = async () => {
+    try {
+      // Fetch all tier-app associations
+      const response = await fetch('/api/v1/tiers/apps', { credentials: 'include' });
+      if (!response.ok) return; // Fail silently, counts will show 0
+
+      const data = await response.json();
+
+      // Count enabled features per tier
+      const counts = {};
+      data.forEach(tierData => {
+        counts[tierData.tier_code] = tierData.apps ? tierData.apps.length : 0;
+      });
+
+      // Update tiers with feature counts
+      setTiers(prev => prev.map(t => ({
+        ...t,
+        feature_count: counts[t.tier_code] || 0
+      })));
+    } catch (err) {
+      console.error('Error fetching feature counts:', err);
+      // Don't show error to user, just keep counts at 0
     }
   };
 
@@ -252,12 +279,42 @@ const SubscriptionManagement = () => {
     }
   };
 
+  const cloneTier = async () => {
+    if (!selectedTier) return;
+
+    try {
+      const params = new URLSearchParams({
+        new_tier_code: formData.tier_code,
+        new_tier_name: formData.tier_name,
+        price_monthly: formData.price_monthly.toString()
+      });
+
+      const response = await fetch(`/api/v1/admin/tiers/${selectedTier.tier_code}/clone?${params}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to clone tier');
+      }
+
+      setSuccess(`Tier cloned successfully as '${formData.tier_code}'`);
+      setCloneDialogOpen(false);
+      fetchTiers();
+      resetForm();
+    } catch (err) {
+      setError(err.message);
+      console.error('Error cloning tier:', err);
+    }
+  };
+
   const updateTierFeatures = async () => {
     if (!selectedTier) return;
 
     try {
       // Format apps for the new API: array of { app_key, enabled }
-      const updates = features.map(f => ({
+      const updates = apps.map(f => ({
         app_key: f.app_key,
         enabled: f.enabled
       }));
@@ -275,6 +332,7 @@ const SubscriptionManagement = () => {
       setSuccess(result.message || 'Apps updated successfully');
       setAppsDialogOpen(false);
       fetchTiers();
+      fetchFeatureCounts(); // Update feature counts after saving
     } catch (err) {
       setError(err.message);
       console.error('Error updating apps:', err);
@@ -360,6 +418,28 @@ const SubscriptionManagement = () => {
     setEditDialogOpen(true);
   };
 
+  const handleCloneTier = (tier) => {
+    setSelectedTier(tier);
+    setFormData({
+      tier_code: `${tier.tier_code}_v2`,
+      tier_name: `${tier.tier_name} V2`,
+      description: tier.description || '',
+      price_monthly: tier.price_monthly,
+      price_yearly: tier.price_yearly || 0,
+      is_active: tier.is_active,
+      is_invite_only: tier.is_invite_only,
+      sort_order: tier.sort_order,
+      api_calls_limit: tier.api_calls_limit,
+      team_seats: tier.team_seats,
+      byok_enabled: tier.byok_enabled,
+      priority_support: tier.priority_support,
+      lago_plan_code: '',
+      stripe_price_monthly: '',
+      stripe_price_yearly: ''
+    });
+    setCloneDialogOpen(true);
+  };
+
   const handleManageFeatures = async (tier) => {
     setSelectedTier(tier);
 
@@ -392,6 +472,7 @@ const SubscriptionManagement = () => {
   useEffect(() => {
     fetchTiers();
     fetchFeatureDefinitions();
+    fetchFeatureCounts();
   }, []);
 
   // ============================================
@@ -408,6 +489,20 @@ const SubscriptionManagement = () => {
   const formatApiLimit = (limit) => {
     if (limit === -1) return 'Unlimited';
     return limit.toLocaleString();
+  };
+
+  // Get tier badge color styling (VIP Founder = Gold)
+  const getTierBadgeColor = (tierCode) => {
+    switch (tierCode) {
+      case 'vip_founder':
+        return { bg: 'rgba(255, 215, 0, 0.15)', color: '#FFD700', border: '#FFD700' };
+      case 'byok':
+        return { bg: 'rgba(124, 58, 237, 0.15)', color: '#7c3aed', border: '#7c3aed' };
+      case 'managed':
+        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '#3b82f6' };
+      default:
+        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', border: '#94a3b8' };
+    }
   };
 
   // ============================================
@@ -647,7 +742,7 @@ const SubscriptionManagement = () => {
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Seats</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Users</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Features</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Apps</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -672,7 +767,18 @@ const SubscriptionManagement = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip label={tier.tier_code} size="small" />
+                      <Chip
+                        label={tier.tier_code}
+                        size="small"
+                        sx={{
+                          ...getTierBadgeColor(tier.tier_code),
+                          backgroundColor: getTierBadgeColor(tier.tier_code).bg,
+                          borderColor: getTierBadgeColor(tier.tier_code).border,
+                          color: getTierBadgeColor(tier.tier_code).color,
+                          fontWeight: 600,
+                          border: `1px solid ${getTierBadgeColor(tier.tier_code).border}`
+                        }}
+                      />
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="body2" fontWeight="bold">
@@ -706,7 +812,7 @@ const SubscriptionManagement = () => {
                     </TableCell>
                     <TableCell align="center">
                       <Chip
-                        label={`${tier.feature_count} features`}
+                        label={`${tier.feature_count} apps`}
                         size="small"
                         color="primary"
                         variant="outlined"
@@ -719,6 +825,14 @@ const SubscriptionManagement = () => {
                           onClick={() => handleManageFeatures(tier)}
                         >
                           <SyncIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Clone">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleCloneTier(tier)}
+                        >
+                          <CloneIcon />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Edit">
@@ -1120,7 +1234,90 @@ const SubscriptionManagement = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Features Dialog */}
+      {/* Clone Tier Dialog */}
+      <Dialog
+        open={cloneDialogOpen}
+        onClose={() => setCloneDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Clone Subscription Tier: {selectedTier?.tier_name}</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This will create a copy of "{selectedTier?.tier_name}" with all its settings and app associations.
+          </Alert>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="New Tier Code"
+                value={formData.tier_code}
+                onChange={(e) => setFormData({ ...formData, tier_code: e.target.value.toLowerCase() })}
+                helperText="Lowercase, no spaces (e.g., 'vip_founder_v2')"
+                required
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="New Tier Name"
+                value={formData.tier_name}
+                onChange={(e) => setFormData({ ...formData, tier_name: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Monthly Price ($)"
+                type="number"
+                value={formData.price_monthly}
+                onChange={(e) => setFormData({ ...formData, price_monthly: parseFloat(e.target.value) })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="body2" color="text.secondary">
+                All other settings (API limits, team seats, BYOK, etc.) will be copied from the source tier.
+                Lago and Stripe integration IDs will NOT be copied - you must configure these separately.
+              </Typography>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 1 }}>
+          <Button
+            onClick={() => setCloneDialogOpen(false)}
+            sx={{
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)'
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={cloneTier}
+            variant="contained"
+            startIcon={<CloneIcon />}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: 2,
+              transition: 'all 0.2s',
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: 4,
+                background: 'linear-gradient(135deg, #7e8fef 0%, #8a5bb2 100%)'
+              }
+            }}
+          >
+            Clone Tier
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Apps Dialog */}
       <Dialog
         open={appsDialogOpen}
         onClose={() => setAppsDialogOpen(false)}
@@ -1144,7 +1341,7 @@ const SubscriptionManagement = () => {
                     {appDefinitions
                       .filter(def => def.category === category)
                       .map(def => {
-                        const feature = features.find(f => f.app_key === def.key);
+                        const feature = apps.find(f => f.app_key === def.key);
                         return (
                           <Grid item xs={12} md={6} key={def.key}>
                             <FormControlLabel
@@ -1192,7 +1389,7 @@ const SubscriptionManagement = () => {
               }
             }}
           >
-            Save Features
+            Save Apps
           </Button>
         </DialogActions>
       </Dialog>
@@ -1328,10 +1525,30 @@ const SubscriptionManagement = () => {
                       </TableCell>
                       <TableCell>{entry.user_email || '-'}</TableCell>
                       <TableCell>
-                        <Chip label={entry.old_tier_code || 'none'} size="small" />
+                        <Chip
+                          label={entry.old_tier_code || 'none'}
+                          size="small"
+                          sx={entry.old_tier_code ? {
+                            ...getTierBadgeColor(entry.old_tier_code),
+                            backgroundColor: getTierBadgeColor(entry.old_tier_code).bg,
+                            color: getTierBadgeColor(entry.old_tier_code).color,
+                            fontWeight: 600,
+                            border: `1px solid ${getTierBadgeColor(entry.old_tier_code).border}`
+                          } : {}}
+                        />
                       </TableCell>
                       <TableCell>
-                        <Chip label={entry.new_tier_code} size="small" color="primary" />
+                        <Chip
+                          label={entry.new_tier_code}
+                          size="small"
+                          sx={{
+                            ...getTierBadgeColor(entry.new_tier_code),
+                            backgroundColor: getTierBadgeColor(entry.new_tier_code).bg,
+                            color: getTierBadgeColor(entry.new_tier_code).color,
+                            fontWeight: 600,
+                            border: `1px solid ${getTierBadgeColor(entry.new_tier_code).border}`
+                          }}
+                        />
                       </TableCell>
                       <TableCell>
                         <Tooltip title={entry.change_reason}>

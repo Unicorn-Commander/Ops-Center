@@ -11,7 +11,7 @@ import {
   Cancel, CheckCircle, Warning, Info, Download, Refresh
 } from '@mui/icons-material';
 import TierBadge from './TierBadge';
-import FeatureMatrix from './FeatureMatrix';
+import AppMatrix from './AppMatrix';
 import UpgradePrompt from './UpgradePrompt';
 
 /**
@@ -452,9 +452,9 @@ export default function SubscriptionManagement({
           </Card>
         </Grid>
 
-        {/* Feature Matrix */}
+        {/* App Matrix */}
         <Grid item xs={12}>
-          <FeatureMatrix
+          <AppMatrix
             currentTier={userInfo?.subscription_tier || 'free'}
             onUpgradeClick={handleUpgrade}
           />

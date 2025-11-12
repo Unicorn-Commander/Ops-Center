@@ -102,8 +102,8 @@ async def get_db_connection():
 # Public Endpoints (No Auth Required)
 # =============================================================================
 
-@router.get("/tiers/features", response_model=List[TierAppsListResponse])
-async def list_all_tier_features():
+@router.get("/tiers/apps", response_model=List[TierAppsListResponse])
+async def list_all_tier_apps():
     """
     Get all subscription tiers with their associated apps.
     This endpoint is public - no authentication required.
@@ -150,8 +150,8 @@ async def list_all_tier_features():
         await conn.close()
 
 
-@router.get("/tiers/{tier_code}/features", response_model=TierAppsListResponse)
-async def get_tier_features(tier_code: str):
+@router.get("/tiers/{tier_code}/apps", response_model=TierAppsListResponse)
+async def get_tier_apps(tier_code: str):
     """
     Get all apps for a specific tier by tier code.
     This endpoint is public - no authentication required.
@@ -202,8 +202,8 @@ async def get_tier_features(tier_code: str):
 # Admin Endpoints (Auth Required)
 # =============================================================================
 
-@router.get("/admin/tiers/features/detailed", response_model=List[TierAppResponse])
-async def list_all_tier_features_detailed(
+@router.get("/admin/tiers/apps/detailed", response_model=List[TierAppResponse])
+async def list_all_tier_apps_detailed(
     admin: str = Depends(get_current_admin)
 ):
     """
@@ -235,8 +235,8 @@ async def list_all_tier_features_detailed(
         await conn.close()
 
 
-@router.put("/admin/tiers/{tier_code}/features")
-async def update_tier_features(
+@router.put("/admin/tiers/{tier_code}/apps")
+async def update_tier_apps(
     tier_code: str,
     updates: List[UpdateTierAppRequest],
     admin: str = Depends(get_current_admin)
@@ -301,8 +301,8 @@ async def update_tier_features(
         await conn.close()
 
 
-@router.post("/admin/tiers/{tier_code}/features/bulk")
-async def bulk_set_tier_features(
+@router.post("/admin/tiers/{tier_code}/apps/bulk")
+async def bulk_set_tier_apps(
     tier_code: str,
     app_keys: List[str],
     enabled: bool = True,
