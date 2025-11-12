@@ -57,7 +57,8 @@ import {
   ChevronDoubleRightIcon,
   LockClosedIcon,
   CpuChipIcon,
-  ShoppingBagIcon
+  ShoppingBagIcon,
+  TicketIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
@@ -101,7 +102,8 @@ const iconMap = {
   CodeBracketIcon,
   LockClosedIcon,
   CpuChipIcon,
-  ShoppingBagIcon
+  ShoppingBagIcon,
+  TicketIcon
 };
 
 export default function Layout({ children }) {
@@ -702,13 +704,43 @@ export default function Layout({ children }) {
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="App Management"
                         href="/admin/system/app-management"
-                        icon={iconMap.AdjustmentsHorizontalIcon}
+                        icon={iconMap.CubeIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Pricing Management"
+                        href="/admin/system/pricing-management"
+                        icon={iconMap.CurrencyDollarIcon}
                         indent={true}
                       />
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="Billing Dashboard"
                         href="/admin/system/billing"
                         icon={iconMap.CurrencyDollarIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="User Billing"
+                        href="/admin/billing/dashboard"
+                        icon={iconMap.UserCircleIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="System Billing Overview"
+                        href="/admin/billing/overview"
+                        icon={iconMap.ChartBarIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Invite Codes"
+                        href="/admin/system/invite-codes"
+                        icon={iconMap.TicketIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="Buy Credits"
+                        href="/admin/credits/purchase"
+                        icon={iconMap.ShoppingBagIcon}
                         indent={true}
                       />
                     </NavigationSection>
