@@ -33,7 +33,7 @@ export default function MarketplaceLanding() {
             {/* Logo */}
             <div className="flex items-center space-x-3">
               <img
-                src="/logos/The_Colonel.webp"
+                src="/logos/The_Colonel.png"
                 alt="The Colonel - Unicorn Commander"
                 className="h-10 w-10 rounded-full"
               />
