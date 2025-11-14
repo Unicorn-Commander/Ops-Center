@@ -65,7 +65,7 @@ async def require_admin(request: Request) -> bool:
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     sessions = RedisSessionManager(host=redis_host, port=redis_port)
-    user_data = sessions.get_session(session_token)
+    user_data = sessions.get(session_token)
 
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid session")
@@ -102,7 +102,7 @@ async def get_current_user(request: Request) -> dict:
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     sessions = RedisSessionManager(host=redis_host, port=redis_port)
-    user_data = sessions.get_session(session_token)
+    user_data = sessions.get(session_token)
 
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid session")

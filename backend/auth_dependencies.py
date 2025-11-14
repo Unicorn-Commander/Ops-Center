@@ -58,7 +58,7 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     sessions = RedisSessionManager(host=redis_host, port=redis_port)
-    user_data = sessions.get_session(session_token)
+    user_data = sessions.get(session_token)
 
     if not user_data:
         raise HTTPException(

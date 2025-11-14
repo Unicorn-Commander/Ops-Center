@@ -284,7 +284,7 @@ except Exception as e:
 async def root_redirect(request: Request):
     """Redirect to dashboard if authenticated, or login if not"""
     session_token = request.cookies.get("session_token")
-    session = session_manager.get_session(session_token) if session_token else None
+    session = session_manager.get(session_token) if session_token else None
 
     if session:
         # Authenticated - redirect to dashboard
@@ -376,7 +376,7 @@ async def logout(request: Request):
 async def get_current_user(request: Request):
     """Get current authenticated user info"""
     session_token = request.cookies.get("session_token")
-    session = session_manager.get_session(session_token) if session_token else None
+    session = session_manager.get(session_token) if session_token else None
 
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -417,7 +417,7 @@ async def get_current_user(request: Request):
 async def create_checkout_session(request: Request, tier: str):
     """Create Stripe checkout session for subscription"""
     session_token = request.cookies.get("session_token")
-    session = session_manager.get_session(session_token) if session_token else None
+    session = session_manager.get(session_token) if session_token else None
 
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -500,7 +500,7 @@ async def stripe_webhook(request: Request):
 async def get_user_usage(request: Request):
     """Get user's API usage statistics"""
     session_token = request.cookies.get("session_token")
-    session = session_manager.get_session(session_token) if session_token else None
+    session = session_manager.get(session_token) if session_token else None
 
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -530,7 +530,7 @@ async def inference_endpoint(request: Request, prompt: str):
     4. Tracks usage for billing
     """
     session_token = request.cookies.get("session_token")
-    session = session_manager.get_session(session_token) if session_token else None
+    session = session_manager.get(session_token) if session_token else None
 
     # Require authentication
     if not session:
