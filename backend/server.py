@@ -194,6 +194,9 @@ from metrics_collector import MetricsCollector
 # White-Label Configuration API
 from white_label_api import router as white_label_router
 
+# Landing Page Settings API (Phase 2)
+from landing_page_settings_api import router as landing_settings_router
+
 # Keycloak SSO integration
 try:
     from keycloak_integration import (
@@ -497,6 +500,11 @@ async def startup_event():
         from api_key_manager import initialize_api_key_manager
         await initialize_api_key_manager(db_pool)
         logger.info("API Key Manager initialized successfully")
+
+        # Initialize Landing Page Settings API (Phase 2)
+        from landing_page_settings_api import init_landing_settings
+        init_landing_settings(db_pool, redis_client)
+        logger.info("Landing Page Settings API initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize credit system / BYOK / API keys: {e}")
         # Don't block startup, but credit-based features will fail
@@ -864,6 +872,10 @@ logger.info("API Documentation endpoints registered at /api/v1/docs")
 app.include_router(white_label_router)
 logger.info("White-Label Configuration API endpoints registered at /api/v1/admin/white-label")
 
+# Landing Page Settings API (Phase 2)
+app.include_router(landing_settings_router)
+logger.info("Landing Page Settings API endpoints registered at /api/v1/system/settings (public) and /api/v1/admin/settings (admin)")
+
 # Dynamic Pricing Management API
 from dynamic_pricing_api import router as dynamic_pricing_router
 app.include_router(dynamic_pricing_router)
@@ -1046,16 +1058,24 @@ async def root_redirect(request: Request):
             print("ERROR: React app not found at public/index.html or dist/index.html")
             return RedirectResponse(url="/auth/login", status_code=302)
     else:
-        print("User not authenticated, serving registration page (signup.html)")
-        # Serve the registration page with manual form + OAuth options
-        if os.path.exists("public/signup.html"):
-            response = FileResponse("public/signup.html")
+        print("User not authenticated, serving React app (will show landing page based on mode)")
+        # Serve the React app for unauthenticated users
+        # React RootRedirect component will handle landing page mode logic
+        if os.path.exists("public/index.html"):
+            response = FileResponse("public/index.html")
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+        elif os.path.exists("dist/index.html"):
+            response = FileResponse("dist/index.html")
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             return response
         else:
-            # Fallback: redirect to login if signup page not found
+            # Fallback: redirect to login if frontend not found
+            print("ERROR: React app not found at public/index.html or dist/index.html")
             return RedirectResponse(url="/auth/login", status_code=302)
 
 # Initialize Docker client

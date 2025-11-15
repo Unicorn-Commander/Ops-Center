@@ -90,15 +90,13 @@ async def get_current_user_tier(request: Request) -> str:
             return 'managed'
 
         session_data = sessions[session_token]
-        user = session_data.get("user", {})
 
-        if not user:
-            # No user in session - return managed tier
-            return 'managed'
-
-        # Extract subscription tier from user data
-        # Tier can be in user attributes or top-level user data
-        tier = user.get("subscription_tier") or user.get("tier")
+        # Check for tier at root level (OAuth sessions) or nested under "user" key (legacy)
+        tier = session_data.get("subscription_tier")
+        if not tier:
+            # Try legacy nested structure
+            user = session_data.get("user", {})
+            tier = user.get("subscription_tier") or user.get("tier")
 
         # If tier not set or invalid, default to managed
         if not tier or tier not in ['vip_founder', 'byok', 'managed']:
