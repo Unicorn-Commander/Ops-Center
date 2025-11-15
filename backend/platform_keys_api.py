@@ -178,27 +178,105 @@ async def set_platform_key_in_db(
 
 
 # ============================================================================
+# Key Validation Functions
+# ============================================================================
+
+def validate_openrouter_key(api_key: str) -> bool:
+    """Validate OpenRouter API key format (sk-or-v1-...)"""
+    return api_key.startswith("sk-or-")
+
+def validate_openai_key(api_key: str) -> bool:
+    """Validate OpenAI API key format (sk-proj-...)"""
+    return api_key.startswith("sk-") and not api_key.startswith("sk-or-")
+
+def validate_anthropic_key(api_key: str) -> bool:
+    """Validate Anthropic API key format (sk-ant-...)"""
+    return api_key.startswith("sk-ant-")
+
+def validate_huggingface_key(api_key: str) -> bool:
+    """Validate HuggingFace API key format (hf_...)"""
+    return api_key.startswith("hf_")
+
+def validate_groq_key(api_key: str) -> bool:
+    """Validate Groq API key format (gsk_...)"""
+    return api_key.startswith("gsk_")
+
+def validate_xai_key(api_key: str) -> bool:
+    """Validate X.AI Grok API key format (xai-...)"""
+    return api_key.startswith("xai-")
+
+def validate_google_key(api_key: str) -> bool:
+    """Validate Google AI API key format (AIza...)"""
+    return api_key.startswith("AIza")
+
+
+# ============================================================================
 # Platform Key Definitions
 # ============================================================================
 
 PLATFORM_KEYS = {
     "openrouter_api_key": {
         "display_name": "OpenRouter API Key",
-        "description": "OpenRouter API key for LLM inference routing",
+        "description": "OpenRouter API key for LLM inference routing (348+ models)",
         "env_var": "OPENROUTER_API_KEY",
-        "key_format": "sk-or-v1-..."
+        "key_format": "sk-or-v1-...",
+        "validator": validate_openrouter_key
+    },
+    "openai_api_key": {
+        "display_name": "OpenAI API Key",
+        "description": "OpenAI API key for GPT-4, GPT-3.5, and DALL-E models",
+        "env_var": "OPENAI_API_KEY",
+        "key_format": "sk-proj-...",
+        "validator": validate_openai_key
+    },
+    "anthropic_api_key": {
+        "display_name": "Anthropic API Key",
+        "description": "Anthropic API key for Claude models (Opus, Sonnet, Haiku)",
+        "env_var": "ANTHROPIC_API_KEY",
+        "key_format": "sk-ant-...",
+        "validator": validate_anthropic_key
+    },
+    "huggingface_api_key": {
+        "display_name": "HuggingFace API Key",
+        "description": "HuggingFace API key for inference API and model downloads",
+        "env_var": "HUGGINGFACE_API_KEY",
+        "key_format": "hf_...",
+        "validator": validate_huggingface_key
+    },
+    "groq_api_key": {
+        "display_name": "Groq API Key",
+        "description": "Groq API key for ultra-fast LLM inference",
+        "env_var": "GROQ_API_KEY",
+        "key_format": "gsk_...",
+        "validator": validate_groq_key
+    },
+    "xai_api_key": {
+        "display_name": "X.AI Grok API Key",
+        "description": "X.AI API key for Grok models",
+        "env_var": "XAI_API_KEY",
+        "key_format": "xai-...",
+        "validator": validate_xai_key
+    },
+    "google_ai_api_key": {
+        "display_name": "Google AI API Key",
+        "description": "Google AI API key for Gemini models",
+        "env_var": "GOOGLE_AI_API_KEY",
+        "key_format": "AIza...",
+        "validator": validate_google_key
     },
     "provisioning_key": {
         "display_name": "Magic Unicorn Provisioning Key",
         "description": "Provisioning key for Magic Unicorn services",
         "env_var": "PROVISIONING_KEY",
-        "key_format": "mu-prov-..."
+        "key_format": "mu-prov-...",
+        "validator": None  # No specific validation
     },
     "litellm_master_key": {
         "display_name": "LiteLLM Master Key",
         "description": "Master key for LiteLLM proxy administration",
         "env_var": "LITELLM_MASTER_KEY",
-        "key_format": "sk-litellm-..."
+        "key_format": "sk-litellm-...",
+        "validator": None  # No specific validation
     }
 }
 
@@ -306,9 +384,14 @@ async def update_openrouter_key(
     - message: Confirmation message
     """
     try:
-        # Validate key format (basic check)
-        if not key_request.api_key.startswith("sk-or-"):
-            logger.warning(f"OpenRouter key doesn't match expected format (sk-or-*)")
+        # Validate key format
+        config = PLATFORM_KEYS["openrouter_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            logger.warning(f"OpenRouter key doesn't match expected format ({config['key_format']})")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid OpenRouter API key format. Expected format: {config['key_format']}"
+            )
 
         # Encrypt the key
         encryption = get_encryption()
@@ -334,9 +417,317 @@ async def update_openrouter_key(
             ]
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating OpenRouter key: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update OpenRouter key")
+
+
+@router.put("/openai")
+async def update_openai_key(
+    key_request: UpdatePlatformKeyRequest,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Update OpenAI API key (admin only)
+
+    Stores the OpenAI API key in encrypted form in the database.
+    This key is used for GPT-4, GPT-3.5, and DALL-E models.
+
+    Request Body:
+    - api_key: OpenAI API key starting with sk-proj- (plain text, will be encrypted)
+
+    Returns:
+    - success: True if updated
+    - message: Confirmation message
+    """
+    try:
+        # Validate key format
+        config = PLATFORM_KEYS["openai_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid OpenAI API key format. Expected format: {config['key_format']}"
+            )
+
+        # Encrypt the key
+        encryption = get_encryption()
+        encrypted_key = encryption.encrypt_key(key_request.api_key)
+
+        # Store in database
+        await set_platform_key_in_db(db_pool, "openai_api_key", encrypted_key)
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} updated OpenAI API key")
+
+        return {
+            "success": True,
+            "message": "OpenAI API key updated successfully",
+            "key_preview": mask_api_key(key_request.api_key)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating OpenAI key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update OpenAI key")
+
+
+@router.put("/anthropic")
+async def update_anthropic_key(
+    key_request: UpdatePlatformKeyRequest,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Update Anthropic API key (admin only)
+
+    Stores the Anthropic API key in encrypted form in the database.
+    This key is used for Claude models (Opus, Sonnet, Haiku).
+
+    Request Body:
+    - api_key: Anthropic API key starting with sk-ant- (plain text, will be encrypted)
+
+    Returns:
+    - success: True if updated
+    - message: Confirmation message
+    """
+    try:
+        # Validate key format
+        config = PLATFORM_KEYS["anthropic_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid Anthropic API key format. Expected format: {config['key_format']}"
+            )
+
+        # Encrypt the key
+        encryption = get_encryption()
+        encrypted_key = encryption.encrypt_key(key_request.api_key)
+
+        # Store in database
+        await set_platform_key_in_db(db_pool, "anthropic_api_key", encrypted_key)
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} updated Anthropic API key")
+
+        return {
+            "success": True,
+            "message": "Anthropic API key updated successfully",
+            "key_preview": mask_api_key(key_request.api_key)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating Anthropic key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update Anthropic key")
+
+
+@router.put("/huggingface")
+async def update_huggingface_key(
+    key_request: UpdatePlatformKeyRequest,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Update HuggingFace API key (admin only)
+
+    Stores the HuggingFace API key in encrypted form in the database.
+    This key is used for inference API and model downloads.
+
+    Request Body:
+    - api_key: HuggingFace API key starting with hf_ (plain text, will be encrypted)
+
+    Returns:
+    - success: True if updated
+    - message: Confirmation message
+    """
+    try:
+        # Validate key format
+        config = PLATFORM_KEYS["huggingface_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid HuggingFace API key format. Expected format: {config['key_format']}"
+            )
+
+        # Encrypt the key
+        encryption = get_encryption()
+        encrypted_key = encryption.encrypt_key(key_request.api_key)
+
+        # Store in database
+        await set_platform_key_in_db(db_pool, "huggingface_api_key", encrypted_key)
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} updated HuggingFace API key")
+
+        return {
+            "success": True,
+            "message": "HuggingFace API key updated successfully",
+            "key_preview": mask_api_key(key_request.api_key)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating HuggingFace key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update HuggingFace key")
+
+
+@router.put("/groq")
+async def update_groq_key(
+    key_request: UpdatePlatformKeyRequest,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Update Groq API key (admin only)
+
+    Stores the Groq API key in encrypted form in the database.
+    This key is used for ultra-fast LLM inference.
+
+    Request Body:
+    - api_key: Groq API key starting with gsk_ (plain text, will be encrypted)
+
+    Returns:
+    - success: True if updated
+    - message: Confirmation message
+    """
+    try:
+        # Validate key format
+        config = PLATFORM_KEYS["groq_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid Groq API key format. Expected format: {config['key_format']}"
+            )
+
+        # Encrypt the key
+        encryption = get_encryption()
+        encrypted_key = encryption.encrypt_key(key_request.api_key)
+
+        # Store in database
+        await set_platform_key_in_db(db_pool, "groq_api_key", encrypted_key)
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} updated Groq API key")
+
+        return {
+            "success": True,
+            "message": "Groq API key updated successfully",
+            "key_preview": mask_api_key(key_request.api_key)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating Groq key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update Groq key")
+
+
+@router.put("/xai")
+async def update_xai_key(
+    key_request: UpdatePlatformKeyRequest,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Update X.AI Grok API key (admin only)
+
+    Stores the X.AI API key in encrypted form in the database.
+    This key is used for Grok models.
+
+    Request Body:
+    - api_key: X.AI API key starting with xai- (plain text, will be encrypted)
+
+    Returns:
+    - success: True if updated
+    - message: Confirmation message
+    """
+    try:
+        # Validate key format
+        config = PLATFORM_KEYS["xai_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid X.AI API key format. Expected format: {config['key_format']}"
+            )
+
+        # Encrypt the key
+        encryption = get_encryption()
+        encrypted_key = encryption.encrypt_key(key_request.api_key)
+
+        # Store in database
+        await set_platform_key_in_db(db_pool, "xai_api_key", encrypted_key)
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} updated X.AI API key")
+
+        return {
+            "success": True,
+            "message": "X.AI API key updated successfully",
+            "key_preview": mask_api_key(key_request.api_key)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating X.AI key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update X.AI key")
+
+
+@router.put("/google")
+async def update_google_key(
+    key_request: UpdatePlatformKeyRequest,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Update Google AI API key (admin only)
+
+    Stores the Google AI API key in encrypted form in the database.
+    This key is used for Gemini models.
+
+    Request Body:
+    - api_key: Google AI API key starting with AIza (plain text, will be encrypted)
+
+    Returns:
+    - success: True if updated
+    - message: Confirmation message
+    """
+    try:
+        # Validate key format
+        config = PLATFORM_KEYS["google_ai_api_key"]
+        if config["validator"] and not config["validator"](key_request.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid Google AI API key format. Expected format: {config['key_format']}"
+            )
+
+        # Encrypt the key
+        encryption = get_encryption()
+        encrypted_key = encryption.encrypt_key(key_request.api_key)
+
+        # Store in database
+        await set_platform_key_in_db(db_pool, "google_ai_api_key", encrypted_key)
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} updated Google AI API key")
+
+        return {
+            "success": True,
+            "message": "Google AI API key updated successfully",
+            "key_preview": mask_api_key(key_request.api_key)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating Google AI key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update Google AI key")
 
 
 @router.put("/provisioning")
@@ -472,3 +863,261 @@ async def get_provisioning_key_decrypted(
     except Exception as e:
         logger.error(f"Error retrieving provisioning key: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve provisioning key")
+
+
+@router.get("/openai/decrypted")
+async def get_openai_key_decrypted(
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get decrypted OpenAI API key (admin only)
+
+    **WARNING**: This exposes the full API key. Use with caution.
+
+    Returns:
+    - api_key: Decrypted API key
+    - source: database or environment
+    """
+    try:
+        db_encrypted = await get_platform_key_from_db(db_pool, "openai_api_key")
+
+        if db_encrypted:
+            encryption = get_encryption()
+            api_key = encryption.decrypt_key(db_encrypted)
+            source = "database"
+        else:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise HTTPException(status_code=404, detail="OpenAI API key not configured")
+            source = "environment"
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} retrieved OpenAI API key")
+
+        return {
+            "api_key": api_key,
+            "source": source,
+            "warning": "This is the full API key. Keep it secure."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving OpenAI key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve OpenAI key")
+
+
+@router.get("/anthropic/decrypted")
+async def get_anthropic_key_decrypted(
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get decrypted Anthropic API key (admin only)
+
+    **WARNING**: This exposes the full API key. Use with caution.
+
+    Returns:
+    - api_key: Decrypted API key
+    - source: database or environment
+    """
+    try:
+        db_encrypted = await get_platform_key_from_db(db_pool, "anthropic_api_key")
+
+        if db_encrypted:
+            encryption = get_encryption()
+            api_key = encryption.decrypt_key(db_encrypted)
+            source = "database"
+        else:
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise HTTPException(status_code=404, detail="Anthropic API key not configured")
+            source = "environment"
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} retrieved Anthropic API key")
+
+        return {
+            "api_key": api_key,
+            "source": source,
+            "warning": "This is the full API key. Keep it secure."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving Anthropic key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve Anthropic key")
+
+
+@router.get("/huggingface/decrypted")
+async def get_huggingface_key_decrypted(
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get decrypted HuggingFace API key (admin only)
+
+    **WARNING**: This exposes the full API key. Use with caution.
+
+    Returns:
+    - api_key: Decrypted API key
+    - source: database or environment
+    """
+    try:
+        db_encrypted = await get_platform_key_from_db(db_pool, "huggingface_api_key")
+
+        if db_encrypted:
+            encryption = get_encryption()
+            api_key = encryption.decrypt_key(db_encrypted)
+            source = "database"
+        else:
+            api_key = os.getenv("HUGGINGFACE_API_KEY")
+            if not api_key:
+                raise HTTPException(status_code=404, detail="HuggingFace API key not configured")
+            source = "environment"
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} retrieved HuggingFace API key")
+
+        return {
+            "api_key": api_key,
+            "source": source,
+            "warning": "This is the full API key. Keep it secure."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving HuggingFace key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve HuggingFace key")
+
+
+@router.get("/groq/decrypted")
+async def get_groq_key_decrypted(
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get decrypted Groq API key (admin only)
+
+    **WARNING**: This exposes the full API key. Use with caution.
+
+    Returns:
+    - api_key: Decrypted API key
+    - source: database or environment
+    """
+    try:
+        db_encrypted = await get_platform_key_from_db(db_pool, "groq_api_key")
+
+        if db_encrypted:
+            encryption = get_encryption()
+            api_key = encryption.decrypt_key(db_encrypted)
+            source = "database"
+        else:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise HTTPException(status_code=404, detail="Groq API key not configured")
+            source = "environment"
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} retrieved Groq API key")
+
+        return {
+            "api_key": api_key,
+            "source": source,
+            "warning": "This is the full API key. Keep it secure."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving Groq key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve Groq key")
+
+
+@router.get("/xai/decrypted")
+async def get_xai_key_decrypted(
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get decrypted X.AI API key (admin only)
+
+    **WARNING**: This exposes the full API key. Use with caution.
+
+    Returns:
+    - api_key: Decrypted API key
+    - source: database or environment
+    """
+    try:
+        db_encrypted = await get_platform_key_from_db(db_pool, "xai_api_key")
+
+        if db_encrypted:
+            encryption = get_encryption()
+            api_key = encryption.decrypt_key(db_encrypted)
+            source = "database"
+        else:
+            api_key = os.getenv("XAI_API_KEY")
+            if not api_key:
+                raise HTTPException(status_code=404, detail="X.AI API key not configured")
+            source = "environment"
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} retrieved X.AI API key")
+
+        return {
+            "api_key": api_key,
+            "source": source,
+            "warning": "This is the full API key. Keep it secure."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving X.AI key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve X.AI key")
+
+
+@router.get("/google/decrypted")
+async def get_google_key_decrypted(
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Get decrypted Google AI API key (admin only)
+
+    **WARNING**: This exposes the full API key. Use with caution.
+
+    Returns:
+    - api_key: Decrypted API key
+    - source: database or environment
+    """
+    try:
+        db_encrypted = await get_platform_key_from_db(db_pool, "google_ai_api_key")
+
+        if db_encrypted:
+            encryption = get_encryption()
+            api_key = encryption.decrypt_key(db_encrypted)
+            source = "database"
+        else:
+            api_key = os.getenv("GOOGLE_AI_API_KEY")
+            if not api_key:
+                raise HTTPException(status_code=404, detail="Google AI API key not configured")
+            source = "environment"
+
+        logger.info(f"Admin {current_user.get('email', 'unknown')} retrieved Google AI API key")
+
+        return {
+            "api_key": api_key,
+            "source": source,
+            "warning": "This is the full API key. Keep it secure."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving Google AI key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve Google AI key")

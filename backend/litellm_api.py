@@ -32,6 +32,9 @@ from cryptography.fernet import Fernet
 # Import universal credential helper
 from get_credential import get_credential
 
+# Import organizational credit integration
+from org_credit_integration import get_org_credit_integration
+
 logger = logging.getLogger(__name__)
 
 # Initialize Stripe - read credentials from database first, then environment
@@ -563,7 +566,8 @@ async def get_user_id(
         service_keys = {
             'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
             'sk-presenton-service-key-2025': 'presenton-service',
-            'sk-brigade-service-key-2025': 'brigade-service'
+            'sk-brigade-service-key-2025': 'brigade-service',
+            'sk-centerdeep-service-key-2025': 'centerdeep-service'
         }
 
         if token in service_keys:
@@ -706,22 +710,42 @@ async def chat_completions(
         )
 
         # Check credits BEFORE making request (skip if using BYOK)
+        org_id = None  # Will be set if using org billing
         if not using_byok and user_tier != 'free':
-            current_balance = await credit_system.get_user_credits(user_id)
+            # Try organizational billing first
+            org_integration = get_org_credit_integration()
+            has_org_credits, org_id, message = await org_integration.has_sufficient_org_credits(
+                user_id=user_id,
+                credits_needed=estimated_cost,
+                request_state=getattr(request, 'state', None) if hasattr(request, 'state') else None
+            )
 
-            if current_balance < estimated_cost:
-                raise HTTPException(
-                    status_code=402,  # Payment Required
-                    detail=f"Insufficient credits. Balance: {current_balance:.6f}, Estimated cost: {estimated_cost:.6f}"
-                )
+            if org_id:
+                # User belongs to organization - use org billing
+                if not has_org_credits:
+                    raise HTTPException(
+                        status_code=402,  # Payment Required
+                        detail=f"Insufficient organization credits. {message}"
+                    )
+                logger.info(f"User {user_id} using org billing (org: {org_id})")
+            else:
+                # Fallback to individual credits (backward compatibility)
+                current_balance = await credit_system.get_user_credits(user_id)
 
-            # Check monthly cap
-            within_cap = await credit_system.check_monthly_cap(user_id, estimated_cost)
-            if not within_cap:
-                raise HTTPException(
-                    status_code=429,  # Too Many Requests
-                    detail="Monthly spending cap exceeded"
-                )
+                if current_balance < estimated_cost:
+                    raise HTTPException(
+                        status_code=402,  # Payment Required
+                        detail=f"Insufficient credits. Balance: {current_balance:.6f}, Estimated cost: {estimated_cost:.6f}"
+                    )
+
+                # Check monthly cap
+                within_cap = await credit_system.check_monthly_cap(user_id, estimated_cost)
+                if not within_cap:
+                    raise HTTPException(
+                        status_code=429,  # Too Many Requests
+                        detail="Monthly spending cap exceeded"
+                    )
+                logger.info(f"User {user_id} using individual billing (no org)")
 
         # Prepare request for LiteLLM proxy
         proxy_request = {
@@ -846,27 +870,66 @@ async def chat_completions(
         # Debit credits (skip if using BYOK - user pays provider directly)
         if using_byok:
             # User is using their own API key - no credit charge
-            new_balance = await credit_system.get_user_credits(user_id)
+            if org_id:
+                # Get org balance for display
+                _, _, new_balance = await get_org_credit_integration().get_user_org_credits(
+                    user_id=user_id,
+                    request_state=getattr(request, 'state', None) if hasattr(request, 'state') else None
+                )
+                new_balance = new_balance / 1000.0 if new_balance else 0.0  # Convert milicredits to credits
+            else:
+                new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
             actual_cost = 0.0  # No cost to user's credit balance
             logger.info(f"BYOK request for {user_id} - no credits charged")
         elif user_tier != 'free' or actual_cost > 0:
-            # Using system key - charge credits
-            new_balance, transaction_id = await credit_system.debit_credits(
-                user_id=user_id,
-                amount=actual_cost,
-                metadata={
-                    'provider': provider_used,
-                    'model': provider_used,
-                    'tokens_used': tokens_used,
-                    'power_level': power_level,
-                    'task_type': request.task_type,
-                    'cost': actual_cost
-                }
-            )
+            # Check if using org billing or individual billing
+            if org_id:
+                # Using organization billing
+                success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
+                    user_id=user_id,
+                    credits_used=actual_cost,
+                    service_name=provider_used,
+                    provider=provider_used,
+                    model=request.model,
+                    tokens_used=tokens_used,
+                    power_level=power_level,
+                    task_type=request.task_type,
+                    request_id=None,  # Could add request tracking here
+                    org_id=org_id
+                )
+
+                if success:
+                    new_balance = remaining_credits / 1000.0 if remaining_credits else 0.0  # Convert to credits
+                    transaction_id = f"org-{used_org_id}-{user_id}"
+                    logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for user {user_id}")
+                else:
+                    logger.error(f"Failed to deduct org credits for user {user_id}")
+                    raise HTTPException(status_code=500, detail="Failed to deduct credits")
+            else:
+                # Using individual credits - charge credits
+                new_balance, transaction_id = await credit_system.debit_credits(
+                    user_id=user_id,
+                    amount=actual_cost,
+                    metadata={
+                        'provider': provider_used,
+                        'model': provider_used,
+                        'tokens_used': tokens_used,
+                        'power_level': power_level,
+                        'task_type': request.task_type,
+                        'cost': actual_cost
+                    }
+                )
         else:
             # Free tier with free model
-            new_balance = await credit_system.get_user_credits(user_id)
+            if org_id:
+                _, _, new_balance = await get_org_credit_integration().get_user_org_credits(
+                    user_id=user_id,
+                    request_state=getattr(request, 'state', None) if hasattr(request, 'state') else None
+                )
+                new_balance = new_balance / 1000.0 if new_balance else 0.0
+            else:
+                new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
 
         # Track usage event (Epic 1.8: Usage Metering)
@@ -1059,22 +1122,42 @@ async def generate_image(
         )
 
         # Check credits BEFORE making request (skip if using BYOK)
+        org_id = None  # Will be set if using org billing
         if not using_byok and user_tier != 'free':
-            current_balance = await credit_system.get_user_credits(user_id)
+            # Try organizational billing first
+            org_integration = get_org_credit_integration()
+            has_org_credits, org_id, message = await org_integration.has_sufficient_org_credits(
+                user_id=user_id,
+                credits_needed=estimated_cost,
+                request_state=getattr(request, 'state', None) if hasattr(request, 'state') else None
+            )
 
-            if current_balance < estimated_cost:
-                raise HTTPException(
-                    status_code=402,
-                    detail=f"Insufficient credits. Balance: {current_balance:.2f}, Estimated cost: {estimated_cost:.2f} credits"
-                )
+            if org_id:
+                # User belongs to organization - use org billing
+                if not has_org_credits:
+                    raise HTTPException(
+                        status_code=402,
+                        detail=f"Insufficient organization credits for image generation. {message}"
+                    )
+                logger.info(f"User {user_id} using org billing for image generation (org: {org_id})")
+            else:
+                # Fallback to individual credits
+                current_balance = await credit_system.get_user_credits(user_id)
 
-            # Check monthly cap
-            within_cap = await credit_system.check_monthly_cap(user_id, estimated_cost)
-            if not within_cap:
-                raise HTTPException(
-                    status_code=429,
-                    detail="Monthly spending cap exceeded"
-                )
+                if current_balance < estimated_cost:
+                    raise HTTPException(
+                        status_code=402,
+                        detail=f"Insufficient credits. Balance: {current_balance:.2f}, Estimated cost: {estimated_cost:.2f} credits"
+                    )
+
+                # Check monthly cap
+                within_cap = await credit_system.check_monthly_cap(user_id, estimated_cost)
+                if not within_cap:
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Monthly spending cap exceeded"
+                    )
+                logger.info(f"User {user_id} using individual billing for image generation")
 
         # Prepare request for provider API
         image_request = {
@@ -1183,25 +1266,63 @@ async def generate_image(
 
         # Debit credits (skip if using BYOK)
         if using_byok:
-            new_balance = await credit_system.get_user_credits(user_id)
+            if org_id:
+                _, _, new_balance = await get_org_credit_integration().get_user_org_credits(
+                    user_id=user_id,
+                    request_state=getattr(request, 'state', None) if hasattr(request, 'state') else None
+                )
+                new_balance = new_balance / 1000.0 if new_balance else 0.0
+            else:
+                new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
             actual_cost = 0.0
             logger.info(f"BYOK image generation for {user_id} - no credits charged")
         elif user_tier != 'free' or actual_cost > 0:
-            new_balance, transaction_id = await credit_system.debit_credits(
-                user_id=user_id,
-                amount=actual_cost,
-                metadata={
-                    'provider': provider_name,
-                    'model': model,
-                    'image_count': request.n,
-                    'size': request.size,
-                    'quality': request.quality,
-                    'cost': actual_cost
-                }
-            )
+            if org_id:
+                # Using organization billing
+                success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
+                    user_id=user_id,
+                    credits_used=actual_cost,
+                    service_name=f"image_generation_{model}",
+                    provider=provider_name,
+                    model=model,
+                    tokens_used=0,  # Not applicable for images
+                    power_level="standard",
+                    task_type="image_generation",
+                    request_id=None,
+                    org_id=org_id
+                )
+
+                if success:
+                    new_balance = remaining_credits / 1000.0 if remaining_credits else 0.0
+                    transaction_id = f"org-{used_org_id}-{user_id}"
+                    logger.info(f"Deducted {actual_cost:.2f} credits from org {used_org_id} for image generation")
+                else:
+                    logger.error(f"Failed to deduct org credits for image generation")
+                    raise HTTPException(status_code=500, detail="Failed to deduct credits")
+            else:
+                # Using individual credits
+                new_balance, transaction_id = await credit_system.debit_credits(
+                    user_id=user_id,
+                    amount=actual_cost,
+                    metadata={
+                        'provider': provider_name,
+                        'model': model,
+                        'image_count': request.n,
+                        'size': request.size,
+                        'quality': request.quality,
+                        'cost': actual_cost
+                    }
+                )
         else:
-            new_balance = await credit_system.get_user_credits(user_id)
+            if org_id:
+                _, _, new_balance = await get_org_credit_integration().get_user_org_credits(
+                    user_id=user_id,
+                    request_state=getattr(request, 'state', None) if hasattr(request, 'state') else None
+                )
+                new_balance = new_balance / 1000.0 if new_balance else 0.0
+            else:
+                new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
 
         # Track usage event
