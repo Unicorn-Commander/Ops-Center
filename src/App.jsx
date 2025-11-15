@@ -29,6 +29,9 @@ import { initTouchOptimizations } from './utils/touchOptimization';
 // Import Extensions Context Provider
 import { ExtensionsProvider } from './contexts/ExtensionsContext';
 
+// Eagerly load RootRedirect (needed on first render for root route)
+import RootRedirect from './components/RootRedirect';
+
 // Lazy load all pages (loaded on-demand when route is accessed)
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
 const Login = lazy(() => import('./pages/Login'));
@@ -114,6 +117,7 @@ const Extensions = lazy(() => import('./pages/Extensions'));
 const Logs = lazy(() => import('./pages/Logs'));
 const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
 const Settings = lazy(() => import('./pages/Settings'));
+const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const ForgejoManagement = lazy(() => import('./pages/admin/ForgejoManagement'));
 const InviteCodesManagement = lazy(() => import('./pages/admin/InviteCodesManagement'));
 const SystemBillingOverview = lazy(() => import('./pages/admin/SystemBillingOverview'));
@@ -271,8 +275,11 @@ function AppRoutes() {
     <>
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
-          {/* Landing Page - Protected, for authenticated users only */}
-          <Route path="/" element={
+          {/* Root Route - Smart redirect based on auth status and landing page mode */}
+          <Route path="/" element={<RootRedirect />} />
+
+          {/* User Landing Page - Authenticated users (search bar, apps, user dropdown) */}
+          <Route path="/dashboard" element={
             <ProtectedRoute>
               <PublicLanding />
             </ProtectedRoute>
@@ -280,7 +287,7 @@ function AppRoutes() {
 
           {/* Admin Login - NO SystemProvider */}
           <Route path="/admin/login" element={<Login />} />
-        
+
         {/* Admin Dashboard - Protected Routes WITH SystemProvider */}
         <Route path="/admin/*" element={
           <ProtectedRoute>
@@ -379,7 +386,7 @@ function AppRoutes() {
                   <Route path="system/authentication" element={<Authentication />} />
                   <Route path="system/extensions" element={<Extensions />} />
                   <Route path="system/landing" element={<LandingCustomization />} />
-                  <Route path="system/settings" element={<Settings />} />
+                  <Route path="system/settings" element={<SystemSettings />} />
                   <Route path="system/forgejo" element={<ForgejoManagement />} />
                   <Route path="system/invite-codes" element={<InviteCodesManagement />} />
 
