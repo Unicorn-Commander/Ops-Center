@@ -195,7 +195,8 @@ from metrics_collector import MetricsCollector
 from white_label_api import router as white_label_router
 
 # Landing Page Settings API (Phase 2)
-from landing_page_settings_api import router as landing_settings_router
+# TODO: Re-enable when landing_page_settings_api module is implemented
+# from landing_page_settings_api import router as landing_settings_router
 
 # Keycloak SSO integration
 try:
@@ -502,9 +503,10 @@ async def startup_event():
         logger.info("API Key Manager initialized successfully")
 
         # Initialize Landing Page Settings API (Phase 2)
-        from landing_page_settings_api import init_landing_settings
-        init_landing_settings(db_pool, redis_client)
-        logger.info("Landing Page Settings API initialized successfully")
+        # TODO: Re-enable when landing_page_settings_api module is implemented
+        # from landing_page_settings_api import init_landing_settings
+        # init_landing_settings(db_pool, redis_client)
+        # logger.info("Landing Page Settings API initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize credit system / BYOK / API keys: {e}")
         # Don't block startup, but credit-based features will fail
@@ -873,8 +875,9 @@ app.include_router(white_label_router)
 logger.info("White-Label Configuration API endpoints registered at /api/v1/admin/white-label")
 
 # Landing Page Settings API (Phase 2)
-app.include_router(landing_settings_router)
-logger.info("Landing Page Settings API endpoints registered at /api/v1/system/settings (public) and /api/v1/admin/settings (admin)")
+# TODO: Re-enable when landing_page_settings_api module is implemented
+# app.include_router(landing_settings_router)
+# logger.info("Landing Page Settings API endpoints registered at /api/v1/system/settings (public) and /api/v1/admin/settings (admin)")
 
 # Dynamic Pricing Management API
 from dynamic_pricing_api import router as dynamic_pricing_router
