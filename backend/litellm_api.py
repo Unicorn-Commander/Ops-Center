@@ -127,6 +127,78 @@ def detect_provider_from_model(model_name: str) -> str:
     return 'openrouter'
 
 
+# Model ID normalization mapping for OpenRouter
+# Maps short/abbreviated model names to full OpenRouter model IDs
+MODEL_ID_MAPPING = {
+    # Llama 3.3 variants
+    'llama-3.3-70b': 'meta-llama/llama-3.3-70b-instruct',
+    'llama-3.3-70b-instruct': 'meta-llama/llama-3.3-70b-instruct',
+    'llama-3.3': 'meta-llama/llama-3.3-70b-instruct',
+
+    # Llama 3.2 variants
+    'llama-3.2-90b': 'meta-llama/llama-3.2-90b-vision-instruct',
+    'llama-3.2-11b': 'meta-llama/llama-3.2-11b-vision-instruct',
+    'llama-3.2-3b': 'meta-llama/llama-3.2-3b-instruct',
+    'llama-3.2-1b': 'meta-llama/llama-3.2-1b-instruct',
+
+    # Llama 3.1 variants
+    'llama-3.1-405b': 'meta-llama/llama-3.1-405b-instruct',
+    'llama-3.1-70b': 'meta-llama/llama-3.1-70b-instruct',
+    'llama-3.1-8b': 'meta-llama/llama-3.1-8b-instruct',
+
+    # Llama 3 variants
+    'llama-3-70b': 'meta-llama/llama-3-70b-instruct',
+    'llama-3-8b': 'meta-llama/llama-3-8b-instruct',
+
+    # GPT variants (for compatibility)
+    'gpt-4': 'openai/gpt-4',
+    'gpt-4-turbo': 'openai/gpt-4-turbo',
+    'gpt-4o': 'openai/gpt-4o',
+    'gpt-3.5-turbo': 'openai/gpt-3.5-turbo',
+
+    # Claude variants
+    'claude-3-opus': 'anthropic/claude-3-opus',
+    'claude-3-sonnet': 'anthropic/claude-3-sonnet',
+    'claude-3.5-sonnet': 'anthropic/claude-3.5-sonnet',
+
+    # Mistral variants
+    'mistral-7b': 'mistralai/mistral-7b-instruct',
+    'mixtral-8x7b': 'mistralai/mixtral-8x7b-instruct',
+    'mixtral-8x22b': 'mistralai/mixtral-8x22b-instruct',
+}
+
+
+def normalize_model_id(model_name: str) -> str:
+    """
+    Normalize model ID to full OpenRouter format
+
+    Converts short model names (e.g., "llama-3.3-70b") to full OpenRouter IDs
+    (e.g., "meta-llama/llama-3.3-70b-instruct")
+
+    Args:
+        model_name: Short or full model identifier
+
+    Returns:
+        Full OpenRouter model ID
+    """
+    if not model_name:
+        return model_name
+
+    # Check if already in full format (contains provider prefix)
+    if '/' in model_name and not model_name.startswith('/'):
+        return model_name
+
+    # Check mapping for short names
+    model_lower = model_name.lower()
+    if model_lower in MODEL_ID_MAPPING:
+        normalized = MODEL_ID_MAPPING[model_lower]
+        logger.info(f"Normalized model ID: {model_name} → {normalized}")
+        return normalized
+
+    # Return as-is if no mapping found
+    return model_name
+
+
 # ============================================================================
 # Session-Based Authentication for Admin Endpoints
 # ============================================================================
@@ -571,8 +643,17 @@ async def get_user_id(
         }
 
         if token in service_keys:
-            logger.info(f"✅ Service key authenticated: {service_keys[token]}")
-            return service_keys[token]
+            service_name = service_keys[token]
+
+            # Check for X-User-ID header (service proxying on behalf of user)
+            x_user_id = request.headers.get('X-User-ID')
+            if x_user_id:
+                logger.info(f"✅ Service key authenticated: {service_name} proxying for user: {x_user_id}")
+                return x_user_id
+            else:
+                # No user context - return service name (for service-level operations)
+                logger.info(f"✅ Service key authenticated: {service_name} (no user context)")
+                return service_name
         else:
             logger.warning(f"❌ Unknown service key: {token[:20]}... (full length: {len(token)})")
             raise HTTPException(status_code=401, detail="Invalid service key")
@@ -701,8 +782,8 @@ async def chat_completions(
         estimated_tokens = sum(len(msg.content.split()) * 1.5 for msg in request.messages)
         estimated_tokens = int(estimated_tokens)
 
-        # Calculate estimated cost
-        estimated_cost = credit_system.calculate_cost(
+        # Calculate estimated cost (ASYNC NOW)
+        estimated_cost = await credit_system.calculate_cost(
             tokens_used=estimated_tokens,
             model=request.model or "balanced",
             power_level=power_level,
@@ -763,9 +844,11 @@ async def chat_completions(
             }
         }
 
-        # Add model if specified
+        # Add model if specified (normalize to full OpenRouter ID first)
         if request.model:
-            proxy_request["model"] = request.model
+            normalized_model = normalize_model_id(request.model)
+            proxy_request["model"] = normalized_model
+            logger.info(f"Using model: {normalized_model} (original: {request.model})")
 
         # Determine API endpoint and headers based on BYOK or system key
         if using_byok:
@@ -788,9 +871,6 @@ async def chat_completions(
         else:
             # Using system OpenRouter key (charge credits)
             logger.info(f"Using system OpenRouter key for {user_id}")
-
-            # Get system key manager
-            system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
 
             # Get provider info from database for direct API call
             async with credit_system.db_pool.acquire() as conn:
@@ -819,15 +899,37 @@ async def chat_completions(
                 provider_name = provider['name']
 
                 # Get system API key (prefer database over environment)
-                api_key = await system_key_manager.get_system_key(provider['id'])
+                api_key = None
+                try:
+                    # Try to use SystemKeyManager if encryption key is available
+                    system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+                    api_key = await system_key_manager.get_system_key(provider['id'])
+                except Exception as e:
+                    logger.warning(f"SystemKeyManager failed: {e}, falling back to direct decryption")
+                    api_key = None
                 if not api_key:
-                    # Fallback to old method (plain text in db)
-                    api_key = provider['api_key_encrypted']
-                    if not api_key:
+                    # Fallback: Try to decrypt the key directly
+                    encrypted_key = provider['api_key_encrypted']
+                    if not encrypted_key:
                         raise HTTPException(
                             status_code=503,
                             detail="No API key configured for system provider. Please configure in Platform Settings."
                         )
+
+                    try:
+                        # Try to decrypt if it looks like Fernet encrypted data
+                        if encrypted_key.startswith('gAAAAA'):
+                            from cryptography.fernet import Fernet
+                            cipher = Fernet(BYOK_ENCRYPTION_KEY.encode() if isinstance(BYOK_ENCRYPTION_KEY, str) else BYOK_ENCRYPTION_KEY)
+                            api_key = cipher.decrypt(encrypted_key.encode()).decode()
+                            logger.info("Successfully decrypted system API key from database")
+                        else:
+                            # Assume it's plain text
+                            api_key = encrypted_key
+                            logger.info("Using plain text API key from database")
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt API key, trying as plain text: {e}")
+                        api_key = encrypted_key
 
             # Build headers for OpenRouter
             headers = {
@@ -838,29 +940,222 @@ async def chat_completions(
             }
 
         # Call provider API directly
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                json=proxy_request,
-                headers=headers
+        # Handle streaming vs non-streaming requests differently
+        if request.stream:
+            # STREAMING PATH: Return Server-Sent Events (SSE)
+            logger.info(f"Streaming request for user {user_id}, model: {request.model}")
+
+            async def stream_generator():
+                """
+                Generator that forwards SSE events from OpenRouter to client.
+
+                CRITICAL: Each yield must be followed by await asyncio.sleep(0) to force
+                FastAPI to send buffered chunks immediately. Without this, clients receive
+                zero bytes until stream completes.
+                """
+                import asyncio  # Import here for sleep(0) flush
+                total_tokens = 0
+                provider_used = request.model or "unknown"
+                chunks_received = 0
+
+                # Send an initial comment to keep connection alive and force headers
+                yield ": ping\n\n"
+                await asyncio.sleep(0)
+
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        async with client.stream(
+                            'POST',
+                            f"{base_url}/chat/completions",
+                            json=proxy_request,
+                            headers=headers
+                        ) as response:
+                            if response.status_code != 200:
+                                error_text = await response.aread()
+                                logger.error(f"OpenRouter streaming error: {error_text.decode()}")
+                                error_data = {
+                                    "error": {
+                                        "message": f"LLM provider error: {error_text.decode()}",
+                                        "type": "api_error",
+                                        "code": response.status_code
+                                    }
+                                }
+                                yield f"data: {json.dumps(error_data)}\n\n"
+                                await asyncio.sleep(0)  # Force flush
+                                return
+
+                            # Stream SSE events from provider
+                            async for line in response.aiter_lines():
+                                if not line:
+                                    continue
+
+                                if line.startswith('data: '):
+                                    data_str = line[6:]  # Remove 'data: ' prefix
+
+                                    # Check for completion marker
+                                    if data_str.strip() == '[DONE]':
+                                        logger.info(f"Streaming complete: {chunks_received} chunks, ~{total_tokens} tokens")
+                                        yield f"data: [DONE]\n\n"
+                                        await asyncio.sleep(0)  # Force flush
+                                        break
+
+                                    # Parse and forward chunk
+                                    try:
+                                        chunk = json.loads(data_str)
+                                        chunks_received += 1
+
+                                        # Extract usage tokens from final chunk (if present)
+                                        if 'usage' in chunk:
+                                            usage = chunk['usage']
+                                            total_tokens = usage.get('total_tokens', 0)
+                                            logger.info(f"Received usage data: {total_tokens} tokens")
+
+                                        # Extract model info if present
+                                        if 'model' in chunk and chunk['model']:
+                                            provider_used = chunk['model']
+
+                                        # Forward chunk to client
+                                        yield f"data: {data_str}\n\n"
+
+                                        # CRITICAL FIX: Force flush by yielding to event loop
+                                        # This ensures FastAPI sends buffered data immediately
+                                        # Without this, chunks are buffered and client receives nothing
+                                        await asyncio.sleep(0)
+
+                                    except json.JSONDecodeError as e:
+                                        logger.warning(f"Failed to parse SSE chunk: {e}, data: {data_str[:100]}")
+                                        continue
+
+                    # After streaming completes, deduct credits
+                    if not using_byok and (user_tier != 'free' or total_tokens > 0):
+                        # Use actual tokens if available, otherwise estimate
+                        tokens_for_billing = total_tokens if total_tokens > 0 else estimated_tokens
+
+                        # Calculate actual cost (ASYNC NOW)
+                        actual_cost = await credit_system.calculate_cost(
+                            tokens_used=tokens_for_billing,
+                            model=provider_used,
+                            power_level=power_level,
+                            user_tier=user_tier
+                        )
+
+                        # Deduct credits
+                        if org_id:
+                            # Organization billing
+                            success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
+                                user_id=user_id,
+                                credits_used=actual_cost,
+                                service_name=provider_used,
+                                provider=provider_used,
+                                model=request.model,
+                                tokens_used=tokens_for_billing,
+                                power_level=power_level,
+                                task_type=request.task_type,
+                                request_id=None,
+                                org_id=org_id
+                            )
+                            if success:
+                                logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
+                        else:
+                            # Individual billing
+                            await credit_system.debit_credits(
+                                user_id=user_id,
+                                amount=actual_cost,
+                                metadata={
+                                    'provider': provider_used,
+                                    'model': provider_used,
+                                    'tokens_used': tokens_for_billing,
+                                    'power_level': power_level,
+                                    'task_type': request.task_type,
+                                    'cost': actual_cost,
+                                    'streaming': True
+                                }
+                            )
+                            logger.info(f"Deducted {actual_cost:.6f} credits from user {user_id} for streaming request")
+
+                        # Track usage event
+                        try:
+                            from decimal import Decimal
+                            await usage_meter.track_usage(
+                                user_id=user_id,
+                                service="litellm",
+                                model=provider_used,
+                                tokens=tokens_for_billing,
+                                cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
+                                is_free=False,
+                                metadata={
+                                    'power_level': power_level,
+                                    'task_type': request.task_type,
+                                    'streaming': True
+                                }
+                            )
+                        except Exception as usage_error:
+                            logger.error(f"Failed to track streaming usage: {usage_error}")
+
+                except Exception as stream_error:
+                    logger.error(f"Streaming error: {stream_error}", exc_info=True)
+                    error_data = {
+                        "error": {
+                            "message": f"Streaming error: {str(stream_error)}",
+                            "type": "internal_error"
+                        }
+                    }
+                    yield f"data: {json.dumps(error_data)}\n\n"
+
+            # Return streaming response with aggressive anti-buffering headers
+            return StreamingResponse(
+                stream_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "X-Accel-Buffering": "no",  # Disable nginx buffering
+                    "Connection": "keep-alive",  # Keep connection open
+                    "Transfer-Encoding": "chunked",  # Force chunked encoding
+                    "Pragma": "no-cache",  # HTTP/1.0 compatibility
+                    "Expires": "0"  # Prevent caching
+                }
             )
 
-            if response.status_code != 200:
-                logger.error(f"OpenRouter API error: {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"LLM provider error: {response.text}"
+        else:
+            # NON-STREAMING PATH: Return complete JSON response
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    json=proxy_request,
+                    headers=headers
                 )
 
-            response_data = response.json()
+                if response.status_code != 200:
+                    logger.error(f"OpenRouter API error: {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"LLM provider error: {response.text}"
+                    )
 
-        # Extract usage information
+                # Log response details for debugging
+                logger.info(f"OpenRouter response status: {response.status_code}")
+                logger.info(f"OpenRouter response headers: {dict(response.headers)}")
+                logger.info(f"OpenRouter response content length: {len(response.content)} bytes")
+                logger.info(f"OpenRouter response text preview: {response.text[:500]}")
+
+                # Try to parse JSON with better error handling
+                try:
+                    response_data = response.json()
+                except Exception as json_error:
+                    logger.error(f"Failed to parse OpenRouter response as JSON: {json_error}")
+                    logger.error(f"Raw response text: {response.text}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Invalid response from LLM provider: {str(json_error)}"
+                    )
+
+        # Extract usage information (non-streaming only)
         usage = response_data.get('usage', {})
         tokens_used = usage.get('total_tokens', estimated_tokens)
         provider_used = response_data.get('model', 'unknown')
 
-        # Calculate actual cost
-        actual_cost = credit_system.calculate_cost(
+        # Calculate actual cost (ASYNC NOW)
+        actual_cost = await credit_system.calculate_cost(
             tokens_used=tokens_used,
             model=provider_used,
             power_level=power_level,
@@ -934,12 +1229,13 @@ async def chat_completions(
 
         # Track usage event (Epic 1.8: Usage Metering)
         try:
+            from decimal import Decimal
             await usage_meter.track_usage(
                 user_id=user_id,
                 service="litellm",
                 model=provider_used,
                 tokens=tokens_used,
-                cost=actual_cost,
+                cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
                 is_free=(user_tier == 'free' and actual_cost == 0),
                 metadata={
                     'power_level': power_level,
@@ -1327,12 +1623,13 @@ async def generate_image(
 
         # Track usage event
         try:
+            from decimal import Decimal
             await usage_meter.track_usage(
                 user_id=user_id,
                 service="image_generation",
                 model=model,
                 tokens=0,
-                cost=actual_cost,
+                cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
                 is_free=(user_tier == 'free' and actual_cost == 0),
                 metadata={
                     'image_count': request.n,
@@ -1547,10 +1844,68 @@ async def list_models(
         raise HTTPException(status_code=500, detail="Failed to list models")
 
 
+def get_model_pricing(model_id: str, model_info: dict, tier_markup: float) -> dict:
+    """
+    Calculate model pricing with tier-based markup
+
+    Args:
+        model_id: Model identifier
+        model_info: Model metadata including pricing
+        tier_markup: Tier markup percentage (0-100)
+
+    Returns:
+        Dict with: credits_per_1k_input, credits_per_1k_output, tier_markup, display
+    """
+    try:
+        logger.info(f"[PRICING DEBUG] Calculating for {model_id}, markup: {tier_markup}%")
+
+        # Get base costs from OpenRouter pricing data (already per-token)
+        pricing_data = model_info.get('pricing', {})
+        logger.info(f"[PRICING DEBUG] pricing_data: {pricing_data}")
+
+        # Base cost is per-token, we want per-1K tokens
+        base_input_cost = float(pricing_data.get('prompt', 0)) * 1000
+        base_output_cost = float(pricing_data.get('completion', 0)) * 1000
+
+        # If no pricing data, check model_info for pre-calculated values
+        if base_input_cost == 0 and base_output_cost == 0:
+            base_input_cost = float(model_info.get('cost_per_1m_input', 0)) / 1000  # Convert 1M to 1K
+            base_output_cost = float(model_info.get('cost_per_1m_output', 0)) / 1000
+            logger.info(f"[PRICING DEBUG] Using cost_per_1m: input={base_input_cost}, output={base_output_cost}")
+
+        # Apply tier markup: final_cost = base_cost * (1 + markup/100)
+        markup_multiplier = 1 + (tier_markup / 100)
+        final_input_cost = base_input_cost * markup_multiplier
+        final_output_cost = base_output_cost * markup_multiplier
+
+        # Convert to credits (1 credit = $0.001)
+        credits_per_1k_input = final_input_cost * 1000  # Convert dollars to credits
+        credits_per_1k_output = final_output_cost * 1000
+
+        result = {
+            'credits_per_1k_input': round(credits_per_1k_input, 4),
+            'credits_per_1k_output': round(credits_per_1k_output, 4),
+            'tier_markup': tier_markup,
+            'display': f"{round(credits_per_1k_input, 2)}/{round(credits_per_1k_output, 2)} credits per 1K tokens"
+        }
+        logger.info(f"[PRICING DEBUG] Result: {result}")
+        return result
+
+    except (ValueError, TypeError, KeyError) as e:
+        logger.warning(f"Failed to calculate pricing for {model_id}: {e}")
+        return {
+            'credits_per_1k_input': 0,
+            'credits_per_1k_output': 0,
+            'tier_markup': tier_markup,
+            'display': 'Pricing unavailable'
+        }
+
+
 @router.get("/models/categorized")
 async def list_models_categorized(
     user_id: str = Depends(get_user_id),
-    byok_manager: BYOKManager = Depends(get_byok_manager)
+    byok_manager: BYOKManager = Depends(get_byok_manager),
+    credit_system: CreditSystem = Depends(get_credit_system)
 ):
     """
     List models categorized by access method (BYOK vs Platform)
@@ -1566,6 +1921,24 @@ async def list_models_categorized(
         }
     """
     try:
+        # Get user's tier and tier markup percentage
+        user_tier = await credit_system.get_user_tier(user_id)
+
+        # Fetch tier markup from database
+        tier_markup = 0.0
+        try:
+            async with credit_system.db_pool.acquire() as conn:
+                tier_result = await conn.fetchrow(
+                    "SELECT llm_markup_percentage FROM subscription_tiers WHERE tier_code = $1",
+                    user_tier
+                )
+                if tier_result:
+                    tier_markup = float(tier_result['llm_markup_percentage'])
+                    logger.info(f"User {user_id} tier {user_tier} has markup {tier_markup}%")
+        except Exception as e:
+            logger.warning(f"Failed to fetch tier markup for {user_tier}: {e}")
+            tier_markup = 0.0
+
         # Get user's BYOK providers
         byok_providers_list = await byok_manager.list_user_providers(user_id)
         byok_provider_names = {p['provider'].lower() for p in byok_providers_list if p.get('enabled')}
@@ -1574,6 +1947,9 @@ async def list_models_categorized(
         import httpx
         litellm_url = os.getenv("LITELLM_PROXY_URL", "http://uchub-litellm:4000")
         litellm_key = os.getenv("LITELLM_MASTER_KEY", "REMOVED")
+
+        # Get OpenRouter API key for pricing data
+        openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             # Fetch base model list from LiteLLM
@@ -1589,7 +1965,7 @@ async def list_models_categorized(
             try:
                 or_response = await client.get(
                     "https://openrouter.ai/api/v1/models",
-                    headers={"Authorization": f"Bearer {litellm_key}"},
+                    headers={"Authorization": f"Bearer {openrouter_key}"},  # FIXED: Use correct OpenRouter key
                     timeout=10.0
                 )
                 if or_response.status_code == 200:
@@ -1692,6 +2068,14 @@ async def list_models_categorized(
                         'instruct_type': arch.get('instruct_type', '')
                     }
 
+            # Add tier-based pricing for platform models
+            if model_info.get('pricing') or model_info.get('cost_per_1m_input'):
+                tier_pricing = get_model_pricing(model_id, model_info, tier_markup)
+                model_info['tier_pricing'] = tier_pricing
+                logger.info(f"[PRICING DEBUG] Model {model_id} has tier_pricing: {tier_pricing}")
+            else:
+                logger.info(f"[PRICING DEBUG] Model {model_id} missing pricing data: pricing={model_info.get('pricing')}, cost_per_1m_input={model_info.get('cost_per_1m_input')}")
+
             provider_models[provider].append(model_info)
 
         # Categorize by BYOK vs Platform
@@ -1725,7 +2109,8 @@ async def list_models_categorized(
                 'provider': provider_display,
                 'provider_type': provider_key,
                 'models': models_list,
-                'count': len(models_list)
+                'count': len(models_list),
+                'tier_markup': tier_markup  # Add tier markup percentage
             }
 
             if is_byok:
@@ -1734,7 +2119,7 @@ async def list_models_categorized(
                 provider_info['source'] = 'byok'
                 byok_models.append(provider_info)
             else:
-                provider_info['note'] = f"Charged with credits from your account"
+                provider_info['note'] = f"Charged with credits from your account (tier markup: {tier_markup}%)"
                 provider_info['source'] = 'platform'
                 platform_models.append(provider_info)
 

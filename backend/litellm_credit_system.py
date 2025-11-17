@@ -264,6 +264,57 @@ class CreditSystem:
             # Invalidate cache
             await self.redis.delete(f"credits:balance:{user_id}")
 
+            # NEW: Send metering event to Lago (non-blocking)
+            try:
+                from lago_integration import record_api_call
+
+                # Get user's org_id from metadata or database
+                org_id = metadata.get('org_id')
+
+                if not org_id:
+                    # Query database to get org_id for user
+                    async with self.db_pool.acquire() as conn_org:
+                        org_result = await conn_org.fetchrow(
+                            """
+                            SELECT org_id
+                            FROM organization_members
+                            WHERE user_id = $1
+                            LIMIT 1
+                            """,
+                            user_id
+                        )
+                        if org_result:
+                            org_id = str(org_result['org_id'])
+
+                if org_id:
+                    # Build properties with cost information
+                    properties = {
+                        "endpoint": metadata.get('endpoint', '/api/v1/llm/chat/completions'),
+                        "user_id": user_id,
+                        "tokens": metadata.get('tokens_used', 0),
+                        "cost": float(amount),  # Cost in credits
+                    }
+                    if metadata.get('model'):
+                        properties["model"] = metadata.get('model')
+                    if metadata.get('provider'):
+                        properties["provider"] = metadata.get('provider')
+
+                    # Send usage event to Lago using record_usage (more flexible than record_api_call)
+                    from lago_integration import record_usage
+                    await record_usage(
+                        org_id=org_id,
+                        event_code="api_call",
+                        transaction_id=str(transaction_id),
+                        properties=properties
+                    )
+                    logger.info(f"✓ Sent Lago metering event for org {org_id}: {amount} credits, {metadata.get('tokens_used', 0)} tokens, model: {metadata.get('model', 'unknown')}")
+                else:
+                    logger.warning(f"No org_id found for user {user_id}, skipping Lago event")
+
+            except Exception as e:
+                # Non-blocking: Don't fail credit deduction if Lago is down
+                logger.warning(f"Failed to record Lago event (non-blocking): {e}")
+
             logger.info(f"Debited {amount} credits from {user_id}. New balance: {new_balance}")
             return new_balance, str(transaction_id)
 
@@ -387,21 +438,21 @@ class CreditSystem:
             logger.error(f"Error retrieving credit history: {e}")
             return []
 
-    def calculate_cost(
+    async def calculate_cost(
         self,
         tokens_used: int,
         model: str,
         power_level: str = "balanced",
-        user_tier: str = "free"
+        user_tier: str = "vip_founder"
     ) -> float:
         """
-        Calculate cost for LLM request
+        Calculate cost for LLM request - NOW ASYNC WITH DB LOOKUP
 
         Args:
             tokens_used: Total tokens (prompt + completion)
             model: Model identifier
             power_level: User's selected power level (eco, balanced, precision)
-            user_tier: User's subscription tier
+            user_tier: User's subscription tier (vip_founder, byok, managed)
 
         Returns:
             Cost in credits (float)
@@ -422,8 +473,28 @@ class CreditSystem:
             power_config = POWER_LEVELS.get(power_level, POWER_LEVELS["balanced"])
             cost_with_power = base_cost * power_config["cost_multiplier"]
 
+            # FETCH TIER MARKUP FROM DATABASE instead of hardcoded
+            tier_markup_pct = 0.0
+            try:
+                async with self.db_pool.acquire() as conn:
+                    result = await conn.fetchrow(
+                        "SELECT llm_markup_percentage FROM subscription_tiers WHERE tier_code = $1",
+                        user_tier
+                    )
+                    if result:
+                        tier_markup_pct = float(result['llm_markup_percentage'])
+                        logger.info(f"Tier {user_tier} markup from DB: {tier_markup_pct}%")
+                    else:
+                        logger.warning(f"No tier found for '{user_tier}' in database, using fallback")
+                        # Fallback to hardcoded values only if DB lookup fails
+                        tier_markup_pct = TIER_MARKUP.get(user_tier, 0) * 100
+            except Exception as db_err:
+                logger.error(f"Failed to fetch tier markup from database: {db_err}, using fallback")
+                # Fallback to hardcoded values
+                tier_markup_pct = TIER_MARKUP.get(user_tier, 0) * 100
+
             # Apply tier markup
-            tier_multiplier = 1 + TIER_MARKUP.get(user_tier, 0)
+            tier_multiplier = 1 + (tier_markup_pct / 100)
             final_cost = cost_with_power * tier_multiplier
 
             # Round to 6 decimal places
@@ -509,7 +580,8 @@ class CreditSystem:
                     result['last_reset'] or datetime.utcnow() - timedelta(days=30)
                 )
 
-                return (monthly_spending + amount) <= result['monthly_cap']
+                # FIX: Convert Decimal to float for comparison
+                return (float(monthly_spending) + amount) <= float(result['monthly_cap'])
 
         except Exception as e:
             logger.error(f"Error checking monthly cap: {e}")
