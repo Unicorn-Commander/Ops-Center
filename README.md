@@ -29,7 +29,35 @@ Ops-Center is the **AWS Console equivalent** for UC-Cloud - a comprehensive admi
 - 🔧 **API Key Management** - User API key generation with bcrypt hashing
 - 👤 **User Impersonation** - Admin "login as user" capability with 24hr sessions
 
-### Recent Updates (v2.3.0)
+### Recent Updates
+
+#### November 17, 2025 - Billing Chain Integration ✅
+**Status**: 🟢 PRODUCTION READY - All components operational
+
+Complete integration of Lago billing system with LLM credit tracking:
+
+- ✅ **Database-Driven Pricing**: Credit costs calculated from `subscription_tiers.llm_markup_percentage`
+  - No more hardcoded tier markup values
+  - Admins adjust pricing via database without code deployment
+  - Current values: VIP Founder (0%), BYOK (10%), Managed (25%)
+
+- ✅ **Lago Metering Events**: Automatic usage events sent to Lago after every credit deduction
+  - Non-blocking design (failures don't block users)
+  - Enables accurate month-end invoicing
+  - Tracks org_id, model, tokens, cost, transaction_id
+
+- ✅ **OpenRouter Pricing Integration**: 1,000+ models now have pricing data
+  - Fixed authentication using correct `OPENROUTER_API_KEY`
+  - Pricing available in `/api/v1/llm/models/categorized` endpoint
+  - Display format: "5.5/11.0 credits per 1K tokens"
+
+**Integration Benefits**:
+- **For Users**: Transparent pricing, accurate billing, detailed invoices
+- **For Admins**: Dynamic pricing, usage analytics, automated invoicing
+
+**Documentation**: `/tmp/BILLING_CHAIN_FIX_COMPLETE.md` (1,500+ lines)
+
+#### v2.3.0 - Feature → App Refactoring
 - 🔄 **Feature → App Refactoring**: Renamed all "feature" terminology to "app" for clarity
   - Eliminates confusion between tier properties and user-facing applications
   - Backward-compatible views maintain old API endpoints during transition
