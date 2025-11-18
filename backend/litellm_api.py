@@ -175,6 +175,9 @@ def normalize_model_id(model_name: str) -> str:
     Converts short model names (e.g., "llama-3.3-70b") to full OpenRouter IDs
     (e.g., "meta-llama/llama-3.3-70b-instruct")
 
+    Also strips incorrect "openai/" prefix added by @ai-sdk/openai when using custom baseURL.
+    For example: "openai/openrouter/deepseek/deepseek-coder" → "openrouter/deepseek/deepseek-coder"
+
     Args:
         model_name: Short or full model identifier
 
@@ -183,6 +186,17 @@ def normalize_model_id(model_name: str) -> str:
     """
     if not model_name:
         return model_name
+
+    # Strip incorrect "openai/" prefix added by @ai-sdk/openai SDK
+    # This happens when bolt.diy uses createOpenAI() with a custom baseURL
+    # The SDK prepends "openai/" even though we're using OpenRouter API
+    # Examples: "openai/openrouter/deepseek/deepseek-coder" → "openrouter/deepseek/deepseek-coder"
+    #           "openai/deepseek/deepseek-chat" → "deepseek/deepseek-chat"
+    if model_name.startswith('openai/') and model_name.count('/') >= 2:
+        # Only strip if it looks like: openai/provider/model or openai/provider/subprovider/model
+        cleaned = model_name[7:]  # Remove "openai/" prefix (7 chars)
+        logger.info(f"Stripped incorrect openai/ prefix: {model_name} → {cleaned}")
+        return cleaned
 
     # Check if already in full format (contains provider prefix)
     if '/' in model_name and not model_name.startswith('/'):
