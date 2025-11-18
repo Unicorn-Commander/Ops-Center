@@ -99,7 +99,9 @@ async def get_current_user_tier(request: Request) -> str:
             tier = user.get("subscription_tier") or user.get("tier")
 
         # If tier not set or invalid, default to managed
-        if not tier or tier not in ['vip_founder', 'byok', 'managed']:
+        # Valid tiers: vip_founder, byok, managed, founder-friend, trial, starter, professional, enterprise
+        valid_tiers = ['vip_founder', 'byok', 'managed', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise']
+        if not tier or tier not in valid_tiers:
             tier = 'managed'
 
         return tier
@@ -141,13 +143,13 @@ async def get_user_tier_features(user_tier: str, conn) -> set:
 
     tier_id = tier_row['id']
 
-    # Get all enabled apps for this tier
-    app_rows = await conn.fetch(
-        "SELECT app_key FROM tier_apps WHERE tier_id = $1 AND enabled = TRUE",
+    # Get all enabled features for this tier from tier_features table
+    feature_rows = await conn.fetch(
+        "SELECT feature_key FROM tier_features WHERE tier_id = $1 AND enabled = TRUE",
         tier_id
     )
 
-    return {row['app_key'] for row in app_rows}
+    return {row['feature_key'] for row in feature_rows}
 
 
 # =============================================================================
@@ -174,7 +176,7 @@ async def get_my_apps(user_tier: str = Depends(get_current_user_tier)):
         # Get all active apps
         apps_query = """
             SELECT id, name, slug, description, icon_url, launch_url,
-                   category, feature_key, base_price
+                   category, feature_key, base_price, features
             FROM add_ons
             WHERE is_active = TRUE
             ORDER BY sort_order, name
@@ -214,7 +216,8 @@ async def get_my_apps(user_tier: str = Depends(get_current_user_tier)):
                 'launch_url': app_dict['launch_url'],
                 'category': app_dict['category'] or 'general',
                 'feature_key': feature_key,
-                'access_type': access_type
+                'access_type': access_type,
+                'features': app_dict.get('features') or {}
             })
 
         return authorized_apps

@@ -267,6 +267,25 @@ export default function AppsMarketplace() {
       featured: true
     },
     {
+      id: 'forgejo',
+      name: 'Forgejo Git Server',
+      category: 'tools',
+      base_price: 0,
+      description: 'Self-hosted Git server with GitHub-like features - repositories, issues, pull requests, and wikis',
+      features: [
+        'Unlimited repositories',
+        'Pull requests & code review',
+        'Issues & project tracking',
+        'Git LFS support',
+        'CI/CD with Actions',
+        'SSO integration'
+      ],
+      icon: ServerIcon,
+      gradient: 'from-orange-500 to-red-500',
+      featured: false,
+      access_url: 'https://git.unicorncommander.ai'
+    },
+    {
       id: 'analytics',
       name: 'Advanced Analytics',
       category: 'analytics',
@@ -294,20 +313,56 @@ export default function AppsMarketplace() {
   const loadServices = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/apps/marketplace', { credentials: 'include' });
-      // const data = await response.json();
-      // setServices(data.apps);
+      // Call tier-filtered apps API
+      const response = await fetch('/api/v1/my-apps/authorized', { credentials: 'include' });
 
-      // Mock data for now
-      setServices(MOCK_SERVICES);
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Transform API response to match MOCK_SERVICES structure
+      const transformedServices = data.map(app => {
+        // Convert features object to array of strings
+        const featuresList = app.features && typeof app.features === 'object'
+          ? Object.values(app.features).filter(f => typeof f === 'string')
+          : [];
+
+        return {
+          id: app.slug,
+          name: app.name,
+          category: app.category,
+          base_price: 0,  // API doesn't return base_price for tier-included apps
+          description: app.description,
+          features: featuresList,
+          icon: ServerIcon,  // Default icon, could map based on category/slug
+          gradient: getCategoryGradient(app.category),
+          featured: app.access_type === 'tier_included',
+          access_url: app.launch_url
+        };
+      });
+
+      setServices(transformedServices);
     } catch (error) {
       console.error('Failed to load apps:', error);
-      toast.error('Failed to load apps');
-      setServices(MOCK_SERVICES); // Fallback
+      toast.error('Failed to load apps - using fallback');
+      setServices(MOCK_SERVICES); // Fallback to mock data
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper function to map category to gradient colors
+  const getCategoryGradient = (category) => {
+    const gradients = {
+      'ai': 'from-blue-500 to-cyan-500',
+      'tools': 'from-purple-500 to-indigo-500',
+      'analytics': 'from-violet-500 to-purple-500',
+      'communication': 'from-pink-500 to-rose-500',
+      'storage': 'from-emerald-500 to-green-500'
+    };
+    return gradients[category] || 'from-gray-500 to-gray-600';
   };
 
   const loadCurrentUser = async () => {
