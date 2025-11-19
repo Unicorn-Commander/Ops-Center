@@ -19,7 +19,7 @@ from datetime import datetime
 import json
 import httpx
 
-from fastapi import APIRouter, HTTPException, Header, Request, Depends
+from fastapi import APIRouter, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import stripe
@@ -165,6 +165,21 @@ MODEL_ID_MAPPING = {
     'mistral-7b': 'mistralai/mistral-7b-instruct',
     'mixtral-8x7b': 'mistralai/mixtral-8x7b-instruct',
     'mixtral-8x22b': 'mistralai/mixtral-8x22b-instruct',
+
+    # DeepSeek variants (note: deepseek-coder doesn't exist, redirect to chat)
+    'deepseek-coder': 'deepseek/deepseek-chat-v3.1',
+    'deepseek/deepseek-coder': 'deepseek/deepseek-chat-v3.1',
+    'deepseek-chat': 'deepseek/deepseek-chat-v3.1',
+    'deepseek/deepseek-chat': 'deepseek/deepseek-chat-v3.1',
+    'deepseek-r1': 'deepseek/deepseek-r1-0528',
+    'deepseek/deepseek-r1': 'deepseek/deepseek-r1-0528',
+
+    # Qwen variants
+    'qwen3-coder': 'qwen/qwen3-coder',
+    'qwen/qwen3-coder': 'qwen/qwen3-coder',
+    'qwen-2.5-coder': 'qwen/qwen-2.5-coder-32b-instruct',
+    'qwen-2.5-72b': 'qwen/qwen-2.5-72b-instruct',
+    'qwen-2-72b': 'qwen/qwen-2-72b-instruct',
 }
 
 
@@ -175,8 +190,14 @@ def normalize_model_id(model_name: str) -> str:
     Converts short model names (e.g., "llama-3.3-70b") to full OpenRouter IDs
     (e.g., "meta-llama/llama-3.3-70b-instruct")
 
-    Also strips incorrect "openai/" prefix added by @ai-sdk/openai when using custom baseURL.
-    For example: "openai/openrouter/deepseek/deepseek-coder" → "openrouter/deepseek/deepseek-coder"
+    Also strips incorrect SDK-added prefixes when using custom baseURL.
+    Various AI SDKs (@ai-sdk/openai, @ai-sdk/ai21, etc.) prepend their provider name
+    even when routing through OpenRouter.
+
+    Examples:
+      - "openai/openrouter/deepseek/deepseek-coder" → "deepseek/deepseek-coder"
+      - "ai21/openrouter/qwen/qwen3-coder" → "qwen/qwen3-coder"
+      - "openai/deepseek/deepseek-chat" → "deepseek/deepseek-chat"
 
     Args:
         model_name: Short or full model identifier
@@ -187,16 +208,31 @@ def normalize_model_id(model_name: str) -> str:
     if not model_name:
         return model_name
 
-    # Strip incorrect "openai/" prefix added by @ai-sdk/openai SDK
-    # This happens when bolt.diy uses createOpenAI() with a custom baseURL
-    # The SDK prepends "openai/" even though we're using OpenRouter API
-    # Examples: "openai/openrouter/deepseek/deepseek-coder" → "openrouter/deepseek/deepseek-coder"
-    #           "openai/deepseek/deepseek-chat" → "deepseek/deepseek-chat"
-    if model_name.startswith('openai/') and model_name.count('/') >= 2:
-        # Only strip if it looks like: openai/provider/model or openai/provider/subprovider/model
-        cleaned = model_name[7:]  # Remove "openai/" prefix (7 chars)
-        logger.info(f"Stripped incorrect openai/ prefix: {model_name} → {cleaned}")
-        return cleaned
+    original_name = model_name
+
+    # List of SDK prefixes that should be stripped
+    # These are added by various AI SDKs when using custom baseURL
+    sdk_prefixes = ['openai/', 'ai21/', 'anthropic/', 'cohere/', 'google/', 'mistral/']
+
+    # Strip SDK-added provider prefix if present
+    for prefix in sdk_prefixes:
+        if model_name.startswith(prefix) and model_name.count('/') >= 2:
+            # Only strip if it looks like: sdk/provider/model or sdk/openrouter/provider/model
+            model_name = model_name[len(prefix):]
+            logger.info(f"Stripped SDK prefix '{prefix}': {original_name} → {model_name}")
+            break
+
+    # Now check if there's a redundant "openrouter/" prefix
+    # This happens when the model ID is like "openrouter/qwen/qwen3-coder"
+    # but it should just be "qwen/qwen3-coder" for the OpenRouter API
+    if model_name.startswith('openrouter/') and model_name.count('/') >= 2:
+        cleaned = model_name[11:]  # Remove "openrouter/" prefix (11 chars)
+        logger.info(f"Stripped redundant openrouter/ prefix: {model_name} → {cleaned}")
+        model_name = cleaned
+
+    # If we made any changes, return the cleaned version
+    if model_name != original_name:
+        return model_name
 
     # Check if already in full format (contains provider prefix)
     if '/' in model_name and not model_name.startswith('/'):
@@ -1803,6 +1839,255 @@ async def get_credit_history(
 # ============================================================================
 # Model & Usage Endpoints
 # ============================================================================
+
+# Curated models list - best FREE models from OpenRouter (updated Nov 2025)
+CURATED_MODELS = [
+    # Coding specialists
+    {
+        'id': 'qwen/qwen3-coder:free',
+        'object': 'model',
+        'name': 'Qwen3 Coder (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 262144,
+        'category': 'coding',
+        'description': 'Best FREE coding model - 262K context, 480B params, excellent for development',
+        'free': True
+    },
+    {
+        'id': 'deepseek/deepseek-r1:free',
+        'object': 'model',
+        'name': 'DeepSeek R1 (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 163840,
+        'category': 'reasoning',
+        'description': 'FREE reasoning model with chain-of-thought - great for coding and analysis',
+        'free': True
+    },
+    # General purpose - fast
+    {
+        'id': 'google/gemini-2.0-flash-exp:free',
+        'object': 'model',
+        'name': 'Gemini 2.0 Flash (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 1048576,
+        'category': 'general',
+        'description': 'Ultra-fast with 1M context window - best for large documents',
+        'free': True
+    },
+    {
+        'id': 'mistralai/mistral-small-3.2-24b-instruct:free',
+        'object': 'model',
+        'name': 'Mistral Small 3.2 (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 131072,
+        'category': 'fast',
+        'description': 'Fast and efficient - 128K context, great for quick tasks',
+        'free': True
+    },
+    # Large models
+    {
+        'id': 'meta-llama/llama-3.3-70b-instruct:free',
+        'object': 'model',
+        'name': 'Llama 3.3 70B (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 131072,
+        'category': 'general',
+        'description': 'Meta\'s flagship 70B model - excellent quality, 128K context',
+        'free': True
+    },
+    {
+        'id': 'nousresearch/hermes-3-llama-3.1-405b:free',
+        'object': 'model',
+        'name': 'Hermes 3 405B (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 131072,
+        'category': 'general',
+        'description': 'Massive 405B model - best quality for complex tasks',
+        'free': True
+    },
+    # Specialized
+    {
+        'id': 'deepseek/deepseek-chat-v3.1',
+        'object': 'model',
+        'name': 'DeepSeek Chat v3.1',
+        'provider': 'OpenRouter',
+        'context_length': 131072,
+        'category': 'general',
+        'description': 'DeepSeek\'s latest chat model - excellent for presentations and content',
+        'free': False
+    },
+    {
+        'id': 'nvidia/nemotron-nano-9b-v2:free',
+        'object': 'model',
+        'name': 'NVIDIA Nemotron Nano (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 128000,
+        'category': 'fast',
+        'description': 'NVIDIA\'s efficient 9B model - fast inference',
+        'free': True
+    },
+    {
+        'id': 'google/gemini-2.5-pro-exp-03-25:free',
+        'object': 'model',
+        'name': 'Gemini 2.5 Pro (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 1048576,
+        'category': 'general',
+        'description': 'Google\'s most capable model - 1M context, multi-modal',
+        'free': True
+    },
+    {
+        'id': 'anthropic/claude-3.5-haiku:free',
+        'object': 'model',
+        'name': 'Claude 3.5 Haiku (FREE)',
+        'provider': 'OpenRouter',
+        'context_length': 200000,
+        'category': 'fast',
+        'description': 'Anthropic\'s fast model - 200K context, excellent quality',
+        'free': True
+    }
+]
+
+
+async def get_curated_models_from_db(request: Request, app_slug: str = None, user_tier: str = None):
+    """Fetch curated models from database for the specified app."""
+    try:
+        db_pool = request.app.state.db_pool
+        if not db_pool:
+            return None
+
+        async with db_pool.acquire() as conn:
+            list_row = None
+
+            # Find the list (app-specific or global)
+            if app_slug:
+                list_query = """
+                    SELECT id, name, slug FROM app_model_lists
+                    WHERE (slug = $1 OR app_identifier = $1) AND is_active = TRUE
+                    ORDER BY is_default DESC LIMIT 1
+                """
+                list_row = await conn.fetchrow(list_query, app_slug)
+
+            if not list_row:
+                # Fall back to global list
+                list_query = "SELECT id, name, slug FROM app_model_lists WHERE slug = 'global' AND is_active = TRUE"
+                list_row = await conn.fetchrow(list_query)
+
+            if not list_row:
+                return None  # No database list, use hardcoded
+
+            # Get models from the list
+            models_query = """
+                SELECT model_id, display_name, description, category, is_free, context_length,
+                       tier_trial, tier_starter, tier_professional, tier_enterprise,
+                       tier_vip_founder, tier_byok
+                FROM app_model_list_items
+                WHERE list_id = $1
+                ORDER BY sort_order ASC
+            """
+
+            rows = await conn.fetch(models_query, list_row['id'])
+
+            models = []
+            for row in rows:
+                # Apply tier filtering if specified
+                if user_tier:
+                    tier_col_name = f"tier_{user_tier.replace('-', '_').replace(' ', '_').lower()}"
+                    tier_enabled = True
+                    if tier_col_name == 'tier_trial':
+                        tier_enabled = row['tier_trial']
+                    elif tier_col_name == 'tier_starter':
+                        tier_enabled = row['tier_starter']
+                    elif tier_col_name == 'tier_professional':
+                        tier_enabled = row['tier_professional']
+                    elif tier_col_name == 'tier_enterprise':
+                        tier_enabled = row['tier_enterprise']
+                    elif tier_col_name == 'tier_vip_founder':
+                        tier_enabled = row['tier_vip_founder']
+                    elif tier_col_name == 'tier_byok':
+                        tier_enabled = row['tier_byok']
+
+                    if not tier_enabled:
+                        continue
+
+                models.append({
+                    'id': row['model_id'],
+                    'object': 'model',
+                    'name': row['display_name'] or row['model_id'],
+                    'provider': 'OpenRouter',
+                    'context_length': row['context_length'] or 32768,
+                    'category': row['category'] or 'general',
+                    'description': row['description'],
+                    'free': row['is_free'] if row['is_free'] is not None else False
+                })
+
+            return models
+
+    except Exception as e:
+        logger.error(f"Error fetching curated models from database: {e}")
+        return None
+
+
+@router.get("/models/curated")
+async def list_curated_models(
+    request: Request,
+    app: Optional[str] = Query(None, description="App identifier (bolt-diy, presenton, open-webui)"),
+    tier: Optional[str] = Query(None, description="User tier for filtering")
+):
+    """
+    List curated models - the best FREE and recommended models.
+
+    Supports app-specific lists (bolt-diy, presenton, open-webui) and tier filtering.
+
+    Returns a curated list of high-quality models that are:
+    - FREE to use (no credits charged)
+    - High performance
+    - Suitable for various use cases (coding, general, fast)
+
+    Use these models as the default for "Unicorn Commander (Curated)" provider.
+    For access to all 1,300+ models, use /models/categorized endpoint.
+    """
+    try:
+        # Try to get from database first
+        db_models = await get_curated_models_from_db(request, app, tier)
+
+        if db_models is not None and len(db_models) > 0:
+            models = db_models
+            source = 'database'
+        else:
+            # Fall back to hardcoded CURATED_MODELS
+            models = CURATED_MODELS
+            source = 'hardcoded'
+
+        # Group models by category
+        by_category = {}
+        for model in models:
+            category = model.get('category', 'general')
+            if category not in by_category:
+                by_category[category] = []
+            by_category[category].append(model)
+
+        # Count FREE models
+        free_count = sum(1 for m in models if m.get('free', False))
+
+        return {
+            'object': 'list',
+            'data': models,
+            'by_category': by_category,
+            'app': app,
+            'source': source,
+            'summary': {
+                'total': len(models),
+                'free_count': free_count,
+                'categories': list(by_category.keys()),
+                'last_updated': datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing curated models: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list curated models")
+
 
 @router.get("/models")
 async def list_models(

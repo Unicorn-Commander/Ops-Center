@@ -74,6 +74,10 @@ const OrganizationRoles = lazy(() => import('./pages/organization/OrganizationRo
 const OrganizationSettings = lazy(() => import('./pages/organization/OrganizationSettings'));
 const OrganizationBilling = lazy(() => import('./pages/organization/OrganizationBilling'));
 const OrganizationBillingPro = lazy(() => import('./pages/organization/OrganizationBillingPro'));
+const OrganizationCredits = lazy(() => import('./pages/organization/OrganizationCredits'));
+const CreditAllocation = lazy(() => import('./pages/organization/CreditAllocation'));
+const CreditPurchaseOrg = lazy(() => import('./pages/organization/CreditPurchase'));
+const UsageAttribution = lazy(() => import('./pages/organization/UsageAttribution'));
 
 // Services pages (lazy loaded)
 const Brigade = lazy(() => import('./pages/Brigade'));
@@ -94,6 +98,7 @@ const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'))
 
 // System pages (lazy loaded)
 const AIModelManagement = lazy(() => import('./components/AIModelManagement'));
+const ModelListManagement = lazy(() => import('./pages/admin/ModelListManagement'));
 const Services = lazy(() => import('./pages/Services'));
 const System = lazy(() => import('./pages/System'));
 const HardwareManagement = lazy(() => import('./pages/HardwareManagement'));
@@ -329,6 +334,10 @@ function AppRoutes() {
                   <Route path="organization/settings" element={<OrganizationSettings />} />
                   <Route path="organization/billing" element={<OrganizationBilling />} />
                   <Route path="organization/:orgId/billing" element={<OrganizationBillingPro />} />
+                  <Route path="organization/credits" element={<OrganizationCredits />} />
+                  <Route path="organization/credits/allocate" element={<CreditAllocation />} />
+                  <Route path="organization/credits/purchase" element={<CreditPurchaseOrg />} />
+                  <Route path="organization/credits/usage" element={<UsageAttribution />} />
                   {/* Legacy routes for backwards compatibility */}
                   <Route path="org/team" element={<OrganizationTeam />} />
                   <Route path="org/roles" element={<OrganizationRoles />} />
@@ -364,6 +373,7 @@ function AppRoutes() {
                   {/* SYSTEM SECTION - Platform administration */}
                   {/* ============================================================ */}
                   <Route path="system/models" element={<AIModelManagement />} />
+                  <Route path="system/model-lists" element={<ModelListManagement />} />
                   <Route path="system/services" element={<Services />} />
                   <Route path="system/resources" element={<System />} />
                   <Route path="system/hardware" element={<HardwareManagement />} />

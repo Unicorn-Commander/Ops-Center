@@ -64,6 +64,7 @@ from lago_webhooks import router as lago_webhook_router
 from webhooks import router as stripe_webhooks_router
 from byok_api import router as byok_router
 from tier_enforcement_middleware import TierEnforcementMiddleware
+from credit_deduction_middleware import CreditDeductionMiddleware
 from usage_api import router as usage_router
 from admin_subscriptions_api import router as admin_subscriptions_router
 from tier_check_middleware import router as tier_check_router
@@ -94,11 +95,17 @@ import redis.asyncio as aioredis
 from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
+from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
 from redis_session import redis_session_manager
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
 from routers.forgejo import router as forgejo_router
+
+# Model List Management API
+from model_list_api import admin_router as model_list_admin_router
+from model_list_api import user_router as model_list_user_router
+from model_list_api import public_router as model_list_public_router
 
 # Invite Code System (VIP Founder)
 from invite_codes_api import admin_router as invite_codes_admin_router
@@ -427,6 +434,11 @@ if TIER_ENFORCEMENT_ENABLED:
     app.state.sessions = sessions
     logger.info("Tier Enforcement Middleware enabled")
 
+# Credit Deduction Middleware (after Tier Enforcement, before routes)
+# Automatically deducts credits for LLM API calls
+app.add_middleware(CreditDeductionMiddleware)
+logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
+
 logger.info(f"CSRF Protection: {'Enabled' if CSRF_ENABLED else 'Disabled'}")
 logger.info(f"Rate Limiting: {'Enabled' if RATE_LIMIT_ENABLED else 'Disabled'}")
 logger.info(f"Audit Logging: {'Enabled' if AUDIT_ENABLED else 'Disabled'}")
@@ -721,6 +733,10 @@ logger.info("Keycloak status API endpoints registered at /api/v1/system/keycloak
 app.include_router(user_management_router)
 logger.info("User Management API endpoints registered at /api/v1/admin/users")
 
+# Avatar Storage API (November 2025 - CORS fix for bolt.diy)
+app.include_router(avatar_storage_router)
+logger.info("Avatar storage API endpoints registered at /api/v1/users/{user_id}/avatar")
+
 # Subscription Tier Management API (Epic 4.4)
 app.include_router(subscription_tiers_router)
 logger.info("Subscription Tier Management API endpoints registered at /api/v1/admin/tiers")
@@ -742,6 +758,12 @@ logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
 # Forgejo integration
 app.include_router(forgejo_router)
 logger.info("Forgejo API endpoints registered at /api/v1/forgejo")
+
+# Model List Management API
+app.include_router(model_list_admin_router)
+app.include_router(model_list_user_router)
+app.include_router(model_list_public_router)
+logger.info("Model List Management API endpoints registered")
 
 # Register LiteLLM API router
 app.include_router(litellm_api_router)
