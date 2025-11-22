@@ -58,15 +58,19 @@ export default function RootRedirect() {
       }
 
       // User is NOT authenticated - fetch landing page mode
+      // Note: System settings endpoint may not exist, default to direct_sso
       try {
         const response = await fetch('/api/v1/system/settings');
         if (response.ok) {
           const data = await response.json();
           setLandingMode(data.landing_page_mode || 'direct_sso');
+        } else if (response.status === 404) {
+          // Endpoint doesn't exist, use default
+          setLandingMode('direct_sso');
         }
       } catch (error) {
-        console.error('Failed to fetch landing page mode:', error);
-        // Default to direct_sso if fetch fails
+        // Network error or endpoint unavailable - use default
+        console.debug('Landing page mode unavailable, using default SSO redirect');
         setLandingMode('direct_sso');
       }
 
@@ -100,7 +104,9 @@ export default function RootRedirect() {
 
     case 'direct_sso':
     default:
-      // Redirect directly to Keycloak SSO login
-      return <Navigate to="/auth/login" replace />;
+      // Use window.location.href instead of Navigate to force full page load
+      // This allows the backend /auth/login endpoint to handle the Keycloak redirect
+      window.location.href = '/auth/login';
+      return <LoadingScreen />;
   }
 }

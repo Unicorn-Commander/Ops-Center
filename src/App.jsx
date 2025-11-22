@@ -122,7 +122,7 @@ const Extensions = lazy(() => import('./pages/Extensions'));
 const Logs = lazy(() => import('./pages/Logs'));
 const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
 const Settings = lazy(() => import('./pages/Settings'));
-const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
+const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const ForgejoManagement = lazy(() => import('./pages/admin/ForgejoManagement'));
 const InviteCodesManagement = lazy(() => import('./pages/admin/InviteCodesManagement'));
 const SystemBillingOverview = lazy(() => import('./pages/admin/SystemBillingOverview'));
@@ -202,9 +202,12 @@ function ProtectedRoute({ children }) {
   }
   
   if (!authenticated) {
-    // Redirect to OAuth login instead of internal login
-    window.location.href = '/auth/login';
-    return null;
+    // Redirect to OAuth login using window.location to force full page load
+    // This allows the backend /auth/login endpoint to handle the Keycloak redirect
+    if (!window.location.pathname.startsWith('/auth/')) {
+      window.location.href = '/auth/login';
+    }
+    return <div>Loading...</div>;
   }
   
   return children;
