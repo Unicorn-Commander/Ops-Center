@@ -14,7 +14,7 @@ Date: October 20, 2025
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from datetime import datetime
 import json
 import httpx
@@ -327,6 +327,8 @@ class ChatCompletionRequest(BaseModel):
     task_type: Optional[str] = Field(None, description="Task type (code, chat, rag, creative)")
     privacy_required: bool = Field(False, description="Require local models")
     power_level: str = Field("balanced", description="Power level (eco, balanced, precision)")
+    tools: Optional[List[dict]] = Field(None, description="Function/tool definitions for structured output")
+    tool_choice: Optional[Union[str, dict]] = Field(None, description="Tool choice (auto, required, or specific tool)")
 
 
 class CreditPurchaseRequest(BaseModel):
@@ -893,6 +895,14 @@ async def chat_completions(
                 "user_tier": user_tier
             }
         }
+
+        # Include tools and tool_choice if provided (for structured output like ResponseSchema)
+        if request.tools:
+            proxy_request["tools"] = request.tools
+            logger.info(f"Including {len(request.tools)} tools in request (structured output)")
+        if request.tool_choice:
+            proxy_request["tool_choice"] = request.tool_choice
+            logger.info(f"Including tool_choice: {request.tool_choice}")
 
         # Add model if specified (normalize to full OpenRouter ID first)
         if request.model:
