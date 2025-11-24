@@ -104,9 +104,12 @@ export default function RootRedirect() {
 
     case 'direct_sso':
     default:
-      // Use window.location.href instead of Navigate to force full page load
-      // This allows the backend /auth/login endpoint to handle the Keycloak redirect
-      window.location.href = '/auth/login';
-      return <LoadingScreen />;
+      // Use window.location.replace() for immediate redirect without history
+      // This prevents React from continuing to render and make API calls
+      if (typeof window !== 'undefined') {
+        window.location.replace('/auth/login');
+      }
+      // Return null to stop rendering immediately
+      return null;
   }
 }

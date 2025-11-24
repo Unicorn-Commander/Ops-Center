@@ -2089,6 +2089,20 @@ async def get_system_capabilities_endpoint(current_user: dict = Depends(get_curr
         logger.error(f"System capabilities detection error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to detect system capabilities: {str(e)}")
 
+@app.get("/api/v1/system/settings")
+async def get_system_settings():
+    """Get system-wide settings (public endpoint for landing page mode)"""
+    return {
+        "landing_page_mode": "direct_sso",  # direct_sso | public_marketplace | custom
+        "branding": {
+            "company_name": "Unicorn Commander",
+            "logo_url": "/logos/magic_unicorn_logo.webp",
+            "primary_color": "#7c3aed"
+        },
+        "sso_enabled": True,
+        "allow_registration": False
+    }
+
 @app.get("/api/v1/deployment/config")
 async def get_deployment_config():
     """Get deployment configuration"""
