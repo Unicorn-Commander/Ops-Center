@@ -74,10 +74,11 @@ const OrganizationRoles = lazy(() => import('./pages/organization/OrganizationRo
 const OrganizationSettings = lazy(() => import('./pages/organization/OrganizationSettings'));
 const OrganizationBilling = lazy(() => import('./pages/organization/OrganizationBilling'));
 const OrganizationBillingPro = lazy(() => import('./pages/organization/OrganizationBillingPro'));
-const OrganizationCredits = lazy(() => import('./pages/organization/OrganizationCredits'));
-const CreditAllocation = lazy(() => import('./pages/organization/CreditAllocation'));
-const CreditPurchaseOrg = lazy(() => import('./pages/organization/CreditPurchase'));
-const UsageAttribution = lazy(() => import('./pages/organization/UsageAttribution'));
+// TODO: Create these organization credit management pages
+// const OrganizationCredits = lazy(() => import('./pages/organization/OrganizationCredits'));
+// const CreditAllocation = lazy(() => import('./pages/organization/CreditAllocation'));
+// const CreditPurchaseOrg = lazy(() => import('./pages/organization/CreditPurchase'));
+// const UsageAttribution = lazy(() => import('./pages/organization/UsageAttribution'));
 
 // Services pages (lazy loaded)
 const Brigade = lazy(() => import('./pages/Brigade'));
@@ -337,10 +338,11 @@ function AppRoutes() {
                   <Route path="organization/settings" element={<OrganizationSettings />} />
                   <Route path="organization/billing" element={<OrganizationBilling />} />
                   <Route path="organization/:orgId/billing" element={<OrganizationBillingPro />} />
-                  <Route path="organization/credits" element={<OrganizationCredits />} />
-                  <Route path="organization/credits/allocate" element={<CreditAllocation />} />
-                  <Route path="organization/credits/purchase" element={<CreditPurchaseOrg />} />
-                  <Route path="organization/credits/usage" element={<UsageAttribution />} />
+                  {/* TODO: Uncomment when organization credit pages are created */}
+                  {/* <Route path="organization/credits" element={<OrganizationCredits />} /> */}
+                  {/* <Route path="organization/credits/allocate" element={<CreditAllocation />} /> */}
+                  {/* <Route path="organization/credits/purchase" element={<CreditPurchaseOrg />} /> */}
+                  {/* <Route path="organization/credits/usage" element={<UsageAttribution />} /> */}
                   {/* Legacy routes for backwards compatibility */}
                   <Route path="org/team" element={<OrganizationTeam />} />
                   <Route path="org/roles" element={<OrganizationRoles />} />

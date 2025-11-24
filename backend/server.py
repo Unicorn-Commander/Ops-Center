@@ -64,7 +64,8 @@ from lago_webhooks import router as lago_webhook_router
 from webhooks import router as stripe_webhooks_router
 from byok_api import router as byok_router
 from tier_enforcement_middleware import TierEnforcementMiddleware
-from credit_deduction_middleware import CreditDeductionMiddleware
+# TODO: Create credit_deduction_middleware module
+# from credit_deduction_middleware import CreditDeductionMiddleware
 from usage_api import router as usage_router
 from admin_subscriptions_api import router as admin_subscriptions_router
 from tier_check_middleware import router as tier_check_router
@@ -95,7 +96,8 @@ import redis.asyncio as aioredis
 from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
-from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
+# TODO: Install Pillow dependency before enabling avatar storage
+# from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
 from redis_session import redis_session_manager
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
@@ -435,9 +437,10 @@ if TIER_ENFORCEMENT_ENABLED:
     logger.info("Tier Enforcement Middleware enabled")
 
 # Credit Deduction Middleware (after Tier Enforcement, before routes)
+# TODO: Uncomment when credit_deduction_middleware is created
 # Automatically deducts credits for LLM API calls
-app.add_middleware(CreditDeductionMiddleware)
-logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
+# app.add_middleware(CreditDeductionMiddleware)
+# logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
 
 logger.info(f"CSRF Protection: {'Enabled' if CSRF_ENABLED else 'Disabled'}")
 logger.info(f"Rate Limiting: {'Enabled' if RATE_LIMIT_ENABLED else 'Disabled'}")
@@ -734,7 +737,8 @@ app.include_router(user_management_router)
 logger.info("User Management API endpoints registered at /api/v1/admin/users")
 
 # Avatar Storage API (November 2025 - CORS fix for bolt.diy)
-app.include_router(avatar_storage_router)
+# TODO: Uncomment when Pillow dependency is installed
+# app.include_router(avatar_storage_router)
 logger.info("Avatar storage API endpoints registered at /api/v1/users/{user_id}/avatar")
 
 # Subscription Tier Management API (Epic 4.4)
