@@ -31,7 +31,7 @@ OPS_DB_URL = os.getenv(
 )
 
 # Redis cache configuration
-REDIS_URL = "redis://unicorn-redis:6379"
+REDIS_URL = "redis://unicorn-lago-redis:6379"
 CACHE_TTL = 300  # 5 minutes
 
 # Initialize database engines
@@ -387,61 +387,67 @@ async def get_cohort_analysis(
     """
 
     async def compute_cohorts():
-        users = await query_keycloak_users(keycloak_db)
+        try:
+            users = await query_keycloak_users(keycloak_db)
 
-        # Group users by signup month
-        cohorts = {}
-        for user in users:
-            if not user.get("created_at"):
-                continue
+            # Group users by signup month
+            cohorts = {}
+            for user in users:
+                if not user.get("created_at"):
+                    continue
 
-            cohort_month = user["created_at"].strftime("%Y-%m")
+                cohort_month = user["created_at"].strftime("%Y-%m")
 
-            if cohort_month not in cohorts:
-                cohorts[cohort_month] = []
+                if cohort_month not in cohorts:
+                    cohorts[cohort_month] = []
 
-            cohorts[cohort_month].append(user)
+                cohorts[cohort_month].append(user)
 
-        # Calculate retention for each cohort
-        cohort_data = []
-        now = datetime.now()
+            # Calculate retention for each cohort
+            cohort_data = []
+            now = datetime.now()
 
-        for cohort_month, cohort_users in sorted(cohorts.items(), reverse=True)[
-            :months
-        ]:
-            cohort_start = datetime.strptime(cohort_month, "%Y-%m")
-            signup_count = len(cohort_users)
+            for cohort_month, cohort_users in sorted(cohorts.items(), reverse=True)[
+                :months
+            ]:
+                cohort_start = datetime.strptime(cohort_month, "%Y-%m")
+                signup_count = len(cohort_users)
 
-            retention = {}
+                retention = {}
 
-            # Calculate retention for months 0-12
-            for month_offset in range(13):
-                month_end = cohort_start + timedelta(days=30 * (month_offset + 1))
+                # Calculate retention for months 0-12
+                for month_offset in range(13):
+                    month_end = cohort_start + timedelta(days=30 * (month_offset + 1))
 
-                if month_end > now:
-                    break
+                    if month_end > now:
+                        break
 
-                # Count users active in this month
-                active_in_month = sum(
-                    1
-                    for u in cohort_users
-                    if u.get("last_login") and u["last_login"] >= month_end - timedelta(days=30)
+                    # Count users active in this month
+                    active_in_month = sum(
+                        1
+                        for u in cohort_users
+                        if u.get("last_login") and u["last_login"] >= month_end - timedelta(days=30)
+                    )
+
+                    retention_rate = (
+                        (active_in_month / signup_count * 100) if signup_count > 0 else 0
+                    )
+                    retention[f"month_{month_offset}"] = round(retention_rate, 1)
+
+                cohort_data.append(
+                    {
+                        "month": cohort_month,
+                        "signup_count": signup_count,
+                        "retention": retention,
+                    }
                 )
 
-                retention_rate = (
-                    (active_in_month / signup_count * 100) if signup_count > 0 else 0
-                )
-                retention[f"month_{month_offset}"] = round(retention_rate, 1)
 
-            cohort_data.append(
-                {
-                    "month": cohort_month,
-                    "signup_count": signup_count,
-                    "retention": retention,
-                }
-            )
+            return cohort_data
+        except Exception as e:
+            logger.error(f'Error computing cohort analysis: {e}')
+            return []
 
-        return cohort_data
 
     return await get_cached_or_compute(
         f"analytics:cohorts:{months}", compute_cohorts
@@ -485,40 +491,42 @@ async def get_engagement_metrics(
     """
 
     async def compute_engagement():
-        users = await query_keycloak_users(keycloak_db)
+        try:
+            users = await query_keycloak_users(keycloak_db)
 
-        now = datetime.now()
+            now = datetime.now()
 
-        # DAU - active in last 1 day
-        one_day_ago = now - timedelta(days=1)
-        dau = sum(
-            1 for u in users if u.get("last_login") and u["last_login"] >= one_day_ago
-        )
+            # DAU - active in last 1 day
+            one_day_ago = now - timedelta(days=1)
+            dau = sum(
+                1 for u in users if u.get("last_login") and u["last_login"] >= one_day_ago
+            )
 
-        # WAU - active in last 7 days
-        seven_days_ago = now - timedelta(days=7)
-        wau = sum(
-            1
-            for u in users
-            if u.get("last_login") and u["last_login"] >= seven_days_ago
-        )
+            # WAU - active in last 7 days
+            seven_days_ago = now - timedelta(days=7)
+            wau = sum(
+                1
+                for u in users
+                if u.get("last_login") and u["last_login"] >= seven_days_ago
+            )
 
-        # MAU - active in last 30 days
-        thirty_days_ago = now - timedelta(days=30)
-        mau = sum(
-            1
-            for u in users
-            if u.get("last_login") and u["last_login"] >= thirty_days_ago
-        )
+            # MAU - active in last 30 days
+            thirty_days_ago = now - timedelta(days=30)
+            mau = sum(
+                1
+                for u in users
+                if u.get("last_login") and u["last_login"] >= thirty_days_ago
+            )
 
-        # Calculate ratios
-        dau_mau_ratio = dau / mau if mau > 0 else 0
-        wau_mau_ratio = wau / mau if mau > 0 else 0
+            # Calculate ratios
+            dau_mau_ratio = dau / mau if mau > 0 else 0
+            wau_mau_ratio = wau / mau if mau > 0 else 0
 
-        # Mock average session duration
-        avg_session_duration = 15.5  # minutes
+            # Mock average session duration
+            avg_session_duration = 15.5  # minutes
 
-        return {
+
+            return {
             "dau": dau,
             "wau": wau,
             "mau": mau,
@@ -526,6 +534,17 @@ async def get_engagement_metrics(
             "wau_mau_ratio": round(wau_mau_ratio, 3),
             "avg_session_duration": avg_session_duration,
         }
+        except Exception as e:
+            logger.error(f'Error computing engagement metrics: {e}')
+            return {
+                'dau': 0,
+                'wau': 0,
+                'mau': 0,
+                'dau_mau_ratio': 0.0,
+                'wau_mau_ratio': 0.0,
+                'avg_session_duration': 0.0
+            }
+
 
     return await get_cached_or_compute("analytics:engagement", compute_engagement)
 

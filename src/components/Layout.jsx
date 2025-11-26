@@ -579,6 +579,12 @@ export default function Layout({ children }) {
                           icon={iconMap.ChartBarIcon}
                           indent={true}
                         />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Model Lists"
+                          href="/admin/system/model-lists"
+                          icon={iconMap.RectangleStackIcon}
+                          indent={true}
+                        />
                       </NavigationSection>
                       <NavigationItem collapsed={sidebarCollapsed}
                         name="Cloudflare DNS"
@@ -880,6 +886,12 @@ export default function Layout({ children }) {
                         name="API Documentation"
                         href="/admin/platform/api-docs"
                         icon={iconMap.CodeBracketIcon}
+                        indent={true}
+                      />
+                      <NavigationItem collapsed={sidebarCollapsed}
+                        name="System Settings"
+                        href="/admin/system/settings"
+                        icon={iconMap.CogIcon}
                         indent={true}
                       />
                     </NavigationSection>

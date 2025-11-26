@@ -124,17 +124,17 @@ async def list_all_tier_apps():
             # Get apps for this tier
             apps_query = """
                 SELECT
-                    ad.id,
-                    ad.app_key,
-                    ad.app_name,
-                    ad.category,
-                    ad.description,
-                    ad.is_active,
-                    ad.sort_order
-                FROM tier_apps ta
-                JOIN app_definitions ad ON ta.app_key = ad.app_key
-                WHERE ta.tier_id = $1 AND ta.enabled = TRUE AND ad.is_active = TRUE
-                ORDER BY ad.category, ad.sort_order, ad.app_name
+                    ao.id,
+                    COALESCE(ao.slug, tf.feature_key) as app_key,
+                    ao.name as app_name,
+                    ao.category,
+                    ao.description,
+                    ao.is_active,
+                    0 as sort_order
+                FROM tier_features tf
+                JOIN add_ons ao ON tf.feature_key = ao.slug OR tf.feature_key = CONCAT(ao.slug, '_access')
+                WHERE tf.tier_id = $1 AND tf.enabled = TRUE AND ao.is_active = TRUE
+                ORDER BY ao.category, ao.name
             """
             apps = await conn.fetch(apps_query, tier['id'])
 

@@ -54,7 +54,7 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
         )
 
     # Get Redis connection
-    redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
+    redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     sessions = RedisSessionManager(host=redis_host, port=redis_port)

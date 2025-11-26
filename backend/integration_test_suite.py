@@ -66,7 +66,7 @@ class IntegrationTestSuite:
             "keycloak": self.keycloak_url,
             "lago": self.lago_url,
             "postgresql": f"postgresql://{os.getenv('POSTGRES_HOST', 'unicorn-postgresql')}:5432",
-            "redis": f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:6379"
+            "redis": f"redis://{os.getenv("REDIS_HOST", "unicorn-lago-redis")}:6379"
         }
 
         availability = {}

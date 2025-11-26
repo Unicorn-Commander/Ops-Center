@@ -99,6 +99,7 @@ from user_management_api import router as user_management_router
 # TODO: Install Pillow dependency before enabling avatar storage
 # from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
 from redis_session import redis_session_manager
+from account_management_api import router as account_management_router
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
@@ -146,6 +147,15 @@ from user_analytics import router as user_analytics_router
 
 # Usage Analytics (Epic 2.6)
 from usage_analytics import router as usage_analytics_router
+
+# Supplementary Analytics & Metering (November 2025)
+from routers.analytics import (
+    revenue_router as analytics_revenue_router,
+    users_router as analytics_users_router,
+    services_router as analytics_services_router,
+    metrics_router as analytics_metrics_router
+)
+from routers.metering import router as metering_router
 
 # Model Management API (Sprint 6-7)
 from model_management_api import router as model_management_router
@@ -736,6 +746,10 @@ logger.info("Keycloak status API endpoints registered at /api/v1/system/keycloak
 app.include_router(user_management_router)
 logger.info("User Management API endpoints registered at /api/v1/admin/users")
 
+# Account & System Management API (Missing endpoints fix - November 2025)
+app.include_router(account_management_router)
+logger.info("Account & System Management API endpoints registered")
+
 # Avatar Storage API (November 2025 - CORS fix for bolt.diy)
 # TODO: Uncomment when Pillow dependency is installed
 # app.include_router(avatar_storage_router)
@@ -863,6 +877,15 @@ logger.info("User Analytics API endpoints registered at /api/v1/analytics/users"
 app.include_router(usage_analytics_router)
 logger.info("Usage Analytics API endpoints registered at /api/v1/analytics/usage")
 
+# Supplementary Analytics & Metering (November 2025)
+app.include_router(analytics_revenue_router)
+app.include_router(analytics_users_router)
+app.include_router(analytics_services_router)
+app.include_router(analytics_metrics_router)
+app.include_router(metering_router)
+logger.info("Supplementary Analytics endpoints registered (revenue: mrr/arr/growth, users: ltv/churn/acquisition, services, metrics)")
+logger.info("Metering endpoints registered (/api/v1/llm/usage/summary, /api/v1/llm/costs, /api/v1/metering/*)")
+
 # Model Management API (Sprint 6-7) - TEMPORARILY DISABLED for Epic 3.3 testing
 # CONFLICT: Both model_management_router and model_access_router use /api/v1/models prefix
 # model_management_router has root route "/" which may interfere with model_access_router
@@ -908,6 +931,10 @@ logger.info("White-Label Configuration API endpoints registered at /api/v1/admin
 # Dynamic Pricing Management API
 from dynamic_pricing_api import router as dynamic_pricing_router
 app.include_router(dynamic_pricing_router)
+
+# Pricing Packages API (public pricing information)
+from pricing_packages_api import router as pricing_packages_router
+app.include_router(pricing_packages_router)
 logger.info("Dynamic Pricing Management API endpoints registered at /api/v1/pricing")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
