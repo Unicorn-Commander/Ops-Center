@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 echo "=== Verifying Automatic Forgejo Access Configuration ==="
 
