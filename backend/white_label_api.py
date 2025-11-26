@@ -402,6 +402,15 @@ async def get_white_label_config(admin: bool = Depends(require_admin)):
         logger.error(f"Error getting white-label config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/settings")
+async def get_white_label_settings(admin: bool = Depends(require_admin)):
+    """
+    Get current white-label configuration (alias for /config for backwards compatibility)
+
+    Returns the active white-label configuration from database or defaults
+    """
+    return await get_white_label_config(admin)
+
 @router.put("/config")
 async def update_white_label_config(
     update: WhiteLabelUpdateRequest,
