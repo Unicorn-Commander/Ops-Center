@@ -263,13 +263,19 @@ async def get_tier_features():
     - Feature description
     """
     try:
-        # TODO: Query subscription_tiers and tier_features tables
-        # For now, return mock data structure
-        from database import get_db_connection
+        import asyncpg
+        import os
+
+        # Create database connection
+        conn = await asyncpg.connect(
+            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "unicorn"),
+            password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+            database=os.getenv("POSTGRES_DB", "unicorn_db")
+        )
 
         try:
-            conn = await get_db_connection()
-
             # Query tier features
             rows = await conn.fetch("""
                 SELECT
@@ -285,14 +291,10 @@ async def get_tier_features():
                 ORDER BY st.tier_code, tf.feature_key
             """)
 
-            # Group by tier
-            features_by_tier = {}
+            # Convert to list of dicts
+            features = []
             for row in rows:
-                tier_code = row['tier_code']
-                if tier_code not in features_by_tier:
-                    features_by_tier[tier_code] = []
-
-                features_by_tier[tier_code].append({
+                features.append({
                     "tier_name": row['tier_name'],
                     "tier_code": row['tier_code'],
                     "feature_key": row['feature_key'],
@@ -301,39 +303,36 @@ async def get_tier_features():
                     "description": row['description']
                 })
 
+            logger.info(f"Retrieved {len(features)} tier features from database")
+            return {"features": features}
+
+        finally:
             await conn.close()
 
-            logger.info(f"Retrieved features for {len(features_by_tier)} tiers")
-            return {"features": [item for items in features_by_tier.values() for item in items]}
+    except Exception as db_error:
+        logger.warning(f"Database query failed: {db_error}, returning mock data")
 
-        except Exception as db_error:
-            logger.warning(f"Database query failed: {db_error}, returning mock data")
-
-            # Fallback to mock data
-            return {
-                "features": [
-                    {
-                        "tier_name": "Trial",
-                        "tier_code": "trial",
-                        "feature_key": "basic_chat",
-                        "feature_name": "Basic Chat",
-                        "enabled": True,
-                        "description": "Access to basic chat interface"
-                    },
-                    {
-                        "tier_name": "Professional",
-                        "tier_code": "professional",
-                        "feature_key": "forgejo",
-                        "feature_name": "Forgejo Git Server",
-                        "enabled": True,
-                        "description": "Self-hosted Git server access"
-                    }
-                ]
-            }
-
-    except Exception as e:
-        logger.error(f"Error fetching tier features: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve tier features")
+        # Fallback to mock data
+        return {
+            "features": [
+                {
+                    "tier_name": "Trial",
+                    "tier_code": "trial",
+                    "feature_key": "basic_chat",
+                    "feature_name": "Basic Chat",
+                    "enabled": True,
+                    "description": "Access to basic chat interface"
+                },
+                {
+                    "tier_name": "Professional",
+                    "tier_code": "professional",
+                    "feature_key": "forgejo",
+                    "feature_name": "Forgejo Git Server",
+                    "enabled": True,
+                    "description": "Self-hosted Git server access"
+                }
+            ]
+        }
 
 
 # ============================================================================

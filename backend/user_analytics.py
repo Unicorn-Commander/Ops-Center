@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/v1/analytics/users", tags=["User Analytics"])
 # Database configuration
 KEYCLOAK_DB_URL = os.getenv(
     "KEYCLOAK_DATABASE_URL",
-    "postgresql://keycloak:REMOVED@uchub-postgres:5432/keycloak"
+    "postgresql://uchub:REMOVED@uchub-postgres:5432/keycloak_db"
 )
 OPS_DB_URL = os.getenv(
     "OPS_DATABASE_URL",

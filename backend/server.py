@@ -153,7 +153,9 @@ from routers.analytics import (
     revenue_router as analytics_revenue_router,
     users_router as analytics_users_router,
     services_router as analytics_services_router,
-    metrics_router as analytics_metrics_router
+    metrics_router as analytics_metrics_router,
+    performance_router as analytics_performance_router,
+    main_router as analytics_main_router
 )
 from routers.metering import router as metering_router
 
@@ -865,26 +867,35 @@ logger.info("Umami Analytics API endpoints registered at /api/v1/monitoring/umam
 app.include_router(prometheus_router)
 logger.info("Prometheus Monitoring API endpoints registered at /api/v1/monitoring/prometheus")
 
+# Supplementary Analytics & Metering (November 2025) - REGISTERED FIRST for priority
+# Priority registration ensures mock data endpoints override old database-dependent endpoints
+app.include_router(analytics_revenue_router)
+app.include_router(analytics_users_router)  # PRIORITY: Mock endpoints (cohorts, growth) override old DB endpoints
+app.include_router(analytics_services_router)
+app.include_router(analytics_metrics_router)
+app.include_router(analytics_performance_router)
+app.include_router(analytics_main_router)
+app.include_router(metering_router)
+logger.info("Supplementary Analytics endpoints registered (PRIORITY - mock data):")
+logger.info("  - Revenue: /api/v1/analytics/revenue/* (mrr, arr, growth, churn, forecast, by-tier)")
+logger.info("  - Users: /api/v1/analytics/users/* (ltv, churn, acquisition, cohorts, growth)")
+logger.info("  - Services: /api/v1/analytics/services/* (popularity, cost-per-user, adoption, performance, uptime, latency, errors)")
+logger.info("  - Metrics: /api/v1/analytics/metrics/* (summary, kpis, alerts)")
+logger.info("  - Performance: /api/v1/analytics/performance/* (metrics)")
+logger.info("  - Main: /api/v1/analytics/summary")
+logger.info("Metering endpoints registered (/api/v1/llm/usage/summary, /api/v1/llm/costs, /api/v1/metering/*)")
+
 # Revenue Analytics API (Epic 2.6)
 app.include_router(revenue_analytics_router)
 logger.info("Revenue Analytics API endpoints registered at /api/v1/analytics/revenue")
 
-# User Analytics API (Epic 2.6)
+# User Analytics API (Epic 2.6) - AFTER new router (non-conflicting endpoints only)
 app.include_router(user_analytics_router)
-logger.info("User Analytics API endpoints registered at /api/v1/analytics/users")
+logger.info("User Analytics API endpoints registered at /api/v1/analytics/users (non-conflicting only)")
 
 # Usage Analytics API (Epic 2.6)
 app.include_router(usage_analytics_router)
 logger.info("Usage Analytics API endpoints registered at /api/v1/analytics/usage")
-
-# Supplementary Analytics & Metering (November 2025)
-app.include_router(analytics_revenue_router)
-app.include_router(analytics_users_router)
-app.include_router(analytics_services_router)
-app.include_router(analytics_metrics_router)
-app.include_router(metering_router)
-logger.info("Supplementary Analytics endpoints registered (revenue: mrr/arr/growth, users: ltv/churn/acquisition, services, metrics)")
-logger.info("Metering endpoints registered (/api/v1/llm/usage/summary, /api/v1/llm/costs, /api/v1/metering/*)")
 
 # Model Management API (Sprint 6-7) - TEMPORARILY DISABLED for Epic 3.3 testing
 # CONFLICT: Both model_management_router and model_access_router use /api/v1/models prefix

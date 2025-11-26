@@ -85,13 +85,43 @@ async def get_llm_usage_summary(range: Literal["day", "week", "month", "year"] =
     }
 
 
+def normalize_period(period: str) -> str:
+    """
+    Convert various period formats to days format (Nd).
+
+    Args:
+        period: Time period (this_month, 30d, this_week, etc.)
+
+    Returns:
+        Normalized period in Nd format
+    """
+    mappings = {
+        "this_month": "30d",
+        "last_month": "30d",
+        "this_week": "7d",
+        "last_week": "7d",
+        "today": "1d",
+        "yesterday": "1d",
+        "this_quarter": "90d",
+        "last_quarter": "90d"
+    }
+
+    # If already in Nd format, return as-is
+    if period.endswith('d') and period[:-1].isdigit():
+        return period
+
+    # Otherwise, use mapping or default to 30d
+    return mappings.get(period.lower(), "30d")
+
+
 @router.get("/llm/costs")
-async def get_llm_costs(period: str = Query("30d", pattern=r"^\d+d$")):
+async def get_llm_costs(period: str = Query("30d", description="Time period (e.g., '30d', 'this_month', 'this_week')")):
     """
     Get LLM costs breakdown for specified period.
 
     **Query Parameters**:
-    - `period`: Time period in days (e.g., "7d", "30d", "90d")
+    - `period`: Time period - accepts "Nd" format (e.g., "7d", "30d", "90d") or
+                named periods (this_month, last_month, this_week, today)
 
     **Returns**:
     - Total costs in credits
@@ -101,7 +131,9 @@ async def get_llm_costs(period: str = Query("30d", pattern=r"^\d+d$")):
 
     **TODO**: Calculate from credit_transactions table
     """
-    days = int(period.rstrip('d'))
+    # Normalize period to days format
+    normalized_period = normalize_period(period)
+    days = int(normalized_period.rstrip('d'))
 
     daily_costs = []
     for i in range(days):
@@ -116,6 +148,8 @@ async def get_llm_costs(period: str = Query("30d", pattern=r"^\d+d$")):
 
     return {
         "period": period,
+        "normalized_period": normalized_period,
+        "days": days,
         "total_cost_credits": round(total_cost, 2),
         "average_daily_cost": round(total_cost / days, 2),
         "cost_by_model": [
@@ -283,6 +317,60 @@ async def get_metering_summary(
         "total_cost_credits": 20030,
         "total_revenue": 15000,  # Subscription revenue
         "gross_margin": -5030,  # Negative = infrastructure costs > revenue
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
+@router.get("/metering/usage/by-service")
+async def get_usage_by_service(
+    period: str = Query("this_month", description="Time period")
+):
+    """
+    Get usage breakdown by service.
+
+    **Query Parameters**:
+    - `period`: Time period (this_month, last_month, this_week, today, or Nd format like 7d, 30d)
+
+    **Returns**:
+    - Usage and cost breakdown by service type
+    - Total calls and credits across all services
+    - Percentage distribution
+
+    **TODO**: Query from actual usage tracking tables
+    """
+    services_usage = {
+        "llm_inference": {
+            "calls": 125847,
+            "credits": 234567,
+            "percentage": 54.2
+        },
+        "storage": {
+            "calls": 45231,
+            "credits": 12345,
+            "percentage": 10.5
+        },
+        "bandwidth": {
+            "calls": 63489,
+            "credits": 45678,
+            "percentage": 18.3
+        },
+        "image_generation": {
+            "calls": 8901,
+            "credits": 34567,
+            "percentage": 12.1
+        },
+        "other": {
+            "calls": 12345,
+            "credits": 6789,
+            "percentage": 4.9
+        }
+    }
+
+    return {
+        "period": period,
+        "services": services_usage,
+        "total_calls": sum(s["calls"] for s in services_usage.values()),
+        "total_credits": sum(s["credits"] for s in services_usage.values()),
         "calculated_at": datetime.now().isoformat()
     }
 

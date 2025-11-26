@@ -32,6 +32,8 @@ revenue_router = APIRouter(prefix="/api/v1/analytics/revenue", tags=["Analytics 
 users_router = APIRouter(prefix="/api/v1/analytics/users", tags=["Analytics - Users"])
 services_router = APIRouter(prefix="/api/v1/analytics/services", tags=["Analytics - Services"])
 metrics_router = APIRouter(prefix="/api/v1/analytics/metrics", tags=["Analytics - Metrics"])
+performance_router = APIRouter(prefix="/api/v1/analytics/performance", tags=["Analytics - Performance"])
+main_router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics - Main"])
 
 
 # ============================================================================
@@ -222,6 +224,62 @@ async def get_revenue_forecast(months_ahead: int = Query(6, ge=1, le=12)):
     }
 
 
+@revenue_router.get("/churn")
+async def get_revenue_churn(months: int = Query(12, ge=1, le=24)):
+    """
+    Get revenue churn rate for last N months.
+
+    **Query Parameters**:
+    - `months`: Number of months to retrieve (1-24, default: 12)
+
+    **Returns**:
+    - Monthly revenue churn data
+    - Churned MRR by tier
+    - Churn reasons breakdown
+
+    **TODO**: Calculate from subscription cancellations and downgrades
+    """
+    data = []
+    base_churn_rate = 4.5
+
+    for i in range(months):
+        date = datetime.now() - timedelta(days=30 * i)
+        # Simulate fluctuating churn rate
+        churn_rate = base_churn_rate + random.uniform(-1.5, 1.5)
+        churned_mrr = 650 + random.uniform(-100, 150)
+
+        data.append({
+            "month": date.strftime("%Y-%m"),
+            "churn_rate": round(churn_rate, 2),
+            "churned_mrr": round(churned_mrr, 2),
+            "churned_customers": random.randint(8, 18),
+            "retained_mrr_rate": round(100 - churn_rate, 2)
+        })
+
+    data.reverse()  # Oldest to newest
+
+    return {
+        "churn_data": data,
+        "current_churn_rate": data[-1]["churn_rate"],
+        "average_churn_rate": round(sum(d["churn_rate"] for d in data) / len(data), 2),
+        "churn_by_tier": {
+            "trial": 75.0,  # High trial churn is normal
+            "starter": 8.5,
+            "professional": 3.2,
+            "enterprise": 1.5
+        },
+        "top_churn_reasons": [
+            {"reason": "Price too high", "percentage": 35.2},
+            {"reason": "Switched to competitor", "percentage": 22.8},
+            {"reason": "No longer needed", "percentage": 18.5},
+            {"reason": "Missing features", "percentage": 12.3},
+            {"reason": "Other", "percentage": 11.2}
+        ],
+        "total_months": months,
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
 # ============================================================================
 # USER ANALYTICS (3 endpoints)
 # ============================================================================
@@ -302,6 +360,100 @@ async def get_user_acquisition():
             {"channel": "social", "users": 6, "percentage": 13.3, "cpa": 45}
         ],
         "average_cpa": 42.50,
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
+@users_router.get("/cohorts")
+async def get_user_cohorts(months: int = Query(6, ge=1, le=12)):
+    """
+    Get user cohort analysis for last N months.
+
+    **Query Parameters**:
+    - `months`: Number of months to analyze (1-12, default: 6)
+
+    **Returns**:
+    - Cohort retention rates
+    - Cohort size by signup month
+    - Month-over-month retention
+
+    **TODO**: Calculate from actual user signup and activity data
+    """
+    cohorts = []
+    base_cohort_size = 50
+
+    for i in range(months):
+        signup_month = datetime.now() - timedelta(days=30 * (months - i - 1))
+        cohort_size = base_cohort_size + random.randint(-10, 20)
+
+        # Generate retention data for this cohort
+        retention = []
+        current_retention = 100.0
+        for month in range(i + 1):
+            # Retention decays over time
+            if month > 0:
+                current_retention *= 0.85 + random.uniform(-0.05, 0.05)
+            retention.append(round(current_retention, 1))
+
+        cohorts.append({
+            "signup_month": signup_month.strftime("%Y-%m"),
+            "cohort_size": cohort_size,
+            "retention_by_month": retention,
+            "current_retention": retention[-1],
+            "months_tracked": len(retention)
+        })
+
+    return {
+        "cohorts": cohorts,
+        "average_retention_month_1": round(sum(c["retention_by_month"][1] for c in cohorts if len(c["retention_by_month"]) > 1) / max(1, len([c for c in cohorts if len(c["retention_by_month"]) > 1])), 2),
+        "total_cohorts": len(cohorts),
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
+@users_router.get("/growth")
+async def get_user_growth(months: int = Query(12, ge=1, le=24)):
+    """
+    Get user growth metrics for last N months.
+
+    **Query Parameters**:
+    - `months`: Number of months to retrieve (1-24, default: 12)
+
+    **Returns**:
+    - Monthly user growth
+    - New vs churned users
+    - Net growth rate
+
+    **TODO**: Calculate from actual user signup and churn data
+    """
+    data = []
+    base_users = 300
+
+    for i in range(months):
+        date = datetime.now() - timedelta(days=30 * i)
+        month_growth = 1 + (0.03 * (months - i))  # Growing user base
+
+        total_users = int(base_users * month_growth)
+        new_users = random.randint(35, 55)
+        churned_users = random.randint(5, 15)
+        net_growth = new_users - churned_users
+
+        data.append({
+            "month": date.strftime("%Y-%m"),
+            "total_users": total_users,
+            "new_users": new_users,
+            "churned_users": churned_users,
+            "net_growth": net_growth,
+            "growth_rate": round((net_growth / max(1, total_users - net_growth)) * 100, 2)
+        })
+
+    data.reverse()  # Oldest to newest
+
+    return {
+        "growth_data": data,
+        "current_users": data[-1]["total_users"],
+        "total_growth": data[-1]["total_users"] - data[0]["total_users"],
+        "average_monthly_growth": round(sum(d["net_growth"] for d in data) / len(data), 2),
         "calculated_at": datetime.now().isoformat()
     }
 
@@ -489,6 +641,181 @@ async def get_service_performance():
     }
 
 
+@services_router.get("/uptime")
+async def get_service_uptime(days: int = Query(30, ge=1, le=90)):
+    """
+    Get service uptime history for last N days.
+
+    **Query Parameters**:
+    - `days`: Number of days to retrieve (1-90, default: 30)
+
+    **Returns**:
+    - Daily uptime percentage per service
+    - Downtime incidents
+    - SLA compliance
+
+    **TODO**: Query from monitoring system (Prometheus/Grafana)
+    """
+    services = ["open-webui", "center-deep", "brigade", "ops-center", "forgejo"]
+    uptime_data = {}
+
+    for service in services:
+        daily_uptime = []
+        for i in range(days):
+            date = datetime.now() - timedelta(days=i)
+            # Simulate high uptime with occasional dips
+            uptime = 99.5 + random.uniform(-1.0, 0.5)
+            uptime = max(95.0, min(100.0, uptime))  # Clamp between 95-100%
+
+            daily_uptime.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "uptime": round(uptime, 2)
+            })
+
+        daily_uptime.reverse()  # Oldest to newest
+        average_uptime = sum(d["uptime"] for d in daily_uptime) / len(daily_uptime)
+
+        uptime_data[service] = {
+            "daily_uptime": daily_uptime,
+            "average_uptime": round(average_uptime, 2),
+            "sla_target": 99.9,
+            "sla_compliance": average_uptime >= 99.9
+        }
+
+    return {
+        "services": uptime_data,
+        "overall_average": round(sum(v["average_uptime"] for v in uptime_data.values()) / len(uptime_data), 2),
+        "days_analyzed": days,
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
+@services_router.get("/latency")
+async def get_service_latency(hours: int = Query(24, ge=1, le=168)):
+    """
+    Get service latency metrics for last N hours.
+
+    **Query Parameters**:
+    - `hours`: Number of hours to retrieve (1-168, default: 24)
+
+    **Returns**:
+    - P50, P95, P99 latency percentiles
+    - Hourly latency trends
+    - Slow request analysis
+
+    **TODO**: Query from APM system (Prometheus/Grafana)
+    """
+    services = {
+        "open-webui": {"base_p50": 120, "base_p95": 280, "base_p99": 450},
+        "center-deep": {"base_p50": 180, "base_p95": 380, "base_p99": 620},
+        "brigade": {"base_p50": 150, "base_p95": 320, "base_p99": 550},
+        "ops-center": {"base_p50": 85, "base_p95": 180, "base_p99": 290}
+    }
+
+    latency_data = {}
+
+    for service, base_metrics in services.items():
+        hourly_latency = []
+        for i in range(hours):
+            hour = datetime.now() - timedelta(hours=i)
+            # Simulate latency with some variation
+            variation = random.uniform(0.8, 1.2)
+
+            hourly_latency.append({
+                "hour": hour.strftime("%Y-%m-%d %H:00"),
+                "p50": round(base_metrics["base_p50"] * variation),
+                "p95": round(base_metrics["base_p95"] * variation),
+                "p99": round(base_metrics["base_p99"] * variation)
+            })
+
+        hourly_latency.reverse()  # Oldest to newest
+
+        latency_data[service] = {
+            "current": {
+                "p50": hourly_latency[-1]["p50"],
+                "p95": hourly_latency[-1]["p95"],
+                "p99": hourly_latency[-1]["p99"]
+            },
+            "hourly_data": hourly_latency,
+            "average": {
+                "p50": round(sum(h["p50"] for h in hourly_latency) / len(hourly_latency)),
+                "p95": round(sum(h["p95"] for h in hourly_latency) / len(hourly_latency)),
+                "p99": round(sum(h["p99"] for h in hourly_latency) / len(hourly_latency))
+            }
+        }
+
+    return {
+        "services": latency_data,
+        "hours_analyzed": hours,
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
+@services_router.get("/errors")
+async def get_service_errors(hours: int = Query(24, ge=1, le=168)):
+    """
+    Get service error rates and incidents for last N hours.
+
+    **Query Parameters**:
+    - `hours`: Number of hours to retrieve (1-168, default: 24)
+
+    **Returns**:
+    - Error counts by type (4xx, 5xx)
+    - Top error messages
+    - Error rate trends
+
+    **TODO**: Query from logging system (Elasticsearch/Loki)
+    """
+    services = {
+        "open-webui": {"base_error_rate": 0.12},
+        "center-deep": {"base_error_rate": 0.28},
+        "brigade": {"base_error_rate": 0.15},
+        "ops-center": {"base_error_rate": 0.05}
+    }
+
+    error_types = ["4xx", "5xx"]
+    error_data = {}
+
+    for service, config in services.items():
+        hourly_errors = []
+        for i in range(hours):
+            hour = datetime.now() - timedelta(hours=i)
+            error_rate = config["base_error_rate"] + random.uniform(-0.05, 0.1)
+            error_rate = max(0.0, error_rate)
+
+            total_requests = random.randint(800, 1500)
+            total_errors = int(total_requests * (error_rate / 100))
+
+            hourly_errors.append({
+                "hour": hour.strftime("%Y-%m-%d %H:00"),
+                "error_rate": round(error_rate, 2),
+                "total_requests": total_requests,
+                "errors_4xx": int(total_errors * 0.7),
+                "errors_5xx": int(total_errors * 0.3)
+            })
+
+        hourly_errors.reverse()  # Oldest to newest
+
+        error_data[service] = {
+            "current_error_rate": hourly_errors[-1]["error_rate"],
+            "hourly_data": hourly_errors,
+            "top_errors": [
+                {"code": 404, "message": "Not Found", "count": random.randint(50, 200)},
+                {"code": 401, "message": "Unauthorized", "count": random.randint(20, 80)},
+                {"code": 500, "message": "Internal Server Error", "count": random.randint(5, 30)},
+                {"code": 429, "message": "Rate Limit Exceeded", "count": random.randint(10, 50)}
+            ],
+            "total_errors_4xx": sum(h["errors_4xx"] for h in hourly_errors),
+            "total_errors_5xx": sum(h["errors_5xx"] for h in hourly_errors)
+        }
+
+    return {
+        "services": error_data,
+        "hours_analyzed": hours,
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
 # ============================================================================
 # METRICS & KPIs (3 endpoints)
 # ============================================================================
@@ -604,5 +931,102 @@ async def get_metric_alerts():
         "calculated_at": datetime.now().isoformat()
     }
 
+# ============================================================================
+# PERFORMANCE ANALYTICS (1 endpoint)
+# ============================================================================
+
+@performance_router.get("/metrics")
+async def get_performance_metrics():
+    """
+    Get system-wide performance metrics.
+
+    **Returns**:
+    - CPU, memory, disk usage
+    - Network throughput
+    - Database performance
+    - Cache hit rates
+
+    **TODO**: Query from system monitoring (Prometheus/Node Exporter)
+    """
+    return {
+        "system": {
+            "cpu_usage": round(random.uniform(35, 75), 2),
+            "memory_usage": round(random.uniform(60, 85), 2),
+            "disk_usage": round(random.uniform(45, 65), 2),
+            "network_rx_mbps": round(random.uniform(50, 150), 2),
+            "network_tx_mbps": round(random.uniform(30, 100), 2)
+        },
+        "database": {
+            "connections_active": random.randint(15, 45),
+            "connections_max": 100,
+            "query_avg_time_ms": round(random.uniform(5, 25), 2),
+            "slow_queries": random.randint(0, 5)
+        },
+        "cache": {
+            "redis_hit_rate": round(random.uniform(88, 98), 2),
+            "redis_memory_used_mb": round(random.uniform(120, 280), 2),
+            "redis_memory_max_mb": 512,
+            "keys_total": random.randint(8000, 15000)
+        },
+        "api": {
+            "requests_per_second": round(random.uniform(45, 120), 2),
+            "avg_response_time_ms": round(random.uniform(80, 180), 2),
+            "p95_response_time_ms": round(random.uniform(200, 400), 2),
+            "error_rate": round(random.uniform(0.05, 0.3), 2)
+        },
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
+# ============================================================================
+# MAIN ANALYTICS (1 endpoint - Top-level summary)
+# ============================================================================
+
+@main_router.get("/summary")
+async def get_analytics_summary():
+    """
+    Get comprehensive analytics summary across all categories.
+
+    **Returns**:
+    - Revenue summary (MRR, ARR, growth)
+    - User summary (total, active, churn)
+    - Service summary (uptime, performance)
+    - Key performance indicators
+
+    **TODO**: Aggregate from all analytics modules
+    """
+    return {
+        "revenue": {
+            "mrr": 15000,
+            "arr": 180000,
+            "mom_growth": 8.5,
+            "churn_rate": 4.2
+        },
+        "users": {
+            "total": 395,
+            "active": 342,
+            "new_this_month": 45,
+            "churn_this_month": 18,
+            "growth_rate": 12.3
+        },
+        "services": {
+            "total_services": 5,
+            "average_uptime": 99.93,
+            "total_api_calls": 312890,
+            "average_response_time_ms": 166
+        },
+        "kpis": {
+            "ltv": 2400,
+            "cac": 750,
+            "ltv_cac_ratio": 3.2,
+            "retention_rate": 95.8,
+            "nps_score": 72
+        },
+        "top_performing_tier": "professional",
+        "top_performing_service": "open-webui",
+        "calculated_at": datetime.now().isoformat()
+    }
+
+
 # Export all routers for server.py registration
-__all__ = ["revenue_router", "users_router", "services_router", "metrics_router"]
+__all__ = ["revenue_router", "users_router", "services_router", "metrics_router", "performance_router", "main_router"]
