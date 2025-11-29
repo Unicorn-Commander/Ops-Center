@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 // Safe utilities for defensive rendering (Phase 3 refactoring)
-import { safeMap, safeFilter } from '../../utils/safeArrayUtils';
-import { safeToFixed, safeNumber } from '../../utils/safeNumberUtils';
+import { safeMap, safeFilter } from '../utils/safeArrayUtils';
+import { safeToFixed, safeNumber } from '../utils/safeNumberUtils';
 import {
   Box,
   Paper,

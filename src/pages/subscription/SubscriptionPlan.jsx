@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../components/Toast';
+import { safeFind } from '../../utils/safeArrayUtils';
 
 // Animation variants
 const itemVariants = {
@@ -226,13 +227,8 @@ export default function SubscriptionPlan() {
 
   // Helper function to get features for a tier
   const getFeaturesForTier = (tierCode) => {
-    // Defensive check: ensure tierFeatures is an array
-    if (!Array.isArray(tierFeatures)) {
-      console.warn('tierFeatures is not an array:', tierFeatures);
-      return [];
-    }
-
-    const tierData = tierFeatures.find(t => t.tier_code === tierCode);
+    // Use safeFind to handle potentially undefined tierFeatures
+    const tierData = safeFind(tierFeatures, t => t.tier_code === tierCode);
     if (!tierData || !tierData.features) return [];
 
     // Return features in display format with included: true
@@ -249,8 +245,8 @@ export default function SubscriptionPlan() {
     setError(null);
 
     try {
-      // Find the plan object for the target tier
-      const plan = availablePlans.find(p => p.tier === targetTier);
+      // Find the plan object for the target tier (using safeFind to handle undefined availablePlans)
+      const plan = safeFind(availablePlans, p => p.tier === targetTier);
       if (!plan) {
         throw new Error('Invalid plan selected. Please refresh the page and try again.');
       }

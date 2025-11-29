@@ -60,6 +60,9 @@ import StorageBreakdown from '../components/hardware/StorageBreakdown';
 import NetworkTrafficChart from '../components/hardware/NetworkTrafficChart';
 import ServiceResourceAllocation from '../components/hardware/ServiceResourceAllocation';
 
+// Import safe utilities
+import { safeToFixed } from '../utils/safeNumberUtils';
+
 const HardwareManagement = () => {
   const [hardwareStatus, setHardwareStatus] = useState(null);
   const [history, setHistory] = useState([]);
@@ -141,14 +144,14 @@ const HardwareManagement = () => {
             severity: 'critical',
             component: 'GPU',
             metric: 'temperature',
-            message: `GPU temperature is ${gpuTemp.toFixed(1)}°C (critical: >85°C)`
+            message: `GPU temperature is ${safeToFixed(gpuTemp, 1)}°C (critical: >85°C)`
           });
         } else if (gpuTemp > 75) {
           alerts.push({
             severity: 'warning',
             component: 'GPU',
             metric: 'temperature',
-            message: `GPU temperature is ${gpuTemp.toFixed(1)}°C (warning: >75°C)`
+            message: `GPU temperature is ${safeToFixed(gpuTemp, 1)}°C (warning: >75°C)`
           });
         }
       }
@@ -161,14 +164,14 @@ const HardwareManagement = () => {
             severity: 'critical',
             component: 'Disk',
             metric: 'space',
-            message: `Disk usage is ${diskPct.toFixed(1)}% (critical: >90%)`
+            message: `Disk usage is ${safeToFixed(diskPct, 1)}% (critical: >90%)`
           });
         } else if (diskPct > 80) {
           alerts.push({
             severity: 'warning',
             component: 'Disk',
             metric: 'space',
-            message: `Disk usage is ${diskPct.toFixed(1)}% (warning: >80%)`
+            message: `Disk usage is ${safeToFixed(diskPct, 1)}% (warning: >80%)`
           });
         }
       }
@@ -181,7 +184,7 @@ const HardwareManagement = () => {
             severity: 'warning',
             component: 'Memory',
             metric: 'usage',
-            message: `Memory usage is ${memPct.toFixed(1)}% (warning: >90%)`
+            message: `Memory usage is ${safeToFixed(memPct, 1)}% (warning: >90%)`
           });
         }
       }
@@ -339,7 +342,7 @@ const HardwareManagement = () => {
 
   // Format bytes to GB
   const formatGB = (bytes) => {
-    return (bytes / (1024 ** 3)).toFixed(2);
+    return safeToFixed(bytes / (1024 ** 3), 2);
   };
 
   // Format temperature color
@@ -511,7 +514,7 @@ const HardwareManagement = () => {
                 <Box display="flex" justifyContent="space-between" mb={0.5}>
                   <Typography variant="caption">Usage</Typography>
                   <Typography variant="caption">
-                    {hardwareStatus?.cpu?.usage !== undefined ? hardwareStatus.cpu.usage.toFixed(1) : '0.0'}%
+                    {safeToFixed(hardwareStatus?.cpu?.usage, 1)}%
                   </Typography>
                 </Box>
                 <LinearProgress
@@ -525,7 +528,7 @@ const HardwareManagement = () => {
                   <Box display="flex" justifyContent="space-between">
                     <Typography variant="caption">Temperature</Typography>
                     <Chip
-                      label={`${(hardwareStatus.cpu.temperature || 0).toFixed(1)}°C`}
+                      label={`${safeToFixed(hardwareStatus.cpu.temperature, 1)}°C`}
                       size="small"
                       color={(hardwareStatus.cpu.temperature || 0) >= 80 ? 'error' : (hardwareStatus.cpu.temperature || 0) >= 70 ? 'warning' : 'success'}
                     />
@@ -559,7 +562,7 @@ const HardwareManagement = () => {
                   sx={{ height: 8, borderRadius: 1 }}
                 />
                 <Typography variant="caption" color="text.secondary">
-                  {hardwareStatus?.memory?.percentage !== undefined ? hardwareStatus.memory.percentage.toFixed(1) : '0.0'}% used
+                  {safeToFixed(hardwareStatus?.memory?.percentage, 1)}% used
                 </Typography>
               </Box>
             </CardContent>
@@ -658,13 +661,13 @@ const HardwareManagement = () => {
               <Typography variant="caption" color="text.secondary">Current GPU Status:</Typography>
               <Box sx={{ mt: 1 }}>
                 <Typography variant="body2">
-                  Memory: {((hardwareStatus.gpu.memory_used || 0) / 1024).toFixed(1)} GB / {((hardwareStatus.gpu.memory_total || 0) / 1024).toFixed(1)} GB
+                  Memory: {safeToFixed((hardwareStatus.gpu.memory_used || 0) / 1024, 1)} GB / {safeToFixed((hardwareStatus.gpu.memory_total || 0) / 1024, 1)} GB
                 </Typography>
                 <Typography variant="body2">
-                  Utilization: {(hardwareStatus.gpu.utilization || 0).toFixed(1)}%
+                  Utilization: {safeToFixed(hardwareStatus.gpu.utilization, 1)}%
                 </Typography>
                 <Typography variant="body2">
-                  Temperature: {(hardwareStatus.gpu.temperature || 0).toFixed(1)}°C
+                  Temperature: {safeToFixed(hardwareStatus.gpu.temperature, 1)}°C
                 </Typography>
               </Box>
             </Box>
