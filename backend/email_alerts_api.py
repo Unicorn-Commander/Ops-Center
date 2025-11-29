@@ -14,6 +14,7 @@ Endpoints:
 """
 
 import logging
+import os
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 from pydantic import BaseModel, EmailStr, Field

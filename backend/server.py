@@ -121,6 +121,9 @@ from email_provider_api import router as email_provider_router
 # Email Alert System (Epic 2.5 - Agent 2)
 from email_alerts_api import router as email_alerts_router
 
+# Alert Trigger System (Epic 2.5 - Agent 3)
+from alert_triggers_api import router as alert_triggers_router
+
 # Extensions Marketplace API - Phase 1 MVP (NEW)
 from extensions_catalog_api import router as extensions_catalog_router
 from my_apps_api import router as my_apps_router
@@ -438,7 +441,9 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/monitoring/grafana/",  # Grafana integration API - monitoring endpoints
         "/api/v1/admin/users/",  # User management and API key endpoints - REST API operations
         "/api/v1/org/",  # Organization management API - CRUD operations
-        "/api/v1/org"    # Organization management API (without trailing slash)
+        "/api/v1/org",    # Organization management API (without trailing slash)
+        "/api/v1/alerts/",  # Email alert system - REST API operations
+        "/api/v1/logs/"  # Log search system - REST API operations
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -862,6 +867,10 @@ logger.info("Email Provider API endpoints registered at /api/v1/email-provider")
 # Email Alert System (Epic 2.5 - Agent 2)
 app.include_router(email_alerts_router)
 logger.info("Email Alert System API endpoints registered at /api/v1/alerts")
+
+# Alert Trigger System (Epic 2.5 - Agent 3)
+app.include_router(alert_triggers_router)
+logger.info("Alert Trigger System API endpoints registered at /api/v1/alert-triggers")
 
 # System Metrics API (Epic 2.5 - Admin Dashboard Polish)
 app.include_router(system_metrics_router)
