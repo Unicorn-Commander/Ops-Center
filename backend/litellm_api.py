@@ -17,6 +17,7 @@ import os
 from typing import Dict, List, Optional, Union
 from datetime import datetime
 import json
+import time
 import httpx
 
 from fastapi import APIRouter, HTTPException, Header, Request, Depends, Query
@@ -694,18 +695,36 @@ async def get_user_id(
             'sk-centerdeep-service-key-2025': 'centerdeep-service'
         }
 
+        # FIX P0: Map service names to actual UUIDs from database (not strings)
+        # These are the actual organization UUIDs for service accounts
+        service_org_ids = {
+            'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',      # UUID for bolt-diy-service org
+            'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',     # UUID for presenton-service org
+            'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
+            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34'     # UUID for centerdeep-service org
+        }
+
         if token in service_keys:
             service_name = service_keys[token]
 
             # Check for X-User-ID header (service proxying on behalf of user)
             x_user_id = request.headers.get('X-User-ID')
             if x_user_id:
+                # Service is proxying for a user - bill to user's account
                 logger.info(f"✅ Service key authenticated: {service_name} proxying for user: {x_user_id}")
                 return x_user_id
             else:
-                # No user context - return service name (for service-level operations)
-                logger.info(f"✅ Service key authenticated: {service_name} (no user context)")
-                return service_name
+                # No user context - use service organization account for billing
+                service_org_id = service_org_ids.get(service_name)
+                if service_org_id:
+                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {service_org_id}")
+                    return service_org_id
+                else:
+                    logger.error(f"❌ Service org ID not configured for: {service_name}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Service organization not configured for {service_name}. Contact system administrator."
+                    )
         else:
             logger.warning(f"❌ Unknown service key: {token[:20]}... (full length: {len(token)})")
             raise HTTPException(status_code=401, detail="Invalid service key")
@@ -1416,35 +1435,40 @@ async def generate_image(
     byok_manager: BYOKManager = Depends(get_byok_manager)
 ):
     """
-    OpenAI-compatible image generation endpoint
+    OpenAI-compatible image generation endpoint (Updated Nov 2025)
 
     Supports multiple providers:
-    - OpenAI DALL-E 2/3
-    - OpenRouter (proxies to multiple image models)
+    - OpenAI GPT Image 1 / GPT Image 1 Mini (replaces DALL-E 3)
+    - OpenAI DALL-E 3 (still supported, being phased out)
+    - Google Gemini 2.5 Flash Image Preview "Nano Banana" (via OpenRouter)
+    - Google Imagen 3 (direct via Gemini API)
+    - OpenRouter (added image support Aug 2025)
     - Stable Diffusion (via OpenRouter)
 
     Usage:
         POST /api/v1/llm/image/generations
         {
             "prompt": "A cute cat wearing a wizard hat",
-            "model": "dall-e-3",
+            "model": "gpt-image-1",  # or "dall-e-3", "gemini-2.5-flash-image", "imagen-3"
             "size": "1024x1024",
-            "quality": "standard",
+            "quality": "high",  # GPT Image 1: low/medium/high; DALL-E 3: standard/hd
             "n": 1
         }
 
     Returns:
         OpenAI-compatible response with image URLs
 
-    Credits:
+    Credits (Nov 2025):
+        - GPT Image 1 (high quality): ~50 credits
+        - GPT Image 1 Mini: ~15 credits
         - DALL-E 3 (standard 1024x1024): ~40 credits
-        - DALL-E 3 (HD 1024x1024): ~80 credits
-        - DALL-E 2 (1024x1024): ~18 credits
+        - Gemini 2.5 Flash Image (Nano Banana): ~35 credits
+        - Imagen 3: ~30 credits ($0.03 per image)
         - Stable Diffusion XL: ~2-5 credits
     """
     try:
-        # Validate model (default to dall-e-3)
-        model = request.model or "dall-e-3"
+        # Validate model (default to gpt-image-1, the latest Nov 2025 model)
+        model = request.model or "gpt-image-1"
 
         # Get user tier for cost calculation
         user_tier = await credit_system.get_user_tier(user_id)
@@ -1457,16 +1481,29 @@ async def generate_image(
         user_byok_key = None
         detected_provider = None
 
-        if 'openrouter' in user_keys:
-            using_byok = True
-            user_byok_key = user_keys['openrouter']
-            detected_provider = 'openrouter'
-            logger.info(f"User {user_id} using OpenRouter BYOK for image generation")
-        elif 'openai' in user_keys and ('dall-e' in model.lower() or 'dalle' in model.lower()):
+        # UPDATED Nov 2025: OpenRouter now supports image generation!
+        # Detect model type and available BYOK keys
+        is_openai_model = any(x in model.lower() for x in ['dall-e', 'dalle', 'gpt-image'])
+        is_gemini_model = any(x in model.lower() for x in ['gemini', 'imagen', 'nano-banana'])
+
+        if is_openai_model and 'openai' in user_keys:
+            # OpenAI models (GPT Image 1, DALL-E 3) with OpenAI BYOK
             using_byok = True
             user_byok_key = user_keys['openai']
             detected_provider = 'openai'
-            logger.info(f"User {user_id} using OpenAI BYOK for DALL-E")
+            logger.info(f"User {user_id} using OpenAI BYOK for {model}")
+        elif is_gemini_model and 'gemini' in user_keys:
+            # Gemini models (Imagen 3, Nano Banana) with Gemini BYOK
+            using_byok = True
+            user_byok_key = user_keys['gemini']
+            detected_provider = 'gemini'
+            logger.info(f"User {user_id} using Gemini BYOK for {model}")
+        elif 'openrouter' in user_keys:
+            # OpenRouter BYOK - now supports image generation (Aug 2025)
+            using_byok = True
+            user_byok_key = user_keys['openrouter']
+            detected_provider = 'openrouter'
+            logger.info(f"User {user_id} using OpenRouter BYOK for image generation: {model}")
 
         # Calculate estimated cost
         estimated_cost = calculate_image_cost(
@@ -1534,24 +1571,48 @@ async def generate_image(
         if using_byok:
             logger.info(f"Using BYOK for image generation: {user_id} with provider {detected_provider}")
 
-            if detected_provider == 'openrouter':
-                base_url = 'https://openrouter.ai/api/v1'
-                if 'dall-e' in model.lower():
-                    image_request["model"] = f"openai/{model}"
-            else:  # OpenAI
+            if detected_provider == 'openai':
+                # OpenAI: GPT Image 1, DALL-E 3
                 base_url = 'https://api.openai.com/v1'
+                api_key = user_byok_key
+                provider_name = 'OpenAI'
+                use_openrouter_format = False
 
-            api_key = user_byok_key
-            provider_name = detected_provider.title()
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+            elif detected_provider == 'gemini':
+                # Gemini: Imagen 3, Nano Banana
+                base_url = 'https://generativelanguage.googleapis.com/v1beta'
+                api_key = user_byok_key
+                provider_name = 'Gemini'
+                use_openrouter_format = False
 
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key  # Gemini uses header instead of Bearer
+                }
+            elif detected_provider == 'openrouter':
+                # OpenRouter: NEW image generation support (Aug 2025)
+                # Uses /chat/completions with modalities parameter
+                base_url = 'https://openrouter.ai/api/v1'
+                api_key = user_byok_key
+                provider_name = 'OpenRouter'
+                use_openrouter_format = True  # Different endpoint/format
 
-            if detected_provider == 'openrouter':
-                headers["HTTP-Referer"] = "https://unicorncommander.ai"
-                headers["X-Title"] = "UC-1 Pro Ops Center"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://unicorncommander.ai",
+                    "X-Title": "UC-1 Pro Ops Center"
+                }
+            else:
+                # Should never reach here
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Unexpected provider {detected_provider} for BYOK image generation"
+                )
 
         else:
             # Using system key (charge credits)
@@ -1559,63 +1620,218 @@ async def generate_image(
 
             system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
 
-            async with credit_system.db_pool.acquire() as conn:
-                provider = await conn.fetchrow("""
-                    SELECT id, name, type, api_key_encrypted, config
-                    FROM llm_providers
-                    WHERE enabled = true AND type = 'openrouter'
-                    ORDER BY priority DESC
-                    LIMIT 1
-                """)
+            # UPDATED Nov 2025: Smart routing based on model type
+            # OpenAI models (GPT Image, DALL-E) → OpenAI API
+            # Gemini models (Imagen, Nano Banana) → Gemini API or OpenRouter
+            # Other models → OpenRouter (now supports images via /chat/completions)
+            is_openai_model = any(x in model.lower() for x in ['dall-e', 'dalle', 'gpt-image'])
+            is_gemini_model = any(x in model.lower() for x in ['gemini', 'imagen', 'nano-banana'])
 
-                if not provider:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="No image generation providers configured. Please configure OpenRouter or OpenAI in Platform Settings."
-                    )
+            if is_openai_model:
+                # OpenAI models (GPT Image 1, DALL-E 3) go to OpenAI API
+                logger.info(f"Routing {model} to OpenAI API")
 
-                provider_db_config = provider['config'] or {}
-                if isinstance(provider_db_config, str):
-                    provider_db_config = json.loads(provider_db_config)
+                async with credit_system.db_pool.acquire() as conn:
+                    provider = await conn.fetchrow("""
+                        SELECT id, name, type, api_key_encrypted, config
+                        FROM llm_providers
+                        WHERE enabled = true AND type = 'openai'
+                        ORDER BY priority DESC
+                        LIMIT 1
+                    """)
 
-                base_url = provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
-                provider_name = provider['name']
-
-                api_key = await system_key_manager.get_system_key(provider['id'])
-                if not api_key:
-                    api_key = provider['api_key_encrypted']
-                    if not api_key:
+                    if not provider:
                         raise HTTPException(
                             status_code=503,
-                            detail="No API key configured for image generation provider."
+                            detail="No OpenAI provider configured. GPT Image/DALL-E requires OpenAI API. Please configure OpenAI in Platform Settings."
                         )
 
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://unicorncommander.ai",
-                "X-Title": "UC-1 Pro Ops Center"
-            }
+                    provider_db_config = provider['config'] or {}
+                    if isinstance(provider_db_config, str):
+                        provider_db_config = json.loads(provider_db_config)
 
-            if provider['type'] == 'openrouter' and 'dall-e' in model.lower():
-                image_request["model"] = f"openai/{model}"
+                    base_url = provider_db_config.get('base_url', 'https://api.openai.com/v1')
+                    provider_name = provider['name']
 
-        # Call provider API
+                    api_key = await system_key_manager.get_system_key(provider['id'])
+                    if not api_key:
+                        api_key = provider['api_key_encrypted']
+                        if not api_key:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="No API key configured for OpenAI provider."
+                            )
+
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                use_openrouter_format = False
+
+                # Don't need to prefix model for OpenAI direct
+                # image_request["model"] already contains the model name
+
+            elif is_gemini_model:
+                # Gemini models (Imagen 3, Nano Banana) - try Gemini API first
+                logger.info(f"Routing {model} to Gemini API")
+
+                async with credit_system.db_pool.acquire() as conn:
+                    provider = await conn.fetchrow("""
+                        SELECT id, name, type, api_key_encrypted, config
+                        FROM llm_providers
+                        WHERE enabled = true AND type = 'gemini'
+                        ORDER BY priority DESC
+                        LIMIT 1
+                    """)
+
+                    if not provider:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="No Gemini provider configured. Imagen/Nano Banana requires Gemini API. Please configure Gemini in Platform Settings."
+                        )
+
+                    provider_db_config = provider['config'] or {}
+                    if isinstance(provider_db_config, str):
+                        provider_db_config = json.loads(provider_db_config)
+
+                    base_url = provider_db_config.get('base_url', 'https://generativelanguage.googleapis.com/v1beta')
+                    provider_name = provider['name']
+
+                    api_key = await system_key_manager.get_system_key(provider['id'])
+                    if not api_key:
+                        api_key = provider['api_key_encrypted']
+                        if not api_key:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="No API key configured for Gemini provider."
+                            )
+
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key
+                }
+                use_openrouter_format = False
+
+            else:
+                # Other models (Stable Diffusion, Nano Banana via OpenRouter, etc.)
+                # OpenRouter NOW supports image generation (Aug 2025)!
+                logger.info(f"Routing {model} to OpenRouter for image generation (NEW: supports images as of Aug 2025)")
+
+                async with credit_system.db_pool.acquire() as conn:
+                    provider = await conn.fetchrow("""
+                        SELECT id, name, type, api_key_encrypted, config
+                        FROM llm_providers
+                        WHERE enabled = true AND type = 'openrouter'
+                        ORDER BY priority DESC
+                        LIMIT 1
+                    """)
+
+                    if not provider:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="No OpenRouter provider configured. Please configure OpenRouter in Platform Settings."
+                        )
+
+                    provider_db_config = provider['config'] or {}
+                    if isinstance(provider_db_config, str):
+                        provider_db_config = json.loads(provider_db_config)
+
+                    base_url = provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
+                    provider_name = provider['name']
+
+                    api_key = await system_key_manager.get_system_key(provider['id'])
+                    if not api_key:
+                        api_key = provider['api_key_encrypted']
+                        if not api_key:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="No API key configured for OpenRouter provider."
+                            )
+
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://unicorncommander.ai",
+                    "X-Title": "UC-1 Pro Ops Center"
+                }
+
+                # Prefix model for OpenRouter (e.g., "stable-diffusion-xl" -> "stability-ai/stable-diffusion-xl")
+                if not model.startswith("stability-ai/") and not model.startswith("openai/") and not model.startswith("google/"):
+                    image_request["model"] = f"stability-ai/{model}"
+
+                use_openrouter_format = True  # OpenRouter uses different API format
+
+        # Call provider API (UPDATED Nov 2025: Handle OpenRouter's new format)
         async with httpx.AsyncClient(timeout=180.0) as client:
-            response = await client.post(
-                f"{base_url}/images/generations",
-                json=image_request,
-                headers=headers
-            )
+            if use_openrouter_format:
+                # OpenRouter: Uses /chat/completions with modalities (added Aug 2025)
+                logger.info(f"Using OpenRouter image generation format for model: {model}")
 
-            if response.status_code != 200:
-                logger.error(f"Image generation API error: {response.text}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Image generation provider error: {response.text}"
+                openrouter_request = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": request.prompt}],
+                    "modalities": ["image", "text"],  # NEW: Enable image generation
+                    "n": request.n,
+                    "temperature": 1.0  # Default for image generation
+                }
+
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    json=openrouter_request,
+                    headers=headers
                 )
 
-            response_data = response.json()
+                if response.status_code != 200:
+                    logger.error(f"OpenRouter image generation API error: {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"OpenRouter image generation error: {response.text}"
+                    )
+
+                openrouter_response = response.json()
+
+                # Convert OpenRouter response to OpenAI format
+                # OpenRouter returns images in: choices[0].message.images[]
+                if "choices" in openrouter_response and len(openrouter_response["choices"]) > 0:
+                    message = openrouter_response["choices"][0].get("message", {})
+                    images = message.get("images", [])
+
+                    if images:
+                        # Convert to OpenAI format
+                        response_data = {
+                            "created": openrouter_response.get("created", int(time.time())),
+                            "data": [
+                                {"b64_json": img} if isinstance(img, str) else img
+                                for img in images
+                            ]
+                        }
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="OpenRouter returned no images"
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Invalid OpenRouter response format"
+                    )
+
+            else:
+                # OpenAI/Gemini: Standard /images/generations endpoint
+                response = await client.post(
+                    f"{base_url}/images/generations",
+                    json=image_request,
+                    headers=headers
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Image generation API error: {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Image generation provider error: {response.text}"
+                    )
+
+                response_data = response.json()
 
         # Calculate actual cost
         actual_cost = estimated_cost
