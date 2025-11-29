@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+// Safe utilities for defensive rendering (Phase 3 refactoring)
+import { safeMap, safeFilter } from '../../utils/safeArrayUtils';
+import { safeToFixed, safeNumber } from '../../utils/safeNumberUtils';
 import {
   Box,
   Paper,
@@ -1089,7 +1092,8 @@ const UserManagement = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {users.map((user) => (
+                  {/* REFACTORED: Using safeMap for defensive rendering */}
+                  {safeMap(users, (user) => (
                     <TableRow
                       key={user.id}
                       hover
@@ -1117,7 +1121,8 @@ const UserManagement = () => {
                       <TableCell>{user.username}</TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                          {user.roles?.map((role) => (
+                          {/* REFACTORED: Using safeMap to prevent crashes on missing roles */}
+                          {safeMap(user.roles, (role) => (
                             <Chip
                               key={role}
                               label={role}
@@ -1374,7 +1379,8 @@ const UserManagement = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {userSessions.map((session, index) => (
+                    {/* REFACTORED: Using safeMap for session list */}
+                    {safeMap(userSessions, (session, index) => (
                       <TableRow key={index}>
                         <TableCell>{session.ipAddress || 'Unknown'}</TableCell>
                         <TableCell>

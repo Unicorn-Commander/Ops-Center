@@ -7,6 +7,9 @@ import ForgejoCard from '../components/ForgejoCard';
 import { getServiceInfo, getGPUUsageSummary } from '../data/serviceDescriptions';
 import { getTooltip, tooltipPresets } from '../data/tooltipContent';
 import HelpTooltip from '../components/HelpTooltip';
+// Safe utilities for defensive rendering (Phase 3 refactoring)
+import { safeMap, safeFilter } from '../utils/safeArrayUtils';
+import { safeToFixed } from '../utils/safeNumberUtils';
 import {
   PlayIcon,
   StopIcon,
@@ -140,7 +143,8 @@ export default function Services() {
       const data = await response.json();
 
       // API returns array of services directly
-      const transformedServices = (Array.isArray(data) ? data : []).map(service => ({
+      // REFACTORED: Using safeMap to prevent crashes on malformed service data
+      const transformedServices = safeMap((Array.isArray(data) ? data : []), (service) => ({
         name: service.name,
         display_name: service.display_name || service.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         container_name: service.container_name || service.name,
@@ -298,12 +302,13 @@ export default function Services() {
   };
   
   // Filter and sort services
-  const filteredServices = services.filter(service => {
+  // REFACTORED: Using safeFilter for defensive service filtering
+  const filteredServices = safeFilter(services, (service) => {
     if (filterStatus === 'running') return isRunning(service.status);
     if (filterStatus === 'stopped') return !isRunning(service.status);
     return true;
   });
-  
+
   const sortedServices = [...filteredServices].sort((a, b) => {
     switch (sortBy) {
       case 'status':
@@ -317,10 +322,10 @@ export default function Services() {
         return (a.display_name || a.name || '').localeCompare(b.display_name || b.name || '');
     }
   });
-  
-  // Group services by type
-  const coreServices = sortedServices.filter(s => s.type === 'core' || !s.type); // Default to core if no type
-  const extensionServices = sortedServices.filter(s => s.type === 'extension');
+
+  // Group services by type - using safeFilter for safety
+  const coreServices = safeFilter(sortedServices, s => s.type === 'core' || !s.type);
+  const extensionServices = safeFilter(sortedServices, s => s.type === 'extension');
 
   return (
     <div className="space-y-8">
@@ -672,7 +677,8 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
             />
           </div>
           <span className="font-medium text-gray-900 dark:text-white">
-            {service.cpu_percent ? `${service.cpu_percent.toFixed(1)}%` : '0%'}
+            {/* REFACTORED: Using safeToFixed for safe number formatting */}
+            {service.cpu_percent ? `${safeToFixed(service.cpu_percent, 1)}%` : '0%'}
           </span>
         </div>
         <div className="flex items-center justify-between text-sm">
@@ -891,7 +897,8 @@ function ServiceTable({ services, loading, onAction, onViewLogs, onViewDetails, 
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <CpuChipIcon className="h-3 w-3 text-gray-400" />
-                        <span>CPU: {service.cpu_percent ? `${service.cpu_percent.toFixed(1)}%` : '0%'}</span>
+                        {/* REFACTORED: Using safeToFixed for safe formatting */}
+                        <span>CPU: {service.cpu_percent ? `${safeToFixed(service.cpu_percent, 1)}%` : '0%'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <CircleStackIcon className="h-3 w-3 text-gray-400" />

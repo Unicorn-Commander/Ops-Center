@@ -7,6 +7,9 @@ import { ServiceLogos, getServiceInfo } from '../components/ServiceLogos';
 import { EnhancedServiceLogos, EnhancedServiceCard, getEnhancedServiceInfo } from '../components/EnhancedServiceLogos';
 import UpdateModal from '../components/UpdateModal';
 import { getGlassmorphismStyles, getResourceColor, getServiceColorScheme } from '../styles/glassmorphism';
+// Safe utilities for defensive rendering (Phase 3 refactoring)
+import { safeMap, safeFilter, safeFind, safeGet } from '../utils/safeArrayUtils';
+import { safeToFixed, safePercent, safeNumber } from '../utils/safeNumberUtils';
 import {
   CpuChipIcon,
   ServerStackIcon,
@@ -389,7 +392,8 @@ export default function Dashboard() {
       };
 
       // Transform API response to component format
-      const activities = (data.logs || []).map(log => ({
+      // REFACTORED: Using safeMap to prevent crashes on malformed API data
+      const activities = safeMap(data.logs || [], (log) => ({
         id: log.id || log.timestamp,
         message: log.details || log.action || 'System event',
         time: formatActivityTime(log.timestamp),
@@ -451,38 +455,42 @@ export default function Dashboard() {
   
   useEffect(() => {
     // Generate alerts based on system state
+    // REFACTORED: Using safe utilities to prevent undefined crashes
     const newAlerts = [];
-    
-    if (systemData?.memory?.percent > 85) {
+
+    const memPercent = safeNumber(systemData?.memory?.percent);
+    if (memPercent > 85) {
       newAlerts.push({
         id: 'mem-high',
         type: 'warning',
-        message: `Memory usage high: ${systemData.memory.percent.toFixed(1)}%`,
+        message: `Memory usage high: ${safeToFixed(memPercent, 1)}%`,
         icon: ExclamationTriangleIcon
       });
     }
-    
-    if (systemData?.cpu?.percent > 85) {
+
+    const cpuPercent = safeNumber(systemData?.cpu?.percent);
+    if (cpuPercent > 85) {
       newAlerts.push({
         id: 'cpu-high',
         type: 'warning',
-        message: `CPU usage high: ${systemData.cpu.percent.toFixed(1)}%`,
+        message: `CPU usage high: ${safeToFixed(cpuPercent, 1)}%`,
         icon: ExclamationTriangleIcon
       });
     }
-    
-    // Check for stopped critical services
-    services?.forEach(service => {
-      if (service.status !== 'running' && ['vllm', 'open-webui', 'redis', 'postgresql'].includes(service.name)) {
-        newAlerts.push({
-          id: `service-${service.name}`,
-          type: 'error',
-          message: `Critical service ${service.name} is ${service.status}`,
-          icon: ShieldExclamationIcon
-        });
-      }
+
+    // Check for stopped critical services - using safeFilter to prevent crashes
+    const criticalServiceNames = ['vllm', 'open-webui', 'redis', 'postgresql'];
+    safeFilter(services, (service) => {
+      return service.status !== 'running' && criticalServiceNames.includes(service.name);
+    }).forEach(service => {
+      newAlerts.push({
+        id: `service-${service.name}`,
+        type: 'error',
+        message: `Critical service ${service.name} is ${service.status}`,
+        icon: ShieldExclamationIcon
+      });
     });
-    
+
     setAlerts(newAlerts);
   }, [systemData, services]);
   

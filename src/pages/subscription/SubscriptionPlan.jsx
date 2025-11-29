@@ -74,13 +74,6 @@ const StatusBadge = ({ status }) => {
 // Plan features will be loaded from API dynamically
 // No hardcoded features - fetched from /api/v1/tiers/features
 
-// Available subscription tiers (just basic info, features loaded from API)
-const availablePlans = [
-  { tier: 'vip_founder', tier_code: 'vip_founder', name: 'VIP / Founder', price: 0.0, period: 'month', description: 'Invite-only tier' },
-  { tier: 'byok', tier_code: 'byok', name: 'BYOK', price: 30.0, period: 'month', description: 'Bring Your Own Key' },
-  { tier: 'managed', tier_code: 'managed', name: 'Managed', price: 50.0, period: 'month', description: 'Recommended', popular: true }
-];
-
 export default function SubscriptionPlan() {
   const { theme } = useTheme();
   const toast = useToast();
@@ -93,9 +86,15 @@ export default function SubscriptionPlan() {
   const [tierFeatures, setTierFeatures] = useState([]); // Real features from API
   const maxRetries = 3;
 
+  // Dynamic plan loading from backend
+  const [availablePlans, setAvailablePlans] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+  const [plansError, setPlansError] = useState(null);
+
   useEffect(() => {
     loadSubscription();
     loadTierFeatures();
+    loadAvailablePlans();  // Load plans from API
 
     // Check for canceled checkout
     const urlParams = new URLSearchParams(window.location.search);
@@ -177,8 +176,62 @@ export default function SubscriptionPlan() {
     }
   };
 
+  const loadAvailablePlans = async () => {
+    setLoadingPlans(true);
+    setPlansError(null);
+    try {
+      const res = await fetch('/api/v1/subscriptions/plans', {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to load plans (${res.status})`);
+      }
+
+      const data = await res.json();
+      const plans = data.plans || [];
+
+      // Transform backend plans to frontend format
+      const transformedPlans = plans.map(plan => ({
+        tier: plan.id,
+        tier_code: plan.id,
+        name: plan.display_name,
+        price: plan.price_monthly,
+        period: plan.price_monthly === 1.0 ? 'week' : 'month',
+        description: plan.features[0] || '',  // Use first feature as description
+        popular: plan.id === 'professional'  // Mark Professional as popular
+      }));
+
+      setAvailablePlans(transformedPlans);
+      console.log('Loaded subscription plans:', transformedPlans);
+    } catch (error) {
+      console.error('Error loading plans:', error);
+      setPlansError(error.message || 'Failed to load subscription plans');
+      toast.error('Failed to load subscription plans');
+
+      // Fallback to minimal plan list if API fails
+      setAvailablePlans([
+        { tier: 'trial', tier_code: 'trial', name: 'Trial', price: 1.0, period: 'week', description: '7-day trial' },
+        { tier: 'starter', tier_code: 'starter', name: 'Starter', price: 19.0, period: 'month', description: 'For individuals' },
+        { tier: 'professional', tier_code: 'professional', name: 'Professional', price: 49.0, period: 'month', description: 'For teams', popular: true },
+        { tier: 'enterprise', tier_code: 'enterprise', name: 'Enterprise', price: 99.0, period: 'month', description: 'For organizations' }
+      ]);
+    } finally {
+      setLoadingPlans(false);
+    }
+  };
+
   // Helper function to get features for a tier
   const getFeaturesForTier = (tierCode) => {
+    // Defensive check: ensure tierFeatures is an array
+    if (!Array.isArray(tierFeatures)) {
+      console.warn('tierFeatures is not an array:', tierFeatures);
+      return [];
+    }
+
     const tierData = tierFeatures.find(t => t.tier_code === tierCode);
     if (!tierData || !tierData.features) return [];
 
@@ -600,8 +653,34 @@ export default function SubscriptionPlan() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {availablePlans.map((plan) => (
+          {/* Plan loading indicator */}
+          {loadingPlans && (
+            <div className={`${theme.card} rounded-xl p-6 text-center`}>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto mb-4"></div>
+              <p className={theme.text.secondary}>Loading subscription plans...</p>
+            </div>
+          )}
+
+          {/* Plan loading error */}
+          {plansError && !loadingPlans && (
+            <div className="bg-red-900/20 border border-red-500/50 rounded-xl p-4 flex items-start gap-3">
+              <ExclamationTriangleIcon className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-200 text-sm font-medium">{plansError}</p>
+                <button
+                  onClick={loadAvailablePlans}
+                  className="mt-2 text-red-400 hover:text-red-300 text-sm underline"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Plan comparison grid */}
+          {!loadingPlans && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {availablePlans.map((plan) => (
               <div
                 key={plan.tier}
                 className={`relative border rounded-xl p-6 transition-all ${
@@ -632,7 +711,7 @@ export default function SubscriptionPlan() {
                 </div>
 
                 <div className="space-y-2 mb-6">
-                  {getFeaturesForTier(plan.tier_code || plan.tier)?.slice(0, 4).map((feature, index) => (
+                  {(getFeaturesForTier(plan.tier_code || plan.tier) || []).slice(0, 4).map((feature, index) => (
                     <div key={index} className="flex items-start gap-2">
                       {feature.included ? (
                         <CheckCircleIcon className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
@@ -680,17 +759,20 @@ export default function SubscriptionPlan() {
                 )}
               </div>
             ))}
-          </div>
+            </div>
+          )}
 
-          <div className={`mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg flex gap-3`}>
-            <InformationCircleIcon className="w-5 h-5 text-blue-400 flex-shrink-0" />
-            <div className="text-sm">
-              <p className={`font-medium ${theme.text.primary} mb-1`}>Plan Changes</p>
-              <p className={theme.text.secondary}>
-                Upgrades take effect immediately. Downgrades take effect at the end of your current billing period.
+          {!loadingPlans && (
+            <div className={`mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg flex gap-3`}>
+              <InformationCircleIcon className="w-5 h-5 text-blue-400 flex-shrink-0" />
+              <div className="text-sm">
+                <p className={`font-medium ${theme.text.primary} mb-1`}>Plan Changes</p>
+                <p className={theme.text.secondary}>
+                  Upgrades take effect immediately. Downgrades take effect at the end of your current billing period.
               </p>
             </div>
           </div>
+          )}
         </motion.div>
       )}
     </div>

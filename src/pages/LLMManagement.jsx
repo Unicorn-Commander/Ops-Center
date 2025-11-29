@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+// Safe utilities for defensive rendering (Phase 3 refactoring)
+import { safeMap, safeFilter } from '../utils/safeArrayUtils';
+import { safeToFixed } from '../utils/safeNumberUtils';
 import {
   Box,
   Container,
@@ -133,7 +136,8 @@ export default function LLMManagement({ showSnackbar }) {
       });
       const result = await response.json();
       if (result.success) {
-        showSnackbar(`Provider is online (${result.latency_ms?.toFixed(0)}ms)`, 'success');
+        // REFACTORED: Using safeToFixed for latency formatting
+        showSnackbar(`Provider is online (${safeToFixed(result.latency_ms, 0)}ms)`, 'success');
       } else {
         showSnackbar(`Provider test failed: ${result.error}`, 'error');
       }
@@ -192,7 +196,8 @@ export default function LLMManagement({ showSnackbar }) {
               <Alert severity="info">No providers configured yet.</Alert>
             ) : (
               <Grid container spacing={3}>
-                {providers.map((provider) => (
+                {/* REFACTORED: Using safeMap for provider list */}
+                {safeMap(providers, (provider) => (
                   <Grid item xs={12} sm={6} md={4} key={provider.provider_id}>
                     <ProviderCard
                       provider={provider}
