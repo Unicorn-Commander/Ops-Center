@@ -64,8 +64,7 @@ from lago_webhooks import router as lago_webhook_router
 from webhooks import router as stripe_webhooks_router
 from byok_api import router as byok_router
 from tier_enforcement_middleware import TierEnforcementMiddleware
-# TODO: Create credit_deduction_middleware module
-# from credit_deduction_middleware import CreditDeductionMiddleware
+from credit_deduction_middleware import CreditDeductionMiddleware
 from usage_api import router as usage_router
 from admin_subscriptions_api import router as admin_subscriptions_router
 from tier_check_middleware import router as tier_check_router
@@ -215,9 +214,8 @@ from metrics_collector import MetricsCollector
 # White-Label Configuration API
 from white_label_api import router as white_label_router
 
-# Landing Page Settings API (Phase 2)
-# TODO: Re-enable when landing_page_settings_api module is implemented
-# from landing_page_settings_api import router as landing_settings_router
+# Landing Page Settings API
+from landing_page_settings_api import router as landing_settings_router
 
 # Keycloak SSO integration
 try:
@@ -449,10 +447,9 @@ if TIER_ENFORCEMENT_ENABLED:
     logger.info("Tier Enforcement Middleware enabled")
 
 # Credit Deduction Middleware (after Tier Enforcement, before routes)
-# TODO: Uncomment when credit_deduction_middleware is created
 # Automatically deducts credits for LLM API calls
-# app.add_middleware(CreditDeductionMiddleware)
-# logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
+app.add_middleware(CreditDeductionMiddleware)
+logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
 
 logger.info(f"CSRF Protection: {'Enabled' if CSRF_ENABLED else 'Disabled'}")
 logger.info(f"Rate Limiting: {'Enabled' if RATE_LIMIT_ENABLED else 'Disabled'}")
@@ -934,10 +931,9 @@ logger.info("API Documentation endpoints registered at /api/v1/docs")
 app.include_router(white_label_router)
 logger.info("White-Label Configuration API endpoints registered at /api/v1/admin/white-label")
 
-# Landing Page Settings API (Phase 2)
-# TODO: Re-enable when landing_page_settings_api module is implemented
-# app.include_router(landing_settings_router)
-# logger.info("Landing Page Settings API endpoints registered at /api/v1/system/settings (public) and /api/v1/admin/settings (admin)")
+# Landing Page Settings API
+app.include_router(landing_settings_router)
+logger.info("Landing Page Settings API endpoints registered at /api/v1/system/settings (public) and /api/v1/admin/settings (admin)")
 
 # Dynamic Pricing Management API
 from dynamic_pricing_api import router as dynamic_pricing_router
