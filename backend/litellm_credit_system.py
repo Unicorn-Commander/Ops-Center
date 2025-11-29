@@ -127,11 +127,14 @@ class CreditSystem:
         """
         Get user's current credit balance (cached)
 
+        Supports both regular user IDs and service organization IDs.
+        Service org IDs start with 'org_' (e.g., 'org_presenton_service')
+
         Args:
-            user_id: User identifier (email or UUID)
+            user_id: User identifier (email, UUID, or org ID)
 
         Returns:
-            Current credit balance as float
+            Current credit balance as float (credits, not millicredits)
         """
         try:
             # Try cache first
@@ -142,7 +145,27 @@ class CreditSystem:
                 logger.debug(f"Credit balance cache hit for {user_id}")
                 return float(cached)
 
-            # Query database
+            # Check if this is a service organization ID
+            if user_id and user_id.startswith('org_'):
+                async with self.db_pool.acquire() as conn:
+                    result = await conn.fetchval(
+                        """
+                        SELECT credit_balance FROM organizations WHERE id = $1
+                        """,
+                        user_id
+                    )
+                    if result is not None:
+                        # Convert millicredits to credits
+                        balance = float(result) / 1000.0
+                        # Cache the result
+                        await self.redis.setex(cache_key, self.cache_ttl, str(balance))
+                        logger.info(f"Service org {user_id} balance: {balance} credits")
+                        return balance
+                    else:
+                        logger.warning(f"Service org {user_id} not found, returning 0 balance")
+                        return 0.0
+
+            # Query database for regular users
             async with self.db_pool.acquire() as conn:
                 result = await conn.fetchrow(
                     """
@@ -185,11 +208,14 @@ class CreditSystem:
         metadata: Dict
     ) -> Tuple[float, str]:
         """
-        Debit credits from user account
+        Debit credits from user or service organization account
+
+        Supports both regular user IDs and service organization IDs.
+        Service org IDs start with 'org_' (e.g., 'org_presenton_service')
 
         Args:
-            user_id: User identifier
-            amount: Amount to debit (positive number)
+            user_id: User identifier or organization ID
+            amount: Amount to debit (positive number, in credits)
             metadata: Transaction metadata (provider, model, tokens, etc.)
 
         Returns:
@@ -202,64 +228,129 @@ class CreditSystem:
             async with self.db_pool.acquire() as conn:
                 # Start transaction
                 async with conn.transaction():
-                    # Lock row and check balance
-                    result = await conn.fetchrow(
-                        """
-                        SELECT credits_remaining, monthly_cap, tier
-                        FROM user_credits
-                        WHERE user_id = $1
-                        FOR UPDATE
-                        """,
-                        user_id
-                    )
-
-                    if not result:
-                        raise HTTPException(status_code=404, detail="User not found")
-
-                    current_balance = float(result['credits_remaining'])
-
-                    # Check sufficient credits (except free tier)
-                    if result['tier'] != 'free' and current_balance < amount:
-                        raise HTTPException(
-                            status_code=402,  # Payment Required
-                            detail=f"Insufficient credits. Balance: {current_balance}, Required: {amount}"
+                    # Check if this is a service organization ID
+                    if user_id and user_id.startswith('org_'):
+                        # Service organization billing
+                        result = await conn.fetchrow(
+                            """
+                            SELECT credit_balance, subscription_tier
+                            FROM organizations
+                            WHERE id = $1
+                            FOR UPDATE
+                            """,
+                            user_id
                         )
 
-                    # Debit credits
-                    new_balance = max(0, current_balance - amount)
-                    await conn.execute(
-                        """
-                        UPDATE user_credits
-                        SET credits_remaining = $1,
-                            last_reset = CASE
-                                WHEN EXTRACT(EPOCH FROM (NOW() - last_reset)) > 2592000
-                                THEN NOW()
-                                ELSE last_reset
-                            END
-                        WHERE user_id = $2
-                        """,
-                        new_balance, user_id
-                    )
+                        if not result:
+                            raise HTTPException(status_code=404, detail=f"Service organization {user_id} not found")
 
-                    # Record transaction
-                    transaction_id = await conn.fetchval(
-                        """
-                        INSERT INTO credit_transactions (
-                            user_id, amount, transaction_type,
-                            provider, model, tokens_used, cost, metadata
+                        # Convert millicredits to credits
+                        current_balance = float(result['credit_balance']) / 1000.0
+                        tier = result['subscription_tier']
+
+                        # Check sufficient credits
+                        if current_balance < amount:
+                            raise HTTPException(
+                                status_code=402,  # Payment Required
+                                detail=f"Insufficient service credits for {user_id}. Balance: {current_balance:.2f}, Required: {amount:.2f}"
+                            )
+
+                        # Debit credits (convert back to millicredits for storage)
+                        new_balance = max(0, current_balance - amount)
+                        await conn.execute(
+                            """
+                            UPDATE organizations
+                            SET credit_balance = $1,
+                                updated_at = NOW()
+                            WHERE id = $2
+                            """,
+                            int(new_balance * 1000),  # Convert credits to millicredits
+                            user_id
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                        RETURNING id
-                        """,
-                        user_id,
-                        -amount,  # Negative for debit
-                        "usage",
-                        metadata.get('provider', 'unknown'),
-                        metadata.get('model', 'unknown'),
-                        metadata.get('tokens_used', 0),
-                        metadata.get('cost', amount),
-                        json.dumps(metadata)
-                    )
+
+                        # Log service usage for analytics
+                        service_name = metadata.get('service_name', user_id.replace('org_', '').replace('_service', ''))
+                        await conn.execute(
+                            """
+                            INSERT INTO service_usage_log (
+                                service_org_id, service_name, endpoint,
+                                credits_used, model_used, user_id, request_metadata
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            """,
+                            user_id,
+                            service_name,
+                            metadata.get('endpoint', '/api/v1/llm/image/generations'),
+                            amount,
+                            metadata.get('model', 'unknown'),
+                            metadata.get('proxied_user_id'),  # NULL if service-initiated
+                            json.dumps(metadata)
+                        )
+
+                        # Create placeholder transaction ID for service
+                        transaction_id = f"svc_{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+                        logger.info(f"✅ Service org {user_id} debited {amount} credits. New balance: {new_balance:.2f}")
+
+                    else:
+                        # Regular user billing (existing logic)
+                        result = await conn.fetchrow(
+                            """
+                            SELECT credits_remaining, monthly_cap, tier
+                            FROM user_credits
+                            WHERE user_id = $1
+                            FOR UPDATE
+                            """,
+                            user_id
+                        )
+
+                        if not result:
+                            raise HTTPException(status_code=404, detail="User not found")
+
+                        current_balance = float(result['credits_remaining'])
+
+                        # Check sufficient credits (except free tier)
+                        if result['tier'] != 'free' and current_balance < amount:
+                            raise HTTPException(
+                                status_code=402,  # Payment Required
+                                detail=f"Insufficient credits. Balance: {current_balance}, Required: {amount}"
+                            )
+
+                        # Debit credits
+                        new_balance = max(0, current_balance - amount)
+                        await conn.execute(
+                            """
+                            UPDATE user_credits
+                            SET credits_remaining = $1,
+                                last_reset = CASE
+                                    WHEN EXTRACT(EPOCH FROM (NOW() - last_reset)) > 2592000
+                                    THEN NOW()
+                                    ELSE last_reset
+                                END
+                            WHERE user_id = $2
+                            """,
+                            new_balance, user_id
+                        )
+
+                        # Record transaction
+                        transaction_id = await conn.fetchval(
+                            """
+                            INSERT INTO credit_transactions (
+                                user_id, amount, transaction_type,
+                                provider, model, tokens_used, cost, metadata
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                            RETURNING id
+                            """,
+                            user_id,
+                            -amount,  # Negative for debit
+                            "usage",
+                            metadata.get('provider', 'unknown'),
+                            metadata.get('model', 'unknown'),
+                            metadata.get('tokens_used', 0),
+                            metadata.get('cost', amount),
+                            json.dumps(metadata)
+                        )
 
             # Invalidate cache
             await self.redis.delete(f"credits:balance:{user_id}")
@@ -537,8 +628,36 @@ class CreditSystem:
         return "default"
 
     async def get_user_tier(self, user_id: str) -> str:
-        """Get user's subscription tier"""
+        """
+        Get user's subscription tier
+
+        Supports both regular user IDs and service organization IDs.
+        Service org IDs start with 'org_' (e.g., 'org_presenton_service')
+
+        Args:
+            user_id: User UUID or organization ID
+
+        Returns:
+            Subscription tier (free, starter, professional, enterprise, managed, etc)
+        """
         try:
+            # Check if this is a service organization ID
+            if user_id and user_id.startswith('org_'):
+                async with self.db_pool.acquire() as conn:
+                    tier = await conn.fetchval(
+                        """
+                        SELECT subscription_tier FROM organizations WHERE id = $1
+                        """,
+                        user_id
+                    )
+                    if tier:
+                        logger.info(f"Service org {user_id} tier: {tier}")
+                        return tier
+                    else:
+                        logger.warning(f"Service org {user_id} not found, defaulting to managed tier")
+                        return "managed"
+
+            # Regular user tier lookup
             async with self.db_pool.acquire() as conn:
                 tier = await conn.fetchval(
                     """
@@ -548,7 +667,7 @@ class CreditSystem:
                 )
                 return tier or "free"
         except Exception as e:
-            logger.error(f"Error getting user tier: {e}")
+            logger.error(f"Error getting user tier for {user_id}: {e}")
             return "free"
 
     async def check_monthly_cap(self, user_id: str, amount: float) -> bool:

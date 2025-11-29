@@ -547,4 +547,163 @@ async def list_folders(api_key: Optional[str] = None):
         logger.error(f"Failed to list folders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/dashboards/{uid}/embed-url")
+async def get_dashboard_embed_url(
+    uid: str,
+    theme: str = "dark",
+    refresh: Optional[str] = None,
+    from_time: str = "now-6h",
+    to_time: str = "now",
+    kiosk: str = "tv"
+):
+    """
+    Generate embeddable URL for Grafana dashboard
+
+    Args:
+        uid: Dashboard unique identifier
+        theme: Dashboard theme ('light' or 'dark')
+        refresh: Auto-refresh interval (e.g., '30s', '1m', '5m')
+        from_time: Start time for time range (e.g., 'now-6h', 'now-24h')
+        to_time: End time for time range (e.g., 'now')
+        kiosk: Kiosk mode ('tv' for clean view, 'full' for fullscreen)
+
+    Returns:
+        - success: Boolean
+        - embed_url: Full embeddable URL
+        - external_url: Public URL (using port 3102)
+    """
+    try:
+        # Build query parameters
+        params = {
+            "theme": theme,
+            "kiosk": kiosk,
+            "from": from_time,
+            "to": to_time
+        }
+
+        if refresh:
+            params["refresh"] = refresh
+
+        # Build query string
+        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+
+        # Internal URL (for backend-to-backend)
+        internal_url = f"{GRAFANA_URL}/d/{uid}?{query_string}"
+
+        # External URL (for browser access via port 3102)
+        external_url = f"http://localhost:3102/d/{uid}?{query_string}"
+
+        logger.info(f"Generated embed URL for dashboard {uid}")
+
+        return {
+            "success": True,
+            "embed_url": internal_url,
+            "external_url": external_url,
+            "uid": uid,
+            "theme": theme,
+            "refresh": refresh,
+            "time_range": {
+                "from": from_time,
+                "to": to_time
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate embed URL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/query")
+async def query_grafana_metrics(
+    query: Dict[str, Any],
+    api_key: Optional[str] = None
+):
+    """
+    Query Grafana data source for metrics
+
+    Args:
+        query: Query configuration with datasource, query, and time range
+        api_key: Grafana API key (optional)
+
+    Request body example:
+    {
+        "datasource": "prometheus",
+        "query": "cpu_usage",
+        "from": "now-5m",
+        "to": "now",
+        "interval": "15s"
+    }
+
+    Returns:
+        - success: Boolean
+        - data: Query results
+        - metadata: Query metadata
+    """
+    try:
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        # Extract query parameters
+        datasource = query.get("datasource", "prometheus")
+        query_str = query.get("query", "")
+        from_time = query.get("from", "now-5m")
+        to_time = query.get("to", "now")
+        interval = query.get("interval", "15s")
+
+        if not query_str:
+            raise HTTPException(
+                status_code=400,
+                detail="Query string is required"
+            )
+
+        # Build Grafana query API request
+        payload = {
+            "queries": [{
+                "refId": "A",
+                "datasource": {"type": datasource},
+                "expr": query_str,
+                "interval": interval,
+                "format": "time_series"
+            }],
+            "from": from_time,
+            "to": to_time
+        }
+
+        async with httpx.AsyncClient(timeout=GRAFANA_TIMEOUT) as client:
+            response = await client.post(
+                f"{GRAFANA_URL}/api/ds/query",
+                json=payload,
+                headers=headers
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"Query executed successfully: {query_str[:50]}")
+                return {
+                    "success": True,
+                    "data": data.get("results", {}),
+                    "metadata": {
+                        "datasource": datasource,
+                        "query": query_str,
+                        "time_range": {
+                            "from": from_time,
+                            "to": to_time
+                        }
+                    }
+                }
+            elif response.status_code == 401:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Unauthorized: Invalid or missing API key"
+                )
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Query failed: {response.text}"
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to execute query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 logger.info("Grafana API module initialized")

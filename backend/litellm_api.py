@@ -692,7 +692,8 @@ async def get_user_id(
             'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
             'sk-presenton-service-key-2025': 'presenton-service',
             'sk-brigade-service-key-2025': 'brigade-service',
-            'sk-centerdeep-service-key-2025': 'centerdeep-service'
+            'sk-centerdeep-service-key-2025': 'centerdeep-service',
+            'sk-partnerpulse-service-key-2025': 'partnerpulse-service'
         }
 
         # FIX P0: Map service names to actual UUIDs from database (not strings)
@@ -701,7 +702,8 @@ async def get_user_id(
             'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',      # UUID for bolt-diy-service org
             'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',     # UUID for presenton-service org
             'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
-            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34'     # UUID for centerdeep-service org
+            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
+            'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098'   # UUID for partnerpulse-service org
         }
 
         if token in service_keys:

@@ -150,6 +150,7 @@ const UserBillingDashboard = lazy(() => import('./pages/billing/UserBillingDashb
 // Monitoring & Analytics pages (lazy loaded)
 const MonitoringOverview = lazy(() => import('./pages/MonitoringOverview'));
 const GrafanaConfig = lazy(() => import('./pages/GrafanaConfig'));
+const GrafanaViewer = lazy(() => import('./pages/GrafanaViewer'));
 const PrometheusConfig = lazy(() => import('./pages/PrometheusConfig'));
 const UmamiConfig = lazy(() => import('./pages/UmamiConfig'));
 const Geeses = lazy(() => import('./pages/Geeses'));
@@ -410,6 +411,7 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   <Route path="monitoring/overview" element={<MonitoringOverview />} />
                   <Route path="monitoring/grafana" element={<GrafanaConfig />} />
+                  <Route path="monitoring/grafana/dashboards" element={<GrafanaViewer />} />
                   <Route path="monitoring/prometheus" element={<PrometheusConfig />} />
                   <Route path="monitoring/umami" element={<UmamiConfig />} />
                   <Route path="monitoring/logs" element={<Logs />} />

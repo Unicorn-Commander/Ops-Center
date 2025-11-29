@@ -15,6 +15,8 @@ services:
       # Mount host user/group files as read-only for Local Users feature
       - /etc/passwd:/host/etc/passwd:ro
       - /etc/group:/host/etc/group:ro
+      # Avatar storage (November 2025 - CORS fix)
+      - ./avatars:/app/avatars
     env_file:
       - .env.auth
     environment:
@@ -41,7 +43,7 @@ services:
       # Redis for sessions
       - REDIS_URL=redis://unicorn-lago-redis:6379/0
       # PostgreSQL Database
-      - POSTGRES_HOST=unicorn-postgresql
+      - POSTGRES_HOST=postgresql
       - POSTGRES_PORT=5432
       - POSTGRES_USER=unicorn
       - POSTGRES_PASSWORD=REMOVED
@@ -56,21 +58,43 @@ services:
       - uchub-network
     labels:
       - "traefik.enable=true"
-      # Main HTTPS route (Cloudflare → Traefik via HTTPS)
-      - "traefik.http.routers.ops-center.rule=Host(`unicorncommander.ai`)"
-      - "traefik.http.routers.ops-center.entrypoints=https"
-      - "traefik.http.routers.ops-center.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.ops-center.service=ops-center-svc"
+      # Service definition (all routers use this)
       - "traefik.http.services.ops-center-svc.loadbalancer.server.port=8084"
-      # HTTP route (for health checks and fallback)
-      - "traefik.http.routers.ops-center-http.rule=Host(`unicorncommander.ai`)"
-      - "traefik.http.routers.ops-center-http.entrypoints=http"
-      - "traefik.http.routers.ops-center-http.service=ops-center-svc"
+
+      # Admin routes (highest priority for authenticated routes)
+      - "traefik.http.routers.ops-center-admin.rule=Host(`unicorncommander.ai`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.ops-center-admin.priority=100"
+      - "traefik.http.routers.ops-center-admin.entrypoints=http,https"
+      - "traefik.http.routers.ops-center-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center-admin.service=ops-center-svc"
+
+      # API routes
+      - "traefik.http.routers.ops-center-api-path.rule=Host(`unicorncommander.ai`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.ops-center-api-path.priority=90"
+      - "traefik.http.routers.ops-center-api-path.entrypoints=http,https"
+      - "traefik.http.routers.ops-center-api-path.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center-api-path.service=ops-center-svc"
+
+      # Auth routes
+      - "traefik.http.routers.ops-center-auth.rule=Host(`unicorncommander.ai`) && PathPrefix(`/auth`)"
+      - "traefik.http.routers.ops-center-auth.priority=80"
+      - "traefik.http.routers.ops-center-auth.entrypoints=http,https"
+      - "traefik.http.routers.ops-center-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center-auth.service=ops-center-svc"
+
+      # Root route (lowest priority, catches landing page)
+      - "traefik.http.routers.ops-center-root.rule=Host(`unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-root.priority=1"
+      - "traefik.http.routers.ops-center-root.entrypoints=http,https"
+      - "traefik.http.routers.ops-center-root.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center-root.service=ops-center-svc"
+
       # API subdomain HTTPS route
-      - "traefik.http.routers.ops-center-api.rule=Host(`api.unicorncommander.ai`)"
-      - "traefik.http.routers.ops-center-api.entrypoints=https"
-      - "traefik.http.routers.ops-center-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.ops-center-api.service=ops-center-svc"
+      - "traefik.http.routers.ops-center-api-subdomain.rule=Host(`api.unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-api-subdomain.entrypoints=https"
+      - "traefik.http.routers.ops-center-api-subdomain.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ops-center-api-subdomain.service=ops-center-svc"
+
       # API subdomain HTTP route
       - "traefik.http.routers.ops-center-api-http.rule=Host(`api.unicorncommander.ai`)"
       - "traefik.http.routers.ops-center-api-http.entrypoints=http"

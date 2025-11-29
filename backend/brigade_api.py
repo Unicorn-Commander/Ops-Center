@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/brigade", tags=["Brigade Integration (H23)"])
 
-# Brigade API configuration
-BRIGADE_API_URL = "https://api.brigade.unicorncommander.ai"
+# Brigade API configuration (use internal Docker network)
+BRIGADE_API_URL = "http://unicorn-brigade:8112"
 BRIGADE_TIMEOUT = 30.0  # seconds
 BRIGADE_API_ENDPOINTS = {
     "usage": "/api/agents/usage",

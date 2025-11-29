@@ -118,12 +118,18 @@ from email_scheduler import EmailScheduler
 from email_notification_api import router as notification_router
 from email_provider_api import router as email_provider_router
 
+# Email Alert System (Epic 2.5 - Agent 2)
+from email_alerts_api import router as email_alerts_router
+
 # Extensions Marketplace API - Phase 1 MVP (NEW)
 from extensions_catalog_api import router as extensions_catalog_router
 from my_apps_api import router as my_apps_router
 from extensions_cart_api import router as extensions_cart_router
 from extensions_purchase_api import router as extensions_purchase_router
 from extensions_admin_api import router as extensions_admin_api_router
+
+# Advanced Log Search API (Epic 2.5)
+from logs_search_api import router as logs_search_router
 
 # System Metrics & Health Monitoring (Epic 2.5)
 from system_metrics_api import router as system_metrics_router
@@ -695,6 +701,10 @@ logger.info("Extensions Catalog API endpoints registered at /api/v1/extensions (
 app.include_router(my_apps_router)
 logger.info("My Apps API endpoints registered at /api/v1/my-apps (RBAC-filtered)")
 
+# Advanced Log Search API (Epic 2.5)
+app.include_router(logs_search_router)
+logger.info("Advanced Log Search API endpoints registered at /api/v1/logs/search/advanced, /api/v1/logs/services, /api/v1/logs/stats")
+
 # Epic 1.8: Credit & Usage Metering System
 app.include_router(credit_router)
 logger.info("Credit & Usage Metering API endpoints registered at /api/v1/credits")
@@ -848,6 +858,10 @@ logger.info("Two-Factor Authentication API endpoints registered at /api/v1/admin
 # Email Provider Management API
 app.include_router(email_provider_router)
 logger.info("Email Provider API endpoints registered at /api/v1/email-provider")
+
+# Email Alert System (Epic 2.5 - Agent 2)
+app.include_router(email_alerts_router)
+logger.info("Email Alert System API endpoints registered at /api/v1/alerts")
 
 # System Metrics API (Epic 2.5 - Admin Dashboard Polish)
 app.include_router(system_metrics_router)

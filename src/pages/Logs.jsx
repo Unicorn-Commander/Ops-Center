@@ -68,6 +68,20 @@ export default function Logs() {
   const logsEndRef = useRef(null);
   const logsContainerRef = useRef(null);
 
+  // Advanced search state
+  const [searchMode, setSearchMode] = useState('live'); // 'live' or 'search'
+  const [selectedServices, setSelectedServices] = useState([]);
+  const [selectedSeverities, setSelectedSeverities] = useState([]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [regexPattern, setRegexPattern] = useState('');
+  const [useRegex, setUseRegex] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [totalResults, setTotalResults] = useState(0);
+  const [queryTime, setQueryTime] = useState(0);
+  const [cacheHit, setCacheHit] = useState(false);
+
   // Load log sources on mount
   useEffect(() => {
     loadLogSources();
@@ -237,27 +251,27 @@ export default function Logs() {
         limit: maxLines,
         format: 'json'
       };
-      
+
       if (selectedSource) {
         filters.sources = [selectedSource];
       }
-      
+
       if (logLevel !== 'all') {
         filters.levels = [logLevel.toUpperCase()];
       }
-      
+
       if (searchQuery) {
         filters.search = searchQuery;
       }
-      
+
       const response = await fetch('/api/v1/logs/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filters, format: 'json' })
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         // Create download link
         const dataStr = JSON.stringify(result, null, 2);
@@ -273,6 +287,72 @@ export default function Logs() {
       console.error('Failed to export logs:', error);
       alert('Failed to export logs');
     }
+  };
+
+  const performAdvancedSearch = async () => {
+    setLoading(true);
+    try {
+      const searchRequest = {
+        query: searchQuery || null,
+        severity: selectedSeverities.length > 0 ? selectedSeverities : null,
+        services: selectedServices.length > 0 ? selectedServices : null,
+        start_date: startDate || null,
+        end_date: endDate || null,
+        regex: useRegex && regexPattern ? regexPattern : null,
+        limit: pageSize,
+        offset: (currentPage - 1) * pageSize
+      };
+
+      const response = await fetch('/api/v1/logs/search/advanced', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(searchRequest)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Search failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      setLogs(result.logs || []);
+      setFilteredLogs(result.logs || []);
+      setTotalResults(result.total || 0);
+      setQueryTime(result.query_time_ms || 0);
+      setCacheHit(result.cache_hit || false);
+    } catch (error) {
+      console.error('Advanced search failed:', error);
+      alert(`Search failed: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedServices([]);
+    setSelectedSeverities([]);
+    setStartDate('');
+    setEndDate('');
+    setRegexPattern('');
+    setUseRegex(false);
+    setCurrentPage(1);
+  };
+
+  const handleSeverityToggle = (severity) => {
+    setSelectedSeverities(prev =>
+      prev.includes(severity)
+        ? prev.filter(s => s !== severity)
+        : [...prev, severity]
+    );
+  };
+
+  const handleServiceToggle = (service) => {
+    setSelectedServices(prev =>
+      prev.includes(service)
+        ? prev.filter(s => s !== service)
+        : [...prev, service]
+    );
   };
 
   const getLevelIcon = (level) => {
@@ -543,15 +623,270 @@ export default function Logs() {
       )}
 
       {activeTab === 'history' && (
-        <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-lg p-6">
-          <div className="text-center py-12">
-            <ClockIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              Log History
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Browse and search through historical logs
-            </p>
+        <motion.div variants={itemVariants} className="space-y-4">
+          {/* Advanced Search Panel */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <AdjustmentsHorizontalIcon className="h-5 w-5 text-blue-600" />
+                Advanced Log Search
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={performAdvancedSearch}
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Searching...
+                    </>
+                  ) : (
+                    <>
+                      <MagnifyingGlassIcon className="h-4 w-4" />
+                      Search
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={clearFilters}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Text Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Text Search
+                </label>
+                <input
+                  type="text"
+                  placeholder="Search in messages..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && performAdvancedSearch()}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Start Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* End Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Severity Checkboxes */}
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Severity Levels
+              </label>
+              <div className="flex flex-wrap gap-3">
+                {['ERROR', 'WARN', 'INFO', 'DEBUG'].map(severity => (
+                  <label key={severity} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedSeverities.includes(severity)}
+                      onChange={() => handleSeverityToggle(severity)}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className={`text-sm font-medium ${logLevels[severity]?.color || 'text-gray-600'}`}>
+                      {severity}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Service Checkboxes */}
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Services
+              </label>
+              <div className="flex flex-wrap gap-3">
+                {logSources.slice(0, 8).map(source => (
+                  <label key={source.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedServices.includes(source.name)}
+                      onChange={() => handleServiceToggle(source.name)}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      {source.name}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Regex Search */}
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox"
+                  checked={useRegex}
+                  onChange={(e) => setUseRegex(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Use Regex Pattern
+                </label>
+              </div>
+              {useRegex && (
+                <input
+                  type="text"
+                  placeholder="Regex pattern (e.g., user.*failed)"
+                  value={regexPattern}
+                  onChange={(e) => setRegexPattern(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Results Section */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+            {/* Result Stats */}
+            {!loading && totalResults > 0 && (
+              <div className="px-4 py-3 border-b dark:border-gray-700">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-4">
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalResults)} of {totalResults.toLocaleString()} results
+                    </span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Query time: {queryTime.toFixed(2)}ms
+                    </span>
+                    {cacheHit && (
+                      <>
+                        <span className="text-gray-400">•</span>
+                        <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <CheckCircleIcon className="h-4 w-4" />
+                          Cached
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-gray-600 dark:text-gray-400">
+                      Results per page:
+                    </label>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm"
+                    >
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="200">200</option>
+                      <option value="500">500</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Log Viewer */}
+            <div className="h-[500px] overflow-y-auto p-4 font-mono text-sm bg-gray-900">
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  {totalResults === 0 && !loading ? 'No logs found. Try adjusting your filters.' : 'Click "Search" to find logs'}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {filteredLogs.map((log, index) => (
+                    <div
+                      key={index}
+                      className={`flex items-start gap-3 p-2 rounded ${logLevels[log.severity]?.bg || ''}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-[200px]">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {new Date(log.timestamp).toLocaleTimeString()}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getLevelIcon(log.severity)}
+                          <span className={`text-xs font-medium ${logLevels[log.severity]?.color || 'text-gray-600'}`}>
+                            {log.severity}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                          [{log.service}]
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-800 dark:text-gray-200 font-mono">
+                        {log.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalResults > pageSize && (
+              <div className="px-4 py-3 border-t dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => {
+                      setCurrentPage(prev => Math.max(1, prev - 1));
+                      performAdvancedSearch();
+                    }}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Page {currentPage} of {Math.ceil(totalResults / pageSize)}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setCurrentPage(prev => prev + 1);
+                      performAdvancedSearch();
+                    }}
+                    disabled={currentPage >= Math.ceil(totalResults / pageSize)}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

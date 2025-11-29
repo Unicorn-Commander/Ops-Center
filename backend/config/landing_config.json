@@ -103,6 +103,19 @@
       "apiOnly": false,
       "order": 7,
       "subdomain": "magicdeck"
+    },
+    {
+      "id": "forgejo",
+      "name": "Forgejo Git",
+      "icon": "🦊",
+      "logo_url": null,
+      "description": "Self-hosted Git server with GitHub-like features - repositories, issues, pull requests, and wikis",
+      "url": "https://git.unicorncommander.ai",
+      "port": 3003,
+      "enabled": true,
+      "apiOnly": false,
+      "order": 8,
+      "subdomain": "git"
     }
   ],
   "custom_links": [],

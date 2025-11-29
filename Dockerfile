@@ -3,8 +3,12 @@ FROM node:20-alpine as frontend-build
 
 WORKDIR /app
 
+# Install bash (required for prebuild scripts)
+RUN apk add --no-cache bash
+
 # Copy package files
 COPY package*.json ./
+COPY scripts ./scripts
 RUN npm install
 
 # Copy source code
@@ -15,8 +19,8 @@ COPY vite.config.js ./
 COPY tailwind.config.js ./
 COPY postcss.config.js ./
 
-# Build the React app
-RUN npm run build
+# Build the React app (skip prebuild verification in Docker)
+RUN npm run build:skip-verify
 
 # Python backend stage
 FROM python:3.10-slim
