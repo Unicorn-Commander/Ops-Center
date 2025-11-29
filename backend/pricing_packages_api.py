@@ -20,7 +20,7 @@ import logging
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 import asyncpg
 
@@ -92,6 +92,7 @@ class PricingComparisonResponse(BaseModel):
 
 @router.get("/tiers", response_model=List[SubscriptionTierPublic])
 async def get_public_pricing_tiers(
+    request: Request,
     include_features: bool = Query(True, description="Include feature lists")
 ):
     """
@@ -104,7 +105,7 @@ async def get_public_pricing_tiers(
         List of subscription tiers with pricing and features
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
 
         async with db_pool.acquire() as conn:
             # Get tiers
@@ -163,7 +164,7 @@ async def get_public_pricing_tiers(
 
 
 @router.get("/packages", response_model=List[CreditPackagePublic])
-async def get_credit_packages():
+async def get_credit_packages(request: Request):
     """
     Get credit package pricing
 
@@ -174,7 +175,7 @@ async def get_credit_packages():
         List of credit packages with pricing
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
 
         async with db_pool.acquire() as conn:
             packages_rows = await conn.fetch("""
@@ -217,6 +218,7 @@ async def get_credit_packages():
 
 @router.get("/addons", response_model=List[AddOnPublic])
 async def get_public_addons(
+    request: Request,
     category: Optional[str] = Query(None, description="Filter by category")
 ):
     """
@@ -232,7 +234,7 @@ async def get_public_addons(
         List of add-ons with pricing
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
 
         async with db_pool.acquire() as conn:
             query = """

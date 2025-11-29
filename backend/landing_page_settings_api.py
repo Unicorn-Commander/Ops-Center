@@ -89,7 +89,7 @@ class LandingPageSettingsUpdate(BaseModel):
 # ============================================================================
 
 @router.get("/api/v1/system/settings", response_model=LandingPageSettings)
-async def get_public_landing_settings():
+async def get_public_landing_settings(request: Request):
     """
     Get public landing page settings
 
@@ -100,7 +100,7 @@ async def get_public_landing_settings():
         Landing page configuration
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
 
         async with db_pool.acquire() as conn:
             settings_row = await conn.fetchrow("""
@@ -150,7 +150,7 @@ async def get_public_landing_settings():
     response_model=LandingPageSettingsAdmin,
     dependencies=[Depends(require_admin)]
 )
-async def get_admin_landing_settings():
+async def get_admin_landing_settings(request: Request):
     """
     Get landing page settings (admin)
 
@@ -160,7 +160,7 @@ async def get_admin_landing_settings():
         Complete landing page configuration with metadata
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
 
         async with db_pool.acquire() as conn:
             settings_row = await conn.fetchrow("""
@@ -212,6 +212,7 @@ async def get_admin_landing_settings():
     dependencies=[Depends(require_admin)]
 )
 async def update_landing_settings(
+    request: Request,
     settings: LandingPageSettingsUpdate,
     current_user: Dict = Depends(get_current_user)
 ):
@@ -227,7 +228,7 @@ async def update_landing_settings(
         Updated landing page configuration
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
         user_id = current_user.get('user_id', 'unknown')
 
         async with db_pool.acquire() as conn:
@@ -336,6 +337,7 @@ async def update_landing_settings(
     dependencies=[Depends(require_admin)]
 )
 async def reset_landing_settings(
+    request: Request,
     current_user: Dict = Depends(get_current_user)
 ):
     """
@@ -347,7 +349,7 @@ async def reset_landing_settings(
         Default landing page configuration
     """
     try:
-        db_pool = await get_db_pool()
+        db_pool = await get_db_pool(request)
         user_id = current_user.get('user_id', 'unknown')
 
         async with db_pool.acquire() as conn:

@@ -64,7 +64,8 @@ import {
   ContentCopy as CloneIcon,
   Visibility as PreviewIcon,
   Close as CloseIcon,
-  CheckCircle as FreeIcon
+  CheckCircle as FreeIcon,
+  Image as ImageIcon
 } from '@mui/icons-material';
 
 // Category color definitions
@@ -73,7 +74,8 @@ const categoryColors = {
   reasoning: { bg: 'rgba(156, 39, 176, 0.15)', color: '#9c27b0', border: '#9c27b0', icon: <ReasoningIcon fontSize="small" /> },
   general: { bg: 'rgba(117, 117, 117, 0.15)', color: '#757575', border: '#757575', icon: <ModelIcon fontSize="small" /> },
   fast: { bg: 'rgba(255, 193, 7, 0.15)', color: '#ffc107', border: '#ffc107', icon: <SpeedIcon fontSize="small" /> },
-  creative: { bg: 'rgba(76, 175, 80, 0.15)', color: '#4caf50', border: '#4caf50', icon: <CreativeIcon fontSize="small" /> }
+  creative: { bg: 'rgba(76, 175, 80, 0.15)', color: '#4caf50', border: '#4caf50', icon: <CreativeIcon fontSize="small" /> },
+  image: { bg: 'rgba(233, 30, 99, 0.15)', color: '#e91e63', border: '#e91e63', icon: <ImageIcon fontSize="small" /> }
 };
 
 // Tier definitions
