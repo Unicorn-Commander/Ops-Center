@@ -703,27 +703,6 @@ export default function Dashboard() {
             className={`${glassStyles.card} rounded-xl p-5 flex items-start gap-4 cursor-pointer`}
             onClick={() => window.location.href = '/apps'}
           >
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-lg">
-              <MagnifyingGlassIcon className="h-6 w-6 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className={`text-base font-bold ${theme.text.primary} mb-1`}>
-                AI Search
-              </div>
-              <div className={`text-xs ${theme.text.secondary} mb-2`}>
-                FREE - Included in your plan
-              </div>
-              <div className={`text-xs ${theme.text.secondary}`}>
-                Privacy-focused metasearch engine
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            className={`${glassStyles.card} rounded-xl p-5 flex items-start gap-4 cursor-pointer`}
-            onClick={() => window.location.href = '/apps'}
-          >
             <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-lg">
               <ServerStackIcon className="h-6 w-6 text-white" />
             </div>

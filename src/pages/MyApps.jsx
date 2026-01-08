@@ -162,12 +162,12 @@ export default function MyApps() {
               className={`${glassStyles.card} rounded-2xl overflow-hidden shadow-xl`}
             >
               {/* Service Header */}
-              <div className={`h-32 bg-gradient-to-br ${service.gradient} flex items-center justify-center relative`}>
+              <div className={`h-32 bg-gradient-to-br ${service.gradient} flex items-center justify-center relative overflow-hidden`}>
                 {service.icon_url ? (
                   <img
                     src={service.icon_url}
                     alt={service.name}
-                    className="h-16 w-16 object-contain"
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   <ServerIcon className="h-16 w-16 text-white opacity-90" />

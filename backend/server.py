@@ -298,47 +298,74 @@ docker_manager = DockerServiceManager()
 # Helper function to get user organization context
 async def get_user_org_context(user_id: str, email: str = None) -> dict:
     """
-    Get organization context for a user from Keycloak attributes.
+    Get organization context for a user from Keycloak attributes or database.
 
     Args:
-        user_id: Keycloak user ID
+        user_id: Keycloak user ID (sub claim)
         email: User's email (optional, for lookup if needed)
 
     Returns:
         Dictionary with org_id, org_name, org_role
         Returns default values if user has no organization
     """
+    # Helper function to check database for organization membership
+    async def check_database_membership(uid: str) -> dict:
+        """Check PostgreSQL for organization membership."""
+        try:
+            # Use the app's database pool if available
+            if hasattr(app.state, 'db_pool') and app.state.db_pool:
+                async with app.state.db_pool.acquire() as conn:
+                    # Get user's organization from organization_members table
+                    result = await conn.fetchrow("""
+                        SELECT om.organization_id, om.role, o.name as org_name
+                        FROM organization_members om
+                        JOIN organizations o ON om.organization_id = o.id
+                        WHERE om.user_id = $1 AND om.is_active = true
+                        LIMIT 1
+                    """, uid)
+
+                    if result:
+                        logger.info(f"Found org membership in database for user {uid}: {result['organization_id']}")
+                        return {
+                            "org_id": result["organization_id"],
+                            "org_name": result["org_name"],
+                            "org_role": result["role"].lower() if result["role"] else "member"
+                        }
+            else:
+                logger.warning("Database pool not available for org membership lookup")
+        except Exception as db_err:
+            logger.error(f"Database lookup for org membership failed: {db_err}")
+
+        return {"org_id": None, "org_name": None, "org_role": None}
+
     try:
         # Import here to avoid circular dependency
         from keycloak_integration import get_user_by_email, _get_attr_value
 
-        # Get user from Keycloak
+        # First, try Keycloak lookup
+        org_id = None
+        org_name = None
+        org_role = "member"
+
         if email:
             user = await get_user_by_email(email)
+            if user:
+                # Extract organization attributes from Keycloak user
+                attrs = user.get("attributes", {})
+                org_id = _get_attr_value(attrs, "org_id")
+                org_name = _get_attr_value(attrs, "org_name")
+                org_role = _get_attr_value(attrs, "org_role", "member")
+            else:
+                logger.warning(f"User not found in Keycloak: {email}")
         else:
-            # If we only have user_id, we'd need to fetch by ID
-            # For now, return defaults
-            logger.warning(f"Cannot fetch org context for user_id {user_id} without email")
-            return {
-                "org_id": None,
-                "org_name": None,
-                "org_role": None
-            }
+            logger.warning(f"Cannot fetch org context from Keycloak for user_id {user_id} without email")
 
-        if not user:
-            logger.warning(f"User not found in Keycloak: {email}")
-            return {
-                "org_id": None,
-                "org_name": None,
-                "org_role": None
-            }
-
-        # Extract organization attributes from Keycloak user
-        attrs = user.get("attributes", {})
-
-        org_id = _get_attr_value(attrs, "org_id")
-        org_name = _get_attr_value(attrs, "org_name")
-        org_role = _get_attr_value(attrs, "org_role", "member")
+        # If Keycloak doesn't have org info, check the database
+        if not org_id and user_id:
+            logger.info(f"Keycloak has no org info for user {user_id}, checking database...")
+            db_result = await check_database_membership(user_id)
+            if db_result.get("org_id"):
+                return db_result
 
         return {
             "org_id": org_id,
@@ -348,6 +375,12 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
 
     except Exception as e:
         logger.error(f"Error getting user org context: {e}")
+        # Last resort: try database lookup even on error
+        if user_id:
+            try:
+                return await check_database_membership(user_id)
+            except:
+                pass
         return {
             "org_id": None,
             "org_name": None,
@@ -5286,20 +5319,39 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         redirect_url = "/"
                     elif org_id:
                         try:
-                            # Import lago_integration here to avoid circular dependency
-                            from lago_integration import get_subscription
+                            # First check the database for subscription status
+                            db_subscription = None
+                            if hasattr(app.state, 'db_pool') and app.state.db_pool:
+                                async with app.state.db_pool.acquire() as conn:
+                                    db_sub_result = await conn.fetchrow("""
+                                        SELECT subscription_plan, status
+                                        FROM organization_subscriptions
+                                        WHERE org_id = $1 AND status = 'active'
+                                        LIMIT 1
+                                    """, org_id)
+                                    if db_sub_result:
+                                        db_subscription = {
+                                            "plan_code": db_sub_result["subscription_plan"],
+                                            "status": db_sub_result["status"]
+                                        }
+                                        print(f"Found active subscription in database: {db_subscription}")
 
-                            # Check for active subscription
-                            subscription = await get_subscription(org_id)
-
-                            if not subscription or subscription.get("status") != "active":
-                                # No active subscription - redirect to signup flow
-                                print(f"No active subscription for org {org_id}, redirecting to signup flow")
-                                redirect_url = "/signup-flow.html"
-                            else:
-                                print(f"User has active subscription: {subscription.get('plan_code', 'unknown')}")
-                                # Active subscription exists - allow access to landing page
+                            # If database has active subscription, allow access
+                            if db_subscription and db_subscription.get("status") == "active":
+                                print(f"User has active subscription (from database): {db_subscription.get('plan_code', 'unknown')}")
                                 redirect_url = "/"
+                            else:
+                                # Fall back to Lago check
+                                from lago_integration import get_subscription
+                                subscription = await get_subscription(org_id)
+
+                                if not subscription or subscription.get("status") != "active":
+                                    # No active subscription - redirect to signup flow
+                                    print(f"No active subscription for org {org_id}, redirecting to signup flow")
+                                    redirect_url = "/signup-flow.html"
+                                else:
+                                    print(f"User has active subscription (from Lago): {subscription.get('plan_code', 'unknown')}")
+                                    redirect_url = "/"
                         except Exception as e:
                             # If subscription check fails, log error but allow access
                             # This prevents blocking users if Lago is temporarily unavailable
@@ -5599,7 +5651,7 @@ async def serve_spa(full_path: str, request: Request):
         return RedirectResponse(url="/login.html", status_code=302)
 
     # Check if requesting a static file
-    if full_path.startswith("assets/") or full_path.endswith((".html", ".js", ".css", ".png", ".jpg", ".svg", ".ico", ".json", ".woff", ".woff2", ".ttf")):
+    if full_path.startswith(("assets/", "logos/")) or full_path.endswith((".html", ".js", ".css", ".png", ".jpg", ".svg", ".ico", ".json", ".woff", ".woff2", ".ttf", ".webp", ".jpeg", ".gif")):
         # First check public directory
         public_path = os.path.join("public", full_path)
         if os.path.exists(public_path):

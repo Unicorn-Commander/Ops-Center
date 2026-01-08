@@ -64,15 +64,15 @@ const AppCard = ({ service, onAddToSubscription, userHasService, theme }) => {
       className={`${glassStyles.card} rounded-2xl overflow-hidden shadow-xl h-full flex flex-col`}
     >
       {/* App Icon/Image Header */}
-      <div className={`h-40 bg-gradient-to-br ${service.gradient || 'from-blue-500 to-purple-500'} flex items-center justify-center relative`}>
+      <div className={`h-48 bg-gradient-to-br ${service.gradient || 'from-blue-500 to-purple-500'} flex items-center justify-center relative overflow-hidden`}>
         {service.icon_url ? (
           <img
             src={service.icon_url}
             alt={service.name}
-            className="h-24 w-24 object-contain"
+            className="w-full h-full object-cover"
           />
         ) : (
-          <service.icon className="h-24 w-24 text-white opacity-90" />
+          <service.icon className="h-40 w-40 text-white opacity-90" />
         )}
 
         {/* Status badges */}

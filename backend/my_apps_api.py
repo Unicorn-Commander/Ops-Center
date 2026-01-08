@@ -99,8 +99,8 @@ async def get_current_user_tier(request: Request) -> str:
             tier = user.get("subscription_tier") or user.get("tier")
 
         # If tier not set or invalid, default to managed
-        # Valid tiers: vip_founder, byok, managed, founder-friend, trial, starter, professional, enterprise
-        valid_tiers = ['vip_founder', 'byok', 'managed', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise']
+        # Valid tiers: vip_founder, byok, managed, founder-friend, trial, starter, professional, enterprise, human_interest
+        valid_tiers = ['vip_founder', 'byok', 'managed', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise', 'human_interest']
         if not tier or tier not in valid_tiers:
             tier = 'managed'
 

@@ -56,7 +56,6 @@ export default function PublicLanding() {
   // Service tier mapping
   const serviceTiers = {
     'Open-WebUI': 'trial',
-    'Center-Deep Search': 'trial',
     'User Documentation': 'starter',
     'Bolt.diy': 'professional',
     'Grafana Monitoring': 'professional',
@@ -268,15 +267,6 @@ export default function PublicLanding() {
       url: 'https://chat.unicorncommander.ai',
       color: 'from-blue-500 to-blue-700',
       textColor: 'text-blue-100'
-    },
-    {
-      title: 'Center-Deep Search',
-      description: 'Advanced AI-powered search platform with tool servers',
-      icon: MagnifyingGlassIcon,
-      iconImage: '/logos/Center-Deep.png',
-      url: 'https://centerdeep.online',
-      color: 'from-green-500 to-green-700',
-      textColor: 'text-green-100'
     },
     {
       title: 'Bolt.diy',
@@ -732,41 +722,6 @@ export default function PublicLanding() {
           </motion.div>
         </div>
       </header>
-
-      {/* Search Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.2 }}
-        className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-12"
-      >
-        <div className={`${styles.searchBg} p-8 rounded-2xl`}>
-          <form onSubmit={handleSearch} className="relative">
-            <div className="relative">
-              <MagnifyingGlassIcon className={`absolute left-4 top-1/2 transform -translate-y-1/2 h-6 w-6 ${styles.searchIcon}`} />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className={`w-full pl-12 pr-16 py-4 text-lg rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 ${styles.searchInput}`}
-                placeholder="Search the web with Center-Deep..."
-              />
-              <button
-                type="submit"
-                className={`absolute right-2 top-1/2 transform -translate-y-1/2 text-white px-6 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 ${styles.searchButton}`}
-              >
-                <span>Search</span>
-                <ArrowRightIcon className="h-4 w-4" />
-              </button>
-            </div>
-          </form>
-          <p className={`text-center text-sm mt-3 ${styles.footerText}`}>
-            Powered by Center-Deep • AI-Enhanced • Private • Secure
-          </p>
-        </div>
-      </motion.div>
 
       {/* Services Grid */}
       <motion.div
