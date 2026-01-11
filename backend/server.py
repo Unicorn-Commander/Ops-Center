@@ -77,6 +77,7 @@ from credit_api import router as credit_router
 from credit_purchase_api import router as credit_purchase_router
 from local_user_api import router as local_user_router
 from org_api import router as org_router
+from org_access_api import router as org_access_router
 from org_manager import org_manager
 from org_billing_api import router as org_billing_router
 from firewall_api import router as firewall_router
@@ -758,6 +759,10 @@ logger.info("Local User Management API endpoints registered at /api/v1/local-use
 # Register Organization Management endpoints
 app.include_router(org_router)
 logger.info("Organization Management API endpoints registered at /api/v1/org")
+
+# Register Org-Centric Access endpoints (multi-tenancy)
+app.include_router(org_access_router)
+logger.info("Org-Centric Access API endpoints registered at /api/v1/users/me")
 
 # Register Organization Billing endpoints
 app.include_router(org_billing_router)
