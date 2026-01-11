@@ -185,10 +185,10 @@ async def get_user_organizations(request: Request):
                 COALESCE(st.tier_code, 'managed') as tier_code,
                 COALESCE(st.tier_name, 'Managed') as tier_name
             FROM organization_members om
-            JOIN organizations o ON om.org_id = o.id
+            JOIN organizations o ON om.organization_id = o.id
             LEFT JOIN subscription_tiers st ON o.tier_id = st.id
             WHERE om.user_id = $1
-              AND o.status = 'active'
+              AND o.is_active = TRUE
             ORDER BY o.name
         """
 
@@ -218,7 +218,7 @@ async def get_user_organizations(request: Request):
                 JOIN add_ons ao ON tf.feature_key = ao.feature_key
                 JOIN subscription_tiers st ON tf.tier_id = st.id
                 JOIN organizations o ON o.tier_id = st.id
-                WHERE o.id = $1::uuid
+                WHERE o.id = $1
                   AND tf.enabled = TRUE
                   AND ao.is_active = TRUE
                   AND ao.launch_url IS NOT NULL
@@ -302,11 +302,11 @@ async def switch_organization(
                 om.role,
                 COALESCE(st.tier_code, 'managed') as tier_code
             FROM organization_members om
-            JOIN organizations o ON om.org_id = o.id
+            JOIN organizations o ON om.organization_id = o.id
             LEFT JOIN subscription_tiers st ON o.tier_id = st.id
             WHERE om.user_id = $1
-              AND o.id = $2::uuid
-              AND o.status = 'active'
+              AND o.id = $2
+              AND o.is_active = TRUE
         """
 
         row = await conn.fetchrow(membership_query, user_id, body.org_id)
@@ -373,11 +373,11 @@ async def get_current_organization(request: Request):
                     COALESCE(st.tier_code, 'managed') as tier_code,
                     COALESCE(st.tier_name, 'Managed') as tier_name
                 FROM organization_members om
-                JOIN organizations o ON om.org_id = o.id
+                JOIN organizations o ON om.organization_id = o.id
                 LEFT JOIN subscription_tiers st ON o.tier_id = st.id
                 WHERE om.user_id = $1
-                  AND o.id = $2::uuid
-                  AND o.status = 'active'
+                  AND o.id = $2
+                  AND o.is_active = TRUE
             """
             row = await conn.fetchrow(query, user_id, current_org_id)
         else:
@@ -394,10 +394,10 @@ async def get_current_organization(request: Request):
                     COALESCE(st.tier_code, 'managed') as tier_code,
                     COALESCE(st.tier_name, 'Managed') as tier_name
                 FROM organization_members om
-                JOIN organizations o ON om.org_id = o.id
+                JOIN organizations o ON om.organization_id = o.id
                 LEFT JOIN subscription_tiers st ON o.tier_id = st.id
                 WHERE om.user_id = $1
-                  AND o.status = 'active'
+                  AND o.is_active = TRUE
                 ORDER BY o.name
                 LIMIT 1
             """
@@ -420,7 +420,7 @@ async def get_current_organization(request: Request):
             JOIN add_ons ao ON tf.feature_key = ao.feature_key
             JOIN subscription_tiers st ON tf.tier_id = st.id
             JOIN organizations o ON o.tier_id = st.id
-            WHERE o.id = $1::uuid
+            WHERE o.id = $1
               AND tf.enabled = TRUE
               AND ao.is_active = TRUE
               AND ao.launch_url IS NOT NULL
@@ -489,8 +489,8 @@ async def get_org_apps(
             first_org_query = """
                 SELECT o.id::text as org_id
                 FROM organization_members om
-                JOIN organizations o ON om.org_id = o.id
-                WHERE om.user_id = $1 AND o.status = 'active'
+                JOIN organizations o ON om.organization_id = o.id
+                WHERE om.user_id = $1 AND o.is_active = TRUE
                 ORDER BY o.name LIMIT 1
             """
             row = await conn.fetchrow(first_org_query, user_id)
@@ -503,8 +503,8 @@ async def get_org_apps(
         # Verify user is member
         member_check = """
             SELECT 1 FROM organization_members om
-            JOIN organizations o ON om.org_id = o.id
-            WHERE om.user_id = $1 AND o.id = $2::uuid AND o.status = 'active'
+            JOIN organizations o ON om.organization_id = o.id
+            WHERE om.user_id = $1 AND o.id = $2 AND o.is_active = TRUE
         """
         is_member = await conn.fetchrow(member_check, user_id, target_org_id)
 
@@ -525,7 +525,7 @@ async def get_org_apps(
             JOIN add_ons ao ON tf.feature_key = ao.feature_key
             JOIN subscription_tiers st ON tf.tier_id = st.id
             JOIN organizations o ON o.tier_id = st.id
-            WHERE o.id = $1::uuid
+            WHERE o.id = $1
               AND tf.enabled = TRUE
               AND ao.is_active = TRUE
               AND ao.launch_url IS NOT NULL
