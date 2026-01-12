@@ -117,20 +117,20 @@ const ServiceResourceAllocation = ({ services, onRefresh, onServiceAction, loadi
                 </TableRow>
               </TableHead>
               <TableBody>
-                {services.map((service) => (
-                  <TableRow key={service.service_name} hover>
+                {services.map((service, index) => (
+                  <TableRow key={service.service_name || service.name || index} hover>
                     <TableCell>
                       <Typography variant="body2" fontWeight="medium">
-                        {service.service_name}
+                        {service.service_name || service.name || service.display_name}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {service.usage_level} priority
+                        {service.usage_level || 'normal'} priority
                       </Typography>
                     </TableCell>
                     <TableCell align="center">
                       <Chip
-                        icon={getHardwareIcon(service.hardware_type)}
-                        label={service.hardware_type.toUpperCase()}
+                        icon={getHardwareIcon(service.hardware_type || 'cpu')}
+                        label={(service.hardware_type || 'cpu').toUpperCase()}
                         size="small"
                         color={service.hardware_type === 'gpu' ? 'primary' : 'default'}
                       />
@@ -146,12 +146,12 @@ const ServiceResourceAllocation = ({ services, onRefresh, onServiceAction, loadi
                       <Box display="flex" alignItems="center" gap={1}>
                         <LinearProgress
                           variant="determinate"
-                          value={service.resource_usage}
-                          color={getUsageColor(service.resource_usage)}
+                          value={service.resource_usage || service.cpu_percent || 0}
+                          color={getUsageColor(service.resource_usage || service.cpu_percent || 0)}
                           sx={{ width: 100, height: 6, borderRadius: 1 }}
                         />
                         <Typography variant="caption" color="text.secondary">
-                          {service.resource_usage.toFixed(1)}%
+                          {(service.resource_usage || service.cpu_percent || 0).toFixed(1)}%
                         </Typography>
                       </Box>
                     </TableCell>
@@ -188,13 +188,13 @@ const ServiceResourceAllocation = ({ services, onRefresh, onServiceAction, loadi
               <Box>
                 <Typography variant="caption" color="text.secondary">GPU Services</Typography>
                 <Typography variant="h6" color="primary.main">
-                  {services.filter(s => s.hardware_type === 'gpu').length}
+                  {services.filter(s => s.hardware_type === 'gpu' || s.gpu_enabled).length}
                 </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Avg CPU Usage</Typography>
                 <Typography variant="h6">
-                  {(services.reduce((sum, s) => sum + s.resource_usage, 0) / services.length).toFixed(1)}%
+                  {services.length > 0 ? (services.reduce((sum, s) => sum + (s.resource_usage || s.cpu_percent || 0), 0) / services.length).toFixed(1) : 0}%
                 </Typography>
               </Box>
             </Box>

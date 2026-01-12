@@ -16,6 +16,7 @@ import {
 import { getGlassmorphismStyles } from '../styles/glassmorphism';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../components/Toast';
+import { safeMap, safeFilter, safeSome, safeIncludes } from '../utils/safeUtils';
 
 // Animation variants
 const containerVariants = {
@@ -127,7 +128,7 @@ const AppCard = ({ service, onAddToSubscription, userHasService, theme }) => {
             Key Features
           </div>
           <ul className="space-y-2">
-            {(service.features || []).slice(0, 4).map((feature, idx) => (
+            {safeMap((service.features || []).slice(0, 4), (feature, idx) => (
               <li key={idx} className={`flex items-start gap-2 text-sm ${theme.text.secondary}`}>
                 <CheckCircleIcon className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
                 <span>{feature}</span>
@@ -326,7 +327,7 @@ export default function AppsMarketplace() {
       const transformedServices = data.map(app => {
         // Convert features object to array of strings
         const featuresList = app.features && typeof app.features === 'object'
-          ? Object.values(app.features).filter(f => typeof f === 'string')
+          ? Object.values(app.features).filter(f => f != null && typeof f === 'string')
           : [];
 
         return {
@@ -337,6 +338,7 @@ export default function AppsMarketplace() {
           description: app.description,
           features: featuresList,
           icon: ServerIcon,  // Default icon, could map based on category/slug
+          icon_url: app.icon_url,  // Pass through icon URL from API
           gradient: getCategoryGradient(app.category),
           featured: app.access_type === 'tier_included',
           access_url: app.launch_url
@@ -404,27 +406,26 @@ export default function AppsMarketplace() {
   };
 
   // Filter apps
-  const filteredServices = services
-    .filter(service => {
-      // Category filter
-      if (selectedCategory !== 'all' && service.category !== selectedCategory) {
-        return false;
-      }
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          service.name.toLowerCase().includes(query) ||
-          service.description.toLowerCase().includes(query) ||
-          service.features.some(f => f.toLowerCase().includes(query))
-        );
-      }
-      return true;
-    });
+  const filteredServices = safeFilter(services, service => {
+    // Category filter
+    if (selectedCategory !== 'all' && service.category !== selectedCategory) {
+      return false;
+    }
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        safeIncludes((service.name || '').toLowerCase(), query) ||
+        safeIncludes((service.description || '').toLowerCase(), query) ||
+        safeSome(service.features || [], f => safeIncludes((f || '').toLowerCase(), query))
+      );
+    }
+    return true;
+  });
 
   // Separate featured and regular apps
-  const featuredServices = filteredServices.filter(s => s.featured);
-  const regularServices = filteredServices.filter(s => !s.featured);
+  const featuredServices = safeFilter(filteredServices, s => s.featured);
+  const regularServices = safeFilter(filteredServices, s => !s.featured);
 
   if (loading) {
     return (

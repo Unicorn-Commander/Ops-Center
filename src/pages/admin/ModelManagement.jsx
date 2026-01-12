@@ -699,7 +699,7 @@ const ModelManagement = () => {
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                           {(model.tiers || model.tier_access || []).slice(0, 3).map((tier) => {
-                            const tierCode = typeof tier === 'string' ? tier : tier.tier_code;
+                            const tierCode = typeof tier === 'string' ? tier : (tier?.tier_code || 'unknown');
                             const tierStyle = getTierBadgeColor(tierCode);
                             const tierName = availableTiers.find(t => t.code === tierCode)?.name || tierCode;
                             return (

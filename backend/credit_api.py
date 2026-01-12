@@ -399,6 +399,12 @@ async def deduct_credits(
     Raises:
         HTTPException 400: Insufficient credits
     """
+    # Add audit log
+    logger.info(
+        f"AUDIT: Admin credit deduction - admin={current_user.get('user_id', 'unknown')}, "
+        f"target_user={request.user_id}, amount={request.amount}, service={request.service}"
+    )
+
     try:
         balance = await credit_manager.deduct_credits(
             user_id=request.user_id,

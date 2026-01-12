@@ -34,6 +34,7 @@ import RootRedirect from './components/RootRedirect';
 
 // Lazy load all pages (loaded on-demand when route is accessed)
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
+const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
 const DashboardPro = lazy(() => import('./pages/DashboardPro'));
 
@@ -154,6 +155,8 @@ const GrafanaViewer = lazy(() => import('./pages/GrafanaViewer'));
 const PrometheusConfig = lazy(() => import('./pages/PrometheusConfig'));
 const UmamiConfig = lazy(() => import('./pages/UmamiConfig'));
 const Geeses = lazy(() => import('./pages/Geeses'));
+const UmamiDashboard = lazy(() => import('./pages/admin/UmamiDashboard'));
+const WebsiteMonitor = lazy(() => import('./pages/admin/WebsiteMonitor'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -295,6 +298,9 @@ function AppRoutes() {
             </ProtectedRoute>
           } />
 
+          {/* Public Status Page - No auth required */}
+          <Route path="/status" element={<PublicStatusPage />} />
+
           {/* Admin Login - NO SystemProvider */}
           <Route path="/admin/login" element={<Login />} />
 
@@ -414,6 +420,8 @@ function AppRoutes() {
                   <Route path="monitoring/grafana/dashboards" element={<GrafanaViewer />} />
                   <Route path="monitoring/prometheus" element={<PrometheusConfig />} />
                   <Route path="monitoring/umami" element={<UmamiConfig />} />
+                  <Route path="monitoring/umami-dashboard" element={<UmamiDashboard />} />
+                  <Route path="monitoring/website-monitor" element={<WebsiteMonitor />} />
                   <Route path="monitoring/logs" element={<Logs />} />
                   <Route path="monitoring/geeses" element={<Geeses />} />
 

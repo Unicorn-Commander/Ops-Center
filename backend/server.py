@@ -2,6 +2,10 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Back
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, HTMLResponse, Response, RedirectResponse
 import psutil
@@ -145,6 +149,12 @@ from grafana_api import router as grafana_router
 # Umami Analytics Integration (Epic 2.5 - Monitoring)
 from umami_api import router as umami_router
 
+# Umami Dashboard API (January 2026)
+from routers.umami import router as umami_dashboard_router
+
+# Website Uptime Monitor (January 2026)
+from routers.website_monitor import router as website_monitor_router
+
 # Prometheus Monitoring API (Epic 3.1)
 from prometheus_api import router as prometheus_router
 
@@ -199,6 +209,9 @@ from api_docs import router as api_docs_router
 # Performance Optimization (Epic 3.1)
 from cache_middleware import CacheHeaderMiddleware, CompressionMiddleware
 # Note: redis_cache_manager provides decorators for API endpoint caching (future use)
+
+# Input Validation Middleware (P1 Security Fix)
+from middleware.validation import InputValidationMiddleware
 
 # Storage & Backup Management
 from storage_backup_api import router as storage_backup_router
@@ -291,6 +304,23 @@ app = FastAPI(title="UC-1 Pro Admin Dashboard API")
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+# Add input validation middleware (P1 Security Fix)
+app.add_middleware(InputValidationMiddleware)
+logger.info("Input validation middleware enabled (P1 Security Fix)")
+
+# Add rate limit exception handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Please wait before making more requests."}
+    )
 
 # Initialize Docker service manager
 docker_manager = DockerServiceManager()
@@ -477,7 +507,9 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/org/",  # Organization management API - CRUD operations
         "/api/v1/org",    # Organization management API (without trailing slash)
         "/api/v1/alerts/",  # Email alert system - REST API operations
-        "/api/v1/logs/"  # Log search system - REST API operations
+        "/api/v1/logs/",  # Log search system - REST API operations
+        "/api/v1/website-monitor/",  # Website uptime monitoring - REST API operations
+        "/api/v1/umami/"  # Umami analytics dashboard - REST API operations
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -920,6 +952,14 @@ logger.info("System Metrics API endpoints registered at /api/v1/system")
 # Umami Analytics API (Epic 2.5 - Monitoring)
 app.include_router(umami_router)
 logger.info("Umami Analytics API endpoints registered at /api/v1/monitoring/umami")
+
+# Umami Dashboard API (January 2026)
+app.include_router(umami_dashboard_router)
+logger.info("Umami Dashboard API endpoints registered at /api/v1/umami")
+
+# Website Uptime Monitor (January 2026)
+app.include_router(website_monitor_router)
+logger.info("Website Monitor API endpoints registered at /api/v1/website-monitor")
 
 # Prometheus Monitoring API (Epic 3.1)
 app.include_router(prometheus_router)
@@ -2498,22 +2538,38 @@ async def list_services(current_user: dict = Depends(get_current_user)):
         # Format the services for the expected API response
         formatted_services = []
         for service in services:
+            # Determine hardware type based on GPU usage
+            hardware_type = 'gpu' if service.get('gpu_enabled', False) else 'cpu'
+
+            # Determine usage level based on service category
+            category = service.get('category', 'general')
+            if category in ['inference', 'processing']:
+                usage_level = 'high'
+            elif category in ['database', 'interface']:
+                usage_level = 'medium'
+            else:
+                usage_level = 'normal'
+
             formatted_services.append({
                 "name": service['name'],
+                "service_name": service['name'],  # Add for frontend compatibility
                 "display_name": service['display_name'],
                 "status": service['status'],
                 "port": service['port'],
                 "description": service['description'],
                 "cpu_percent": service['cpu_percent'],
+                "resource_usage": service['cpu_percent'],  # Add for frontend compatibility
                 "memory_mb": service['memory_mb'],
                 "uptime": service['uptime'],
                 "type": service.get('type', 'core'),
                 "category": service.get('category', 'general'),
                 "container_name": service['container_name'],
                 "gpu_enabled": service['gpu_enabled'],
+                "hardware_type": hardware_type,  # Add hardware_type field
+                "usage_level": usage_level,  # Add usage_level field
                 "image": service['image']
             })
-        
+
         return formatted_services
     
     except Exception as e:
@@ -2522,18 +2578,24 @@ async def list_services(current_user: dict = Depends(get_current_user)):
         if os.environ.get('DEVELOPMENT', 'false').lower() == 'true':
             services = []
             for service_id, service_info in SERVICES.items():
+                gpu_enabled = service_id in ["vllm"]
+                cpu_pct = 12.5 if service_id == "vllm" else 2.1
                 services.append({
                     "name": service_id,
+                    "service_name": service_id,
                     "display_name": service_info["name"],
                     "status": "healthy" if service_id in ["vllm", "open-webui"] else "stopped",
                     "port": service_info["port"],
                     "description": service_info.get("description", ""),
-                    "cpu_percent": 12.5 if service_id == "vllm" else 2.1,
+                    "cpu_percent": cpu_pct,
+                    "resource_usage": cpu_pct,
                     "memory_mb": 8192 if service_id == "vllm" else 512,
                     "uptime": "2h 15m" if service_id in ["vllm", "open-webui"] else None,
                     "category": "core",
                     "container_name": service_info["container"],
-                    "gpu_enabled": False,
+                    "gpu_enabled": gpu_enabled,
+                    "hardware_type": 'gpu' if gpu_enabled else 'cpu',
+                    "usage_level": 'high' if service_id == "vllm" else 'normal',
                     "image": "unknown"
                 })
             return services
@@ -5599,6 +5661,26 @@ async def serve_login():
     """Redirect to OAuth login flow"""
     return RedirectResponse(url="/auth/login")
 
+# Serve the React app for dashboard route (handles refresh)
+@app.get("/dashboard")
+async def serve_dashboard(request: Request):
+    """Serve the React app for /dashboard route with auth check"""
+    session_token = request.cookies.get("session_token")
+
+    if session_token and session_token in sessions:
+        # User is authenticated, serve the React app
+        for index_path in ["public/index.html", "dist/index.html", "../public/index.html"]:
+            if os.path.exists(index_path):
+                response = FileResponse(index_path)
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                return response
+        raise HTTPException(status_code=404, detail="Frontend not found")
+    else:
+        # Not authenticated, redirect to OAuth login
+        return RedirectResponse(url="/auth/login", status_code=302)
+
 # Serve the React app for admin routes
 @app.get("/admin")
 @app.get("/admin/{path:path}")
@@ -5667,16 +5749,16 @@ async def serve_spa(full_path: str, request: Request):
             return FileResponse(file_path)
 
     # For all other routes, return the index.html (for React Router)
-    index_path = "dist/index.html"
-    if os.path.exists(index_path):
-        # Add cache-control headers to prevent browser caching of index.html
-        response = FileResponse(index_path)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-        return response
-    else:
-        raise HTTPException(status_code=404, detail="Frontend not found")
+    # Check public directory first (deployed build), then dist
+    for index_path in ["public/index.html", "dist/index.html"]:
+        if os.path.exists(index_path):
+            # Add cache-control headers to prevent browser caching of index.html
+            response = FileResponse(index_path)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+    raise HTTPException(status_code=404, detail="Frontend not found")
 
 if __name__ == "__main__":
     import uvicorn

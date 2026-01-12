@@ -142,7 +142,8 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
                     'sk-presenton-service-key-2025': 'presenton-service',
                     'sk-brigade-service-key-2025': 'brigade-service',
-                    'sk-centerdeep-service-key-2025': 'centerdeep-service'
+                    'sk-centerdeep-service-key-2025': 'centerdeep-service',
+                    'sk-partnerpulse-service-key-2025': 'partnerpulse-service'
                 }
 
                 service_name = service_keys.get(token)

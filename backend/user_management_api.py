@@ -398,10 +398,12 @@ async def reset_user_password(
         if not success:
             raise HTTPException(status_code=404, detail="User not found")
 
+        # TODO: Implement email sending
+        # For now, log securely and return message
+        logger.info(f"Password reset for user {user_id} (temp password generated but not returned for security)")
         return {
-            "message": "Password reset successfully",
-            "temporary_password": temp_password,
-            "note": "User will be required to change password on next login"
+            "message": "Password reset successfully. A new temporary password has been set.",
+            "note": "The user will need to contact admin to receive the password securely, or implement email notification."
         }
 
     except HTTPException:

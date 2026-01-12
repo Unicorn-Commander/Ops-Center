@@ -53,13 +53,13 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
   };
 
   const alerts = [];
-  if (gpuData.temperature >= 80) {
+  if (gpuData?.temperature != null && gpuData.temperature >= 80) {
     alerts.push({ severity: 'error', message: `High temperature: ${gpuData.temperature.toFixed(1)}°C` });
   }
-  if (gpuData.memory_percent >= 90) {
+  if (gpuData?.memory_percent != null && gpuData.memory_percent >= 90) {
     alerts.push({ severity: 'warning', message: `High memory usage: ${gpuData.memory_percent.toFixed(1)}%` });
   }
-  if (gpuData.utilization >= 95) {
+  if (gpuData?.utilization != null && gpuData.utilization >= 95) {
     alerts.push({ severity: 'info', message: `High utilization: ${gpuData.utilization.toFixed(1)}%` });
   }
 
@@ -82,7 +82,7 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
 
           {/* GPU Model */}
           <Typography variant="body2" color="text.secondary" mb={2} fontWeight="medium">
-            {gpuData.model}
+            {gpuData.model || 'Unknown GPU'}
           </Typography>
 
           {/* Alerts */}
@@ -106,21 +106,21 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
               <Typography variant="caption" fontWeight="medium">Temperature</Typography>
               <Chip
-                label={`${gpuData.temperature.toFixed(1)}°C`}
+                label={`${(gpuData.temperature || 0).toFixed(1)}°C`}
                 size="small"
-                color={getTempColor(gpuData.temperature)}
+                color={getTempColor(gpuData.temperature || 0)}
               />
             </Box>
             <LinearProgress
               variant="determinate"
-              value={(gpuData.temperature / 100) * 100}
+              value={((gpuData.temperature || 0) / 100) * 100}
               sx={{
                 height: 8,
                 borderRadius: 1,
                 backgroundColor: 'grey.200',
                 '& .MuiLinearProgress-bar': {
-                  backgroundColor: gpuData.temperature >= 80 ? 'error.main' :
-                                  gpuData.temperature >= 70 ? 'warning.main' : 'success.main'
+                  backgroundColor: (gpuData.temperature || 0) >= 80 ? 'error.main' :
+                                  (gpuData.temperature || 0) >= 70 ? 'warning.main' : 'success.main'
                 }
               }}
             />
@@ -131,17 +131,17 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
               <Typography variant="caption" fontWeight="medium">Memory</Typography>
               <Typography variant="caption" color="text.secondary">
-                {(gpuData.memory_used / 1024).toFixed(1)} GB / {(gpuData.memory_total / 1024).toFixed(1)} GB
+                {((gpuData.memory_used || 0) / 1024).toFixed(1)} GB / {((gpuData.memory_total || 0) / 1024).toFixed(1)} GB
               </Typography>
             </Box>
             <LinearProgress
               variant="determinate"
-              value={gpuData.memory_percent}
-              color={gpuData.memory_percent >= 90 ? 'error' : gpuData.memory_percent >= 75 ? 'warning' : 'primary'}
+              value={gpuData.memory_percent || 0}
+              color={(gpuData.memory_percent || 0) >= 90 ? 'error' : (gpuData.memory_percent || 0) >= 75 ? 'warning' : 'primary'}
               sx={{ height: 8, borderRadius: 1 }}
             />
             <Typography variant="caption" color="text.secondary">
-              {gpuData.memory_percent.toFixed(1)}% used
+              {(gpuData.memory_percent || 0).toFixed(1)}% used
             </Typography>
           </Box>
 
@@ -150,15 +150,15 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
               <Typography variant="caption" fontWeight="medium">Utilization</Typography>
               <Chip
-                label={`${gpuData.utilization.toFixed(1)}%`}
+                label={`${(gpuData.utilization || 0).toFixed(1)}%`}
                 size="small"
-                color={getUtilizationColor(gpuData.utilization)}
+                color={getUtilizationColor(gpuData.utilization || 0)}
               />
             </Box>
             <LinearProgress
               variant="determinate"
-              value={gpuData.utilization}
-              color={getUtilizationColor(gpuData.utilization)}
+              value={gpuData.utilization || 0}
+              color={getUtilizationColor(gpuData.utilization || 0)}
               sx={{ height: 8, borderRadius: 1 }}
             />
           </Box>
@@ -171,7 +171,7 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
                 <Typography variant="caption" fontWeight="medium">Power</Typography>
               </Box>
               <Typography variant="caption" color="text.secondary">
-                {gpuData.power_draw.toFixed(1)} W / {gpuData.power_limit.toFixed(0)} W
+                {(gpuData.power_draw || 0).toFixed(1)} W / {(gpuData.power_limit || 0).toFixed(0)} W
               </Typography>
             </Box>
           </Box>
@@ -196,32 +196,32 @@ const GPUMonitorCard = ({ gpuData, onRefresh, loading }) => {
           <Box sx={{ display: 'grid', gap: 2 }}>
             <Box>
               <Typography variant="caption" color="text.secondary">Model</Typography>
-              <Typography variant="body2" fontWeight="medium">{gpuData.model}</Typography>
+              <Typography variant="body2" fontWeight="medium">{gpuData.model || 'Unknown'}</Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Driver Version</Typography>
-              <Typography variant="body2" fontWeight="medium">{gpuData.driver_version}</Typography>
+              <Typography variant="body2" fontWeight="medium">{gpuData.driver_version || 'N/A'}</Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Compute Capability</Typography>
-              <Typography variant="body2" fontWeight="medium">{gpuData.compute_capability}</Typography>
+              <Typography variant="body2" fontWeight="medium">{gpuData.compute_capability || 'N/A'}</Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Total Memory</Typography>
               <Typography variant="body2" fontWeight="medium">
-                {(gpuData.memory_total / 1024).toFixed(2)} GB
+                {((gpuData.memory_total || 0) / 1024).toFixed(2)} GB
               </Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Free Memory</Typography>
               <Typography variant="body2" fontWeight="medium">
-                {(gpuData.memory_free / 1024).toFixed(2)} GB
+                {((gpuData.memory_free || 0) / 1024).toFixed(2)} GB
               </Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Power Limit</Typography>
               <Typography variant="body2" fontWeight="medium">
-                {gpuData.power_limit.toFixed(0)} W
+                {(gpuData.power_limit || 0).toFixed(0)} W
               </Typography>
             </Box>
           </Box>

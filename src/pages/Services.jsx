@@ -146,7 +146,7 @@ export default function Services() {
       // REFACTORED: Using safeMap to prevent crashes on malformed service data
       const transformedServices = safeMap((Array.isArray(data) ? data : []), (service) => ({
         name: service.name,
-        display_name: service.display_name || service.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        display_name: service.display_name || (service.name ? service.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown Service'),
         container_name: service.container_name || service.name,
         status: service.status,
         port: service.port,
