@@ -300,8 +300,8 @@ async def list_all_organizations(
                         else:
                             owner_display = member.user_id
                     except Exception as e:
-                        logger.warning(f"Could not fetch owner details for {member.user_id}: {e}")
-                        owner_display = member.user_id
+                        logger.warning(f"Failed to fetch user info for owner {member.user_id}: {e}")
+                        owner_display = member.user_id  # Fallback to user_id
                     break
 
             enriched_orgs.append({

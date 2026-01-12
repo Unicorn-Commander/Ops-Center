@@ -87,13 +87,8 @@ async def get_user_org_id(request: Request) -> str:
     org_id = user.get("org_id")
 
     if not org_id:
-        # Fallback: generate org_id from email
-        email = user.get("email")
-        if email:
-            org_id = f"org_{email.split('@')[0]}_{user.get('id', 'unknown')}"
-            logger.warning(f"No org_id found, using generated: {org_id}")
-        else:
-            raise HTTPException(status_code=400, detail="Cannot determine org_id")
+        # No fallback generation - user must be assigned to organization
+        raise HTTPException(status_code=400, detail="User not assigned to organization. Please contact support.")
 
     return org_id
 
@@ -107,10 +102,46 @@ async def get_subscription_plans():
         List of subscription plans with pricing and features
     """
     logger.info("Fetching subscription plans")
+
+    # Try to fetch from database first
+    try:
+        import asyncpg
+        import os
+
+        # Get database connection
+        conn = await asyncpg.connect(
+            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "unicorn"),
+            password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+            database=os.getenv("POSTGRES_DB", "unicorn_db")
+        )
+
+        try:
+            # Query subscription tiers
+            rows = await conn.fetch("""
+                SELECT tier_code as plan_code, display_name as name,
+                       price_monthly, credits_monthly, description, features
+                FROM subscription_tiers
+                WHERE is_active = true
+                ORDER BY price_monthly ASC
+            """)
+
+            if rows:
+                plans = [dict(row) for row in rows]
+                logger.info(f"Fetched {len(plans)} plans from database")
+                return {"plans": plans, "currency": "USD", "source": "database"}
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning(f"Failed to fetch plans from database: {e}")
+
+    # Fallback to hardcoded plans
+    logger.info("Using hardcoded plans as fallback")
     return {
         "plans": SUBSCRIPTION_PLANS,
         "currency": "USD",
-        "billing_provider": "lago"
+        "source": "fallback"
     }
 
 
@@ -157,8 +188,10 @@ async def get_invoices_list(request: Request, limit: int = 50):
 
     except Exception as e:
         logger.error(f"Error fetching invoices: {e}", exc_info=True)
-        # Return empty list instead of error to avoid breaking the UI
-        return []
+        raise HTTPException(
+            status_code=503,
+            detail="Billing service temporarily unavailable. Please try again later."
+        )
 
 
 @router.get("/cycle")

@@ -1,37 +1,51 @@
 import React from 'react';
+import { Box, Typography, Button } from '@mui/material';
+import { Error as ErrorIcon } from '@mui/icons-material';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, error };
+    return { hasError: true };
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
+    this.setState({ error, errorInfo });
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-          <div className="bg-red-900 text-white p-8 rounded-lg max-w-lg">
-            <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
-            <p className="mb-4">The application encountered an error.</p>
-            <pre className="bg-black p-4 rounded text-sm overflow-auto">
-              {this.state.error?.toString()}
-            </pre>
-            <button 
-              onClick={() => window.location.reload()} 
-              className="mt-4 bg-red-600 hover:bg-red-700 px-4 py-2 rounded"
-            >
-              Reload Page
-            </button>
-          </div>
-        </div>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '200px',
+            p: 3,
+            textAlign: 'center',
+          }}
+        >
+          <ErrorIcon sx={{ fontSize: 48, color: 'error.main', mb: 2 }} />
+          <Typography variant="h6" gutterBottom>
+            Something went wrong
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {this.props.fallbackMessage || 'An unexpected error occurred. Please try again.'}
+          </Typography>
+          <Button variant="contained" onClick={this.handleReset}>
+            Try Again
+          </Button>
+        </Box>
       );
     }
 

@@ -719,8 +719,10 @@ async def get_user_id(
                 # No user context - use service organization account for billing
                 service_org_id = service_org_ids.get(service_name)
                 if service_org_id:
-                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {service_org_id}")
-                    return service_org_id
+                    # Prefix with 'org_' so credit system recognizes this as an organization
+                    org_prefixed_id = f"org_{service_org_id}"
+                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {org_prefixed_id}")
+                    return org_prefixed_id
                 else:
                     logger.error(f"❌ Service org ID not configured for: {service_name}")
                     raise HTTPException(

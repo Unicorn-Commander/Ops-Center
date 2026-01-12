@@ -7,9 +7,11 @@ Author: Ops-Center AI
 Created: November 8, 2025
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from typing import Optional, Dict, Any, List
 import logging
+import sys
+import os
 
 from services.forgejo_client import ForgejoClient
 
@@ -21,8 +23,56 @@ router = APIRouter(prefix="/api/v1/forgejo", tags=["forgejo"])
 forgejo = ForgejoClient()
 
 
+# =============================================================================
+# Authentication Dependencies
+# =============================================================================
+
+async def get_current_user(request: Request):
+    """Verify user is authenticated (uses Redis session manager)"""
+    # Add parent directory to path if needed
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+
+    from redis_session import RedisSessionManager
+
+    # Get session token from cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Get Redis connection info
+    redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
+    # Initialize session manager
+    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+
+    # Get session data
+    if session_token not in sessions:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    session_data = sessions[session_token]
+    user = session_data.get("user", {})
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found in session")
+
+    return user
+
+
+async def require_admin(request: Request):
+    """Verify user is authenticated and has admin role"""
+    user = await get_current_user(request)
+
+    # Check if user has admin role
+    if not user.get("is_admin") and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    return True
+
+
 @router.get("/health")
-async def get_forgejo_health():
+async def get_forgejo_health(current_user: dict = Depends(get_current_user)):
     """
     Check Forgejo service health
 
@@ -42,7 +92,7 @@ async def get_forgejo_health():
 
 
 @router.get("/stats")
-async def get_forgejo_stats():
+async def get_forgejo_stats(current_user: dict = Depends(get_current_user)):
     """
     Get Forgejo instance statistics
 
@@ -58,7 +108,7 @@ async def get_forgejo_stats():
 
 
 @router.get("/orgs")
-async def get_all_organizations():
+async def get_all_organizations(admin: bool = Depends(require_admin)):
     """
     Get all Forgejo organizations (admin only)
 
@@ -74,7 +124,7 @@ async def get_all_organizations():
 
 
 @router.get("/orgs/{org_name}/repos")
-async def get_organization_repos(org_name: str):
+async def get_organization_repos(org_name: str, admin: bool = Depends(require_admin)):
     """
     Get repositories for specific organization
 
@@ -122,7 +172,7 @@ async def get_user_repos(
 
 
 @router.get("/info")
-async def get_forgejo_info():
+async def get_forgejo_info(current_user: dict = Depends(get_current_user)):
     """
     Get Forgejo instance information
 

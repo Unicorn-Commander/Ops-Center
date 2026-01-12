@@ -147,12 +147,13 @@ class CreditSystem:
 
             # Check if this is a service organization ID
             if user_id and user_id.startswith('org_'):
+                org_uuid = user_id[4:]  # Remove 'org_' prefix to get raw UUID
                 async with self.db_pool.acquire() as conn:
                     result = await conn.fetchval(
                         """
-                        SELECT credit_balance FROM organizations WHERE id = $1
+                        SELECT credit_balance FROM organization_credits WHERE org_id = $1
                         """,
-                        user_id
+                        org_uuid
                     )
                     if result is not None:
                         # Convert millicredits to credits
@@ -230,15 +231,17 @@ class CreditSystem:
                 async with conn.transaction():
                     # Check if this is a service organization ID
                     if user_id and user_id.startswith('org_'):
-                        # Service organization billing
+                        # Service organization billing - strip 'org_' prefix for UUID lookup
+                        org_uuid = user_id[4:]  # Remove 'org_' prefix to get raw UUID
                         result = await conn.fetchrow(
                             """
-                            SELECT credit_balance, subscription_tier
-                            FROM organizations
-                            WHERE id = $1
-                            FOR UPDATE
+                            SELECT oc.credit_balance, o.subscription_tier
+                            FROM organization_credits oc
+                            JOIN organizations o ON oc.org_id = o.id
+                            WHERE oc.org_id = $1
+                            FOR UPDATE OF oc
                             """,
-                            user_id
+                            org_uuid
                         )
 
                         if not result:
@@ -259,13 +262,16 @@ class CreditSystem:
                         new_balance = max(0, current_balance - amount)
                         await conn.execute(
                             """
-                            UPDATE organizations
+                            UPDATE organization_credits
                             SET credit_balance = $1,
+                                total_credits_used = total_credits_used + $3,
+                                last_usage_date = NOW(),
                                 updated_at = NOW()
-                            WHERE id = $2
+                            WHERE org_id = $2
                             """,
                             int(new_balance * 1000),  # Convert credits to millicredits
-                            user_id
+                            org_uuid,
+                            int(amount * 1000)  # Amount used in millicredits
                         )
 
                         # Log service usage for analytics
@@ -278,7 +284,7 @@ class CreditSystem:
                             )
                             VALUES ($1, $2, $3, $4, $5, $6, $7)
                             """,
-                            user_id,
+                            org_uuid,
                             service_name,
                             metadata.get('endpoint', '/api/v1/llm/image/generations'),
                             amount,

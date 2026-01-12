@@ -147,6 +147,7 @@ export default function Layout({ children }) {
       billingUsage: true,
       analytics: true,
       llmHub: true,
+      monitoring: true,
       platform: true
     };
   };
@@ -543,12 +544,49 @@ export default function Layout({ children }) {
                         icon={iconMap.UsersIcon}
                         indent={true}
                       />
-                      <NavigationItem collapsed={sidebarCollapsed}
-                        name="Monitoring"
-                        href="/admin/system"
+                      <NavigationSection collapsed={sidebarCollapsed}
+                        title="Monitoring"
                         icon={iconMap.ChartBarIcon}
-                        indent={true}
-                      />
+                        defaultOpen={sectionState.monitoring}
+                        onToggle={() => toggleSection('monitoring')}
+                      >
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Overview"
+                          href="/admin/monitoring/overview"
+                          icon={iconMap.HomeIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Umami Analytics"
+                          href="/admin/monitoring/umami-dashboard"
+                          icon={iconMap.ChartBarIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Website Monitor"
+                          href="/admin/monitoring/website-monitor"
+                          icon={iconMap.GlobeAltIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Grafana"
+                          href="/admin/monitoring/grafana"
+                          icon={iconMap.ChartBarIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Prometheus"
+                          href="/admin/monitoring/prometheus"
+                          icon={iconMap.ServerIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Logs"
+                          href="/admin/monitoring/logs"
+                          icon={iconMap.DocumentTextIcon}
+                          indent={true}
+                        />
+                      </NavigationSection>
                       <NavigationSection collapsed={sidebarCollapsed}
                         title="LLM Hub"
                         icon={iconMap.CpuChipIcon}

@@ -74,8 +74,8 @@ async def get_current_user_tier(request: Request) -> str:
         # Get session token from cookie
         session_token = request.cookies.get("session_token")
         if not session_token:
-            # Not authenticated - return managed tier (most permissive)
-            return 'managed'
+            # Not authenticated - return trial tier (least permissive for unauthenticated)
+            return 'trial'
 
         # Get Redis connection info
         redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
@@ -86,8 +86,8 @@ async def get_current_user_tier(request: Request) -> str:
 
         # Get session data
         if session_token not in sessions:
-            # Session expired - return managed tier
-            return 'managed'
+            # Session expired - return trial tier
+            return 'trial'
 
         session_data = sessions[session_token]
 
@@ -98,21 +98,21 @@ async def get_current_user_tier(request: Request) -> str:
             user = session_data.get("user", {})
             tier = user.get("subscription_tier") or user.get("tier")
 
-        # If tier not set or invalid, default to managed
-        # Valid tiers: vip_founder, byok, managed, founder-friend, trial, starter, professional, enterprise, human_interest
-        valid_tiers = ['vip_founder', 'byok', 'managed', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise', 'human_interest']
+        # If tier not set or invalid, default to trial
+        # Valid tiers: vip_founder, byok, managed, founder-friend, trial, starter, professional, enterprise
+        valid_tiers = ['vip_founder', 'byok', 'managed', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise']
         if not tier or tier not in valid_tiers:
-            tier = 'managed'
+            tier = 'trial'
 
         return tier
 
     except Exception as e:
-        # On any error, default to managed tier
+        # On any error, default to trial tier
         # Log warning but don't fail the request
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(f"Error extracting user tier from session: {e}")
-        return 'managed'
+        return 'trial'
 
 
 # =============================================================================
@@ -132,6 +132,11 @@ def get_tier_level(tier_name: str) -> int:
 
 async def get_user_tier_features(user_tier: str, conn) -> set:
     """Get all app keys enabled for user's tier"""
+    # Validate tier before database query
+    valid_tiers = ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'founder-friend', 'byok', 'managed']
+    if user_tier.lower() not in valid_tiers:
+        raise HTTPException(status_code=400, detail=f"Invalid subscription tier: {user_tier}")
+
     # Get tier_id from subscription_tiers (using tier_code which matches Keycloak attribute)
     tier_row = await conn.fetchrow(
         "SELECT id FROM subscription_tiers WHERE tier_code = $1",

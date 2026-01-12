@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { ServiceLogos, getServiceInfo } from '../components/ServiceLogos';
 import { EnhancedServiceLogos, EnhancedServiceCard, getEnhancedServiceInfo } from '../components/EnhancedServiceLogos';
 import UpdateModal from '../components/UpdateModal';
+import UmamiWidget from '../components/UmamiWidget';
 import { getGlassmorphismStyles, getResourceColor, getServiceColorScheme } from '../styles/glassmorphism';
 // Safe utilities for defensive rendering (Phase 3 refactoring)
 import { safeMap, safeFilter, safeFind, safeGet } from '../utils/safeArrayUtils';
@@ -229,7 +230,12 @@ export default function Dashboard() {
   const loadUserFeatures = async () => {
     try {
       // Get current user
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      let user = {};
+      try {
+        user = JSON.parse(localStorage.getItem('user') || '{}');
+      } catch (e) {
+        console.error('Failed to parse user from localStorage:', e);
+      }
 
       // Admin users see all services
       if (user.role === 'admin') {
@@ -253,7 +259,9 @@ export default function Dashboard() {
       if (response.ok) {
         const data = await response.json();
         // Extract feature keys from the response
-        const featureKeys = (data.features || []).map(f => f.feature_key);
+        const featureKeys = (data.features || [])
+          .filter(f => f != null && f.feature_key)
+          .map(f => f.feature_key);
         setUserFeatures(featureKeys);
       }
     } catch (error) {
@@ -481,7 +489,7 @@ export default function Dashboard() {
     // Check for stopped critical services - using safeFilter to prevent crashes
     const criticalServiceNames = ['vllm', 'open-webui', 'redis', 'postgresql'];
     safeFilter(services, (service) => {
-      return service.status !== 'running' && criticalServiceNames.includes(service.name);
+      return service?.name && service.status !== 'running' && criticalServiceNames.includes(service.name);
     }).forEach(service => {
       newAlerts.push({
         id: `service-${service.name}`,
@@ -503,10 +511,10 @@ export default function Dashboard() {
 
   // Calculate system status dynamically
   const criticalServices = ['vllm', 'open-webui', 'redis', 'postgresql', 'keycloak'];
-  const runningServices = services?.filter(s => s.status === 'running' || s.status === 'healthy') || [];
+  const runningServices = services?.filter(s => s?.status === 'running' || s?.status === 'healthy') || [];
   const criticalRunning = services?.filter(s =>
-    criticalServices.some(cs => s.name.includes(cs)) &&
-    (s.status === 'running' || s.status === 'healthy')
+    s?.name && criticalServices.some(cs => s.name.includes(cs)) &&
+    (s?.status === 'running' || s?.status === 'healthy')
   ) || [];
 
   const getSystemStatus = () => {
@@ -731,6 +739,11 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
+      {/* Analytics Widget - Umami Integration */}
+      <motion.div variants={itemVariants}>
+        <UmamiWidget />
+      </motion.div>
+
       {/* System Information Card - Glassmorphism */}
       <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-8 shadow-xl`}>
         <h2 className={`text-xl font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary} mb-6 flex items-center gap-3`}>
@@ -863,7 +876,7 @@ export default function Dashboard() {
           <div>
             <div className="flex justify-between mb-2">
               <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
-                GPU {systemData?.gpu?.[0]?.name ? `(${systemData.gpu[0].name})` : ''}
+                GPU {systemData?.gpu?.[0]?.name ? `(${systemData?.gpu?.[0]?.name})` : ''}
               </span>
               <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{gpuUsage.toFixed(1)}%</span>
             </div>
@@ -933,7 +946,7 @@ export default function Dashboard() {
           <div>
             <div className="flex justify-between mb-2">
               <span className={`text-sm font-semibold ${currentTheme === 'unicorn' ? 'text-purple-200' : theme.text.secondary}`}>
-                CPU {hardwareInfo?.cpu?.model ? `(${hardwareInfo.cpu.model.split(' ').slice(0, 2).join(' ')})` : ''}
+                CPU {hardwareInfo?.cpu?.model ? `(${hardwareInfo?.cpu?.model.split(' ').slice(0, 2).join(' ')})` : ''}
               </span>
               <span className={`text-sm font-bold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>{systemData?.cpu?.percent?.toFixed(1) || 0}%</span>
             </div>
