@@ -24,7 +24,7 @@ import {
   WrenchScrewdriverIcon,
   ArchiveBoxIcon
 } from '@heroicons/react/24/outline';
-import { ColonelLogo, MagicUnicornLogo } from '../components/Logos';
+import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from '../components/Logos';
 import { useTheme } from '../contexts/ThemeContext';
 
 export default function PublicLanding() {
@@ -704,18 +704,18 @@ export default function PublicLanding() {
           >
             {/* Logo and Title - Compact on Desktop */}
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
-              <ColonelLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl animate-pulse" />
+              <CenterDeepLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl" />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
                   <h1 className={`text-4xl md:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' ? 'animate-gradient' : ''}`}>
-                    Unicorn Commander
+                    Center-Deep
                   </h1>
-                  <div className={`text-2xl md:text-3xl ${styles.subText} font-bold tracking-widest ${currentTheme === 'unicorn' ? 'sparkle-text' : ''}`}>
-                    PRO
-                  </div>
                 </div>
                 <p className={`text-lg ${styles.subText} mt-1`}>
-                  Your AI Infrastructure Command Center
+                  AI-Powered Operations Dashboard
+                </p>
+                <p className={`text-sm ${styles.footerText} mt-2`}>
+                  Powered by <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-400">Unicorn Commander</a>
                 </p>
               </div>
             </div>
@@ -1001,7 +1001,7 @@ export default function PublicLanding() {
           </div>
 
           <p className={`${styles.subText} mb-4`}>
-            Access the admin dashboard to manage your UC-1 Pro system
+            Access the admin dashboard to manage your Center-Deep services
           </p>
 
           <button
@@ -1018,18 +1018,28 @@ export default function PublicLanding() {
       {/* Footer */}
       <footer className={`${styles.footerBg} py-8 mt-16`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <MagicUnicornLogo className="w-8 h-8" />
+              <CenterDeepLogo className="w-10 h-10" />
               <div className={styles.logoText}>
-                <div className="font-semibold">Magic Unicorn Unconventional Technology & Stuff Inc</div>
-                <div className={`text-sm ${styles.footerText}`}>UC-1 Pro v1.0.0</div>
+                <div className="font-semibold">Center-Deep Operations Dashboard</div>
+                <div className={`text-sm ${styles.footerText}`}>v2.1.0</div>
               </div>
             </div>
-            
-            <div className={`text-right text-sm ${styles.footerText}`}>
-              <div>Enterprise AI Infrastructure</div>
-              <div>Powered by NVIDIA RTX 5090</div>
+
+            <div className={`text-center md:text-right text-sm ${styles.footerText}`}>
+              <div className="flex items-center gap-2 justify-center md:justify-end mb-1">
+                <span>Powered by</span>
+                <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-blue-400 underline">
+                  Unicorn Commander
+                </a>
+              </div>
+              <div className="flex items-center gap-2 justify-center md:justify-end">
+                <MagicUnicornLogo className="w-5 h-5" />
+                <a href="https://magicunicorn.tech" target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 underline">
+                  Magic Unicorn Unconventional Technology & Stuff Inc
+                </a>
+              </div>
             </div>
           </div>
         </div>

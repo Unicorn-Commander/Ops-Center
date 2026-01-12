@@ -256,27 +256,27 @@ export default function Layout({ children }) {
                     ? 'hover:bg-gray-100'
                     : 'hover:bg-slate-700/50'
                 }`}
-                title={sidebarCollapsed ? "Ops Center - UC-1 Pro Control" : ""}
+                title={sidebarCollapsed ? "Center-Deep - Operations Dashboard" : ""}
               >
-                {/* The Colonel Logo */}
-                <ColonelLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                {/* Center-Deep Logo */}
+                <CenterDeepLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
                 {!sidebarCollapsed && (
                   <div className="text-center">
                     <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
-                      Ops Center
+                      Center-Deep
                     </h1>
                     <div className={`text-lg ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
-                      UC-1 Pro Control
+                      Operations Dashboard
                     </div>
                   </div>
                 )}
               </Link>
 
-              {/* System Management - subtitle (hidden when collapsed) */}
+              {/* Powered By - subtitle (hidden when collapsed) */}
               {!sidebarCollapsed && (
                 <>
                   <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200/70' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-400'} mb-2 font-medium`}>
-                    System Management Console
+                    Powered by <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-300">Unicorn Commander</a>
                   </div>
 
                   {/* Version */}
