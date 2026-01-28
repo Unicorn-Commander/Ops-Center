@@ -19,6 +19,7 @@ from datetime import datetime
 import json
 import time
 import httpx
+import bcrypt
 
 from fastapi import APIRouter, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -53,7 +54,10 @@ def set_sessions_store(sessions_dict):
     sessions = sessions_dict
 
 # LiteLLM proxy URL
-LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://unicorn-litellm-wilmer:4000')
+LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://uchub-litellm:4000')
+
+# LiteLLM master key for internal API calls
+LITELLM_MASTER_KEY = os.getenv('LITELLM_MASTER_KEY', 'REMOVED')
 
 # BYOK encryption key (used for both user and system keys)
 BYOK_ENCRYPTION_KEY = os.getenv('BYOK_ENCRYPTION_KEY')
@@ -627,6 +631,83 @@ class SystemKeyManager:
 
 
 # ============================================================================
+# Service Key Validation from Database
+# ============================================================================
+
+async def validate_service_key_from_db(request: Request, api_key: str) -> Optional[dict]:
+    """
+    Validate service key against database.
+
+    Args:
+        request: FastAPI request (to access db_pool)
+        api_key: The service key to validate (e.g., sk-brigade-xxx-2026)
+
+    Returns:
+        dict with service_name and org_id if valid, None otherwise
+    """
+    try:
+        db_pool = getattr(request.app.state, 'db_pool', None)
+        if not db_pool:
+            logger.warning("Database pool not available for service key validation")
+            return None
+
+        async with db_pool.acquire() as conn:
+            # Query all active service keys
+            keys = await conn.fetch("""
+                SELECT id, service_name, api_key_hash, org_id, scopes
+                FROM service_api_keys
+                WHERE is_active = true
+            """)
+
+            # Check each key using bcrypt
+            for key_record in keys:
+                try:
+                    if bcrypt.checkpw(api_key.encode(), key_record['api_key_hash'].encode()):
+                        # Update last_used_at asynchronously (don't block auth)
+                        try:
+                            await conn.execute("""
+                                UPDATE service_api_keys
+                                SET last_used_at = NOW()
+                                WHERE id = $1
+                            """, key_record['id'])
+                        except Exception as update_err:
+                            logger.warning(f"Failed to update last_used_at: {update_err}")
+
+                        return {
+                            'service_name': key_record['service_name'],
+                            'org_id': str(key_record['org_id']) if key_record['org_id'] else None,
+                            'scopes': key_record['scopes'] or []
+                        }
+                except Exception as hash_err:
+                    logger.debug(f"Hash check failed for key: {hash_err}")
+                    continue
+
+            return None  # No matching key found
+
+    except Exception as e:
+        logger.error(f"Database service key validation error: {e}")
+        return None  # Fall back to hardcoded keys
+
+
+# Legacy hardcoded service keys (fallback if database unavailable)
+LEGACY_SERVICE_KEYS = {
+    'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
+    'sk-presenton-service-key-2025': 'presenton-service',
+    'sk-brigade-service-key-2025': 'brigade-service',
+    'sk-centerdeep-service-key-2025': 'centerdeep-service',
+    'sk-partnerpulse-service-key-2025': 'partnerpulse-service'
+}
+
+LEGACY_SERVICE_ORG_IDS = {
+    'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',
+    'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',
+    'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
+    'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',
+    'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098'
+}
+
+
+# ============================================================================
 # Dependency Injection
 # ============================================================================
 
@@ -684,44 +765,52 @@ async def get_user_id(
     token = authorization[7:]
     logger.info(f"🔍 Auth token received - Length: {len(token)}, Prefix: {token[:10]}...")
 
-    # Check for service key (format: sk-<service>-service-key-<year>)
+    # Check for service key (format: sk-<service>-xxx-<year>)
     if token.startswith('sk-'):
         logger.info(f"🔑 Token starts with 'sk-', checking service keys...")
-        # Service keys are pre-configured trusted keys for internal services
-        service_keys = {
-            'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
-            'sk-presenton-service-key-2025': 'presenton-service',
-            'sk-brigade-service-key-2025': 'brigade-service',
-            'sk-centerdeep-service-key-2025': 'centerdeep-service',
-            'sk-partnerpulse-service-key-2025': 'partnerpulse-service'
-        }
 
-        # FIX P0: Map service names to actual UUIDs from database (not strings)
-        # These are the actual organization UUIDs for service accounts
-        service_org_ids = {
-            'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',      # UUID for bolt-diy-service org
-            'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',     # UUID for presenton-service org
-            'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
-            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
-            'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098'   # UUID for partnerpulse-service org
-        }
+        # Try database validation first (supports GUI-configured keys)
+        db_result = await validate_service_key_from_db(request, token)
 
-        if token in service_keys:
-            service_name = service_keys[token]
+        if db_result:
+            # Database key found
+            service_name = db_result['service_name']
+            org_id = db_result['org_id']
 
             # Check for X-User-ID header (service proxying on behalf of user)
             x_user_id = request.headers.get('X-User-ID')
             if x_user_id:
                 # Service is proxying for a user - bill to user's account
-                logger.info(f"✅ Service key authenticated: {service_name} proxying for user: {x_user_id}")
+                logger.info(f"✅ Service key authenticated (DB): {service_name} proxying for user: {x_user_id}")
+                return x_user_id
+            elif org_id:
+                # No user context - use service organization account for billing
+                org_prefixed_id = f"org_{org_id}"
+                logger.info(f"✅ Service key authenticated (DB): {service_name} using org credits: {org_prefixed_id}")
+                return org_prefixed_id
+            else:
+                # Service key without org - use service name as identifier
+                logger.info(f"✅ Service key authenticated (DB): {service_name} (no org)")
+                return f"service_{service_name}"
+
+        # Fallback to legacy hardcoded keys (backward compatibility)
+        if token in LEGACY_SERVICE_KEYS:
+            service_name = LEGACY_SERVICE_KEYS[token]
+            logger.info(f"🔑 Using legacy hardcoded service key for: {service_name}")
+
+            # Check for X-User-ID header (service proxying on behalf of user)
+            x_user_id = request.headers.get('X-User-ID')
+            if x_user_id:
+                # Service is proxying for a user - bill to user's account
+                logger.info(f"✅ Service key authenticated (legacy): {service_name} proxying for user: {x_user_id}")
                 return x_user_id
             else:
                 # No user context - use service organization account for billing
-                service_org_id = service_org_ids.get(service_name)
+                service_org_id = LEGACY_SERVICE_ORG_IDS.get(service_name)
                 if service_org_id:
                     # Prefix with 'org_' so credit system recognizes this as an organization
                     org_prefixed_id = f"org_{service_org_id}"
-                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {org_prefixed_id}")
+                    logger.info(f"✅ Service key authenticated (legacy): {service_name} using org credits: {org_prefixed_id}")
                     return org_prefixed_id
                 else:
                     logger.error(f"❌ Service org ID not configured for: {service_name}")
@@ -1344,7 +1433,45 @@ async def chat_completions(
             'byok_provider': detected_provider if using_byok else None
         }
 
-        return response_data
+        # WORKAROUND for Traefik 3.x bug: Force all responses through SSE streaming
+        # This ensures proper response body forwarding through Traefik reverse proxy
+        # The bug causes non-streaming responses to have their bodies dropped
+        #
+        # Traefik 3.x only correctly forwards:
+        # 1. text/event-stream responses (SSE)
+        # 2. Actual streaming responses
+        #
+        # For non-streaming chat completions, we return SSE format.
+        # Clients should parse the `data: ` prefix and `[DONE]` terminator.
+        # This is OpenAI-compatible as OpenAI uses the same SSE format for streaming.
+        import json as json_module
+
+        response_data['_billing'] = {
+            'credits_used': float(actual_cost),
+            'credits_remaining': float(new_balance),
+            'using_byok': using_byok
+        }
+
+        json_content = json_module.dumps(response_data, ensure_ascii=False)
+
+        async def stream_sse_response():
+            """Yield the JSON response in SSE format for Traefik compatibility"""
+            yield f"data: {json_content}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            stream_sse_response(),
+            media_type="text/event-stream",
+            headers={
+                "X-Credits-Used": str(actual_cost),
+                "X-Credits-Remaining": str(new_balance),
+                "X-Org-Credits": str(bool(org_id)).lower(),
+                "X-BYOK": str(using_byok).lower(),
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Response-Format": "sse-wrapped"  # Header to indicate SSE format
+            }
+        )
 
     except HTTPException:
         raise
@@ -3697,10 +3824,13 @@ async def toggle_model_status(
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test LiteLLM proxy connection
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{LITELLM_PROXY_URL}/health")
+        # Test LiteLLM proxy connection with authentication
+        headers = {"Authorization": f"Bearer {LITELLM_MASTER_KEY}"}
+        logger.info(f"Health check: connecting to {LITELLM_PROXY_URL}/health")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(f"{LITELLM_PROXY_URL}/health", headers=headers)
             litellm_healthy = response.status_code == 200
+            logger.info(f"Health check: got status {response.status_code}")
 
         return {
             'status': 'healthy' if litellm_healthy else 'degraded',
@@ -3708,8 +3838,16 @@ async def health_check():
             'timestamp': datetime.utcnow().isoformat()
         }
 
+    except httpx.TimeoutException as e:
+        logger.error(f"Health check timeout: {e}")
+        return {
+            'status': 'degraded',
+            'litellm_proxy': 'down',
+            'error': f'Timeout connecting to LiteLLM proxy',
+            'timestamp': datetime.utcnow().isoformat()
+        }
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check failed: {type(e).__name__}: {e}")
         return {
             'status': 'degraded',
             'litellm_proxy': 'down',

@@ -60,6 +60,8 @@ services:
       - "traefik.enable=true"
       # Service definition (all routers use this)
       - "traefik.http.services.ops-center-svc.loadbalancer.server.port=8084"
+      # Force immediate response forwarding (fix for Traefik 3.x chunked encoding bug)
+      - "traefik.http.services.ops-center-svc.loadbalancer.responseforwarding.flushinterval=-1"
 
       # Admin routes (highest priority for authenticated routes)
       - "traefik.http.routers.ops-center-admin.rule=Host(`unicorncommander.ai`) && PathPrefix(`/admin`)"

@@ -197,6 +197,9 @@ from provider_keys_api import router as provider_keys_router
 from uc_api_keys import router as uc_api_keys_router
 from platform_keys_api import router as platform_keys_router
 
+# Service API Keys Management (January 2026) - GUI-configurable service-to-service auth
+from service_keys_api import router as service_keys_router
+
 # LLM Testing Lab API (Epic 3.2 - Unified LLM Management)
 from testing_lab_api import router as testing_lab_router
 
@@ -348,17 +351,17 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
                 async with app.state.db_pool.acquire() as conn:
                     # Get user's organization from organization_members table
                     result = await conn.fetchrow("""
-                        SELECT om.organization_id, om.role, o.name as org_name
+                        SELECT om.org_id, om.role, o.name as org_name
                         FROM organization_members om
-                        JOIN organizations o ON om.organization_id = o.id
-                        WHERE om.user_id = $1 AND om.is_active = true
+                        JOIN organizations o ON om.org_id = o.id
+                        WHERE om.user_id = $1
                         LIMIT 1
                     """, uid)
 
                     if result:
-                        logger.info(f"Found org membership in database for user {uid}: {result['organization_id']}")
+                        logger.info(f"Found org membership in database for user {uid}: {result['org_id']}")
                         return {
-                            "org_id": result["organization_id"],
+                            "org_id": str(result["org_id"]),
                             "org_name": result["org_name"],
                             "org_role": result["role"].lower() if result["role"] else "member"
                         }
@@ -887,6 +890,10 @@ app.include_router(uc_api_keys_router)
 logger.info("UC API Keys endpoints registered at /api/v1/account/uc-api-keys")
 app.include_router(platform_keys_router)
 logger.info("Platform Keys Management endpoints registered at /api/v1/admin/platform-keys (Admin only)")
+
+# Service API Keys Management (January 2026)
+app.include_router(service_keys_router)
+logger.info("Service Keys Management endpoints registered at /api/v1/admin/service-keys (Admin only)")
 
 # Platform Settings API
 app.include_router(platform_settings_router)
