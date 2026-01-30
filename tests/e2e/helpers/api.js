@@ -14,7 +14,7 @@
  */
 export async function checkApiEndpoint(page, endpoint, options = {}) {
   const method = options.method || 'GET';
-  const baseURL = options.baseURL || 'https://unicorncommander.ai';
+  const baseURL = options.baseURL || 'https://magicunicorn.dev';
   const url = `${baseURL}${endpoint}`;
 
   console.log(`[API] Testing ${method} ${endpoint}`);

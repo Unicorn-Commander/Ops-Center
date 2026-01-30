@@ -1,22 +1,14 @@
 """
-My Apps API - Returns apps filtered by user's subscription tier and organization role
+My Apps API - Returns apps filtered by user's subscription tier
 Integrates with existing RBAC system (app_definitions + tier_apps)
-
-Role-based filtering:
-- Apps can specify min_org_role (member, admin, owner)
-- User must have >= min_org_role in their current organization to see the app
 """
 
 import os
 import sys
-import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 import asyncpg
-
-# Configure logging
-logger = logging.getLogger(__name__)
 
 # Router configuration
 router = APIRouter(prefix="/api/v1/my-apps", tags=["my-apps"])
@@ -82,11 +74,11 @@ async def get_current_user_tier(request: Request) -> str:
         # Get session token from cookie
         session_token = request.cookies.get("session_token")
         if not session_token:
-            # Not authenticated - return trial tier (least permissive for unauthenticated)
-            return 'trial'
+            # Not authenticated - return vip_founder tier (default for MVP)
+            return 'vip_founder'
 
         # Get Redis connection info
-        redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+        redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
         # Initialize session manager
@@ -106,21 +98,43 @@ async def get_current_user_tier(request: Request) -> str:
             user = session_data.get("user", {})
             tier = user.get("subscription_tier") or user.get("tier")
 
-        # If tier not set or invalid, default to trial
+        # If tier not set or invalid, try database fallback
         # Valid tiers: vip_founder, byok, managed, founder-friend, trial, starter, professional, enterprise
         valid_tiers = ['vip_founder', 'byok', 'managed', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise']
         if not tier or tier not in valid_tiers:
-            tier = 'trial'
+            # Try database fallback - check if user_id is in session
+            user_id = session_data.get("user_id") or session_data.get("sub") or session_data.get("user", {}).get("id")
+            if user_id:
+                try:
+                    # Query database for user's tier
+                    conn = await get_db_connection()
+                    try:
+                        tier_row = await conn.fetchrow(
+                            "SELECT st.tier_code FROM user_tiers ut JOIN subscription_tiers st ON ut.tier_code = st.id WHERE ut.user_id = $1",
+                            user_id
+                        )
+                        if tier_row:
+                            tier = tier_row['tier_code']
+                    finally:
+                        await conn.close()
+                except Exception as db_error:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Database tier lookup failed for user {user_id}: {db_error}")
+
+            # If still no tier, default to vip_founder (was trial, but defaulting to vip_founder for MVP)
+            if not tier or tier not in valid_tiers:
+                tier = 'vip_founder'
 
         return tier
 
     except Exception as e:
-        # On any error, default to trial tier
+        # On any error, default to vip_founder tier
         # Log warning but don't fail the request
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(f"Error extracting user tier from session: {e}")
-        return 'trial'
+        return 'vip_founder'
 
 
 # =============================================================================
@@ -138,26 +152,10 @@ def get_tier_level(tier_name: str) -> int:
     return tier_levels.get(tier_name.lower(), 0)
 
 
-def get_role_level(role: str) -> int:
-    """Convert role name to level for comparison (higher = more permissions)"""
-    role_levels = {
-        'member': 1,
-        'billing_admin': 2,
-        'admin': 3,
-        'owner': 4
-    }
-    return role_levels.get(role.lower(), 0)
-
-
-def role_meets_minimum(user_role: str, min_role: str) -> bool:
-    """Check if user's role meets or exceeds the minimum required role"""
-    return get_role_level(user_role) >= get_role_level(min_role)
-
-
 async def get_user_tier_features(user_tier: str, conn) -> set:
     """Get all app keys enabled for user's tier"""
     # Validate tier before database query
-    valid_tiers = ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'founder-friend', 'byok', 'managed', 'nda-autopilot', 'partnerpulse']
+    valid_tiers = ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'founder-friend', 'byok', 'managed']
     if user_tier.lower() not in valid_tiers:
         raise HTTPException(status_code=400, detail=f"Invalid subscription tier: {user_tier}")
 
@@ -181,161 +179,55 @@ async def get_user_tier_features(user_tier: str, conn) -> set:
     return {row['feature_key'] for row in feature_rows}
 
 
-async def get_user_org_context(request: Request, conn) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Get user's current organization context including their role.
-
-    Returns:
-        Tuple of (user_id, org_id, org_role) or (None, None, None) if not in an org
-    """
-    if '/app' not in sys.path:
-        sys.path.insert(0, '/app')
-
-    try:
-        from redis_session import RedisSessionManager
-
-        # Get session token from cookie
-        session_token = request.cookies.get("session_token")
-        if not session_token:
-            return None, None, None
-
-        # Get Redis connection info
-        redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
-
-        # Initialize session manager
-        sessions = RedisSessionManager(host=redis_host, port=redis_port)
-
-        # Get session data
-        if session_token not in sessions:
-            return None, None, None
-
-        session_data = sessions[session_token]
-
-        # Get user_id from session
-        user_id = (
-            session_data.get("user_id") or
-            session_data.get("sub") or
-            session_data.get("id") or
-            session_data.get("user", {}).get("id") or
-            session_data.get("user", {}).get("sub")
-        )
-
-        if not user_id:
-            return None, None, None
-
-        # Get current org_id from cookie or session
-        current_org_id = request.cookies.get("current_org_id")
-        if not current_org_id:
-            current_org_id = session_data.get("current_org_id")
-
-        if not current_org_id:
-            # No org selected - try to get user's first org
-            org_row = await conn.fetchrow(
-                """SELECT org_id, role FROM organization_members
-                   WHERE user_id = $1 ORDER BY joined_at LIMIT 1""",
-                user_id
-            )
-            if org_row:
-                return user_id, str(org_row['org_id']), org_row['role']
-            return user_id, None, None
-
-        # Get user's role in current org
-        role_row = await conn.fetchrow(
-            """SELECT role FROM organization_members
-               WHERE org_id = $1 AND user_id = $2""",
-            current_org_id, user_id
-        )
-
-        if role_row:
-            return user_id, current_org_id, role_row['role']
-
-        return user_id, None, None
-
-    except Exception as e:
-        logger.warning(f"Error getting user org context: {e}")
-        return None, None, None
-
-
-async def get_org_tier(org_id: str, conn) -> Optional[str]:
-    """Get the tier_code for an organization"""
-    row = await conn.fetchrow(
-        """SELECT st.tier_code FROM organizations o
-           JOIN subscription_tiers st ON o.tier_id = st.id
-           WHERE o.id = $1""",
-        org_id
-    )
-    return row['tier_code'] if row else None
-
-
 # =============================================================================
 # Endpoints
 # =============================================================================
 
 @router.get("/authorized", response_model=List[AppResponse])
-async def get_my_apps(request: Request, user_tier: str = Depends(get_current_user_tier)):
+async def get_my_apps(user_tier: str = Depends(get_current_user_tier)):
     """
-    Get apps the current user is authorized to access based on their subscription tier
-    and their role in their current organization.
+    Get apps the current user is authorized to access based on their subscription tier.
 
     Returns apps where:
     - User's tier includes the app's feature_key
-    - User's role in current org meets or exceeds app's min_org_role
     - User has purchased the app separately (future: check user_add_ons table)
-
-    Role-based filtering:
-    - Apps with min_org_role='member' are visible to all org members
-    - Apps with min_org_role='admin' require admin or owner role
-    - Apps with min_org_role='owner' require owner role
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[MY-APPS] User tier detected: {user_tier}")
+
     conn = await get_db_connection()
     try:
-        # Get user's organization context (user_id, org_id, role)
-        user_id, current_org_id, org_role = await get_user_org_context(request, conn)
+        # User's tier is now extracted from session via dependency injection
+        # Valid tiers: 'vip_founder', 'byok', 'managed' (defaults to 'managed')
 
-        # Get org tier if user is in an org (may differ from user's session tier)
-        org_tier = None
-        if current_org_id:
-            org_tier = await get_org_tier(current_org_id, conn)
+        # Get enabled features for user's tier
+        enabled_features = await get_user_tier_features(user_tier, conn)
+        logger.info(f"[MY-APPS] Enabled features for {user_tier}: {enabled_features}")
 
-        # COMBINE user's personal tier features with org tier features
-        # User always gets their personal tier apps PLUS any apps from current org
-        enabled_features = set()
-
-        # Add features from user's personal subscription tier
-        user_features = await get_user_tier_features(user_tier, conn)
-        enabled_features.update(user_features)
-
-        # Add features from current org's tier (if different)
-        if org_tier and org_tier != user_tier:
-            org_features = await get_user_tier_features(org_tier, conn)
-            enabled_features.update(org_features)
-
-        logger.info(f"User {user_id} - Org: {current_org_id}, Role: {org_role}, UserTier: {user_tier}, OrgTier: {org_tier}, TotalFeatures: {len(enabled_features)}")
-
-        # Get all active apps including min_org_role
+        # Get all active apps
         apps_query = """
             SELECT id, name, slug, description, icon_url, launch_url,
-                   category, feature_key, base_price, features,
-                   COALESCE(min_org_role, 'member') as min_org_role
+                   category, feature_key, base_price, features
             FROM add_ons
             WHERE is_active = TRUE
             ORDER BY sort_order, name
         """
         app_rows = await conn.fetch(apps_query)
+        logger.info(f"[MY-APPS] Fetched {len(app_rows)} apps from database")
 
-        # Filter apps based on tier AND role
+        # Filter apps based on user's tier
         authorized_apps = []
         for app in app_rows:
+            logger.info(f"[MY-APPS] Processing app: {dict(app).get('name')} (feature_key: {dict(app).get('feature_key')})")
             app_dict = dict(app)
             feature_key = app_dict.get('feature_key')
-            min_role = app_dict.get('min_org_role', 'member')
 
             # Skip apps without launch URLs
             if not app_dict.get('launch_url'):
                 continue
 
-            # Check if user has access via tier
+            # Check if user has access
             access_type = None
 
             if feature_key and feature_key in enabled_features:
@@ -345,20 +237,9 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
                 # Free app with no feature restriction
                 access_type = 'tier_included'
             else:
-                # App not included in tier - skip it
+                # App not included in tier - skip it for now
+                # (Later: check if user purchased it separately)
                 continue
-
-            # Check role-based access (only if user is in an org)
-            # If app requires admin+ role, user must have that role in their org
-            if min_role != 'member':
-                if not org_role:
-                    # User has no org role - skip apps requiring elevated roles
-                    logger.debug(f"Skipping {app_dict['name']} - requires {min_role}, user has no org role")
-                    continue
-                if not role_meets_minimum(org_role, min_role):
-                    # User's role is insufficient
-                    logger.debug(f"Skipping {app_dict['name']} - requires {min_role}, user has {org_role}")
-                    continue
 
             authorized_apps.append({
                 'id': app_dict['id'],
@@ -372,7 +253,9 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
                 'access_type': access_type,
                 'features': app_dict.get('features') or {}
             })
+            logger.info(f"[MY-APPS] Added app {app_dict['name']} to authorized list")
 
+        logger.info(f"[MY-APPS] Returning {len(authorized_apps)} authorized apps")
         return authorized_apps
 
     except asyncpg.PostgresError as e:

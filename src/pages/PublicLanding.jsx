@@ -704,11 +704,11 @@ export default function PublicLanding() {
           >
             {/* Logo and Title - Compact on Desktop */}
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
-              <CenterDeepLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl" />
+              <MagicUnicornLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl" />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
                   <h1 className={`text-4xl md:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' ? 'animate-gradient' : ''}`}>
-                    Center-Deep
+                    Magic Unicorn Search
                   </h1>
                 </div>
                 <p className={`text-lg ${styles.subText} mt-1`}>
@@ -1001,7 +1001,7 @@ export default function PublicLanding() {
           </div>
 
           <p className={`${styles.subText} mb-4`}>
-            Access the admin dashboard to manage your Center-Deep services
+            Access the admin dashboard to manage your Magic Unicorn services
           </p>
 
           <button
@@ -1020,9 +1020,9 @@ export default function PublicLanding() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <CenterDeepLogo className="w-10 h-10" />
+              <MagicUnicornLogo className="w-10 h-10" />
               <div className={styles.logoText}>
-                <div className="font-semibold">Center-Deep Operations Dashboard</div>
+                <div className="font-semibold">Magic Unicorn Operations Center</div>
                 <div className={`text-sm ${styles.footerText}`}>v2.1.0</div>
               </div>
             </div>

@@ -37,7 +37,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-REMOVED-KEYCLOAK_ADMIN_PASSWORD}
 
       # Hostname configuration
-      KC_HOSTNAME: auth.unicorncommander.ai
+      KC_HOSTNAME: auth.magicunicorn.dev
       KC_HOSTNAME_STRICT: false
       KC_HOSTNAME_STRICT_HTTPS: false
 
@@ -72,13 +72,13 @@ services:
       - "traefik.enable=true"
 
       # HTTP to HTTPS redirect
-      - "traefik.http.routers.keycloak-http.rule=Host(`auth.unicorncommander.ai`)"
+      - "traefik.http.routers.keycloak-http.rule=Host(`auth.magicunicorn.dev`)"
       - "traefik.http.routers.keycloak-http.entrypoints=web"
       - "traefik.http.routers.keycloak-http.middlewares=keycloak-https-redirect"
       - "traefik.http.middlewares.keycloak-https-redirect.redirectscheme.scheme=https"
 
       # HTTPS configuration
-      - "traefik.http.routers.keycloak.rule=Host(`auth.unicorncommander.ai`)"
+      - "traefik.http.routers.keycloak.rule=Host(`auth.magicunicorn.dev`)"
       - "traefik.http.routers.keycloak.entrypoints=websecure"
       - "traefik.http.routers.keycloak.tls=true"
       - "traefik.http.routers.keycloak.tls.certresolver=letsencrypt"

@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://staging.unicorncommander.ai
+      url: https://staging.magicunicorn.dev
 
     steps:
       - name: Checkout code
@@ -88,8 +88,8 @@ jobs:
       - name: Run smoke tests
         run: |
           # Test basic endpoints
-          curl -f https://staging.unicorncommander.ai/api/v1/system/status || exit 1
-          curl -f https://staging.unicorncommander.ai/api/v1/health || exit 1
+          curl -f https://staging.magicunicorn.dev/api/v1/system/status || exit 1
+          curl -f https://staging.magicunicorn.dev/api/v1/health || exit 1
 
           echo "✅ Smoke tests passed"
 
@@ -99,7 +99,7 @@ jobs:
           echo "### ✅ Staging Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment**: staging" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: https://staging.unicorncommander.ai" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://staging.magicunicorn.dev" >> $GITHUB_STEP_SUMMARY
 
       - name: Rollback on failure
         if: failure()

@@ -587,7 +587,7 @@ export default function Dashboard() {
                 {currentUser ? `Welcome back, ${currentUser.firstName || currentUser.username || 'User'}` : 'Operations Center'}
               </h1>
               <p className={`${currentTheme === 'unicorn' ? 'text-purple-200/80' : theme.text.secondary} mt-1 text-base`}>
-                {currentUser ? 'Center-Deep Operations Dashboard' : 'Loading...'}
+                {currentUser ? 'Magic Unicorn Operations Center' : 'Loading...'}
               </p>
             </div>
           </div>

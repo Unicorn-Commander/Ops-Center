@@ -258,8 +258,8 @@ export default function Layout({ children }) {
                 }`}
                 title={sidebarCollapsed ? "Center-Deep - Operations Dashboard" : ""}
               >
-                {/* Center-Deep Logo */}
-                <CenterDeepLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                {/* Magic Unicorn Logo */}
+                <MagicUnicornLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
                 {!sidebarCollapsed && (
                   <div className="text-center">
                     <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
@@ -621,6 +621,24 @@ export default function Layout({ children }) {
                           name="Model Lists"
                           href="/admin/system/model-lists"
                           icon={iconMap.RectangleStackIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="Local Models"
+                          href="/admin/system/local-models"
+                          icon={iconMap.ServerIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="RAG Services"
+                          href="/admin/system/rag-services"
+                          icon={iconMap.CubeIcon}
+                          indent={true}
+                        />
+                        <NavigationItem collapsed={sidebarCollapsed}
+                          name="GPU Services"
+                          href="/admin/system/gpu-services"
+                          icon={iconMap.CpuChipIcon}
                           indent={true}
                         />
                       </NavigationSection>

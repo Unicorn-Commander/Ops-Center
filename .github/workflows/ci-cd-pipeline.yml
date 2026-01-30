@@ -418,7 +418,7 @@ jobs:
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     environment:
       name: staging
-      url: https://staging.unicorncommander.ai
+      url: https://staging.magicunicorn.dev
 
     steps:
       - name: Checkout code
@@ -447,7 +447,7 @@ jobs:
     if: github.event_name == 'release'
     environment:
       name: production
-      url: https://unicorncommander.ai
+      url: https://magicunicorn.dev
 
     steps:
       - name: Checkout code
@@ -469,7 +469,7 @@ jobs:
       - name: Verify deployment
         run: |
           sleep 30
-          curl -f https://unicorncommander.ai/api/v1/system/status || exit 1
+          curl -f https://magicunicorn.dev/api/v1/system/status || exit 1
           echo "Production deployment verified successfully"
 
       - name: Notify deployment
@@ -508,7 +508,7 @@ jobs:
               --users 100 \
               --spawn-rate 10 \
               --run-time 2m \
-              --host https://staging.unicorncommander.ai \
+              --host https://staging.magicunicorn.dev \
               --html performance-report.html \
               --csv performance-results \
               || true

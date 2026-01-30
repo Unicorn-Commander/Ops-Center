@@ -595,8 +595,8 @@ provider_pricing:
 security_settings:
   # Allowed origins for CORS
   allowed_origins:
-    - "https://unicorncommander.ai"
-    - "https://brigade.unicorncommander.ai"
+    - "https://magicunicorn.dev"
+    - "https://brigade.magicunicorn.dev"
     - "http://localhost:*"
 
   # API key rotation

@@ -27,7 +27,7 @@ import {
 } from './helpers/accessibility.js';
 
 // Test configuration
-const BASE_URL = process.env.BASE_URL || 'https://unicorncommander.ai';
+const BASE_URL = process.env.BASE_URL || 'https://magicunicorn.dev';
 const TEST_USERNAME = process.env.TEST_USERNAME || 'aaron';
 const TEST_PASSWORD = process.env.TEST_PASSWORD || 'REMOVED-KEYCLOAK_ADMIN_PASSWORD';
 

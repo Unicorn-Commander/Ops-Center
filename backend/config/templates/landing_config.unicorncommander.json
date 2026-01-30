@@ -38,7 +38,7 @@
       "icon": "🎖️",
       "logo_url": "/brigade-logo.png",
       "description": "AI agent factory with The General orchestrator and 47+ pre-built agents",
-      "url": "https://brigade.unicorncommander.ai",
+      "url": "https://brigade.magicunicorn.dev",
       "port": 8102,
       "enabled": true,
       "order": 2

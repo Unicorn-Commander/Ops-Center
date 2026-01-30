@@ -337,7 +337,7 @@
       "federated_realms": [
         {
           "name": "Unicorn Commander",
-          "url": "https://auth.unicorncommander.ai",
+          "url": "https://auth.magicunicorn.dev",
           "note": "Users can login with UC credentials"
         }
       ]

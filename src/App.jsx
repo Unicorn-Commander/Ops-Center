@@ -128,6 +128,9 @@ const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const ForgejoManagement = lazy(() => import('./pages/admin/ForgejoManagement'));
 const InviteCodesManagement = lazy(() => import('./pages/admin/InviteCodesManagement'));
 const SystemBillingOverview = lazy(() => import('./pages/admin/SystemBillingOverview'));
+const LocalModelsManagement = lazy(() => import('./pages/admin/LocalModelsManagement'));
+const RAGServicesManagement = lazy(() => import('./pages/admin/RAGServicesManagement'));
+const GPUServicesManagement = lazy(() => import('./pages/admin/GPUServicesManagement'));
 
 // Infrastructure pages (lazy loaded)
 const CloudflareDNS = lazy(() => import('./components/CloudflareDNS'));
@@ -386,6 +389,9 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   <Route path="system/models" element={<AIModelManagement />} />
                   <Route path="system/model-lists" element={<ModelListManagement />} />
+                  <Route path="system/local-models" element={<LocalModelsManagement />} />
+                  <Route path="system/rag-services" element={<RAGServicesManagement />} />
+                  <Route path="system/gpu-services" element={<GPUServicesManagement />} />
                   <Route path="system/services" element={<Services />} />
                   <Route path="system/resources" element={<System />} />
                   <Route path="system/hardware" element={<HardwareManagement />} />

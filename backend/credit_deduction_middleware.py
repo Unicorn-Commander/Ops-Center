@@ -151,11 +151,32 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
         return False
 
     async def _get_user_from_session(self, request: Request) -> Optional[dict]:
-        """Extract user data from session cookie OR service key + X-User-ID header"""
+        """Extract user data from session cookie OR service key OR API key + X-User-ID header"""
         try:
             # Check for service key pattern (for bolt.diy, presenton, brigade, etc.)
             x_user_id = request.headers.get('X-User-ID')
             auth_header = request.headers.get('Authorization', '')
+
+            # Check for user API key (uc_<hex>) - for remote API access
+            if auth_header.startswith('Bearer uc_'):
+                token = auth_header[7:]  # Remove "Bearer "
+                try:
+                    from api_key_manager import get_api_key_manager
+                    manager = get_api_key_manager()
+                    user_info = await manager.validate_api_key(token)
+
+                    if user_info:
+                        logger.info(f"API key authenticated user: {user_info['user_id']}")
+                        return {
+                            "user_id": user_info['user_id'],
+                            "subscription_tier": "vip_founder",  # VIP users get vip_founder tier
+                        }
+                    else:
+                        logger.warning(f"Invalid API key in credit middleware")
+                        return None
+                except Exception as e:
+                    logger.error(f"API key validation error in middleware: {e}")
+                    return None
 
             if auth_header.startswith('Bearer sk-'):
                 # Service key authentication - extract service name
@@ -167,7 +188,18 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     'sk-presenton-service-key-2025': 'presenton-service',
                     'sk-brigade-service-key-2025': 'brigade-service',
                     'sk-centerdeep-service-key-2025': 'centerdeep-service',
-                    'sk-partnerpulse-service-key-2025': 'partnerpulse-service'
+                    'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
+                    'sk-open-webui-service-key-2026': 'open-webui-service'
+                }
+
+                # Map service names to organization UUIDs (matches litellm_api.py)
+                service_org_ids = {
+                    'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',
+                    'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',
+                    'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
+                    'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',
+                    'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',
+                    'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
                 }
 
                 service_name = service_keys.get(token)
@@ -180,12 +212,19 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                             "subscription_tier": "professional",  # Default tier for service key users
                         }
                     else:
-                        # Service key without user context - use service account
-                        logger.info(f"Service key request without user context: {service_name}")
-                        return {
-                            "user_id": service_name,
-                            "subscription_tier": "enterprise",  # Service accounts get enterprise tier
-                        }
+                        # Service key without user context - use org-prefixed ID for billing
+                        service_org_id = service_org_ids.get(service_name)
+                        if service_org_id:
+                            org_prefixed_id = f"org_{service_org_id}"
+                            logger.info(f"Service key request using org credits: {org_prefixed_id}")
+                            return {
+                                "user_id": org_prefixed_id,
+                                "subscription_tier": "professional",
+                                "is_service_account": True
+                            }
+                        else:
+                            logger.error(f"Service org ID not configured for: {service_name}")
+                            return None
                 else:
                     # Unknown service key - let endpoint handle authentication
                     logger.warning(f"Unknown service key in credit middleware: {token[:20]}...")
