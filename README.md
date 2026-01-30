@@ -121,7 +121,13 @@ POSTGRES_DB=unicorn_db
 # Billing
 LAGO_API_KEY=<your-lago-key>
 STRIPE_SECRET_KEY=<your-stripe-key>
+
+# Billing Mode (Optional)
+BILLING_ENABLED=true                    # Set "false" to disable all billing
+CREDIT_EXEMPT_TIERS=free,admin,internal # Tiers exempt from charges (or "*" for all)
 ```
+
+> **Tip**: For personal or internal servers, set `BILLING_ENABLED=false` to skip all credit checks.
 
 ### 3. Start the Services
 
