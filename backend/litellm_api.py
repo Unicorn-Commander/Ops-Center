@@ -62,6 +62,29 @@ LITELLM_MASTER_KEY = os.getenv('LITELLM_MASTER_KEY', 'REMOVED')
 # BYOK encryption key (used for both user and system keys)
 BYOK_ENCRYPTION_KEY = os.getenv('BYOK_ENCRYPTION_KEY')
 
+# =============================================================================
+# CONFIGURABLE BILLING SETTINGS
+# =============================================================================
+# These can be customized per deployment via environment variables.
+# Personal servers or internal company servers can disable billing entirely.
+
+# Tiers that are exempt from credit charges (comma-separated)
+# Default includes common "unlimited" tier names. Customize for your deployment.
+# Set to "*" to exempt ALL tiers (effectively disabling billing)
+CREDIT_EXEMPT_TIERS_ENV = os.getenv("CREDIT_EXEMPT_TIERS", "free,vip_founder,vip,founder,admin,unlimited,internal")
+CREDIT_EXEMPT_TIERS = set(t.strip() for t in CREDIT_EXEMPT_TIERS_ENV.split(",") if t.strip())
+
+# Master billing toggle - set to "false" to disable all credit checking
+BILLING_ENABLED = os.getenv("BILLING_ENABLED", "true").lower() == "true"
+
+def is_credit_exempt(user_tier: str) -> bool:
+    """Check if a user tier is exempt from credit charges."""
+    if not BILLING_ENABLED:
+        return True
+    if "*" in CREDIT_EXEMPT_TIERS:
+        return True
+    return user_tier in CREDIT_EXEMPT_TIERS
+
 
 # ============================================================================
 # Provider Configuration
@@ -959,9 +982,9 @@ async def chat_completions(
             user_tier=user_tier
         )
 
-        # Check credits BEFORE making request (skip if using BYOK)
+        # Check credits BEFORE making request (skip if using BYOK or credit-exempt tier)
         org_id = None  # Will be set if using org billing
-        if not using_byok and user_tier != 'free':
+        if not using_byok and not is_credit_exempt(user_tier):
             # Try organizational billing first
             org_integration = get_org_credit_integration()
             has_org_credits, org_id, message = await org_integration.has_sufficient_org_credits(
@@ -1650,9 +1673,9 @@ async def generate_image(
             user_tier=user_tier
         )
 
-        # Check credits BEFORE making request (skip if using BYOK)
+        # Check credits BEFORE making request (skip if using BYOK or credit-exempt tier)
         org_id = None  # Will be set if using org billing
-        if not using_byok and user_tier != 'free':
+        if not using_byok and not is_credit_exempt(user_tier):
             # Try organizational billing first
             org_integration = get_org_credit_integration()
             has_org_credits, org_id, message = await org_integration.has_sufficient_org_credits(

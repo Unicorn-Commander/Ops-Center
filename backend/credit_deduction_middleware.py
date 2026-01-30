@@ -43,6 +43,30 @@ from litellm_credit_system import CreditSystem
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# CONFIGURABLE BILLING SETTINGS
+# =============================================================================
+# These can be customized per deployment via environment variables.
+# Personal servers or internal company servers can disable billing entirely
+# by setting BILLING_ENABLED=false or by listing all tiers in CREDIT_EXEMPT_TIERS.
+
+# Tiers that are exempt from credit charges (comma-separated)
+# Default includes common "unlimited" tier names. Customize for your deployment.
+# Set to "*" to exempt ALL tiers (effectively disabling billing)
+CREDIT_EXEMPT_TIERS_ENV = os.getenv("CREDIT_EXEMPT_TIERS", "free,vip_founder,vip,founder,admin,unlimited,internal")
+CREDIT_EXEMPT_TIERS = set(t.strip() for t in CREDIT_EXEMPT_TIERS_ENV.split(",") if t.strip())
+
+# Master billing toggle - set to "false" to disable all credit checking
+BILLING_ENABLED = os.getenv("BILLING_ENABLED", "true").lower() == "true"
+
+def is_credit_exempt(user_tier: str) -> bool:
+    """Check if a user tier is exempt from credit charges."""
+    if not BILLING_ENABLED:
+        return True
+    if "*" in CREDIT_EXEMPT_TIERS:
+        return True
+    return user_tier in CREDIT_EXEMPT_TIERS
+
 
 class CreditDeductionMiddleware(BaseHTTPMiddleware):
     """
@@ -174,7 +198,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
             if not session_token:
                 return None
 
-            redis_host = os.getenv("REDIS_HOST", "unicorn-lago-redis")
+            redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
             redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
             sessions = RedisSessionManager(host=redis_host, port=redis_port)
@@ -495,6 +519,21 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 request._body = body
         except:
             pass
+
+        # Check if billing is disabled globally or user is in credit-exempt tier
+        # Configurable via BILLING_ENABLED and CREDIT_EXEMPT_TIERS env vars
+        if is_credit_exempt(user_tier):
+            exempt_reason = "billing disabled" if not BILLING_ENABLED else f"tier '{user_tier}' is credit-exempt"
+            logger.info(f"Credit exempt for user {user_id} - {exempt_reason}")
+
+            response = await call_next(request)
+
+            # Add exempt tier headers
+            response.headers["X-Credit-Exempt"] = "true"
+            response.headers["X-Credits-Used"] = "0.0"
+            response.headers["X-Credits-Remaining"] = "unlimited"
+
+            return response
 
         # Check if BYOK enabled for this user/model
         is_byok, byok_provider = await self._check_byok_enabled(user_id, model)
