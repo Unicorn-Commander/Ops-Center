@@ -164,7 +164,12 @@ MODEL_ID_MAPPING = {
     # Claude variants
     'claude-3-opus': 'anthropic/claude-3-opus',
     'claude-3-sonnet': 'anthropic/claude-3-sonnet',
+    'claude-3-haiku': 'anthropic/claude-3-haiku',
     'claude-3.5-sonnet': 'anthropic/claude-3.5-sonnet',
+    'claude-3.5-haiku': 'anthropic/claude-3.5-haiku',
+    'claude-opus-4': 'anthropic/claude-opus-4',
+    'claude-opus-4.5': 'anthropic/claude-opus-4.5',
+    'claude-sonnet-4': 'anthropic/claude-sonnet-4',
 
     # Mistral variants
     'mistral-7b': 'mistralai/mistral-7b-instruct',
