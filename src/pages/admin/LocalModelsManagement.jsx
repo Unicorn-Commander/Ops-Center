@@ -48,6 +48,7 @@ import {
 } from '@mui/icons-material';
 import GPUStatusCard from '../../components/local-inference/GPUStatusCard';
 import ProviderPanel from '../../components/local-inference/ProviderPanel';
+import PageHeader from '../../components/admin/PageHeader';
 
 // API base URL
 const API_BASE = '/api/v1/local-inference';
@@ -373,70 +374,43 @@ const LocalModelsManagement = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-          borderRadius: 2,
-          p: 3,
-          mb: 3,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}
-      >
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <LocalIcon sx={{ fontSize: 28, color: 'primary.main' }} />
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 700 }}>
-              Local Inference
-            </Typography>
-          </Box>
-          <Typography variant="body2" color="text.secondary">
-            Manage local LLM providers and GPU resources
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Module Toggle */}
-          <FormControlLabel
-            control={
-              <Switch
-                checked={moduleEnabled}
-                onChange={handleModuleToggle}
-                color="primary"
-              />
-            }
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                {moduleEnabled ? (
-                  <EnabledIcon sx={{ fontSize: 18, color: 'success.main' }} />
-                ) : (
-                  <DisabledIcon sx={{ fontSize: 18, color: 'error.main' }} />
-                )}
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {moduleEnabled ? 'Enabled' : 'Disabled'}
-                </Typography>
-              </Box>
-            }
-          />
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={handleRefresh}
-            disabled={loading}
-            sx={{
-              borderRadius: 2,
-              transition: 'all 0.2s',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: 2
+      <PageHeader
+        title="Local Inference"
+        subtitle="Manage local LLM providers and GPU resources"
+        actions={(
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={moduleEnabled}
+                  onChange={handleModuleToggle}
+                  color="primary"
+                />
               }
-            }}
-          >
-            Refresh
-          </Button>
-        </Box>
-      </Box>
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {moduleEnabled ? (
+                    <EnabledIcon sx={{ fontSize: 18, color: 'success.main' }} />
+                  ) : (
+                    <DisabledIcon sx={{ fontSize: 18, color: 'error.main' }} />
+                  )}
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {moduleEnabled ? 'Enabled' : 'Disabled'}
+                  </Typography>
+                </Box>
+              }
+            />
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={handleRefresh}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+          </Box>
+        )}
+      />
 
       {/* Alerts */}
       {error && (

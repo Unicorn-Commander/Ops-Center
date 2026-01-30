@@ -46,6 +46,7 @@ import {
   TextFields as TextFieldsIcon,
   Description as DocumentIcon
 } from '@mui/icons-material';
+import PageHeader from '../../components/admin/PageHeader';
 
 // API base URL
 const API_BASE = '/api/v1/gpu-services';
@@ -474,59 +475,28 @@ const GPUServicesManagement = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-          borderRadius: 2,
-          p: 3,
-          mb: 3,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}
-      >
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <GpuIcon sx={{ fontSize: 28, color: 'primary.main' }} />
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 700 }}>
-              GPU Services
-            </Typography>
+      <PageHeader
+        title="GPU Services"
+        subtitle="Manage GPU-based services for RAG and document extraction"
+        actions={(
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Chip
+              icon={overallStatus.running > 0 ? <HealthyIcon /> : <UnhealthyIcon />}
+              label={`${overallStatus.running}/${overallStatus.total} Running`}
+              color={overallStatus.running === overallStatus.total ? 'success' : overallStatus.running > 0 ? 'warning' : 'default'}
+              variant="outlined"
+            />
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={handleRefresh}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
           </Box>
-          <Typography variant="body2" color="text.secondary">
-            Manage GPU-based services for RAG and document extraction
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Overall Status */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {overallStatus.running > 0 ? (
-              <HealthyIcon sx={{ color: overallStatus.running === overallStatus.total ? 'success.main' : 'warning.main' }} />
-            ) : (
-              <UnhealthyIcon sx={{ color: 'text.disabled' }} />
-            )}
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {overallStatus.running}/{overallStatus.total} Services Running
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={handleRefresh}
-            disabled={loading}
-            sx={{
-              borderRadius: 2,
-              transition: 'all 0.2s',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: 2
-              }
-            }}
-          >
-            Refresh
-          </Button>
-        </Box>
-      </Box>
+        )}
+      />
 
       {/* Alerts */}
       {error && (

@@ -43,6 +43,7 @@ import {
   Cloud as CloudIcon,
   CloudOff as CloudOffIcon
 } from '@mui/icons-material';
+import PageHeader from '../../components/admin/PageHeader';
 
 // API base URL
 const API_BASE = '/api/v1/rag-services';
@@ -459,59 +460,28 @@ const RAGServicesManagement = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-          borderRadius: 2,
-          p: 3,
-          mb: 3,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}
-      >
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <ModelIcon sx={{ fontSize: 28, color: 'primary.main' }} />
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 700 }}>
-              RAG Services
-            </Typography>
+      <PageHeader
+        title="RAG Services"
+        subtitle="Manage Infinity embedding and reranker services for RAG applications"
+        actions={(
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Chip
+              icon={status?.proxy_healthy ? <HealthyIcon /> : <UnhealthyIcon />}
+              label={`Proxy: ${status?.proxy_healthy ? 'Healthy' : 'Unhealthy'}`}
+              color={status?.proxy_healthy ? 'success' : 'error'}
+              variant="outlined"
+            />
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={handleRefresh}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
           </Box>
-          <Typography variant="body2" color="text.secondary">
-            Manage Infinity embedding and reranker services for RAG applications
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Proxy Health Status */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {status?.proxy_healthy ? (
-              <HealthyIcon sx={{ color: 'success.main' }} />
-            ) : (
-              <UnhealthyIcon sx={{ color: 'error.main' }} />
-            )}
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Proxy: {status?.proxy_healthy ? 'Healthy' : 'Unhealthy'}
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={handleRefresh}
-            disabled={loading}
-            sx={{
-              borderRadius: 2,
-              transition: 'all 0.2s',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: 2
-              }
-            }}
-          >
-            Refresh
-          </Button>
-        </Box>
-      </Box>
+        )}
+      />
 
       {/* Alerts */}
       {error && (

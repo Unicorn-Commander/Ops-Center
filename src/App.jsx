@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Eagerly load critical components (needed on first render)
@@ -221,6 +221,12 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function ParamRedirect({ to }) {
+  const params = useParams();
+  const resolved = to.replace(/:([A-Za-z0-9_]+)/g, (_, key) => params[key] || '');
+  return <Navigate to={resolved} replace />;
+}
+
 // Admin content wrapper with SystemProvider
 function AdminContent({ children }) {
   const [loading, setLoading] = useState(true);
@@ -342,12 +348,12 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* ORGANIZATION SECTION - Team & org management */}
                   {/* ============================================================ */}
-                  <Route path="organization/list" element={<OrganizationsList />} />
+                  <Route path="organization/list" element={<Navigate to="/admin/people/organizations" replace />} />
                   <Route path="organization/team" element={<OrganizationTeam />} />
                   <Route path="organization/roles" element={<OrganizationRoles />} />
                   <Route path="organization/settings" element={<OrganizationSettings />} />
                   <Route path="organization/billing" element={<OrganizationBilling />} />
-                  <Route path="organization/:orgId/billing" element={<OrganizationBillingPro />} />
+                  <Route path="organization/:orgId/billing" element={<ParamRedirect to="/admin/people/organizations/:orgId/billing" />} />
                   {/* TODO: Uncomment when organization credit pages are created */}
                   {/* <Route path="organization/credits" element={<OrganizationCredits />} /> */}
                   {/* <Route path="organization/credits/allocate" element={<CreditAllocation />} /> */}
@@ -363,13 +369,13 @@ function AppRoutes() {
                   {/* SERVICES SECTION - Platform services */}
                   {/* ============================================================ */}
                   <Route path="brigade" element={<Brigade />} />
-                  <Route path="llm-hub" element={<LLMHub />} />
-                  <Route path="llm-management" element={<LLMManagement />} />
-                  <Route path="litellm-providers" element={<LiteLLMManagement />} />
-                  <Route path="llm-models" element={<LLMManagementUnified />} />
-                  <Route path="openrouter-settings" element={<OpenRouterSettings />} />
-                  <Route path="llm/usage" element={<LLMUsage />} />
-                  <Route path="analytics" element={<AnalyticsDashboard />} />
+                  <Route path="llm-hub" element={<Navigate to="/admin/ai" replace />} />
+                  <Route path="llm-management" element={<Navigate to="/admin/ai/management" replace />} />
+                  <Route path="litellm-providers" element={<Navigate to="/admin/ai/providers" replace />} />
+                  <Route path="llm-models" element={<Navigate to="/admin/ai/models" replace />} />
+                  <Route path="openrouter-settings" element={<Navigate to="/admin/ai/openrouter" replace />} />
+                  <Route path="llm/usage" element={<Navigate to="/admin/ai/usage" replace />} />
+                  <Route path="analytics" element={<Navigate to="/admin/monitoring/analytics" replace />} />
 
                   {/* ============================================================ */}
                   {/* INTEGRATIONS SECTION - External APIs & Services */}
@@ -385,42 +391,103 @@ function AppRoutes() {
                   <Route path="platform/performance" element={<PerformanceMonitor />} />
 
                   {/* ============================================================ */}
+                  {/* ADMIN IA - New Paths (Phase 1) */}
+                  {/* ============================================================ */}
+                  {/* People & Access */}
+                  <Route path="people/users" element={<UserManagement />} />
+                  <Route path="people/users/:userId" element={<UserDetail />} />
+                  <Route path="people/organizations" element={<OrganizationsList />} />
+                  <Route path="people/organizations/:orgId/billing" element={<OrganizationBillingPro />} />
+                  <Route path="people/invite-codes" element={<InviteCodesManagement />} />
+                  <Route path="people/authentication" element={<Authentication />} />
+
+                  {/* Billing & Plans */}
+                  <Route path="billing/tiers" element={<SubscriptionManagement />} />
+                  <Route path="billing/tiers/compare" element={<TierComparison />} />
+                  <Route path="billing/apps" element={<AppManagement />} />
+                  <Route path="billing/pricing" element={<DynamicPricingManagement />} />
+                  <Route path="billing/system" element={<BillingDashboard />} />
+                  <Route path="billing/user" element={<UserBillingDashboard />} />
+                  <Route path="billing/overview" element={<SystemBillingOverview />} />
+                  <Route path="billing/credits" element={<CreditDashboard />} />
+                  <Route path="billing/credits/purchase" element={<CreditPurchase />} />
+
+                  {/* AI & Models */}
+                  <Route path="ai" element={<LLMHub />} />
+                  <Route path="ai/management" element={<LLMManagement />} />
+                  <Route path="ai/providers" element={<LiteLLMManagement />} />
+                  <Route path="ai/models" element={<LLMManagementUnified />} />
+                  <Route path="ai/registry" element={<AIModelManagement />} />
+                  <Route path="ai/openrouter" element={<OpenRouterSettings />} />
+                  <Route path="ai/usage" element={<LLMUsage />} />
+                  <Route path="ai/model-lists" element={<ModelListManagement />} />
+                  <Route path="ai/local-models" element={<LocalModelsManagement />} />
+                  <Route path="ai/rag-services" element={<RAGServicesManagement />} />
+                  <Route path="ai/gpu-services" element={<GPUServicesManagement />} />
+
+                  {/* Infrastructure */}
+                  <Route path="infra/services" element={<Services />} />
+                  <Route path="infra/resources" element={<System />} />
+                  <Route path="infra/hardware" element={<HardwareManagement />} />
+                  <Route path="infra/local-users" element={<LocalUserManagement />} />
+                  <Route path="infra/network" element={<Network />} />
+                  <Route path="infra/storage" element={<StorageBackup />} />
+                  <Route path="infra/traefik" element={<TraefikConfig />} />
+                  <Route path="infra/traefik/dashboard" element={<TraefikDashboard />} />
+                  <Route path="infra/traefik/routes" element={<TraefikRoutes />} />
+                  <Route path="infra/traefik/services" element={<TraefikServices />} />
+                  <Route path="infra/traefik/ssl" element={<TraefikSSL />} />
+                  <Route path="infra/traefik/metrics" element={<TraefikMetrics />} />
+                  <Route path="infra/migration" element={<MigrationWizard />} />
+
+                  {/* Platform */}
+                  <Route path="platform/landing" element={<LandingCustomization />} />
+                  <Route path="platform/white-label" element={<WhiteLabelBuilder />} />
+                  <Route path="platform/extensions" element={<ExtensionsMarketplace />} />
+                  <Route path="platform/purchases" element={<PurchaseHistory />} />
+
+                  {/* Monitoring (alias) */}
+                  <Route path="monitoring/geeses" element={<Geeses />} />
+
+                  {/* ============================================================ */}
                   {/* SYSTEM SECTION - Platform administration */}
                   {/* ============================================================ */}
-                  <Route path="system/models" element={<AIModelManagement />} />
-                  <Route path="system/model-lists" element={<ModelListManagement />} />
-                  <Route path="system/local-models" element={<LocalModelsManagement />} />
-                  <Route path="system/rag-services" element={<RAGServicesManagement />} />
-                  <Route path="system/gpu-services" element={<GPUServicesManagement />} />
-                  <Route path="system/services" element={<Services />} />
-                  <Route path="system/resources" element={<System />} />
-                  <Route path="system/hardware" element={<HardwareManagement />} />
-                  <Route path="infrastructure/hardware" element={<HardwareManagement />} />
-                  <Route path="system/analytics" element={<AdvancedAnalytics />} />
-                  <Route path="system/usage-analytics" element={<UsageAnalytics />} />
-                  <Route path="system/billing" element={<BillingDashboard />} />
-                  <Route path="system/subscription-management" element={<SubscriptionManagement />} />
-                  <Route path="system/app-management" element={<AppManagement />} />
-                  <Route path="system/pricing-management" element={<DynamicPricingManagement />} />
+                  <Route path="system/models" element={<Navigate to="/admin/ai/registry" replace />} />
+                  <Route path="system/model-lists" element={<Navigate to="/admin/ai/model-lists" replace />} />
+                  <Route path="system/local-models" element={<Navigate to="/admin/ai/local-models" replace />} />
+                  <Route path="system/rag-services" element={<Navigate to="/admin/ai/rag-services" replace />} />
+                  <Route path="system/gpu-services" element={<Navigate to="/admin/ai/gpu-services" replace />} />
+                  <Route path="system/services" element={<Navigate to="/admin/infra/services" replace />} />
+                  <Route path="system/resources" element={<Navigate to="/admin/infra/resources" replace />} />
+                  <Route path="system/hardware" element={<Navigate to="/admin/infra/hardware" replace />} />
+                  <Route path="infrastructure/hardware" element={<Navigate to="/admin/infra/hardware" replace />} />
+                  <Route path="system/analytics" element={<Navigate to="/admin/monitoring/analytics/advanced" replace />} />
+                  <Route path="system/usage-analytics" element={<Navigate to="/admin/monitoring/usage-analytics" replace />} />
+                  <Route path="system/billing" element={<Navigate to="/admin/billing/system" replace />} />
+                  <Route path="system/subscription-management" element={<Navigate to="/admin/billing/tiers" replace />} />
+                  <Route path="system/app-management" element={<Navigate to="/admin/billing/apps" replace />} />
+                  <Route path="system/pricing-management" element={<Navigate to="/admin/billing/pricing" replace />} />
                   <Route path="platform/white-label" element={<WhiteLabelBuilder />} />
-                  <Route path="system/users" element={<UserManagement />} />
-                  <Route path="system/users/:userId" element={<UserDetail />} />
                   {/* Local User Management - consolidated to single route */}
-                  <Route path="system/local-users" element={<LocalUserManagement />} />
-                  <Route path="system/usage-metrics" element={<UsageMetrics />} />
-                  <Route path="system/network" element={<Network />} />
-                  <Route path="system/storage" element={<StorageBackup />} />
+                  <Route path="system/local-users" element={<Navigate to="/admin/infra/local-users" replace />} />
+                  <Route path="system/usage-metrics" element={<Navigate to="/admin/monitoring/usage-metrics" replace />} />
+                  <Route path="system/network" element={<Navigate to="/admin/infra/network" replace />} />
+                  <Route path="system/storage" element={<Navigate to="/admin/infra/storage" replace />} />
                   <Route path="system/security" element={<Security />} />
-                  <Route path="system/authentication" element={<Authentication />} />
-                  <Route path="system/extensions" element={<Extensions />} />
-                  <Route path="system/landing" element={<LandingCustomization />} />
+                  <Route path="system/authentication" element={<Navigate to="/admin/people/authentication" replace />} />
+                  <Route path="system/extensions" element={<Navigate to="/admin/platform/extensions" replace />} />
+                  <Route path="system/landing" element={<Navigate to="/admin/platform/landing" replace />} />
                   <Route path="system/settings" element={<SystemSettings />} />
                   <Route path="system/forgejo" element={<ForgejoManagement />} />
-                  <Route path="system/invite-codes" element={<InviteCodesManagement />} />
+                  <Route path="system/invite-codes" element={<Navigate to="/admin/people/invite-codes" replace />} />
 
                   {/* ============================================================ */}
                   {/* MONITORING & ANALYTICS SECTION - Metrics, Logs, Analytics */}
                   {/* ============================================================ */}
+                  <Route path="monitoring/analytics" element={<AnalyticsDashboard />} />
+                  <Route path="monitoring/analytics/advanced" element={<AdvancedAnalytics />} />
+                  <Route path="monitoring/usage-analytics" element={<UsageAnalytics />} />
+                  <Route path="monitoring/usage-metrics" element={<UsageMetrics />} />
                   <Route path="monitoring/overview" element={<MonitoringOverview />} />
                   <Route path="monitoring/grafana" element={<GrafanaConfig />} />
                   <Route path="monitoring/grafana/dashboards" element={<GrafanaViewer />} />
@@ -461,15 +528,9 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* CREDITS & USAGE SECTION - Credit metering system */}
                   {/* ============================================================ */}
-                  <Route path="credits" element={<CreditDashboard />} />
-                  <Route path="credits/purchase" element={<CreditPurchase />} />
-                  <Route path="credits/tiers" element={<TierComparison />} />
-
-                  {/* ============================================================ */}
-                  {/* BILLING SECTION - Organization billing dashboards */}
-                  {/* ============================================================ */}
-                  <Route path="billing/dashboard" element={<UserBillingDashboard />} />
-                  <Route path="billing/overview" element={<SystemBillingOverview />} />
+                  <Route path="credits" element={<Navigate to="/admin/billing/credits" replace />} />
+                  <Route path="credits/purchase" element={<Navigate to="/admin/billing/credits/purchase" replace />} />
+                  <Route path="credits/tiers" element={<Navigate to="/admin/billing/tiers/compare" replace />} />
 
                   {/* ============================================================ */}
                   {/* UPGRADE & PLANS SECTION - Subscription management */}
@@ -487,12 +548,12 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* EXTENSIONS MARKETPLACE - Admin Add-ons & Purchases */}
                   {/* ============================================================ */}
-                  <Route path="extensions" element={<ExtensionsMarketplace />} />
+                  <Route path="extensions" element={<Navigate to="/admin/platform/extensions" replace />} />
                   <Route path="extensions/:id" element={<ProductDetailPage />} />
                   <Route path="extensions/checkout" element={<CheckoutPage />} />
                   <Route path="extensions/success" element={<SuccessPage />} />
                   <Route path="extensions/cancelled" element={<CancelledPage />} />
-                  <Route path="purchases" element={<PurchaseHistory />} />
+                  <Route path="purchases" element={<Navigate to="/admin/platform/purchases" replace />} />
 
                   {/* ============================================================ */}
                   {/* LEGACY ROUTES - Backwards compatibility (DEPRECATED) */}
@@ -500,16 +561,15 @@ function AppRoutes() {
                   {/* ============================================================ */}
 
                   {/* System admin routes - redirect to new system/* namespace */}
-                  <Route path="models" element={<Navigate to="/admin/system/models" replace />} />
-                  <Route path="services" element={<Navigate to="/admin/system/services" replace />} />
-                  <Route path="system" element={<Navigate to="/admin/system/resources" replace />} />
-                  <Route path="network" element={<Navigate to="/admin/system/network" replace />} />
-                  <Route path="storage" element={<Navigate to="/admin/system/storage" replace />} />
-                  <Route path="logs" element={<Navigate to="/admin/system/logs" replace />} />
+                  <Route path="models" element={<Navigate to="/admin/ai/registry" replace />} />
+                  <Route path="services" element={<Navigate to="/admin/infra/services" replace />} />
+                  <Route path="system" element={<Navigate to="/admin/infra/resources" replace />} />
+                  <Route path="network" element={<Navigate to="/admin/infra/network" replace />} />
+                  <Route path="storage" element={<Navigate to="/admin/infra/storage" replace />} />
+                  <Route path="logs" element={<Navigate to="/admin/monitoring/logs" replace />} />
                   <Route path="security" element={<Navigate to="/admin/system/security" replace />} />
-                  <Route path="authentication" element={<Navigate to="/admin/system/authentication" replace />} />
-                  <Route path="extensions" element={<Navigate to="/admin/system/extensions" replace />} />
-                  <Route path="landing" element={<Navigate to="/admin/system/landing" replace />} />
+                  <Route path="authentication" element={<Navigate to="/admin/people/authentication" replace />} />
+                  <Route path="landing" element={<Navigate to="/admin/platform/landing" replace />} />
                   <Route path="settings" element={<Navigate to="/admin/system/settings" replace />} />
 
                   {/* Personal routes - redirect to new account/* namespace */}
@@ -517,6 +577,7 @@ function AppRoutes() {
 
                   {/* Billing routes - redirect to new subscription/* namespace */}
                   <Route path="billing" element={<Navigate to="/admin/subscription/plan" replace />} />
+
                 </Routes>
               </Layout>
             </AdminContent>

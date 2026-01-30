@@ -551,7 +551,7 @@ export default function Dashboard() {
     switch(action) {
       case 'view-logs':
         // Navigate to logs page
-        window.location.href = '/admin/logs';
+        window.location.href = '/admin/monitoring/logs';
         break;
       case 'check-updates':
         // Show update modal
@@ -559,7 +559,7 @@ export default function Dashboard() {
         break;
       case 'download-model':
         // Navigate to models page
-        window.location.href = '/admin/models';
+        window.location.href = '/admin/ai/registry';
         break;
       case 'system-info':
         // Scroll to hardware section
@@ -855,7 +855,7 @@ export default function Dashboard() {
       <motion.div
         variants={itemVariants}
         className={`${glassStyles.card} rounded-2xl p-8 cursor-pointer ${glassStyles.cardHover.base} shadow-xl relative overflow-hidden group`}
-        onClick={() => window.location.href = '/admin/system'}
+        onClick={() => window.location.href = '/admin/infra/resources'}
         whileHover={{ scale: 1.01 }}
       >
         <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>

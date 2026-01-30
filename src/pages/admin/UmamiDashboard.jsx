@@ -33,6 +33,7 @@ import {
   OpenInNew as OpenInNewIcon,
   Language as LanguageIcon
 } from '@mui/icons-material';
+import PageHeader from '../../components/admin/PageHeader';
 
 const UmamiDashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -145,41 +146,38 @@ const UmamiDashboard = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <AnalyticsIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            Umami Analytics
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Period</InputLabel>
-            <Select value={period} onChange={(e) => setPeriod(e.target.value)} label="Period">
-              <MenuItem value="24h">Last 24 Hours</MenuItem>
-              <MenuItem value="7d">Last 7 Days</MenuItem>
-              <MenuItem value="30d">Last 30 Days</MenuItem>
-              <MenuItem value="90d">Last 90 Days</MenuItem>
-            </Select>
-          </FormControl>
-          <Tooltip title="Refresh">
-            <IconButton onClick={fetchDashboard} disabled={loading}>
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Open Umami Dashboard">
-            <IconButton
-              component="a"
-              href="http://localhost:3002"
-              target="_blank"
-              rel="noopener"
-            >
-              <OpenInNewIcon />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      </Box>
+      <PageHeader
+        title="Umami Analytics"
+        subtitle="Website analytics and visitor insights"
+        actions={(
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>Period</InputLabel>
+              <Select value={period} onChange={(e) => setPeriod(e.target.value)} label="Period">
+                <MenuItem value="24h">Last 24 Hours</MenuItem>
+                <MenuItem value="7d">Last 7 Days</MenuItem>
+                <MenuItem value="30d">Last 30 Days</MenuItem>
+                <MenuItem value="90d">Last 90 Days</MenuItem>
+              </Select>
+            </FormControl>
+            <Tooltip title="Refresh">
+              <IconButton onClick={fetchDashboard} disabled={loading}>
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Open Umami Dashboard">
+              <IconButton
+                component="a"
+                href="http://localhost:3002"
+                target="_blank"
+                rel="noopener"
+              >
+                <OpenInNewIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+      />
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
