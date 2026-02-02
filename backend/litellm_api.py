@@ -19,7 +19,6 @@ from datetime import datetime
 import json
 import time
 import httpx
-import bcrypt
 
 from fastapi import APIRouter, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -54,10 +53,7 @@ def set_sessions_store(sessions_dict):
     sessions = sessions_dict
 
 # LiteLLM proxy URL
-LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://uchub-litellm:4000')
-
-# LiteLLM master key for internal API calls
-LITELLM_MASTER_KEY = os.getenv('LITELLM_MASTER_KEY', 'REMOVED')
+LITELLM_PROXY_URL = os.getenv('LITELLM_PROXY_URL', 'http://unicorn-litellm-wilmer:4000')
 
 # BYOK encryption key (used for both user and system keys)
 BYOK_ENCRYPTION_KEY = os.getenv('BYOK_ENCRYPTION_KEY')
@@ -659,83 +655,6 @@ class SystemKeyManager:
 
 
 # ============================================================================
-# Service Key Validation from Database
-# ============================================================================
-
-async def validate_service_key_from_db(request: Request, api_key: str) -> Optional[dict]:
-    """
-    Validate service key against database.
-
-    Args:
-        request: FastAPI request (to access db_pool)
-        api_key: The service key to validate (e.g., sk-brigade-xxx-2026)
-
-    Returns:
-        dict with service_name and org_id if valid, None otherwise
-    """
-    try:
-        db_pool = getattr(request.app.state, 'db_pool', None)
-        if not db_pool:
-            logger.warning("Database pool not available for service key validation")
-            return None
-
-        async with db_pool.acquire() as conn:
-            # Query all active service keys
-            keys = await conn.fetch("""
-                SELECT id, service_name, api_key_hash, org_id, scopes
-                FROM service_api_keys
-                WHERE is_active = true
-            """)
-
-            # Check each key using bcrypt
-            for key_record in keys:
-                try:
-                    if bcrypt.checkpw(api_key.encode(), key_record['api_key_hash'].encode()):
-                        # Update last_used_at asynchronously (don't block auth)
-                        try:
-                            await conn.execute("""
-                                UPDATE service_api_keys
-                                SET last_used_at = NOW()
-                                WHERE id = $1
-                            """, key_record['id'])
-                        except Exception as update_err:
-                            logger.warning(f"Failed to update last_used_at: {update_err}")
-
-                        return {
-                            'service_name': key_record['service_name'],
-                            'org_id': str(key_record['org_id']) if key_record['org_id'] else None,
-                            'scopes': key_record['scopes'] or []
-                        }
-                except Exception as hash_err:
-                    logger.debug(f"Hash check failed for key: {hash_err}")
-                    continue
-
-            return None  # No matching key found
-
-    except Exception as e:
-        logger.error(f"Database service key validation error: {e}")
-        return None  # Fall back to hardcoded keys
-
-
-# Legacy hardcoded service keys (fallback if database unavailable)
-LEGACY_SERVICE_KEYS = {
-    'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
-    'sk-presenton-service-key-2025': 'presenton-service',
-    'sk-brigade-service-key-2025': 'brigade-service',
-    'sk-centerdeep-service-key-2025': 'centerdeep-service',
-    'sk-partnerpulse-service-key-2025': 'partnerpulse-service'
-}
-
-LEGACY_SERVICE_ORG_IDS = {
-    'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',
-    'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',
-    'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
-    'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',
-    'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098'
-}
-
-
-# ============================================================================
 # Dependency Injection
 # ============================================================================
 
@@ -793,52 +712,46 @@ async def get_user_id(
     token = authorization[7:]
     logger.info(f"🔍 Auth token received - Length: {len(token)}, Prefix: {token[:10]}...")
 
-    # Check for service key (format: sk-<service>-xxx-<year>)
+    # Check for service key (format: sk-<service>-service-key-<year>)
     if token.startswith('sk-'):
         logger.info(f"🔑 Token starts with 'sk-', checking service keys...")
+        # Service keys are pre-configured trusted keys for internal services
+        service_keys = {
+            'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
+            'sk-presenton-service-key-2025': 'presenton-service',
+            'sk-brigade-service-key-2025': 'brigade-service',
+            'sk-centerdeep-service-key-2025': 'centerdeep-service',
+            'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
+            'sk-open-webui-service-key-2026': 'open-webui-service'
+        }
 
-        # Try database validation first (supports GUI-configured keys)
-        db_result = await validate_service_key_from_db(request, token)
+        # FIX P0: Map service names to actual UUIDs from database (not strings)
+        # These are the actual organization UUIDs for service accounts
+        service_org_ids = {
+            'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',      # UUID for bolt-diy-service org
+            'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',     # UUID for presenton-service org
+            'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
+            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
+            'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',  # UUID for partnerpulse-service org
+            'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479'     # UUID for open-webui-service org
+        }
 
-        if db_result:
-            # Database key found
-            service_name = db_result['service_name']
-            org_id = db_result['org_id']
-
-            # Check for X-User-ID header (service proxying on behalf of user)
-            x_user_id = request.headers.get('X-User-ID')
-            if x_user_id:
-                # Service is proxying for a user - bill to user's account
-                logger.info(f"✅ Service key authenticated (DB): {service_name} proxying for user: {x_user_id}")
-                return x_user_id
-            elif org_id:
-                # No user context - use service organization account for billing
-                org_prefixed_id = f"org_{org_id}"
-                logger.info(f"✅ Service key authenticated (DB): {service_name} using org credits: {org_prefixed_id}")
-                return org_prefixed_id
-            else:
-                # Service key without org - use service name as identifier
-                logger.info(f"✅ Service key authenticated (DB): {service_name} (no org)")
-                return f"service_{service_name}"
-
-        # Fallback to legacy hardcoded keys (backward compatibility)
-        if token in LEGACY_SERVICE_KEYS:
-            service_name = LEGACY_SERVICE_KEYS[token]
-            logger.info(f"🔑 Using legacy hardcoded service key for: {service_name}")
+        if token in service_keys:
+            service_name = service_keys[token]
 
             # Check for X-User-ID header (service proxying on behalf of user)
             x_user_id = request.headers.get('X-User-ID')
             if x_user_id:
                 # Service is proxying for a user - bill to user's account
-                logger.info(f"✅ Service key authenticated (legacy): {service_name} proxying for user: {x_user_id}")
+                logger.info(f"✅ Service key authenticated: {service_name} proxying for user: {x_user_id}")
                 return x_user_id
             else:
                 # No user context - use service organization account for billing
-                service_org_id = LEGACY_SERVICE_ORG_IDS.get(service_name)
+                service_org_id = service_org_ids.get(service_name)
                 if service_org_id:
                     # Prefix with 'org_' so credit system recognizes this as an organization
                     org_prefixed_id = f"org_{service_org_id}"
-                    logger.info(f"✅ Service key authenticated (legacy): {service_name} using org credits: {org_prefixed_id}")
+                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {org_prefixed_id}")
                     return org_prefixed_id
                 else:
                     logger.error(f"❌ Service org ID not configured for: {service_name}")
@@ -1069,19 +982,32 @@ async def chat_completions(
             }
 
         else:
-            # Using system OpenRouter key (charge credits)
-            logger.info(f"Using system OpenRouter key for {user_id}")
+            # Using system key (charge credits)
+            logger.info(f"Using system provider for {user_id}")
 
             # Get provider info from database for direct API call
             async with credit_system.db_pool.acquire() as conn:
-                # Get OpenRouter provider (or first enabled provider)
+                # FIRST: Check if requested model has a specific provider mapping
+                model_name = request.model or "Qwen3-30B-Q4_K_M"
                 provider = await conn.fetchrow("""
-                    SELECT id, name, type, api_key_encrypted, config
-                    FROM llm_providers
-                    WHERE enabled = true AND type = 'openrouter'
-                    ORDER BY priority DESC
-                    LIMIT 1
-                """)
+                    SELECT p.id, p.name, p.type, p.api_key_encrypted, p.api_base_url, p.config
+                    FROM llm_models m
+                    JOIN llm_providers p ON m.provider_id = p.id
+                    WHERE m.name = $1 AND m.enabled = true AND p.enabled = true
+                """, model_name)
+
+                if provider:
+                    logger.info(f"Found model-specific provider for '{model_name}': {provider['name']}")
+                else:
+                    # FALLBACK: Get highest priority provider (for unknown models)
+                    logger.info(f"No specific provider for '{model_name}', using highest priority")
+                    provider = await conn.fetchrow("""
+                        SELECT id, name, type, api_key_encrypted, api_base_url, config
+                        FROM llm_providers
+                        WHERE enabled = true AND type IN ('openai_compatible', 'openrouter', 'local')
+                        ORDER BY priority DESC
+                        LIMIT 1
+                    """)
 
                 if not provider:
                     raise HTTPException(
@@ -1095,49 +1021,64 @@ async def chat_completions(
                     import json
                     provider_db_config = json.loads(provider_db_config)
 
-                base_url = provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
+                # Use api_base_url from database if available, otherwise check config, fallback to openrouter
+                base_url = provider.get('api_base_url') or provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
                 provider_name = provider['name']
 
-                # Get system API key (prefer database over environment)
+                # Check if this is a local provider that doesn't need API key
+                is_local_provider = provider['type'] in ('openai_compatible', 'local') and (
+                    provider.get('api_base_url', '').startswith('http://') or
+                    'localhost' in provider.get('api_base_url', '') or
+                    'unicorn-' in provider.get('api_base_url', '')
+                )
+
+                # Get system API key (prefer database over environment) - skip for local providers
                 api_key = None
-                try:
-                    # Try to use SystemKeyManager if encryption key is available
-                    system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
-                    api_key = await system_key_manager.get_system_key(provider['id'])
-                except Exception as e:
-                    logger.warning(f"SystemKeyManager failed: {e}, falling back to direct decryption")
-                    api_key = None
-                if not api_key:
-                    # Fallback: Try to decrypt the key directly
-                    encrypted_key = provider['api_key_encrypted']
-                    if not encrypted_key:
-                        raise HTTPException(
-                            status_code=503,
-                            detail="No API key configured for system provider. Please configure in Platform Settings."
-                        )
-
+                if not is_local_provider:
                     try:
-                        # Try to decrypt if it looks like Fernet encrypted data
-                        if encrypted_key.startswith('gAAAAA'):
-                            from cryptography.fernet import Fernet
-                            cipher = Fernet(BYOK_ENCRYPTION_KEY.encode() if isinstance(BYOK_ENCRYPTION_KEY, str) else BYOK_ENCRYPTION_KEY)
-                            api_key = cipher.decrypt(encrypted_key.encode()).decode()
-                            logger.info("Successfully decrypted system API key from database")
-                        else:
-                            # Assume it's plain text
-                            api_key = encrypted_key
-                            logger.info("Using plain text API key from database")
+                        # Try to use SystemKeyManager if encryption key is available
+                        system_key_manager = SystemKeyManager(credit_system.db_pool, BYOK_ENCRYPTION_KEY)
+                        api_key = await system_key_manager.get_system_key(provider['id'])
                     except Exception as e:
-                        logger.error(f"Failed to decrypt API key, trying as plain text: {e}")
-                        api_key = encrypted_key
+                        logger.warning(f"SystemKeyManager failed: {e}, falling back to direct decryption")
+                        api_key = None
+                    if not api_key:
+                        # Fallback: Try to decrypt the key directly
+                        encrypted_key = provider['api_key_encrypted']
+                        if not encrypted_key:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="No API key configured for system provider. Please configure in Platform Settings."
+                            )
 
-            # Build headers for OpenRouter
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://unicorncommander.ai",  # Required by OpenRouter
-                "X-Title": "UC-1 Pro Ops Center"  # Required by OpenRouter
-            }
+                        try:
+                            # Try to decrypt if it looks like Fernet encrypted data
+                            if encrypted_key.startswith('gAAAAA'):
+                                from cryptography.fernet import Fernet
+                                cipher = Fernet(BYOK_ENCRYPTION_KEY.encode() if isinstance(BYOK_ENCRYPTION_KEY, str) else BYOK_ENCRYPTION_KEY)
+                                api_key = cipher.decrypt(encrypted_key.encode()).decode()
+                                logger.info("Successfully decrypted system API key from database")
+                            else:
+                                # Assume it's plain text
+                                api_key = encrypted_key
+                                logger.info("Using plain text API key from database")
+                        except Exception as e:
+                            logger.error(f"Failed to decrypt API key, trying as plain text: {e}")
+                            api_key = encrypted_key
+
+            # Build headers (skip auth for local providers)
+            if is_local_provider:
+                headers = {
+                    "Content-Type": "application/json"
+                }
+                logger.info(f"Using local provider: {provider_name} at {base_url} (no API key required)")
+            else:
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://unicorncommander.ai",  # Required by OpenRouter
+                    "X-Title": "UC-1 Pro Ops Center"  # Required by OpenRouter
+                }
 
         # Call provider API directly
         # Handle streaming vs non-streaming requests differently
@@ -1377,7 +1318,13 @@ async def chat_completions(
             transaction_id = None
             actual_cost = 0.0  # No cost to user's credit balance
             logger.info(f"BYOK request for {user_id} - no credits charged")
-        elif user_tier != 'free' or actual_cost > 0:
+        elif is_credit_exempt(user_tier):
+            # Credit-exempt tier - completely free, skip credit deduction
+            new_balance = 0.0
+            transaction_id = None
+            actual_cost = 0.0  # Override cost for exempt users
+            logger.info(f"Credit-exempt tier request for {user_id} (tier: {user_tier}) - no credits charged")
+        elif actual_cost > 0:
             # Check if using org billing or individual billing
             if org_id:
                 # Using organization billing
@@ -1461,45 +1408,7 @@ async def chat_completions(
             'byok_provider': detected_provider if using_byok else None
         }
 
-        # WORKAROUND for Traefik 3.x bug: Force all responses through SSE streaming
-        # This ensures proper response body forwarding through Traefik reverse proxy
-        # The bug causes non-streaming responses to have their bodies dropped
-        #
-        # Traefik 3.x only correctly forwards:
-        # 1. text/event-stream responses (SSE)
-        # 2. Actual streaming responses
-        #
-        # For non-streaming chat completions, we return SSE format.
-        # Clients should parse the `data: ` prefix and `[DONE]` terminator.
-        # This is OpenAI-compatible as OpenAI uses the same SSE format for streaming.
-        import json as json_module
-
-        response_data['_billing'] = {
-            'credits_used': float(actual_cost),
-            'credits_remaining': float(new_balance),
-            'using_byok': using_byok
-        }
-
-        json_content = json_module.dumps(response_data, ensure_ascii=False)
-
-        async def stream_sse_response():
-            """Yield the JSON response in SSE format for Traefik compatibility"""
-            yield f"data: {json_content}\n\n"
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(
-            stream_sse_response(),
-            media_type="text/event-stream",
-            headers={
-                "X-Credits-Used": str(actual_cost),
-                "X-Credits-Remaining": str(new_balance),
-                "X-Org-Credits": str(bool(org_id)).lower(),
-                "X-BYOK": str(using_byok).lower(),
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "X-Response-Format": "sse-wrapped"  # Header to indicate SSE format
-            }
-        )
+        return response_data
 
     except HTTPException:
         raise
@@ -3852,13 +3761,10 @@ async def toggle_model_status(
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test LiteLLM proxy connection with authentication
-        headers = {"Authorization": f"Bearer {LITELLM_MASTER_KEY}"}
-        logger.info(f"Health check: connecting to {LITELLM_PROXY_URL}/health")
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(f"{LITELLM_PROXY_URL}/health", headers=headers)
+        # Test LiteLLM proxy connection
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{LITELLM_PROXY_URL}/health")
             litellm_healthy = response.status_code == 200
-            logger.info(f"Health check: got status {response.status_code}")
 
         return {
             'status': 'healthy' if litellm_healthy else 'degraded',
@@ -3866,16 +3772,8 @@ async def health_check():
             'timestamp': datetime.utcnow().isoformat()
         }
 
-    except httpx.TimeoutException as e:
-        logger.error(f"Health check timeout: {e}")
-        return {
-            'status': 'degraded',
-            'litellm_proxy': 'down',
-            'error': f'Timeout connecting to LiteLLM proxy',
-            'timestamp': datetime.utcnow().isoformat()
-        }
     except Exception as e:
-        logger.error(f"Health check failed: {type(e).__name__}: {e}")
+        logger.error(f"Health check failed: {e}")
         return {
             'status': 'degraded',
             'litellm_proxy': 'down',

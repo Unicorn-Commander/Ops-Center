@@ -398,7 +398,7 @@ export default function DashboardPro() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => window.location.href = '/admin/models'}
+              onClick={() => window.location.href = '/admin/ai/registry'}
               className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-medium text-sm hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg"
             >
               <div className="flex items-center gap-2">
@@ -410,7 +410,7 @@ export default function DashboardPro() {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => window.location.href = '/admin/logs'}
+              onClick={() => window.location.href = '/admin/monitoring/logs'}
               className="px-4 py-2 rounded-lg bg-gray-800 text-white font-medium text-sm hover:bg-gray-700 transition-all"
             >
               <div className="flex items-center gap-2">
@@ -450,7 +450,7 @@ export default function DashboardPro() {
               Resource Monitoring
             </h2>
             <button 
-              onClick={() => window.location.href = '/admin/system'}
+              onClick={() => window.location.href = '/admin/infra/resources'}
               className={`text-sm ${theme.text.accent} hover:underline flex items-center gap-1`}
             >
               View Details

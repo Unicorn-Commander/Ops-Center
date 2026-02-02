@@ -38,7 +38,7 @@ on:
 # Environment variables
 env:
   NODE_VERSION: '20.x'
-  BASE_URL: 'https://unicorncommander.ai'
+  BASE_URL: 'https://magicunicorn.dev'
 
 # Jobs
 jobs:

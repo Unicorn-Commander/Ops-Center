@@ -109,6 +109,15 @@ from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
 from routers.forgejo import router as forgejo_router
 
+# Local Inference Module (GPU/Model Management)
+from routers.local_inference import router as local_inference_router
+
+# RAG Services (Infinity Embedding/Reranker Proxy)
+from routers.rag_services import router as rag_services_router
+
+# GPU Services (Unified Infinity + Granite Management)
+from routers.gpu_services import router as gpu_services_router
+
 # Model List Management API
 from model_list_api import admin_router as model_list_admin_router
 from model_list_api import user_router as model_list_user_router
@@ -273,7 +282,7 @@ else:
     OAUTH_REDIRECT_URI = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}:8084/auth/callback"
 
 # Session storage - Redis-backed with 2-hour TTL
-# Configuration: REDIS_HOST=unicorn-lago-redis, REDIS_PORT=6379, SESSION_TTL=7200
+# Configuration: REDIS_HOST=unicorn-redis, REDIS_PORT=6379, SESSION_TTL=7200
 sessions = redis_session_manager
 
 # Security Feature Toggles
@@ -574,7 +583,7 @@ async def startup_event():
         logger.info("PostgreSQL connection pool created")
 
         # Create Redis client
-        redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-lago-redis')}:{os.getenv('REDIS_PORT', '6379')}")
+        redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
         redis_client = aioredis.from_url(
             redis_url,
             encoding="utf-8",
@@ -644,7 +653,8 @@ async def startup_event():
 
     # Start alert checker (Epic 2.5)
     try:
-        from alert_manager import alert_manager
+        from alert_manager import AlertManager
+        alert_manager = AlertManager()
         asyncio.create_task(check_alerts_periodically())
         logger.info("Alert checker started successfully")
     except Exception as e:
@@ -657,7 +667,8 @@ async def check_alerts_periodically():
     Background task that checks for system alerts every 60 seconds.
     Epic 2.5: Admin Dashboard Polish - Analytics Lead
     """
-    from alert_manager import alert_manager
+    from alert_manager import AlertManager
+    alert_manager = AlertManager()
 
     while True:
         try:
@@ -863,6 +874,18 @@ logger.info("LiteLLM routing API endpoints registered at /api/v1/llm")
 # Forgejo integration
 app.include_router(forgejo_router)
 logger.info("Forgejo API endpoints registered at /api/v1/forgejo")
+
+# Local Inference Module (GPU/Model Management) - January 2026
+app.include_router(local_inference_router)
+logger.info("Local Inference API endpoints registered at /api/v1/local-inference")
+
+# RAG Services (Infinity Embedding/Reranker Proxy) - January 2026
+app.include_router(rag_services_router)
+logger.info("RAG Services API endpoints registered at /api/v1/rag-services")
+
+# GPU Services (Unified Infinity + Granite Management) - January 2026
+app.include_router(gpu_services_router)
+logger.info("GPU Services API endpoints registered at /api/v1/gpu-services")
 
 # Model List Management API
 app.include_router(model_list_admin_router)
@@ -4067,14 +4090,19 @@ async def get_csrf_token_endpoint(request: Request):
 
     # Set session_token cookie if this is a new session
     if new_session_token:
-        response.set_cookie(
-            key="session_token",
-            value=new_session_token,
-            httponly=True,
-            secure=False,  # Set to True in production with HTTPS
-            samesite="lax",
-            max_age=7200  # 2 hours, matching Redis TTL
-        )
+        cookie_kwargs = {
+            "key": "session_token",
+            "value": new_session_token,
+            "httponly": True,
+            "secure": (EXTERNAL_PROTOCOL == "https"),
+            "samesite": "none",
+            "max_age": 7200,  # 2 hours, matching Redis TTL
+            "path": "/"
+        }
+        # Set domain for cross-subdomain cookie sharing
+        if "." in EXTERNAL_HOST and not EXTERNAL_HOST.startswith("localhost"):
+            cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
+        response.set_cookie(**cookie_kwargs)
 
     return response
 
@@ -4911,25 +4939,34 @@ async def register_user(request: Request):
             "org_role": "owner"
         })
 
-        response.set_cookie(
-            key="session_token",
-            value=session_token,
-            httponly=True,
-            secure=False,  # Set to True in production with HTTPS
-            samesite="lax",
-            max_age=7200  # 2 hours
-        )
+        # Build cookie kwargs for cross-subdomain support
+        session_cookie_kwargs = {
+            "key": "session_token",
+            "value": session_token,
+            "httponly": True,
+            "secure": (EXTERNAL_PROTOCOL == "https"),
+            "samesite": "none",
+            "max_age": 7200,  # 2 hours
+            "path": "/"
+        }
+        if "." in EXTERNAL_HOST and not EXTERNAL_HOST.startswith("localhost"):
+            session_cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
+        response.set_cookie(**session_cookie_kwargs)
 
         # Also set CSRF token cookie for double-submit pattern
         csrf_token = sessions[session_token]["csrf_token"]
-        response.set_cookie(
-            key="csrf_token",
-            value=csrf_token,
-            httponly=False,  # Must be accessible to JavaScript
-            secure=False,  # Set to True in production with HTTPS
-            samesite="lax",
-            max_age=86400  # 24 hours
-        )
+        csrf_cookie_kwargs = {
+            "key": "csrf_token",
+            "value": csrf_token,
+            "httponly": False,  # Must be accessible to JavaScript
+            "secure": (EXTERNAL_PROTOCOL == "https"),
+            "samesite": "none",
+            "max_age": 86400,  # 24 hours
+            "path": "/"
+        }
+        if "." in EXTERNAL_HOST and not EXTERNAL_HOST.startswith("localhost"):
+            csrf_cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
+        response.set_cookie(**csrf_cookie_kwargs)
 
         return response
 
@@ -5150,14 +5187,19 @@ async def direct_login(request: Request, credentials: dict):
 
                     # Create response with session cookie
                     response = JSONResponse({"success": True, "user": user_info})
-                    response.set_cookie(
-                        key="session_token",
-                        value=session_token,
-                        httponly=True,
-                        secure=("https" in str(request.url)),
-                        samesite="lax",
-                        max_age=86400  # 24 hours
-                    )
+                    # Build cookie kwargs for cross-subdomain support
+                    login_cookie_kwargs = {
+                        "key": "session_token",
+                        "value": session_token,
+                        "httponly": True,
+                        "secure": (EXTERNAL_PROTOCOL == "https"),
+                        "samesite": "none",
+                        "max_age": 86400,  # 24 hours
+                        "path": "/"
+                    }
+                    if "." in EXTERNAL_HOST and not EXTERNAL_HOST.startswith("localhost"):
+                        login_cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
+                    response.set_cookie(**login_cookie_kwargs)
                     return response
             else:
                 # Authentication failed
@@ -5194,7 +5236,9 @@ async def direct_login(request: Request, credentials: dict):
 async def oauth_login(request: Request):
     """Redirect to Authentik OAuth authorization"""
     state = secrets.token_urlsafe(32)
-    sessions[state] = {"created": time.time()}
+    # Capture return_url for post-login redirect
+    return_url = request.query_params.get("return_url")
+    sessions[state] = {"created": time.time(), "return_url": return_url}
     
     # Build redirect URI based on the request host
     if "yoda.unicorncommander.ai" in str(request.url):
@@ -5385,6 +5429,18 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     # Check if user has active subscription (UNLESS they're an admin)
                     user_role = user_info.get("role", "viewer")
                     org_id = org_context.get("org_id")
+
+                    # Check for return_url from login flow (stored with state)
+                    stored_return_url = None
+                    if state:
+                        try:
+                            state_data = sessions.get(state)
+                            if state_data and isinstance(state_data, dict):
+                                stored_return_url = state_data.get("return_url")
+                                print(f"Found stored return_url: {stored_return_url}")
+                        except Exception as e:
+                            print(f"Could not retrieve state data: {e}")
+
                     redirect_url = "/"  # Default to landing page
 
                     # Admins bypass payment gate entirely
@@ -5437,6 +5493,15 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         print(f"User has no organization, redirecting to signup flow")
                         redirect_url = "/signup-flow.html"
 
+                    # Override with stored return_url if valid (external subdomain)
+                    if stored_return_url and redirect_url != "/signup-flow.html":
+                        # Validate return_url is a safe subdomain
+                        if stored_return_url.startswith(f"https://") and EXTERNAL_HOST in stored_return_url:
+                            print(f"Redirecting to return_url: {stored_return_url}")
+                            redirect_url = stored_return_url
+                        else:
+                            print(f"Ignoring invalid return_url: {stored_return_url}")
+
                     # Redirect with session token
                     response = RedirectResponse(url=redirect_url)
                     
@@ -5447,7 +5512,7 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         "path": "/",  # Ensure cookie is available for all paths
                         "httponly": True,
                         "secure": (EXTERNAL_PROTOCOL == "https"),
-                        "samesite": "lax",
+                        "samesite": "none",
                         "max_age": 86400  # 24 hours
                     }
 
@@ -5662,6 +5727,118 @@ async def get_session_info(request: Request):
     )
 
 
+@app.get("/api/v1/auth/sso-token")
+async def get_sso_token(request: Request):
+    """
+    Return the session_token for trusted subdomain SSO.
+
+    This endpoint allows trusted subdomains (*.magicunicorn.dev) to obtain
+    the session_token for use as a Bearer token in cross-origin API requests.
+
+    The browser sends cookies to this endpoint (same origin), and we return
+    the session_token in the response body for the subdomain to use.
+    """
+    origin = request.headers.get("origin", "")
+
+    # Only allow requests from trusted subdomains
+    trusted_origins = [
+        f"https://{EXTERNAL_HOST}",
+        f"https://leads.{EXTERNAL_HOST}",
+        f"https://leads-api.{EXTERNAL_HOST}",
+    ]
+
+    if origin not in trusted_origins:
+        print(f"[SSO-TOKEN] Rejected origin: {origin}")
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"Origin not allowed: {origin}"},
+            headers={
+                "Access-Control-Allow-Origin": origin if origin else "*",
+                "Access-Control-Allow-Credentials": "true",
+            }
+        )
+
+    session_token = request.cookies.get("session_token")
+    print(f"[SSO-TOKEN] Origin: {origin}, session_token exists: {bool(session_token)}")
+
+    if session_token and session_token in sessions:
+        session = sessions[session_token]
+        user_info = session.get("user", {})
+
+        if user_info:
+            # Return the session_token for use as Bearer token
+            response_data = {
+                "authenticated": True,
+                "session_token": session_token,
+                "user": {
+                    "id": user_info.get("sub", "unknown"),
+                    "email": user_info.get("email", ""),
+                    "name": user_info.get("preferred_username") or user_info.get("name", ""),
+                    "is_admin": user_info.get("role") in ["admin", "power_user"]
+                }
+            }
+            print(f"[SSO-TOKEN] Returning token for user: {user_info.get('email')}")
+            response = JSONResponse(content=response_data)
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            return response
+
+    print(f"[SSO-TOKEN] No valid session")
+    response = JSONResponse(
+        status_code=401,
+        content={"authenticated": False, "detail": "No valid session"}
+    )
+    response.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+
+# Login route handler - checks for existing session and handles return_url
+@app.get("/login")
+async def login_page(request: Request):
+    """Handle login requests with return_url support for SSO.
+
+    If user already has a valid session (e.g., logged into ops-center),
+    redirect directly to return_url for seamless SSO experience.
+    If not authenticated, initiate OAuth flow with Keycloak.
+    """
+    session_token = request.cookies.get("session_token")
+    return_url = request.query_params.get("return_url")
+
+    print(f"[LOGIN] return_url={return_url}, session_token exists={bool(session_token)}")
+
+    # If already authenticated, redirect to return_url or home
+    if session_token and session_token in sessions:
+        session_data = sessions.get(session_token)
+        if session_data and session_data.get("user"):
+            print(f"[LOGIN] User already authenticated, redirecting to return_url")
+            if return_url:
+                # Validate return_url is a safe subdomain
+                if return_url.startswith("https://") and EXTERNAL_HOST in return_url:
+                    # Set cookie again with proper domain before redirect
+                    response = RedirectResponse(url=return_url)
+                    cookie_kwargs = {
+                        "key": "session_token",
+                        "value": session_token,
+                        "httponly": True,
+                        "secure": (EXTERNAL_PROTOCOL == "https"),
+                        "samesite": "none",
+                        "max_age": 86400,
+                        "path": "/"
+                    }
+                    if "." in EXTERNAL_HOST and not EXTERNAL_HOST.startswith("localhost"):
+                        cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
+                    response.set_cookie(**cookie_kwargs)
+                    return response
+            return RedirectResponse(url="/")
+
+    # Not authenticated, start OAuth flow with return_url preserved
+    print(f"[LOGIN] No valid session, redirecting to OAuth")
+    oauth_url = "/auth/login"
+    if return_url:
+        oauth_url += f"?return_url={return_url}"
+    return RedirectResponse(url=oauth_url)
+
 # Login page endpoint - now just redirects to OAuth
 @app.get("/login.html")
 async def serve_login():
@@ -5745,7 +5922,7 @@ async def serve_spa(full_path: str, request: Request):
         return RedirectResponse(url="/login.html", status_code=302)
 
     # Check if requesting a static file
-    if full_path.startswith(("assets/", "logos/")) or full_path.endswith((".html", ".js", ".css", ".png", ".jpg", ".svg", ".ico", ".json", ".woff", ".woff2", ".ttf", ".webp", ".jpeg", ".gif")):
+    if full_path.startswith(("assets/", "logos/")) or full_path.endswith((".html", ".js", ".css", ".png", ".jpg", ".svg", ".ico", ".json", ".webmanifest", ".woff", ".woff2", ".ttf", ".webp", ".jpeg", ".gif")):
         # First check public directory
         public_path = os.path.join("public", full_path)
         if os.path.exists(public_path):

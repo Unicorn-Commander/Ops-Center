@@ -9,7 +9,7 @@ on:
     types: [published]
 
 env:
-  REGISTRY: git.unicorncommander.ai
+  REGISTRY: git.magicunicorn.dev
   IMAGE_NAME: unicorncommander/ops-center
 
 jobs:

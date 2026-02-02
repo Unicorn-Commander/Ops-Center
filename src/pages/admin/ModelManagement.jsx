@@ -55,6 +55,7 @@ import {
   Security as SecurityIcon
 } from '@mui/icons-material';
 import TierAccessDialog from '../../components/admin/TierAccessDialog';
+import PageHeader from '../../components/admin/PageHeader';
 
 const ModelManagement = () => {
   // State management
@@ -422,47 +423,22 @@ const ModelManagement = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-          borderRadius: 2,
-          p: 3,
-          mb: 3,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}
-      >
-        <Box>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 0.5 }}>
-            Model Access Control
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage which models are available to each subscription tier
-          </Typography>
-        </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            resetForm();
-            setCreateDialogOpen(true);
-          }}
-          sx={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: 2,
-            transition: 'all 0.2s',
-            '&:hover': {
-              transform: 'translateY(-2px)',
-              boxShadow: 4,
-              background: 'linear-gradient(135deg, #7e8fef 0%, #8a5bb2 100%)'
-            }
-          }}
-        >
-          Add Model
-        </Button>
-      </Box>
+      <PageHeader
+        title="Model Access Control"
+        subtitle="Manage which models are available to each subscription tier"
+        actions={(
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              resetForm();
+              setCreateDialogOpen(true);
+            }}
+          >
+            Add Model
+          </Button>
+        )}
+      />
 
       {/* Alerts */}
       {error && (

@@ -4,9 +4,9 @@
 
 global:
   resolve_timeout: 5m
-  smtp_from: 'alerts@unicorncommander.ai'
+  smtp_from: 'alerts@magicunicorn.dev'
   smtp_smarthost: 'smtp.gmail.com:587'
-  smtp_auth_username: 'alerts@unicorncommander.ai'
+  smtp_auth_username: 'alerts@magicunicorn.dev'
   smtp_auth_password: 'YOUR_EMAIL_APP_PASSWORD_HERE'  # Replace with actual password
   smtp_require_tls: true
 
@@ -152,7 +152,7 @@ receivers:
         icon_emoji: ':rotating_light:'
         color: '#E01E5A'
         title: ':rotating_light: CRITICAL: {{ .GroupLabels.alertname }}'
-        title_link: 'https://monitoring.unicorncommander.ai'
+        title_link: 'https://monitoring.magicunicorn.dev'
         text: '{{ template "slack.critical.text" . }}'
         actions:
           - type: button
@@ -160,7 +160,7 @@ receivers:
             url: '{{ (index .Alerts 0).Annotations.runbook }}'
           - type: button
             text: 'View Logs'
-            url: 'https://unicorncommander.ai/admin/logs'
+            url: 'https://magicunicorn.dev/admin/logs'
         fields:
           - title: 'Severity'
             value: '{{ .GroupLabels.severity | toUpper }}'
@@ -192,7 +192,7 @@ receivers:
         icon_emoji: ':warning:'
         color: '#FFB02E'
         title: ':warning: HIGH: {{ .GroupLabels.alertname }}'
-        title_link: 'https://monitoring.unicorncommander.ai'
+        title_link: 'https://monitoring.magicunicorn.dev'
         text: '{{ template "slack.high.text" . }}'
         fields:
           - title: 'Severity'

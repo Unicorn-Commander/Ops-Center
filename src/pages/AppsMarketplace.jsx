@@ -198,7 +198,7 @@ export default function AppsMarketplace() {
     },
     {
       id: 'search',
-      name: 'AI Search (Center-Deep)',
+      name: 'AI Search (Magic Unicorn)',
       category: 'ai',
       base_price: 0,
       description: 'Privacy-focused AI-powered metasearch across 70+ search engines',

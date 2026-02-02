@@ -54,7 +54,7 @@ export default function MyApps() {
     },
     {
       id: 'search',
-      name: 'AI Search (Center-Deep)',
+      name: 'AI Search (Magic Unicorn)',
       description: 'Privacy-focused AI metasearch',
       status: 'Active',
       access_url: 'https://search.unicorncommander.ai',

@@ -21,7 +21,7 @@
 const { test, expect } = require('@playwright/test');
 
 // Configuration
-const BASE_URL = process.env.BASE_URL || 'https://unicorncommander.ai';
+const BASE_URL = process.env.BASE_URL || 'https://magicunicorn.dev';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'aaron@magicunicorn.tech';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'REMOVED-KEYCLOAK_ADMIN_PASSWORD';
 

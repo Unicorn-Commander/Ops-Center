@@ -211,12 +211,12 @@ notification_channels:
     enabled: false  # Set to true when configured
     smtp_server: "smtp.gmail.com"
     smtp_port: 587
-    smtp_user: "alerts@unicorncommander.ai"
+    smtp_user: "alerts@magicunicorn.dev"
     smtp_password: "YOUR_PASSWORD"
-    from_address: "alerts@unicorncommander.ai"
+    from_address: "alerts@magicunicorn.dev"
     to_addresses:
-      - "admin@unicorncommander.ai"
-      - "ops@unicorncommander.ai"
+      - "admin@magicunicorn.dev"
+      - "ops@magicunicorn.dev"
 
   pagerduty:
     enabled: false  # Set to true when configured

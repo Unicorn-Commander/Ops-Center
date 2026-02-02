@@ -12,13 +12,13 @@ services:
       - web
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ops-center-nginx.rule=Host(`unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-nginx.rule=Host(`magicunicorn.dev`)"
       - "traefik.http.routers.ops-center-nginx.entrypoints=https"
       - "traefik.http.routers.ops-center-nginx.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center-nginx.priority=100"
       - "traefik.http.services.ops-center-nginx.loadbalancer.server.port=80"
       # HTTP to HTTPS redirect
-      - "traefik.http.routers.ops-center-nginx-http.rule=Host(`unicorncommander.ai`)"
+      - "traefik.http.routers.ops-center-nginx-http.rule=Host(`magicunicorn.dev`)"
       - "traefik.http.routers.ops-center-nginx-http.entrypoints=http"
       - "traefik.http.routers.ops-center-nginx-http.middlewares=https-redirect"
       - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"

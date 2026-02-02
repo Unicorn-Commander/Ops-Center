@@ -7,7 +7,7 @@
   "parent": "the_colonel",
   "version": "1.0.0",
   "description": "Expert AI assistant for UC-Cloud Ops-Center infrastructure management. Specializes in service monitoring, user management, billing operations, and Docker container orchestration.",
-  "avatar": "https://unicorncommander.ai/assets/geeses-avatar.png",
+  "avatar": "https://magicunicorn.dev/assets/geeses-avatar.png",
   "status": "active",
   "capabilities": [
     "service_health_monitoring",
@@ -118,7 +118,7 @@
       "authentication": "keycloak_session"
     },
     "brigade": {
-      "baseUrl": "https://api.brigade.unicorncommander.ai",
+      "baseUrl": "https://api.brigade.magicunicorn.dev",
       "apiVersion": "v1"
     },
     "keycloak": {
@@ -138,6 +138,6 @@
     "created": "2025-10-28",
     "license": "MIT",
     "repository": "https://github.com/Unicorn-Commander/UC-Cloud",
-    "documentation": "https://unicorncommander.ai/docs/geeses"
+    "documentation": "https://magicunicorn.dev/docs/geeses"
   }
 }

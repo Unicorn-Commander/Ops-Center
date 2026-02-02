@@ -78,7 +78,7 @@ services:
     labels:
       # Traefik routing (if using Traefik)
       - "traefik.enable=true"
-      - "traefik.http.routers.litellm.rule=Host(`ai.unicorncommander.ai`)"
+      - "traefik.http.routers.litellm.rule=Host(`ai.magicunicorn.dev`)"
       - "traefik.http.routers.litellm.entrypoints=websecure"
       - "traefik.http.routers.litellm.tls.certresolver=letsencrypt"
       - "traefik.http.services.litellm.loadbalancer.server.port=4000"

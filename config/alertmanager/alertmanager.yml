@@ -74,10 +74,10 @@ receivers:
 
     # Email notifications (configure SMTP)
     # email_configs:
-    #   - to: 'ops-team@unicorncommander.ai'
-    #     from: 'alertmanager@unicorncommander.ai'
+    #   - to: 'ops-team@magicunicorn.dev'
+    #     from: 'alertmanager@magicunicorn.dev'
     #     smarthost: 'smtp.gmail.com:587'
-    #     auth_username: 'alertmanager@unicorncommander.ai'
+    #     auth_username: 'alertmanager@magicunicorn.dev'
     #     auth_password: '${SMTP_PASSWORD}'
 
   # Deployment alerts

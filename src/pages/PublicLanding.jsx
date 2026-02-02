@@ -53,6 +53,22 @@ export default function PublicLanding() {
     galaxy: { name: 'Unicorn Galaxy', icon: GlobeAltIcon }
   };
 
+  // Card gradient colors - vibrant gradients for each app (same as AppsLauncher)
+  const CARD_COLORS = [
+    { gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', iconBg: '#ffffff' },  // Purple
+    { gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', iconBg: '#ffffff' },  // Pink
+    { gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', iconBg: '#ffffff' },  // Blue
+    { gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', iconBg: '#1a1a2e' },  // Green
+    { gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', iconBg: '#1a1a2e' },  // Orange/Pink
+    { gradient: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', iconBg: '#1a1a2e' },  // Pastel
+    { gradient: 'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)', iconBg: '#ffffff' },  // Teal/Purple
+    { gradient: 'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)', iconBg: '#1a1a2e' },  // Lavender
+    { gradient: 'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)', iconBg: '#ffffff' },  // Sky Blue
+    { gradient: 'linear-gradient(135deg, #cd9cf2 0%, #f6f3ff 100%)', iconBg: '#1a1a2e' },  // Light Purple
+  ];
+
+  const getCardColor = (index) => CARD_COLORS[index % CARD_COLORS.length];
+
   // Service tier mapping
   const serviceTiers = {
     'Open-WebUI': 'trial',
@@ -630,7 +646,7 @@ export default function PublicLanding() {
                       <button
                         onClick={() => {
                           setIsDropdownOpen(false);
-                          navigate('/admin/billing');
+                          navigate('/admin/subscription/plan');
                         }}
                         className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
                           currentTheme === 'unicorn'
@@ -704,11 +720,11 @@ export default function PublicLanding() {
           >
             {/* Logo and Title - Compact on Desktop */}
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
-              <CenterDeepLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl" />
+              <MagicUnicornLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl" />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
                   <h1 className={`text-4xl md:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' ? 'animate-gradient' : ''}`}>
-                    Center-Deep
+                    Magic Unicorn Search
                   </h1>
                 </div>
                 <p className={`text-lg ${styles.subText} mt-1`}>
@@ -754,10 +770,11 @@ export default function PublicLanding() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {services.map((service, index) => {
             const isLocked = !hasAccess(service.title);
             const requiredTier = serviceTiers[service.title];
+            const cardColor = getCardColor(index);
 
             return (
               <motion.div
@@ -773,11 +790,19 @@ export default function PublicLanding() {
                   className={`block group ${isLocked ? 'cursor-not-allowed' : ''}`}
                   onClick={(e) => handleServiceClick(e, service)}
                 >
-                  <div className={`bg-gradient-to-br ${service.color} rounded-3xl shadow-lg transition-all duration-300 border border-white/20 overflow-hidden relative h-full ${
-                    isLocked
-                      ? 'opacity-60 hover:opacity-70'
-                      : 'hover:shadow-2xl hover:-translate-y-1'
-                  }`}>
+                  <div
+                    className={`rounded-3xl shadow-lg transition-all duration-300 border border-white/20 overflow-hidden relative ${
+                      isLocked
+                        ? 'opacity-60 hover:opacity-70'
+                        : 'hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]'
+                    }`}
+                    style={{
+                      background: cardColor.gradient,
+                      height: '320px',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
                     {/* Lock Overlay */}
                     {isLocked && (
                       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10 flex items-center justify-center">
@@ -791,56 +816,71 @@ export default function PublicLanding() {
                       </div>
                     )}
 
-                    <div className="p-8">
-                      {/* Logo/Icon Section */}
-                      <div className="flex items-start justify-between mb-6">
-                        <div className="flex-shrink-0">
-                          {service.iconImage ? (
-                            <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm p-3 flex items-center justify-center border border-white/20 shadow-lg">
-                              <img
-                                src={service.iconImage}
-                                alt={service.title}
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                          ) : service.icon ? (
-                            <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
-                              <service.icon className="h-12 w-12 text-white" />
-                            </div>
-                          ) : (
-                            <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
-                              <ServerIcon className="h-12 w-12 text-white/50" />
-                            </div>
-                          )}
-                        </div>
-                        {!isLocked && (
-                          <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                            <ArrowRightIcon className="h-6 w-6 text-white/80 group-hover:translate-x-1 transition-transform duration-300" />
-                          </div>
+                    {/* Icon Section - Top */}
+                    <div className="p-6 pt-8 flex justify-center">
+                      <div
+                        className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg p-3"
+                        style={{ backgroundColor: cardColor.iconBg }}
+                      >
+                        {service.iconImage ? (
+                          <img
+                            src={service.iconImage}
+                            alt={service.title}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : service.icon ? (
+                          <service.icon
+                            className="h-12 w-12"
+                            style={{ color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }}
+                          />
+                        ) : (
+                          <ServerIcon
+                            className="h-12 w-12"
+                            style={{ color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }}
+                          />
                         )}
-                      </div>
-
-                      {/* Content Section */}
-                      <div>
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className="text-2xl font-bold text-white leading-tight flex-1">
-                            {service.title}
-                          </h3>
-                          {/* Access Type Badge */}
-                          {service.accessType === 'tier_included' && (
-                            <span className="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-green-500/20 text-green-100 border border-green-400/30 whitespace-nowrap">
-                              ✓ Included
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-white/90 text-base leading-relaxed font-light">
-                          {service.description}
-                        </p>
                       </div>
                     </div>
 
-                    {/* Bottom Accent Bar */}
-                    <div className="h-1 bg-gradient-to-r from-white/0 via-white/30 to-white/0"></div>
+                    {/* Content Section - White Background Bottom */}
+                    <div
+                      className="flex-1 flex flex-col px-6 pb-6 pt-4 mt-auto"
+                      style={{
+                        background: 'rgba(255,255,255,0.95)',
+                        borderTopLeftRadius: '24px',
+                        borderTopRightRadius: '24px'
+                      }}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="text-xl font-bold text-gray-900 leading-tight flex-1 text-center">
+                          {service.title}
+                        </h3>
+                      </div>
+
+                      {/* Access Type Badge */}
+                      {service.accessType === 'tier_included' && (
+                        <div className="flex justify-center mb-2">
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">
+                            ✓ Included
+                          </span>
+                        </div>
+                      )}
+
+                      <p className="text-gray-600 text-sm leading-relaxed text-center flex-1 line-clamp-2">
+                        {service.description?.length > 80
+                          ? service.description.substring(0, 80) + '...'
+                          : service.description}
+                      </p>
+
+                      {/* Launch Button */}
+                      <button
+                        className="mt-3 w-full py-2 px-4 rounded-xl font-semibold text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
+                        style={{ background: cardColor.gradient }}
+                      >
+                        <span>Launch</span>
+                        <ArrowRightIcon className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    </div>
                   </div>
                 </a>
               </motion.div>
@@ -920,66 +960,93 @@ export default function PublicLanding() {
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.4 }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
             >
-              {adminServices.map((service, index) => (
-                <motion.div
-                  key={service.title}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.1 * index }}
-                >
-                  <a
-                    href={service.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block group"
+              {adminServices.map((service, index) => {
+                // Offset admin cards by 5 to get different colors than user apps
+                const cardColor = getCardColor(index + 5);
+
+                return (
+                  <motion.div
+                    key={service.title}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.1 * index }}
                   >
-                    <div className={`bg-gradient-to-br ${service.color} rounded-3xl shadow-lg transition-all duration-300 border border-white/20 overflow-hidden h-full hover:shadow-2xl hover:-translate-y-1`}>
-                      <div className="p-8">
-                        {/* Logo/Icon Section */}
-                        <div className="flex items-start justify-between mb-6">
-                          <div className="flex-shrink-0">
+                    <a
+                      href={service.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block group"
+                    >
+                      <div
+                        className="rounded-3xl shadow-lg transition-all duration-300 border border-white/20 overflow-hidden hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]"
+                        style={{
+                          background: cardColor.gradient,
+                          height: '320px',
+                          display: 'flex',
+                          flexDirection: 'column'
+                        }}
+                      >
+                        {/* Icon Section - Top */}
+                        <div className="p-6 pt-8 flex justify-center">
+                          <div
+                            className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg p-3"
+                            style={{ backgroundColor: cardColor.iconBg }}
+                          >
                             {service.iconImage ? (
-                              <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm p-3 flex items-center justify-center border border-white/20 shadow-lg">
-                                <img
-                                  src={service.iconImage}
-                                  alt={service.title}
-                                  className="w-full h-full object-contain"
-                                />
-                              </div>
+                              <img
+                                src={service.iconImage}
+                                alt={service.title}
+                                className="w-full h-full object-contain"
+                              />
                             ) : service.icon ? (
-                              <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
-                                <service.icon className="h-12 w-12 text-white" />
-                              </div>
+                              <service.icon
+                                className="h-12 w-12"
+                                style={{ color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }}
+                              />
                             ) : (
-                              <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
-                                <ServerIcon className="h-12 w-12 text-white/50" />
-                              </div>
+                              <ServerIcon
+                                className="h-12 w-12"
+                                style={{ color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }}
+                              />
                             )}
                           </div>
-                          <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                            <ArrowRightIcon className="h-6 w-6 text-white/80 group-hover:translate-x-1 transition-transform duration-300" />
-                          </div>
                         </div>
 
-                        {/* Content Section */}
-                        <div>
-                          <h3 className="text-2xl font-bold text-white mb-3 leading-tight">
+                        {/* Content Section - White Background Bottom */}
+                        <div
+                          className="flex-1 flex flex-col px-6 pb-6 pt-4 mt-auto"
+                          style={{
+                            background: 'rgba(255,255,255,0.95)',
+                            borderTopLeftRadius: '24px',
+                            borderTopRightRadius: '24px'
+                          }}
+                        >
+                          <h3 className="text-xl font-bold text-gray-900 leading-tight text-center mb-2">
                             {service.title}
                           </h3>
-                          <p className="text-white/90 text-base leading-relaxed font-light">
-                            {service.description}
+
+                          <p className="text-gray-600 text-sm leading-relaxed text-center flex-1 line-clamp-2">
+                            {service.description?.length > 80
+                              ? service.description.substring(0, 80) + '...'
+                              : service.description}
                           </p>
+
+                          {/* Launch Button */}
+                          <button
+                            className="mt-3 w-full py-2 px-4 rounded-xl font-semibold text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
+                            style={{ background: cardColor.gradient }}
+                          >
+                            <span>Launch</span>
+                            <ArrowRightIcon className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                          </button>
                         </div>
                       </div>
-
-                      {/* Bottom Accent Bar */}
-                      <div className="h-1 bg-gradient-to-r from-white/0 via-white/30 to-white/0"></div>
-                    </div>
-                  </a>
-                </motion.div>
-              ))}
+                    </a>
+                  </motion.div>
+                );
+              })}
             </motion.div>
           )}
         </motion.div>
@@ -1001,7 +1068,7 @@ export default function PublicLanding() {
           </div>
 
           <p className={`${styles.subText} mb-4`}>
-            Access the admin dashboard to manage your Center-Deep services
+            Access the admin dashboard to manage your Magic Unicorn services
           </p>
 
           <button
@@ -1020,9 +1087,9 @@ export default function PublicLanding() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <CenterDeepLogo className="w-10 h-10" />
+              <MagicUnicornLogo className="w-10 h-10" />
               <div className={styles.logoText}>
-                <div className="font-semibold">Center-Deep Operations Dashboard</div>
+                <div className="font-semibold">Magic Unicorn Operations Center</div>
                 <div className={`text-sm ${styles.footerText}`}>v2.1.0</div>
               </div>
             </div>

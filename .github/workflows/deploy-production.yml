@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://unicorncommander.ai
+      url: https://magicunicorn.dev
 
     steps:
       - name: Checkout code
@@ -130,14 +130,14 @@ jobs:
       - name: Run production smoke tests
         run: |
           # Test critical endpoints
-          curl -f https://unicorncommander.ai/api/v1/system/status || exit 1
-          curl -f https://unicorncommander.ai/api/v1/health || exit 1
+          curl -f https://magicunicorn.dev/api/v1/system/status || exit 1
+          curl -f https://magicunicorn.dev/api/v1/health || exit 1
 
           # Test authentication endpoint
-          curl -f https://unicorncommander.ai/api/v1/auth/oidc/login || exit 1
+          curl -f https://magicunicorn.dev/api/v1/auth/oidc/login || exit 1
 
           # Test admin endpoints (with auth)
-          # curl -f -H "Authorization: Bearer ${{ secrets.PROD_API_KEY }}" https://unicorncommander.ai/api/v1/admin/users/analytics/summary || exit 1
+          # curl -f -H "Authorization: Bearer ${{ secrets.PROD_API_KEY }}" https://magicunicorn.dev/api/v1/admin/users/analytics/summary || exit 1
 
           echo "✅ Smoke tests passed"
 
@@ -158,7 +158,7 @@ jobs:
           echo "- **Environment**: production" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployed at**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: https://unicorncommander.ai" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://magicunicorn.dev" >> $GITHUB_STEP_SUMMARY
 
           # Optional: Send Slack/Discord notification
           # curl -X POST ${{ secrets.SLACK_WEBHOOK }} -d '{"text":"✅ Ops-Center deployed to production: ${{ inputs.version }}"}'

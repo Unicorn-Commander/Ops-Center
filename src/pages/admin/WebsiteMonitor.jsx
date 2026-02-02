@@ -60,6 +60,7 @@ import {
   Search as DiscoverIcon,
   Storage as ServerIcon
 } from '@mui/icons-material';
+import PageHeader from '../../components/admin/PageHeader';
 
 const WebsiteMonitor = () => {
   const [loading, setLoading] = useState(true);
@@ -382,41 +383,38 @@ const WebsiteMonitor = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <WebsiteIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            Website Monitor
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<DiscoverIcon />}
-            onClick={discoverWebsites}
-            disabled={discovering}
-            color="secondary"
-          >
-            {discovering ? 'Discovering...' : 'Discover Sites'}
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={checkAllWebsites}
-            disabled={checking}
-          >
-            {checking ? 'Checking...' : 'Check All'}
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setAddDialogOpen(true)}
-          >
-            Add Website
-          </Button>
-        </Box>
-      </Box>
+      <PageHeader
+        title="Website Monitor"
+        subtitle="Monitor website uptime and response times"
+        actions={(
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              startIcon={<DiscoverIcon />}
+              onClick={discoverWebsites}
+              disabled={discovering}
+              color="secondary"
+            >
+              {discovering ? 'Discovering...' : 'Discover Sites'}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={checkAllWebsites}
+              disabled={checking}
+            >
+              {checking ? 'Checking...' : 'Check All'}
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setAddDialogOpen(true)}
+            >
+              Add Website
+            </Button>
+          </Box>
+        )}
+      />
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>

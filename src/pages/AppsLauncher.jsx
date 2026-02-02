@@ -9,8 +9,7 @@ import {
   Button,
   CircularProgress,
   Alert,
-  Chip,
-  Stack
+  Chip
 } from '@mui/material';
 import { Launch as LaunchIcon, Public as PublicIcon, Business as BusinessIcon } from '@mui/icons-material';
 
@@ -27,6 +26,21 @@ import { Launch as LaunchIcon, Public as PublicIcon, Business as BusinessIcon } 
  *
  * launch_url is the source of truth for where the app lives.
  */
+
+// Card background colors - vibrant gradients for each app
+const CARD_COLORS = [
+  { gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', iconBg: '#ffffff' },  // Purple
+  { gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', iconBg: '#ffffff' },  // Pink
+  { gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', iconBg: '#ffffff' },  // Blue
+  { gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', iconBg: '#1a1a2e' },  // Green
+  { gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', iconBg: '#1a1a2e' },  // Orange/Pink
+  { gradient: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', iconBg: '#1a1a2e' },  // Pastel
+  { gradient: 'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)', iconBg: '#ffffff' },  // Teal/Purple
+  { gradient: 'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)', iconBg: '#1a1a2e' },  // Lavender
+  { gradient: 'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)', iconBg: '#ffffff' },  // Sky Blue
+  { gradient: 'linear-gradient(135deg, #cd9cf2 0%, #f6f3ff 100%)', iconBg: '#1a1a2e' },  // Light Purple
+];
+
 const AppsLauncher = () => {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +77,7 @@ const AppsLauncher = () => {
       const host = url.hostname;
 
       // Determine if hosted by UC or federated
-      if (host.includes('unicorncommander.ai')) {
+      if (host.includes('unicorncommander.ai') || host.includes('magicunicorn.dev')) {
         return { label: 'UC Hosted', icon: <BusinessIcon />, color: 'primary' };
       } else {
         return { label: 'Federated', icon: <PublicIcon />, color: 'secondary' };
@@ -71,6 +85,10 @@ const AppsLauncher = () => {
     } catch (e) {
       return { label: 'External', icon: <PublicIcon />, color: 'default' };
     }
+  };
+
+  const getCardColor = (index) => {
+    return CARD_COLORS[index % CARD_COLORS.length];
   };
 
   if (loading) {
@@ -101,25 +119,26 @@ const AppsLauncher = () => {
       </Box>
 
       <Grid container spacing={3}>
-        {apps.map((app) => {
+        {apps.map((app, index) => {
           const hostBadge = getHostBadge(app.launch_url);
+          const cardColor = getCardColor(index);
 
           return (
             <Grid item xs={12} sm={6} md={4} lg={3} key={app.id}>
               <Card
                 sx={{
-                  height: '100%',
+                  height: 320,  // Fixed height for all cards
                   display: 'flex',
                   flexDirection: 'column',
                   cursor: 'pointer',
                   transition: 'all 0.3s ease',
                   position: 'relative',
+                  background: cardColor.gradient,
+                  borderRadius: 3,
+                  overflow: 'hidden',
                   '&:hover': {
-                    transform: 'translateY(-8px)',
-                    boxShadow: 6,
-                    borderColor: 'primary.main',
-                    borderWidth: 2,
-                    borderStyle: 'solid'
+                    transform: 'translateY(-8px) scale(1.02)',
+                    boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
                   }
                 }}
                 onClick={() => handleLaunch(app)}
@@ -130,12 +149,19 @@ const AppsLauncher = () => {
                     icon={hostBadge.icon}
                     label={hostBadge.label}
                     size="small"
-                    color={hostBadge.color}
-                    sx={{ fontSize: '0.7rem' }}
+                    sx={{
+                      fontSize: '0.7rem',
+                      bgcolor: 'rgba(255,255,255,0.9)',
+                      color: '#333',
+                      fontWeight: 600,
+                      '& .MuiChip-icon': {
+                        color: '#333'
+                      }
+                    }}
                   />
                 </Box>
 
-                {/* App Icon */}
+                {/* App Icon with background */}
                 <Box
                   sx={{
                     p: 3,
@@ -143,40 +169,78 @@ const AppsLauncher = () => {
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    bgcolor: 'background.default',
+                    flexGrow: 0,
                     minHeight: 140
                   }}
                 >
-                  {app.icon_url ? (
-                    <CardMedia
-                      component="img"
-                      image={app.icon_url}
-                      alt={app.name}
-                      sx={{
-                        width: 80,
-                        height: 80,
-                        objectFit: 'contain'
-                      }}
-                    />
-                  ) : (
-                    <LaunchIcon sx={{ fontSize: 80, color: 'text.secondary' }} />
-                  )}
+                  <Box
+                    sx={{
+                      width: 90,
+                      height: 90,
+                      borderRadius: 3,
+                      bgcolor: cardColor.iconBg,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                      p: 1.5
+                    }}
+                  >
+                    {app.icon_url ? (
+                      <CardMedia
+                        component="img"
+                        image={app.icon_url}
+                        alt={app.name}
+                        sx={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain'
+                        }}
+                      />
+                    ) : (
+                      <LaunchIcon sx={{ fontSize: 50, color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }} />
+                    )}
+                  </Box>
                 </Box>
 
                 {/* App Info */}
-                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="h6" gutterBottom textAlign="center">
+                <CardContent
+                  sx={{
+                    flexGrow: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    bgcolor: 'rgba(255,255,255,0.95)',
+                    borderTopLeftRadius: 24,
+                    borderTopRightRadius: 24,
+                    mt: 'auto'
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    gutterBottom
+                    textAlign="center"
+                    sx={{
+                      fontWeight: 700,
+                      color: '#1a1a2e'
+                    }}
+                  >
                     {app.name}
                   </Typography>
 
                   {app.description && (
                     <Typography
                       variant="body2"
-                      color="text.secondary"
-                      sx={{ mb: 2, flexGrow: 1, textAlign: 'center' }}
+                      sx={{
+                        mb: 2,
+                        flexGrow: 1,
+                        textAlign: 'center',
+                        color: '#666',
+                        fontSize: '0.85rem',
+                        lineHeight: 1.4
+                      }}
                     >
-                      {app.description.length > 80
-                        ? app.description.substring(0, 80) + '...'
+                      {app.description.length > 60
+                        ? app.description.substring(0, 60) + '...'
                         : app.description
                       }
                     </Typography>
@@ -190,9 +254,19 @@ const AppsLauncher = () => {
                       e.stopPropagation();
                       handleLaunch(app);
                     }}
-                    sx={{ mt: 'auto' }}
+                    sx={{
+                      mt: 'auto',
+                      background: cardColor.gradient,
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      textTransform: 'none',
+                      py: 1,
+                      '&:hover': {
+                        opacity: 0.9
+                      }
+                    }}
                   >
-                    Launch App
+                    Launch
                   </Button>
                 </CardContent>
               </Card>

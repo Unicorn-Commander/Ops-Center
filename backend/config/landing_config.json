@@ -110,7 +110,7 @@
       "icon": "🦊",
       "logo_url": null,
       "description": "Self-hosted Git server with GitHub-like features - repositories, issues, pull requests, and wikis",
-      "url": "https://git.unicorncommander.ai",
+      "url": "https://git.magicunicorn.dev",
       "port": 3003,
       "enabled": true,
       "apiOnly": false,
