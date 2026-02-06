@@ -84,6 +84,7 @@ from org_api import router as org_router
 from org_access_api import router as org_access_router
 from org_manager import org_manager
 from org_billing_api import router as org_billing_router
+from org_features_api import router as org_features_router
 from firewall_api import router as firewall_router
 from cloudflare_api import router as cloudflare_router
 from migration_api import router as migration_router
@@ -117,6 +118,9 @@ from routers.rag_services import router as rag_services_router
 
 # GPU Services (Unified Infinity + Granite Management)
 from routers.gpu_services import router as gpu_services_router
+
+# Billing Analytics API
+from billing_analytics_api import router as billing_analytics_router
 
 # Model List Management API
 from model_list_api import admin_router as model_list_admin_router
@@ -163,6 +167,15 @@ from routers.umami import router as umami_dashboard_router
 
 # Website Uptime Monitor (January 2026)
 from routers.website_monitor import router as website_monitor_router
+
+# Alerts Management API (January 2026)
+from routers.alerts_api import router as alerts_router
+
+# Webhooks Management API (January 2026)
+from routers.webhooks_api import router as webhooks_router
+
+# System Audit Log API (January 2026)
+from routers.audit_api import admin_router as audit_admin_router, internal_router as audit_internal_router
 
 # Prometheus Monitoring API (Epic 3.1)
 from prometheus_api import router as prometheus_router
@@ -353,12 +366,36 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
     """
     # Helper function to check database for organization membership
     async def check_database_membership(uid: str) -> dict:
-        """Check PostgreSQL for organization membership."""
+        """Check PostgreSQL for organization membership.
+
+        uid can be either:
+        - Keycloak sub (zitadel_id) - needs to be looked up first
+        - Internal user ID - can be used directly
+        """
         try:
             # Use the app's database pool if available
             if hasattr(app.state, 'db_pool') and app.state.db_pool:
                 async with app.state.db_pool.acquire() as conn:
-                    # Get user's organization from organization_members table
+                    # First, try to find org membership by joining through users table
+                    # This handles Keycloak sub (zitadel_id) -> internal user ID -> org membership
+                    result = await conn.fetchrow("""
+                        SELECT om.org_id, om.role, o.name as org_name
+                        FROM users u
+                        JOIN organization_members om ON u.id::text = om.user_id
+                        JOIN organizations o ON om.org_id = o.id
+                        WHERE u.zitadel_id = $1
+                        LIMIT 1
+                    """, uid)
+
+                    if result:
+                        logger.info(f"Found org membership in database for Keycloak user {uid}: {result['org_id']}")
+                        return {
+                            "org_id": str(result["org_id"]),
+                            "org_name": result["org_name"],
+                            "org_role": result["role"].lower() if result["role"] else "member"
+                        }
+
+                    # Fallback: try direct user_id lookup (for internal IDs)
                     result = await conn.fetchrow("""
                         SELECT om.org_id, om.role, o.name as org_name
                         FROM organization_members om
@@ -410,25 +447,200 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
             if db_result.get("org_id"):
                 return db_result
 
+        # Fallback to file-backed org manager if database doesn't have membership
+        if not org_id and user_id:
+            try:
+                from org_manager import org_manager
+                user_orgs = org_manager.get_user_orgs(user_id)
+                if user_orgs:
+                    org = user_orgs[0]
+                    org_role = org_manager.get_user_role_in_org(org.id, user_id) or "member"
+                    logger.info(f"Found org membership in file store for user {user_id}: {org.id}")
+                    return {
+                        "org_id": org.id,
+                        "org_name": org.name,
+                        "org_role": org_role
+                    }
+            except Exception as org_err:
+                logger.error(f"File store lookup for org membership failed: {org_err}")
+
         return {
             "org_id": org_id,
             "org_name": org_name,
             "org_role": org_role
         }
-
     except Exception as e:
         logger.error(f"Error getting user org context: {e}")
-        # Last resort: try database lookup even on error
-        if user_id:
-            try:
-                return await check_database_membership(user_id)
-            except:
-                pass
         return {
             "org_id": None,
             "org_name": None,
-            "org_role": None
+            "org_role": "member"
         }
+
+
+async def auto_provision_user_org(user_id: str, email: Optional[str], display_name: str) -> dict:
+    """
+    Create a default organization and assign the user as owner when no org is found.
+    Mirrors signup provisioning for Keycloak-only users.
+    """
+    from org_manager import org_manager
+
+    # Build a unique org name
+    base_name = f"{display_name}'s Organization" if display_name else "My Organization"
+    org_name = base_name
+    attempt = 1
+    while True:
+        try:
+            org_id = org_manager.create_organization(
+                name=org_name,
+                plan_tier="founders_friend"
+            )
+            break
+        except ValueError as e:
+            if "already exists" not in str(e).lower() or attempt >= 5:
+                raise
+            attempt += 1
+            org_name = f"{base_name} ({attempt})"
+
+    # Add user as owner
+    org_manager.add_user_to_org(
+        org_id=org_id,
+        user_id=user_id,
+        role="owner"
+    )
+
+    # Write to Postgres for org-centric APIs (best-effort)
+    try:
+        if hasattr(app.state, 'db_pool') and app.state.db_pool:
+            async with app.state.db_pool.acquire() as conn:
+                # Detect available columns to support multiple schema variants
+                org_columns = await conn.fetch(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'organizations'
+                    """
+                )
+                org_column_names = {row["column_name"] for row in org_columns}
+
+                def slugify(value: str) -> str:
+                    return re.sub(r"[^a-z0-9-]", "", value.lower().replace(" ", "-"))
+
+                org_values = {
+                    "id": org_id,
+                    "name": org_name,
+                    "display_name": org_name,
+                    "slug": slugify(org_name) if "slug" in org_column_names else None,
+                    "plan_tier": "founders_friend",
+                    "status": "active",
+                    "is_active": True,
+                    "max_seats": 1,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+
+                insert_org_cols = [c for c in org_values if c in org_column_names]
+                if "id" in insert_org_cols and "name" in insert_org_cols:
+                    placeholders = ", ".join(f"${i}" for i in range(1, len(insert_org_cols) + 1))
+                    cols_sql = ", ".join(insert_org_cols)
+                    values = [org_values[c] for c in insert_org_cols]
+                    await conn.execute(
+                        f"""
+                        INSERT INTO organizations ({cols_sql})
+                        VALUES ({placeholders})
+                        ON CONFLICT (id) DO NOTHING
+                        """,
+                        *values
+                    )
+
+                member_columns = await conn.fetch(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'organization_members'
+                    """
+                )
+                member_column_names = {row["column_name"] for row in member_columns}
+
+                org_id_column = "org_id" if "org_id" in member_column_names else (
+                    "organization_id" if "organization_id" in member_column_names else None
+                )
+
+                if org_id_column and "user_id" in member_column_names and "role" in member_column_names:
+                    member_values = {
+                        org_id_column: org_id,
+                        "user_id": user_id,
+                        "role": "owner",
+                        "joined_at": datetime.utcnow(),
+                        "is_active": True
+                    }
+                    insert_member_cols = [c for c in member_values if c in member_column_names]
+                    member_placeholders = ", ".join(f"${i}" for i in range(1, len(insert_member_cols) + 1))
+                    member_cols_sql = ", ".join(insert_member_cols)
+                    member_values_list = [member_values[c] for c in insert_member_cols]
+                    await conn.execute(
+                        f"""
+                        INSERT INTO organization_members ({member_cols_sql})
+                        VALUES ({member_placeholders})
+                        ON CONFLICT DO NOTHING
+                        """,
+                        *member_values_list
+                    )
+    except Exception as db_error:
+        logger.error(f"Failed to write org provisioning data to Postgres: {db_error}")
+
+    # Update Keycloak attributes if available
+    if KEYCLOAK_ENABLED and email:
+        try:
+            from keycloak_integration import update_user_attributes
+            await update_user_attributes(email, {
+                "subscription_tier": ["trial"],
+                "subscription_status": ["active"],
+                "org_id": [org_id],
+                "org_name": [org_name],
+                "org_role": ["owner"]
+            })
+        except Exception as keycloak_error:
+            logger.error(f"Failed to update Keycloak attributes for {email}: {keycloak_error}")
+
+    # Create Lago subscription for the organization (best-effort)
+    try:
+        from lago_integration import subscribe_org_to_plan, LagoIntegrationError
+        subscription = await subscribe_org_to_plan(
+            org_id=org_id,
+            plan_code="founders_friend",
+            org_name=org_name,
+            email=email or "",
+            user_id=user_id
+        )
+        if subscription and subscription.get("lago_id"):
+            org_manager.update_org_billing_ids(
+                org_id=org_id,
+                lago_id=subscription.get("lago_id")
+            )
+    except LagoIntegrationError as lago_error:
+        logger.error(f"Failed to create Lago subscription for org {org_id}: {lago_error}")
+    except Exception as lago_error:
+        logger.error(f"Unexpected error creating Lago subscription for org {org_id}: {lago_error}")
+
+    # Create credit account (best-effort)
+    try:
+        from credit_system import credit_manager
+        await credit_manager.initialize()
+        await credit_manager.create_user_credits(
+            user_id=email or user_id,
+            tier="trial"
+        )
+    except Exception as credit_error:
+        logger.error(f"Failed to create credit account during auto-provision for {email}: {credit_error}")
+
+    logger.info(f"Auto-provisioned org {org_id} for user {user_id}")
+    return {
+        "org_id": org_id,
+        "org_name": org_name,
+        "org_role": "owner"
+    }
+
 
 # CORS configuration (Security Team - Nov 12, 2025)
 # Restrict origins to known domains for security
@@ -521,7 +733,12 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/alerts/",  # Email alert system - REST API operations
         "/api/v1/logs/",  # Log search system - REST API operations
         "/api/v1/website-monitor/",  # Website uptime monitoring - REST API operations
-        "/api/v1/umami/"  # Umami analytics dashboard - REST API operations
+        "/api/v1/umami/",  # Umami analytics dashboard - REST API operations
+        "/api/v1/my-apps/",  # Apps marketplace - REST API operations
+        "/api/v1/credits/",  # Credit system - REST API operations
+        "/api/v1/subscriptions/",  # Subscription management - REST API operations
+        "/api/v1/system/",  # System status - REST API operations
+        "/api/v1/billing/",  # Billing analytics - REST API operations
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -814,6 +1031,10 @@ logger.info("Org-Centric Access API endpoints registered at /api/v1/users/me")
 app.include_router(org_billing_router)
 logger.info("Organization Billing API endpoints registered at /api/v1/org-billing")
 
+# Register Organization Features Admin endpoints
+app.include_router(org_features_router)
+logger.info("Organization Features Admin API endpoints registered at /api/v1/admin/orgs/{org_id}/features")
+
 # Register Firewall Management endpoints
 app.include_router(firewall_router)
 logger.info("Firewall Management API endpoints registered at /api/v1/network/firewall")
@@ -835,6 +1056,19 @@ app.include_router(invite_codes_admin_router)
 logger.info("Invite Codes Admin API endpoints registered at /api/v1/admin/invite-codes")
 app.include_router(invite_codes_user_router)
 logger.info("Invite Codes User API endpoints registered at /api/v1/invite-codes")
+
+# Alerts Management (January 2026)
+app.include_router(alerts_router)
+logger.info("Alerts Management API endpoints registered at /api/v1/monitoring/alerts")
+
+# Webhooks Management (January 2026)
+app.include_router(webhooks_router)
+logger.info("Webhooks Management API endpoints registered at /api/v1/admin/webhooks")
+
+# System Audit Log (January 2026)
+app.include_router(audit_admin_router)
+app.include_router(audit_internal_router)
+logger.info("System Audit Log API endpoints registered at /api/v1/admin/audit-log, /api/v1/audit/log")
 
 # Keycloak Status API
 app.include_router(keycloak_status_router)
@@ -886,6 +1120,10 @@ logger.info("RAG Services API endpoints registered at /api/v1/rag-services")
 # GPU Services (Unified Infinity + Granite Management) - January 2026
 app.include_router(gpu_services_router)
 logger.info("GPU Services API endpoints registered at /api/v1/gpu-services")
+
+# Billing Analytics API
+app.include_router(billing_analytics_router)
+logger.info("Billing Analytics API endpoints registered at /api/v1/billing/analytics")
 
 # Model List Management API
 app.include_router(model_list_admin_router)
@@ -1989,6 +2227,14 @@ async def get_current_user(request: Request):
     if not session_token or session_token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
+
+async def get_current_user_optional(request: Request) -> Optional[dict]:
+    """Get current user if authenticated, otherwise return None (doesn't fail)"""
+    session_token = request.cookies.get("session_token")
+
+    if not session_token or session_token not in sessions:
+        return None
+
     session = sessions[session_token]
     user_data = session.get("user", {})
 
@@ -2035,8 +2281,8 @@ async def require_user(current_user: dict = Depends(get_current_user)):
 # API Routes
 
 @app.get("/api/v1/system/status")
-async def get_system_status(current_user: dict = Depends(get_current_user)):
-    """Get current system resource usage with enhanced monitoring (authenticated users only)"""
+async def get_system_status(current_user: Optional[dict] = Depends(get_current_user_optional)):
+    """Get current system resource usage with enhanced monitoring (works with or without auth)"""
     try:
         # Try enhanced monitoring first
         if ENHANCED_MONITORING:
@@ -2419,38 +2665,6 @@ async def get_service_urls():
         "external_protocol": external_protocol,
         "service_urls": service_urls
     }
-
-@app.get("/api/v1/geeses/agent-card")
-async def get_geeses_agent_card():
-    """
-    Get Geeses Navigator Agent Card (Brigade A2A protocol compatible)
-    Returns the agent definition JSON for Navigator Geeses
-    """
-    try:
-        agent_card_path = os.path.join(os.path.dirname(__file__), "../geeses/architecture/geeses-agent.json")
-
-        # Try alternate path if not found
-        if not os.path.exists(agent_card_path):
-            agent_card_path = os.path.join(os.path.dirname(__file__), "geeses/architecture/geeses-agent.json")
-
-        if not os.path.exists(agent_card_path):
-            raise HTTPException(
-                status_code=404,
-                detail="Agent card not found. Ensure geeses/architecture/geeses-agent.json exists."
-            )
-
-        with open(agent_card_path, 'r') as f:
-            agent_card = json.load(f)
-
-        return agent_card
-
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Geeses agent card file not found")
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Invalid JSON in agent card file")
-    except Exception as e:
-        logger.error(f"Error loading Geeses agent card: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to load agent card: {str(e)}")
 
 @app.post("/api/v1/landing/service/{service_id}")
 async def update_landing_service(
@@ -5168,6 +5382,24 @@ async def direct_login(request: Request, credentials: dict):
                     # Get organization context for the user
                     email = user_info.get('email')
                     org_context = await get_user_org_context(user_id, email)
+                    auto_provisioned = False
+
+                    # Auto-provision org for Keycloak-only users with no org context
+                    if not org_context.get("org_id") and role != "admin":
+                        display_name = (
+                            user_info.get("name")
+                            or user_info.get("preferred_username")
+                            or username
+                        )
+                        try:
+                            org_context = await auto_provision_user_org(
+                                user_id=user_id,
+                                email=email,
+                                display_name=display_name
+                            )
+                            auto_provisioned = True
+                        except Exception as provision_error:
+                            logger.error(f"Auto-provisioning org failed for {email}: {provision_error}")
 
                     # Create session with org data
                     session_token = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
@@ -5407,6 +5639,7 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     # Get organization context for the user
                     email = user_info.get('email')
                     org_context = await get_user_org_context(user_id, email)
+                    auto_provisioned = False  # Initialize for subscription check logic
 
                     # Create session with org data (store id_token for logout!)
                     session_token = secrets.token_urlsafe(32)
@@ -5447,6 +5680,9 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     if user_role == "admin":
                         print(f"User is admin, bypassing subscription check - direct access to landing page")
                         redirect_url = "/"
+                    elif auto_provisioned:
+                        print("Auto-provisioned user org, skipping subscription check")
+                        redirect_url = "/"
                     elif org_id:
                         try:
                             # First check the database for subscription status
@@ -5456,7 +5692,7 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                                     db_sub_result = await conn.fetchrow("""
                                         SELECT subscription_plan, status
                                         FROM organization_subscriptions
-                                        WHERE org_id = $1 AND status = 'active'
+                                        WHERE org_id = $1 AND status IN ('active', 'trialing')
                                         LIMIT 1
                                     """, org_id)
                                     if db_sub_result:
@@ -5466,17 +5702,17 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                                         }
                                         print(f"Found active subscription in database: {db_subscription}")
 
-                            # If database has active subscription, allow access
-                            if db_subscription and db_subscription.get("status") == "active":
-                                print(f"User has active subscription (from database): {db_subscription.get('plan_code', 'unknown')}")
+                            # If database has active or trial subscription, allow access
+                            if db_subscription and db_subscription.get("status") in ("active", "trialing"):
+                                print(f"User has valid subscription (from database): {db_subscription.get('plan_code', 'unknown')} - status: {db_subscription.get('status')}")
                                 redirect_url = "/"
                             else:
                                 # Fall back to Lago check
                                 from lago_integration import get_subscription
                                 subscription = await get_subscription(org_id)
 
-                                if not subscription or subscription.get("status") != "active":
-                                    # No active subscription - redirect to signup flow
+                                if not subscription or subscription.get("status") not in ("active", "trialing"):
+                                    # No active or trial subscription - redirect to signup flow
                                     print(f"No active subscription for org {org_id}, redirecting to signup flow")
                                     redirect_url = "/signup-flow.html"
                                 else:

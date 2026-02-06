@@ -22,6 +22,8 @@ export const routes = {
   // PERSONAL SECTION - Always visible to authenticated users
   // ==========================================================================
   personal: {
+    // Note: App.jsx renders AdminInfraDashboard at /admin/ for admin users
+    // AppsLauncher is available at /admin/apps for the apps launcher view
     dashboard: {
       path: '/admin/',
       component: 'AppsLauncher',
@@ -29,6 +31,21 @@ export const routes = {
       name: 'Dashboard',
       icon: 'HomeIcon',
       description: 'Main dashboard with quick stats and service status'
+    },
+    myDashboard: {
+      path: '/admin/my-dashboard',
+      component: 'UserDashboard',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'My Dashboard',
+      icon: 'ChartBarSquareIcon',
+      description: 'Personal credits, usage, and subscription overview'
+    },
+    login: {
+      path: '/admin/login',
+      component: 'Login',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'Login',
+      nav: false
     },
     marketplace: {
       path: '/admin/apps/marketplace',
@@ -440,6 +457,19 @@ export const routes = {
             roles: ['admin'],
             name: 'Migration',
             nav: false
+          },
+          forgejo: {
+            path: '/admin/system/forgejo',
+            component: 'ForgejoManagement',
+            roles: ['admin'],
+            name: 'Forgejo Git Server',
+            nav: false
+          },
+          security: {
+            path: '/admin/system/security',
+            component: 'Security',
+            roles: ['admin'],
+            name: 'System Security'
           }
         }
       },
@@ -523,11 +553,17 @@ export const routes = {
             roles: ['admin'],
             name: 'System Logs'
           },
-          geeses: {
-            path: '/admin/monitoring/geeses',
-            component: 'Geeses',
+          alerts: {
+            path: '/admin/monitoring/alerts',
+            component: 'AlertsManagement',
             roles: ['admin'],
-            name: 'Geeses'
+            name: 'Alerts'
+          },
+          audit: {
+            path: '/admin/monitoring/audit',
+            component: 'SystemAuditLog',
+            roles: ['admin'],
+            name: 'Audit Log'
           }
         }
       },
@@ -554,6 +590,12 @@ export const routes = {
             component: 'CloudflareDNS',
             roles: ['admin'],
             name: 'Cloudflare DNS'
+          },
+          webhooks: {
+            path: '/admin/integrations/webhooks',
+            component: 'WebhooksManagement',
+            roles: ['admin'],
+            name: 'Webhooks'
           }
         }
       },
@@ -602,13 +644,8 @@ export const routes = {
             roles: ['admin'],
             name: 'Purchase History',
             nav: false
-          },
-          marketplace: {
-            path: '/admin/apps/marketplace',
-            component: 'AppMarketplace',
-            roles: ['admin'],
-            name: 'Marketplace'
           }
+          // Note: Marketplace is defined in personal.marketplace, not duplicated here
         }
       }
     }
@@ -672,7 +709,6 @@ export const routes = {
 
     // Monitoring
     { from: '/admin/monitoring/logs', to: '/admin/monitoring/logs', type: 'permanent' },
-    { from: '/admin/geeses', to: '/admin/monitoring/geeses', type: 'permanent' },
     { from: '/admin/analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
     { from: '/admin/system/analytics', to: '/admin/monitoring/analytics/advanced', type: 'permanent' },
     { from: '/admin/system/usage-analytics', to: '/admin/monitoring/usage-analytics', type: 'permanent' },

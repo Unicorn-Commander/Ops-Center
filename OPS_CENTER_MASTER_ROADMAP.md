@@ -208,7 +208,7 @@ Old tier definitions exist in codebase (Trial, Free, Starter, Professional, Ente
    - Implement Umami tracking scripts
 
 4. **The Colonel AI Agent System** (1-2 weeks) 🔄 IN PROGRESS
-   - Lt. Colonel "Atlas" - Ops-Center expert agent
+   - The Colonel - Ops-Center expert AI agent
    - Custom tools for Ops-Center API
    - Chat interface integration
    - A2A protocol for multi-instance coordination
@@ -373,7 +373,7 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 ```
 🎖️ The Colonel (Ecosystem Orchestrator)
     │
-    ├─ 🎖️ Lt. Colonel "Atlas" (Ops-Center System Agent)
+    ├─ 🎖️ The Colonel (Ops-Center System Agent)
     │   │
     │   ├─ 👤 Major "Roster" (Users & Orgs Specialist)
     │   ├─ 🤖 Major "Neural" (LLM & AI Specialist)
@@ -388,7 +388,7 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 
 ### Implementation Plan
 
-**Phase 1: Lt. Colonel Atlas (Single Super-Agent)**
+**Phase 1: The Colonel (Ops-Center AI Agent)**
 - [ ] Create agent definition in Brigade
 - [ ] Write comprehensive system prompt covering all Ops-Center sections
 - [ ] Implement custom tools:
@@ -405,7 +405,7 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 
 **Phase 2: Specialist Majors (Optional - If Needed)**
 - [ ] Create 6 specialist agents (Roster, Neural, Forge, Link, Sentinel, Guardian)
-- [ ] Implement A2A coordination between Atlas and Majors
+- [ ] Implement A2A coordination between The Colonel and Majors
 - [ ] Parallel task execution
 - [ ] Deep domain expertise per section
 
@@ -508,15 +508,15 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 4. ✅ Billing system operational
 5. ✅ LLM infrastructure stable
 6. 🟡 Dashboard refined (deferred - will do before launch)
-7. 🟡 Lt. Colonel Atlas agent operational
+7. 🟡 The Colonel AI agent operational
 8. 🟡 Forgejo API integration added
 9. 🟡 Menu structure optimized
 10. ✅ Security audit passed
 
 ### Nice-to-Have (Post-Launch)
 
-1. Specialist Major agents (if Atlas needs help)
-2. The Colonel ecosystem orchestrator
+1. Specialist Major agents (if The Colonel needs help)
+2. Ecosystem-wide orchestration
 3. Grafana/Prometheus full integration
 4. Advanced analytics dashboards
 5. Mobile-optimized views
@@ -534,7 +534,7 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 - [ ] Live Stripe testing with real transactions
 
 ### Next Week (Nov 4 - Nov 10)
-- [ ] Lt. Colonel Atlas implementation (Phase 1)
+- [ ] The Colonel AI agent implementation (Phase 1)
 - [ ] Chat interface integration
 - [ ] Dashboard refinement
 - [ ] Section-by-section polish
@@ -561,7 +561,7 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 ### Key Decisions
 
 - **Navigation**: Option 2 (enhanced System Settings structure) - IMPLEMENTED
-- **AI Agent**: Start with single super-agent (Lt. Col Atlas), add specialists if needed
+- **AI Agent**: Start with single super-agent (The Colonel), add specialists if needed
 - **Monitoring**: Placeholder pages created, full implementation post-launch
 - **Billing**: Live Stripe keys configured, ready for real transactions
 
@@ -577,7 +577,7 @@ An intelligent AI agent system that knows Ops-Center inside and out, can execute
 **Next Actions**:
 1. Add Forgejo to Integrations → API Credentials
 2. Consolidate LLM section pages
-3. Begin Lt. Colonel Atlas implementation
+3. Begin The Colonel AI agent implementation
 4. Test live Stripe transactions with real money
 
 ---

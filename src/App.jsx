@@ -36,7 +36,6 @@ import RootRedirect from './components/RootRedirect';
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
 const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
-const DashboardPro = lazy(() => import('./pages/DashboardPro'));
 
 // Apps Marketplace pages (user-facing) - lazy loaded
 const AppsLauncher = lazy(() => import('./pages/AppsLauncher'));
@@ -99,7 +98,8 @@ const ApiDocumentation = lazy(() => import('./pages/ApiDocumentation'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 
 // System pages (lazy loaded)
-const AIModelManagement = lazy(() => import('./components/AIModelManagement'));
+// AIModelManagement was deprecated - using ModelListManagement instead
+const AIModelManagement = lazy(() => import('./pages/admin/ModelListManagement'));
 const ModelListManagement = lazy(() => import('./pages/admin/ModelListManagement'));
 const Services = lazy(() => import('./pages/Services'));
 const System = lazy(() => import('./pages/System'));
@@ -120,10 +120,8 @@ const Network = lazy(() => import('./pages/NetworkTabbed'));
 const StorageBackup = lazy(() => import('./pages/StorageBackup'));
 const Security = lazy(() => import('./pages/Security'));
 const Authentication = lazy(() => import('./pages/Authentication'));
-const Extensions = lazy(() => import('./pages/Extensions'));
 const Logs = lazy(() => import('./pages/Logs'));
 const LandingCustomization = lazy(() => import('./pages/LandingCustomization'));
-const Settings = lazy(() => import('./pages/Settings'));
 const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const ForgejoManagement = lazy(() => import('./pages/admin/ForgejoManagement'));
 const InviteCodesManagement = lazy(() => import('./pages/admin/InviteCodesManagement'));
@@ -131,9 +129,14 @@ const SystemBillingOverview = lazy(() => import('./pages/admin/SystemBillingOver
 const LocalModelsManagement = lazy(() => import('./pages/admin/LocalModelsManagement'));
 const RAGServicesManagement = lazy(() => import('./pages/admin/RAGServicesManagement'));
 const GPUServicesManagement = lazy(() => import('./pages/admin/GPUServicesManagement'));
+const AdminInfraDashboard = lazy(() => import('./pages/admin/Dashboard'));
+const AdminRedirect = lazy(() => import('./components/AdminRedirect'));
+const AlertsManagement = lazy(() => import('./pages/admin/AlertsManagement'));
+const WebhooksManagement = lazy(() => import('./pages/admin/WebhooksManagement'));
+const SystemAuditLog = lazy(() => import('./pages/admin/SystemAuditLog'));
 
 // Infrastructure pages (lazy loaded)
-const CloudflareDNS = lazy(() => import('./components/CloudflareDNS'));
+const CloudflareDNS = lazy(() => import('./pages/network/CloudflareDNS'));
 const MigrationWizard = lazy(() => import('./pages/migration/MigrationWizard'));
 
 // Traefik pages (lazy loaded)
@@ -143,6 +146,9 @@ const TraefikServices = lazy(() => import('./pages/TraefikServices'));
 const TraefikSSL = lazy(() => import('./pages/TraefikSSL'));
 const TraefikMetrics = lazy(() => import('./pages/TraefikMetrics'));
 const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
+
+// User-facing dashboard (lazy loaded)
+const UserDashboard = lazy(() => import('./pages/UserDashboard'));
 
 // Credit & Usage pages (lazy loaded)
 const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
@@ -157,7 +163,6 @@ const GrafanaConfig = lazy(() => import('./pages/GrafanaConfig'));
 const GrafanaViewer = lazy(() => import('./pages/GrafanaViewer'));
 const PrometheusConfig = lazy(() => import('./pages/PrometheusConfig'));
 const UmamiConfig = lazy(() => import('./pages/UmamiConfig'));
-const Geeses = lazy(() => import('./pages/Geeses'));
 const UmamiDashboard = lazy(() => import('./pages/admin/UmamiDashboard'));
 const WebsiteMonitor = lazy(() => import('./pages/admin/WebsiteMonitor'));
 
@@ -319,11 +324,17 @@ function AppRoutes() {
             <AdminContent>
               <Layout>
                 <Routes>
-                  {/* Default Landing - Apps Launcher */}
-                  <Route path="/" element={<AppsLauncher />} />
+                  {/* Default Landing - Smart redirect based on role */}
+                  <Route path="/" element={<AdminRedirect />} />
 
-                  {/* Dashboard (legacy - still accessible) */}
-                  <Route path="dashboard" element={<DashboardPro />} />
+                  {/* Dashboard alias for backwards compatibility */}
+                  <Route path="dashboard" element={<AdminInfraDashboard />} />
+
+                  {/* User Dashboard - Personal credits, usage, subscription overview */}
+                  <Route path="my-dashboard" element={<UserDashboard />} />
+
+                  {/* Apps Launcher (moved from default) */}
+                  <Route path="apps" element={<AppsLauncher />} />
 
                   {/* ============================================================ */}
                   {/* ACCOUNT SECTION - Personal user settings */}
@@ -426,6 +437,7 @@ function AppRoutes() {
                   <Route path="ai/gpu-services" element={<GPUServicesManagement />} />
 
                   {/* Infrastructure */}
+                  <Route path="infra/dashboard" element={<AdminInfraDashboard />} />
                   <Route path="infra/services" element={<Services />} />
                   <Route path="infra/resources" element={<System />} />
                   <Route path="infra/hardware" element={<HardwareManagement />} />
@@ -445,9 +457,6 @@ function AppRoutes() {
                   <Route path="platform/white-label" element={<WhiteLabelBuilder />} />
                   <Route path="platform/extensions" element={<ExtensionsMarketplace />} />
                   <Route path="platform/purchases" element={<PurchaseHistory />} />
-
-                  {/* Monitoring (alias) */}
-                  <Route path="monitoring/geeses" element={<Geeses />} />
 
                   {/* ============================================================ */}
                   {/* SYSTEM SECTION - Platform administration */}
@@ -496,10 +505,8 @@ function AppRoutes() {
                   <Route path="monitoring/umami-dashboard" element={<UmamiDashboard />} />
                   <Route path="monitoring/website-monitor" element={<WebsiteMonitor />} />
                   <Route path="monitoring/logs" element={<Logs />} />
-                  <Route path="monitoring/geeses" element={<Geeses />} />
-
-                  {/* ATLAS Multi-Agent System (Geeses) */}
-                  <Route path="geeses" element={<Geeses />} />
+                  <Route path="monitoring/alerts" element={<AlertsManagement />} />
+                  <Route path="monitoring/audit" element={<SystemAuditLog />} />
 
                   {/* Legacy system/logs route (redirect) */}
                   <Route path="system/logs" element={<Navigate to="/admin/monitoring/logs" replace />} />
@@ -508,6 +515,7 @@ function AppRoutes() {
                   {/* INFRASTRUCTURE SECTION - Network & DNS */}
                   {/* ============================================================ */}
                   <Route path="integrations/cloudflare" element={<CloudflareDNS />} />
+                  <Route path="integrations/webhooks" element={<WebhooksManagement />} />
                   <Route path="infrastructure/migration" element={<MigrationWizard />} />
 
                   {/* Legacy cloudflare route (redirect) */}
