@@ -50,21 +50,22 @@ export default function PublicLanding() {
     dark: { name: 'Professional Dark', icon: MoonIcon },
     light: { name: 'Professional Light', icon: SunIcon },
     unicorn: { name: 'Magic Unicorn', icon: PaintBrushIcon },
-    galaxy: { name: 'Unicorn Galaxy', icon: GlobeAltIcon }
+    galaxy: { name: 'Unicorn Galaxy', icon: GlobeAltIcon },
+    underground: { name: 'Underground', icon: CpuChipIcon }
   };
 
-  // Card gradient colors - vibrant gradients for each app (same as AppsLauncher)
+  // Card gradient colors - deep, dark gradients for Underground theme
   const CARD_COLORS = [
-    { gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', iconBg: '#ffffff' },  // Purple
-    { gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', iconBg: '#ffffff' },  // Pink
-    { gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', iconBg: '#ffffff' },  // Blue
-    { gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', iconBg: '#1a1a2e' },  // Green
-    { gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', iconBg: '#1a1a2e' },  // Orange/Pink
-    { gradient: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', iconBg: '#1a1a2e' },  // Pastel
-    { gradient: 'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)', iconBg: '#ffffff' },  // Teal/Purple
-    { gradient: 'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)', iconBg: '#1a1a2e' },  // Lavender
-    { gradient: 'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)', iconBg: '#ffffff' },  // Sky Blue
-    { gradient: 'linear-gradient(135deg, #cd9cf2 0%, #f6f3ff 100%)', iconBg: '#1a1a2e' },  // Light Purple
+    { gradient: 'linear-gradient(135deg, #1e1b4b 0%, #581c87 100%)', iconBg: '#ffffff' },  // Deep Indigo → Purple
+    { gradient: 'linear-gradient(135deg, #4c1d95 0%, #be185d 100%)', iconBg: '#ffffff' },  // Violet → Pink
+    { gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)', iconBg: '#ffffff' },  // Slate → Blue
+    { gradient: 'linear-gradient(135deg, #701a75 0%, #c026d3 100%)', iconBg: '#ffffff' },  // Fuchsia Dark
+    { gradient: 'linear-gradient(135deg, #312e81 0%, #7c3aed 100%)', iconBg: '#ffffff' },  // Indigo → Violet
+    { gradient: 'linear-gradient(135deg, #0c4a6e 0%, #0891b2 100%)', iconBg: '#ffffff' },  // Sky Dark → Cyan
+    { gradient: 'linear-gradient(135deg, #3730a3 0%, #a855f7 100%)', iconBg: '#ffffff' },  // Indigo → Purple
+    { gradient: 'linear-gradient(135deg, #6b21a8 0%, #ec4899 100%)', iconBg: '#ffffff' },  // Purple → Pink
+    { gradient: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)', iconBg: '#1a1a2e' },  // Cyan Dark
+    { gradient: 'linear-gradient(135deg, #86198f 0%, #d946ef 100%)', iconBg: '#ffffff' },  // Fuchsia
   ];
 
   const getCardColor = (index) => CARD_COLORS[index % CARD_COLORS.length];
@@ -441,7 +442,21 @@ export default function PublicLanding() {
 
   // Get theme-specific styling
   const getThemeStyles = () => {
-    if (currentTheme === 'unicorn') {
+    if (currentTheme === 'underground') {
+      return {
+        background: 'min-h-screen bg-gradient-to-br from-black via-purple-950 to-slate-950',
+        headerText: 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-400 to-pink-400',
+        subText: 'text-purple-300/80',
+        searchBg: 'bg-purple-950/50 backdrop-blur-xl rounded-2xl shadow-2xl border border-purple-800/30',
+        searchInput: 'bg-black/30 border border-purple-800/30 text-white placeholder-purple-400 focus:ring-fuchsia-500',
+        searchIcon: 'text-fuchsia-400',
+        searchButton: 'bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:from-purple-800 hover:to-fuchsia-800',
+        cardOverlay: 'bg-purple-950/50 backdrop-blur-xl border border-purple-800/30',
+        footerBg: 'bg-black/40 backdrop-blur-sm border-t border-purple-800/30',
+        logoText: 'text-purple-200',
+        footerText: 'text-purple-400/70'
+      };
+    } else if (currentTheme === 'unicorn') {
       return {
         background: 'min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900',
         headerText: 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400',
@@ -720,18 +735,23 @@ export default function PublicLanding() {
           >
             {/* Logo and Title - Compact on Desktop */}
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
-              <MagicUnicornLogo className="w-20 h-20 md:w-24 md:h-24 drop-shadow-2xl" />
+              {/* Custom logo for this server - transparent background */}
+              <img
+                src="/logos/magicunicorn-special-projects.png"
+                alt="Magic Unicorn Special Projects"
+                className="w-24 h-24 md:w-28 md:h-28 drop-shadow-2xl"
+              />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
-                  <h1 className={`text-4xl md:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' ? 'animate-gradient' : ''}`}>
-                    Magic Unicorn Search
+                  <h1 className={`text-3xl md:text-4xl lg:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' || currentTheme === 'underground' ? 'animate-gradient' : ''}`}>
+                    Magic Unicorn Special Projects
                   </h1>
                 </div>
-                <p className={`text-lg ${styles.subText} mt-1`}>
-                  AI-Powered Operations Dashboard
+                <p className={`text-base md:text-lg ${styles.subText} mt-2`}>
+                  Applied Research • Prototype Systems • Advanced Development
                 </p>
-                <p className={`text-sm ${styles.footerText} mt-2`}>
-                  Powered by <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-400">Unicorn Commander</a>
+                <p className={`text-sm ${styles.footerText} mt-1 italic`}>
+                  Where New Things Become Real
                 </p>
               </div>
             </div>
@@ -1087,23 +1107,24 @@ export default function PublicLanding() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <MagicUnicornLogo className="w-10 h-10" />
+              <img
+                src="/logos/magicunicorn-special-projects.png"
+                alt="Magic Unicorn Special Projects"
+                className="w-10 h-10"
+              />
               <div className={styles.logoText}>
-                <div className="font-semibold">Magic Unicorn Operations Center</div>
-                <div className={`text-sm ${styles.footerText}`}>v2.1.0</div>
+                <div className="font-semibold">Magic Unicorn Special Projects</div>
+                <div className={`text-sm ${styles.footerText}`}>Research-Backed • Production-Bound</div>
               </div>
             </div>
 
             <div className={`text-center md:text-right text-sm ${styles.footerText}`}>
               <div className="flex items-center gap-2 justify-center md:justify-end mb-1">
-                <span>Powered by</span>
-                <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-blue-400 underline">
-                  Unicorn Commander
-                </a>
+                <span>Experiments • Deployments • Breakthroughs</span>
               </div>
               <div className="flex items-center gap-2 justify-center md:justify-end">
-                <MagicUnicornLogo className="w-5 h-5" />
-                <a href="https://magicunicorn.tech" target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 underline">
+                <img src="/logos/magicunicorn-special-projects.png" alt="" className="w-5 h-5" />
+                <a href="https://magicunicorn.tech" target="_blank" rel="noopener noreferrer" className="hover:text-fuchsia-400 underline">
                   Magic Unicorn Unconventional Technology & Stuff Inc
                 </a>
               </div>

@@ -27,18 +27,18 @@ import { Launch as LaunchIcon, Public as PublicIcon, Business as BusinessIcon } 
  * launch_url is the source of truth for where the app lives.
  */
 
-// Card background colors - vibrant gradients for each app
+// Card background colors - deep, dark gradients for Lab/Underground theme
 const CARD_COLORS = [
-  { gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', iconBg: '#ffffff' },  // Purple
-  { gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', iconBg: '#ffffff' },  // Pink
-  { gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', iconBg: '#ffffff' },  // Blue
-  { gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', iconBg: '#1a1a2e' },  // Green
-  { gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', iconBg: '#1a1a2e' },  // Orange/Pink
-  { gradient: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', iconBg: '#1a1a2e' },  // Pastel
-  { gradient: 'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)', iconBg: '#ffffff' },  // Teal/Purple
-  { gradient: 'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)', iconBg: '#1a1a2e' },  // Lavender
-  { gradient: 'linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)', iconBg: '#ffffff' },  // Sky Blue
-  { gradient: 'linear-gradient(135deg, #cd9cf2 0%, #f6f3ff 100%)', iconBg: '#1a1a2e' },  // Light Purple
+  { gradient: 'linear-gradient(135deg, #1e1b4b 0%, #581c87 100%)', iconBg: '#ffffff' },  // Deep Indigo → Purple
+  { gradient: 'linear-gradient(135deg, #4c1d95 0%, #be185d 100%)', iconBg: '#ffffff' },  // Violet → Pink
+  { gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)', iconBg: '#ffffff' },  // Slate → Blue
+  { gradient: 'linear-gradient(135deg, #701a75 0%, #c026d3 100%)', iconBg: '#ffffff' },  // Fuchsia Dark
+  { gradient: 'linear-gradient(135deg, #312e81 0%, #7c3aed 100%)', iconBg: '#ffffff' },  // Indigo → Violet
+  { gradient: 'linear-gradient(135deg, #0c4a6e 0%, #0891b2 100%)', iconBg: '#ffffff' },  // Sky Dark → Cyan
+  { gradient: 'linear-gradient(135deg, #3730a3 0%, #a855f7 100%)', iconBg: '#ffffff' },  // Indigo → Purple
+  { gradient: 'linear-gradient(135deg, #6b21a8 0%, #ec4899 100%)', iconBg: '#ffffff' },  // Purple → Pink
+  { gradient: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)', iconBg: '#1a1a2e' },  // Cyan Dark
+  { gradient: 'linear-gradient(135deg, #86198f 0%, #d946ef 100%)', iconBg: '#ffffff' },  // Fuchsia
 ];
 
 const AppsLauncher = () => {

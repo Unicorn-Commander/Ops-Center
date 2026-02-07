@@ -189,7 +189,8 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     'sk-brigade-service-key-2025': 'brigade-service',
                     'sk-centerdeep-service-key-2025': 'centerdeep-service',
                     'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
-                    'sk-open-webui-service-key-2026': 'open-webui-service'
+                    'sk-open-webui-service-key-2026': 'open-webui-service',
+                    'sk-colonel-service-key-2026': 'colonel-service'
                 }
 
                 # Map service names to organization UUIDs (matches litellm_api.py)
@@ -199,17 +200,22 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
                     'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',
                     'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',
-                    'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+                    'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+                    'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37'
                 }
+
+                # Internal services exempt from billing
+                internal_services = {'colonel-service'}
 
                 service_name = service_keys.get(token)
                 if service_name:
+                    tier = "internal" if service_name in internal_services else "professional"
                     if x_user_id:
                         # Service key with user context - return user data
                         logger.info(f"Service key request with user context: {x_user_id}")
                         return {
                             "user_id": x_user_id,
-                            "subscription_tier": "professional",  # Default tier for service key users
+                            "subscription_tier": tier,
                         }
                     else:
                         # Service key without user context - use org-prefixed ID for billing
@@ -219,7 +225,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                             logger.info(f"Service key request using org credits: {org_prefixed_id}")
                             return {
                                 "user_id": org_prefixed_id,
-                                "subscription_tier": "professional",
+                                "subscription_tier": tier,
                                 "is_service_account": True
                             }
                         else:

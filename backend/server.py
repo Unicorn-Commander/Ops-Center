@@ -119,6 +119,9 @@ from routers.rag_services import router as rag_services_router
 # GPU Services (Unified Infinity + Granite Management)
 from routers.gpu_services import router as gpu_services_router
 
+# Granite API Keys Management
+from routers.granite_keys import router as granite_keys_router
+
 # Billing Analytics API
 from billing_analytics_api import router as billing_analytics_router
 
@@ -258,6 +261,11 @@ from brigade_api import router as brigade_router
 # System Metrics & Analytics (Epic 2.5)
 from system_metrics_api import router as system_metrics_router
 from metrics_collector import MetricsCollector
+
+# The Colonel AI Command System (Phase 1)
+from routers.colonel import router as colonel_router
+from colonel.websocket_gateway import colonel_gateway
+from colonel.a2a_server import router as colonel_a2a_router
 
 # White-Label Configuration API
 from white_label_api import router as white_label_router
@@ -1121,6 +1129,10 @@ logger.info("RAG Services API endpoints registered at /api/v1/rag-services")
 app.include_router(gpu_services_router)
 logger.info("GPU Services API endpoints registered at /api/v1/gpu-services")
 
+# Granite API Keys Management - February 2026
+app.include_router(granite_keys_router)
+logger.info("Granite API Keys endpoints registered at /api/v1/granite-keys")
+
 # Billing Analytics API
 app.include_router(billing_analytics_router)
 logger.info("Billing Analytics API endpoints registered at /api/v1/billing/analytics")
@@ -1312,6 +1324,11 @@ app.include_router(dynamic_pricing_router)
 from pricing_packages_api import router as pricing_packages_router
 app.include_router(pricing_packages_router)
 logger.info("Dynamic Pricing Management API endpoints registered at /api/v1/pricing")
+
+# The Colonel AI Command System
+app.include_router(colonel_router)
+app.include_router(colonel_a2a_router)
+logger.info("🎖️ Colonel AI Command System registered at /api/v1/colonel + A2A at /.well-known/agent.json")
 
 # CSRF Token Endpoint removed - see line 2897 for the full implementation that handles unauthenticated users
 
@@ -1800,6 +1817,12 @@ class ModelConfig(BaseModel):
 class GlobalModelSettings(BaseModel):
     default_retention: str = "keep"
     default_context_size: int = 16384
+
+# Colonel WebSocket endpoint for streaming AI chat
+@app.websocket("/ws/colonel")
+async def colonel_websocket(websocket: WebSocket):
+    """WebSocket endpoint for Colonel AI chat with streaming LLM responses."""
+    await colonel_gateway.handle_websocket(websocket)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

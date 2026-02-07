@@ -265,9 +265,19 @@ export default function DashboardPro() {
   };
   
   const healthScore = calculateHealthScore();
-  const gpuUsage = systemData?.gpu?.[0]?.utilization || 0;
-  const vramUsed = systemData?.gpu?.[0]?.memory_used || 0;
-  const vramTotal = systemData?.gpu?.[0]?.memory_total || 33554432000;
+  const gpuCount = systemData?.gpu?.length || 0;
+  const gpuUsage = gpuCount > 0
+    ? systemData.gpu.reduce((sum, g) => sum + (g.utilization || 0), 0) / gpuCount
+    : 0;
+  const vramUsed = gpuCount > 0
+    ? systemData.gpu.reduce((sum, g) => sum + (g.memory_used || 0), 0)
+    : 0;
+  const vramTotal = gpuCount > 0
+    ? systemData.gpu.reduce((sum, g) => sum + (g.memory_total || 0), 0)
+    : 33554432000;
+  const gpuLabel = gpuCount > 1
+    ? `${gpuCount}x ${systemData?.gpu?.[0]?.name || 'GPU'}`
+    : (systemData?.gpu?.[0]?.name || hardwareInfo?.gpu?.model || 'GPU');
   
   return (
     <motion.div
@@ -343,7 +353,7 @@ export default function DashboardPro() {
         <MetricCard
           title="GPU Utilization"
           value={`${gpuUsage.toFixed(1)}%`}
-          subtitle="RTX 5090"
+          subtitle={gpuLabel}
           icon={CpuChipIcon}
           trend={5}
           color="purple"

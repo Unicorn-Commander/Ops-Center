@@ -365,6 +365,27 @@ export const routes = {
             component: 'GPUServicesManagement',
             roles: ['admin'],
             name: 'GPU Services'
+          },
+          colonel: {
+            path: '/admin/ai/colonel',
+            component: 'ColonelChat',
+            roles: ['admin'],
+            name: 'The Colonel',
+            icon: 'SparklesIcon'
+          },
+          colonelSetup: {
+            path: '/admin/ai/colonel/setup',
+            component: 'ColonelOnboarding',
+            roles: ['admin'],
+            name: 'Colonel Setup',
+            nav: false
+          },
+          colonelStatus: {
+            path: '/admin/ai/colonel/status',
+            component: 'ColonelStatus',
+            roles: ['admin'],
+            name: 'Colonel Status',
+            nav: false
           }
         }
       },

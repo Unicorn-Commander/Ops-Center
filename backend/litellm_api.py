@@ -188,7 +188,10 @@ MODEL_ID_MAPPING = {
     'claude-3.5-haiku': 'anthropic/claude-3.5-haiku',
     'claude-opus-4': 'anthropic/claude-opus-4',
     'claude-opus-4.5': 'anthropic/claude-opus-4.5',
+    'claude-opus-4-6': 'anthropic/claude-opus-4-6',
+    'claude-opus-4.6': 'anthropic/claude-opus-4.6',
     'claude-sonnet-4': 'anthropic/claude-sonnet-4',
+    'claude-sonnet-4.5': 'anthropic/claude-sonnet-4.5',
 
     # Mistral variants
     'mistral-7b': 'mistralai/mistral-7b-instruct',
@@ -722,7 +725,8 @@ async def get_user_id(
             'sk-brigade-service-key-2025': 'brigade-service',
             'sk-centerdeep-service-key-2025': 'centerdeep-service',
             'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
-            'sk-open-webui-service-key-2026': 'open-webui-service'
+            'sk-open-webui-service-key-2026': 'open-webui-service',
+            'sk-colonel-service-key-2026': 'colonel-service'
         }
 
         # FIX P0: Map service names to actual UUIDs from database (not strings)
@@ -733,7 +737,8 @@ async def get_user_id(
             'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
             'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
             'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',  # UUID for partnerpulse-service org
-            'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479'     # UUID for open-webui-service org
+            'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',    # UUID for open-webui-service org
+            'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37'        # Colonel uses brigade org for billing
         }
 
         if token in service_keys:
@@ -2136,6 +2141,27 @@ async def get_credit_history(
 
 # Curated models list - best FREE models from OpenRouter (updated Nov 2025)
 CURATED_MODELS = [
+    # Local LAN Models - Strix Halo Workstation (highest priority)
+    {
+        'id': 'gpt-oss-120b',
+        'object': 'model',
+        'name': 'GPT-OSS 120B (LOCAL)',
+        'provider': 'Local',
+        'context_length': 8192,
+        'category': 'reasoning',
+        'description': '116.83B MoE model (62.8GB) - Strix Halo workstation, high privacy',
+        'free': True
+    },
+    {
+        'id': 'qwen3-coder-30b',
+        'object': 'model',
+        'name': 'Qwen3 Coder 30B (LOCAL)',
+        'provider': 'Local',
+        'context_length': 4096,
+        'category': 'coding',
+        'description': '30B coding specialist (18GB) - Strix Halo workstation, high privacy',
+        'free': True
+    },
     # Coding specialists
     {
         'id': 'qwen/qwen3-coder:free',
@@ -2399,6 +2425,8 @@ async def list_models(
         # Define models by tier
         models_by_tier = {
             'free': [
+                {'id': 'gpt-oss-120b', 'object': 'model', 'owned_by': 'local', 'tier': 'free', 'description': '116.83B MoE model, Strix Halo workstation'},
+                {'id': 'qwen3-coder-30b', 'object': 'model', 'owned_by': 'local', 'tier': 'free', 'description': '30B coding specialist, Strix Halo workstation'},
                 {'id': 'llama3-8b-local', 'object': 'model', 'owned_by': 'local', 'tier': 'free'},
                 {'id': 'qwen-32b-local', 'object': 'model', 'owned_by': 'local', 'tier': 'free'},
                 {'id': 'llama3-70b-groq', 'object': 'model', 'owned_by': 'groq', 'tier': 'free'},

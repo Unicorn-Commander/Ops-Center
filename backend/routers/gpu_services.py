@@ -127,6 +127,7 @@ class GPUInfo(BaseModel):
     memory_total_mb: int = Field(..., description="Total memory in MB")
     memory_free_mb: int = Field(..., description="Free memory in MB")
     utilization_percent: int = Field(0, description="GPU utilization percentage")
+    temperature: Optional[int] = Field(None, description="GPU temperature in Celsius")
 
 
 class GPUMemoryInfo(BaseModel):
@@ -235,7 +236,7 @@ async def get_gpu_memory_info() -> Optional[GPUMemoryInfo]:
     try:
         import subprocess
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name,memory.used,memory.total,memory.free,utilization.gpu",
+            ["nvidia-smi", "--query-gpu=index,name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
              "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
@@ -249,13 +250,22 @@ async def get_gpu_memory_info() -> Optional[GPUMemoryInfo]:
             if line:
                 parts = [p.strip() for p in line.split(',')]
                 if len(parts) >= 6:
+                    # Parse temperature (7th field if available)
+                    temperature = None
+                    if len(parts) >= 7 and parts[6] not in ['[N/A]', '[Not Supported]', '']:
+                        try:
+                            temperature = int(parts[6])
+                        except ValueError:
+                            pass
+
                     gpus.append(GPUInfo(
                         index=int(parts[0]),
                         name=parts[1],
                         memory_used_mb=int(parts[2]),
                         memory_total_mb=int(parts[3]),
                         memory_free_mb=int(parts[4]),
-                        utilization_percent=int(parts[5]) if parts[5] != '[N/A]' else 0
+                        utilization_percent=int(parts[5]) if parts[5] not in ['[N/A]', '[Not Supported]', ''] else 0,
+                        temperature=temperature
                     ))
 
         return GPUMemoryInfo(
@@ -285,7 +295,7 @@ def build_proxy_status(status: Dict[str, Any], health: Dict[str, Any], services:
             last_activity_seconds_ago=svc_status.get("last_activity_seconds_ago"),
             upstream=svc_status.get("upstream"),
             service_status=svc_health if isinstance(svc_health, str) else "unknown",
-            last_activity=svc_last_activity
+            last_activity=str(svc_last_activity) if svc_last_activity is not None else None
         )
 
     return ProxyStatus(

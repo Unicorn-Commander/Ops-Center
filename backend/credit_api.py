@@ -676,7 +676,7 @@ async def redeem_coupon(
                 user_id=current_user["user_id"],
                 coupon_code=request.code,
                 credits_added=redemption["credits_awarded"],
-                new_balance=balance["credits_remaining"]
+                new_balance=balance["balance"]  # credit_system returns 'balance' not 'credits_remaining'
             )
             logger.info(f"Coupon redemption confirmation sent to user {current_user['user_id']}")
         except Exception as e:

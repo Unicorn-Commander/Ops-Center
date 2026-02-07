@@ -129,11 +129,17 @@ const SystemBillingOverview = lazy(() => import('./pages/admin/SystemBillingOver
 const LocalModelsManagement = lazy(() => import('./pages/admin/LocalModelsManagement'));
 const RAGServicesManagement = lazy(() => import('./pages/admin/RAGServicesManagement'));
 const GPUServicesManagement = lazy(() => import('./pages/admin/GPUServicesManagement'));
+const GraniteApiKeysManagement = lazy(() => import('./pages/admin/GraniteApiKeysManagement'));
 const AdminInfraDashboard = lazy(() => import('./pages/admin/Dashboard'));
 const AdminRedirect = lazy(() => import('./components/AdminRedirect'));
 const AlertsManagement = lazy(() => import('./pages/admin/AlertsManagement'));
 const WebhooksManagement = lazy(() => import('./pages/admin/WebhooksManagement'));
 const SystemAuditLog = lazy(() => import('./pages/admin/SystemAuditLog'));
+
+// Colonel AI Command System (Phase 1)
+const ColonelChat = lazy(() => import('./pages/admin/ColonelChat'));
+const ColonelOnboarding = lazy(() => import('./pages/admin/ColonelOnboarding'));
+const ColonelStatus = lazy(() => import('./pages/admin/ColonelStatus'));
 
 // Infrastructure pages (lazy loaded)
 const CloudflareDNS = lazy(() => import('./pages/network/CloudflareDNS'));
@@ -318,6 +324,15 @@ function AppRoutes() {
           {/* Admin Login - NO SystemProvider */}
           <Route path="/admin/login" element={<Login />} />
 
+          {/* Colonel Pop-out - Protected but NO Layout wrapper */}
+          <Route path="/admin/ai/colonel-popout" element={
+            <ProtectedRoute>
+              <AdminContent>
+                <ColonelChat popout={true} />
+              </AdminContent>
+            </ProtectedRoute>
+          } />
+
         {/* Admin Dashboard - Protected Routes WITH SystemProvider */}
         <Route path="/admin/*" element={
           <ProtectedRoute>
@@ -435,6 +450,12 @@ function AppRoutes() {
                   <Route path="ai/local-models" element={<LocalModelsManagement />} />
                   <Route path="ai/rag-services" element={<RAGServicesManagement />} />
                   <Route path="ai/gpu-services" element={<GPUServicesManagement />} />
+                  <Route path="ai/granite-keys" element={<GraniteApiKeysManagement />} />
+
+                  {/* Colonel AI Command System */}
+                  <Route path="ai/colonel" element={<ColonelChat />} />
+                  <Route path="ai/colonel/setup" element={<ColonelOnboarding />} />
+                  <Route path="ai/colonel/status" element={<ColonelStatus />} />
 
                   {/* Infrastructure */}
                   <Route path="infra/dashboard" element={<AdminInfraDashboard />} />

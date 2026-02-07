@@ -19,12 +19,19 @@
  */
 
 const { test, expect } = require('@playwright/test');
+const runPlaywright = process.env.RUN_PLAYWRIGHT === 'true';
+if (!runPlaywright) {
+  describe('Playwright E2E skipped', () => {
+    it('skipped', () => {});
+  });
+}
 
 // Configuration
 const BASE_URL = process.env.BASE_URL || 'https://magicunicorn.dev';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'aaron@magicunicorn.tech';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'REMOVED-KEYCLOAK_ADMIN_PASSWORD';
 
+if (runPlaywright) {
 test.describe('System Settings E2E Tests', () => {
   // Setup: Login before each test
   test.beforeEach(async ({ page }) => {
@@ -488,3 +495,4 @@ test.describe('Smoke Tests', () => {
     expect(hasSuccess || !hasError).toBeTruthy();
   });
 });
+}

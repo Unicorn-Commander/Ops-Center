@@ -28,7 +28,9 @@ import {
   IconButton,
   TextField,
   Divider,
-  LinearProgress
+  LinearProgress,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -44,9 +46,14 @@ import {
   CloudOff as CloudOffIcon,
   Hub as HubIcon,
   TextFields as TextFieldsIcon,
-  Description as DocumentIcon
+  Description as DocumentIcon,
+  Key as KeyIcon,
+  Dns as ServicesIcon
 } from '@mui/icons-material';
 import PageHeader from '../../components/admin/PageHeader';
+
+// Lazy load the API Keys component
+const GraniteApiKeysPanel = React.lazy(() => import('./GraniteApiKeysManagement'));
 
 // API base URL
 const API_BASE = '/api/v1/gpu-services';
@@ -346,6 +353,9 @@ const SectionHeader = ({ title, subtitle, icon: IconComponent, statusCount }) =>
  * Main GPU Services Management Page
  */
 const GPUServicesManagement = () => {
+  // Tab state
+  const [activeTab, setActiveTab] = useState(0);
+
   // State management
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -498,19 +508,34 @@ const GPUServicesManagement = () => {
         )}
       />
 
-      {/* Alerts */}
-      {error && (
-        <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      {success && (
-        <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>
-          {success}
-        </Alert>
-      )}
+      {/* Tabs */}
+      <Paper sx={{ mb: 3 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(e, newValue) => setActiveTab(newValue)}
+          sx={{ borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab icon={<ServicesIcon />} iconPosition="start" label="Services" />
+          <Tab icon={<KeyIcon />} iconPosition="start" label="API Keys" />
+        </Tabs>
+      </Paper>
 
-      {/* RAG Services Section */}
+      {/* Tab Panel: Services */}
+      {activeTab === 0 && (
+        <>
+          {/* Alerts */}
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          {success && (
+            <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>
+              {success}
+            </Alert>
+          )}
+
+          {/* RAG Services Section */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
         <SectionHeader
           title="RAG Services (Infinity)"
@@ -715,6 +740,19 @@ const GPUServicesManagement = () => {
           </Typography>
         </Box>
       </Paper>
+        </>
+      )}
+
+      {/* Tab Panel: API Keys */}
+      {activeTab === 1 && (
+        <React.Suspense fallback={
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        }>
+          <GraniteApiKeysPanel />
+        </React.Suspense>
+      )}
     </Box>
   );
 };

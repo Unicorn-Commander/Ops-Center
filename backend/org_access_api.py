@@ -180,13 +180,13 @@ async def get_user_organizations(request: Request):
             SELECT
                 o.id::text as org_id,
                 o.name as org_name,
-                COALESCE(o.slug, LOWER(REPLACE(o.name, ' ', '-'))) as org_slug,
+                COALESCE(LOWER(REPLACE(o.name, ' ', '-')), o.id::text) as org_slug,
                 om.role,
-                COALESCE(st.tier_code, 'managed') as tier_code,
-                COALESCE(st.tier_name, 'Managed') as tier_name
+                COALESCE(st.tier_code, o.plan_tier, 'managed') as tier_code,
+                COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' ')), 'Managed') as tier_name
             FROM organization_members om
             JOIN organizations o ON om.org_id = o.id
-            LEFT JOIN subscription_tiers st ON o.tier_id = st.id
+            LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
             WHERE om.user_id = $1
               AND o.status = 'active'
             ORDER BY o.name
@@ -217,7 +217,7 @@ async def get_user_organizations(request: Request):
                 FROM tier_features tf
                 JOIN add_ons ao ON tf.feature_key = ao.feature_key
                 JOIN subscription_tiers st ON tf.tier_id = st.id
-                JOIN organizations o ON o.tier_id = st.id
+                JOIN organizations o ON o.plan_tier = st.tier_code
                 WHERE o.id = $1
                   AND tf.enabled = TRUE
                   AND ao.is_active = TRUE
@@ -303,7 +303,7 @@ async def switch_organization(
                 COALESCE(st.tier_code, 'managed') as tier_code
             FROM organization_members om
             JOIN organizations o ON om.org_id = o.id
-            LEFT JOIN subscription_tiers st ON o.tier_id = st.id
+            LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
             WHERE om.user_id = $1
               AND o.id = $2
               AND o.status = 'active'
@@ -374,7 +374,7 @@ async def get_current_organization(request: Request):
                     COALESCE(st.tier_name, 'Managed') as tier_name
                 FROM organization_members om
                 JOIN organizations o ON om.org_id = o.id
-                LEFT JOIN subscription_tiers st ON o.tier_id = st.id
+                LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
                 WHERE om.user_id = $1
                   AND o.id = $2
                   AND o.status = 'active'
@@ -395,7 +395,7 @@ async def get_current_organization(request: Request):
                     COALESCE(st.tier_name, 'Managed') as tier_name
                 FROM organization_members om
                 JOIN organizations o ON om.org_id = o.id
-                LEFT JOIN subscription_tiers st ON o.tier_id = st.id
+                LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
                 WHERE om.user_id = $1
                   AND o.status = 'active'
                 ORDER BY o.name
@@ -419,7 +419,7 @@ async def get_current_organization(request: Request):
             FROM tier_features tf
             JOIN add_ons ao ON tf.feature_key = ao.feature_key
             JOIN subscription_tiers st ON tf.tier_id = st.id
-            JOIN organizations o ON o.tier_id = st.id
+            JOIN organizations o ON o.plan_tier = st.tier_code
             WHERE o.id = $1
               AND tf.enabled = TRUE
               AND ao.is_active = TRUE
@@ -524,7 +524,7 @@ async def get_org_apps(
             FROM tier_features tf
             JOIN add_ons ao ON tf.feature_key = ao.feature_key
             JOIN subscription_tiers st ON tf.tier_id = st.id
-            JOIN organizations o ON o.tier_id = st.id
+            JOIN organizations o ON o.plan_tier = st.tier_code
             WHERE o.id = $1
               AND tf.enabled = TRUE
               AND ao.is_active = TRUE
