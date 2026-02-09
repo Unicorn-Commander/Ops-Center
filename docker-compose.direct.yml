@@ -39,7 +39,7 @@ services:
       # Lago Configuration
       - LAGO_API_URL=http://unicorn-lago-api:3000
       - LAGO_PUBLIC_URL=https://billing-api.magicunicorn.dev
-      - LREMOVED
+      - REMOVED
       # Redis for sessions
       - REDIS_URL=redis://unicorn-redis:6379/0
       # PostgreSQL Database
