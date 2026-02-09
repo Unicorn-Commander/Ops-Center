@@ -16,19 +16,24 @@ from enum import Enum
 # Import subscription manager
 from subscription_manager import subscription_manager, DEFAULT_PLANS
 
-# Manual authentication function (matches server.py logic - avoids circular import)
+# Redis-backed authentication (matches billing_api.py pattern)
 async def get_current_user(request):
-    """Get current user from session cookie (avoids circular import with server.py)"""
+    """Get current user from Redis-backed session cookie"""
     from fastapi import Request, HTTPException
     import sys
-    sys.path.insert(0, '/app')
-    from server import sessions  # Import sessions from server.py
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+    from redis_session import RedisSessionManager
 
-    session_cookie = request.cookies.get("ops_center_session")
-    if not session_cookie:
+    session_token = request.cookies.get("session_token")
+    if not session_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    user_data = sessions.get(session_cookie)
+    redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
+    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    user_data = sessions.get(session_token)
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid session")
 
