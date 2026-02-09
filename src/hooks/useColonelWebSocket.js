@@ -9,6 +9,7 @@ export default function useColonelWebSocket(sessionId = null) {
   const [connecting, setConnecting] = useState(false);
   const [colonelName, setColonelName] = useState('The Colonel');
   const [serverName, setServerName] = useState('');
+  const [writeEnabled, setWriteEnabled] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState(sessionId);
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -113,6 +114,7 @@ export default function useColonelWebSocket(sessionId = null) {
         setCurrentSessionId(frame.session_id);
         setColonelName(frame.colonel_name || 'The Colonel');
         setServerName(frame.server_name || '');
+        setWriteEnabled(frame.write_enabled || false);
         break;
 
       case 'chunk':
@@ -255,6 +257,7 @@ export default function useColonelWebSocket(sessionId = null) {
     connecting,
     colonelName,
     serverName,
+    writeEnabled,
     currentSessionId,
     messages,
     isStreaming,

@@ -344,7 +344,7 @@ export default function ColonelChat({ popout = false }) {
   const isPopout = popout || searchParams.get('popout') === 'true';
 
   const {
-    connected, connecting, colonelName, serverName,
+    connected, connecting, colonelName, serverName, writeEnabled,
     currentSessionId, messages, isStreaming, error,
     activeSkill, pendingConfirm,
     sendMessage, confirmAction, startNewSession, clearError,
@@ -439,6 +439,12 @@ export default function ColonelChat({ popout = false }) {
             <div className="flex items-center gap-2 text-xs text-gray-400">
               <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-400' : connecting ? 'bg-yellow-400 animate-pulse' : 'bg-red-400'}`} />
               {connected ? `Online — ${serverName || 'Server'}` : connecting ? 'Connecting...' : 'Offline'}
+              {connected && writeEnabled && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-yellow-800/60 text-yellow-300">Read/Write</span>
+              )}
+              {connected && !writeEnabled && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-700/60 text-gray-400">Read Only</span>
+              )}
             </div>
           </div>
         </div>

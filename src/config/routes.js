@@ -15,6 +15,13 @@
  * - icon: Icon identifier (optional)
  * - section: Section grouping (optional)
  * - nav: Set to false to hide from navigation
+ *
+ * Phase 1 Consolidation (February 2026):
+ * - AI & Models: 12 items → 7 nav items (5 demoted to nav:false)
+ * - Monitoring: 12 items → 6 nav items (Grafana/Prometheus/Umami → External Tools tab page)
+ * - Billing: 8 items → 5 nav items (3 billing dashboards → Revenue Dashboard)
+ * - User sections: Credits & Usage merged into Subscription & Credits
+ * - Infrastructure: Traefik → Reverse Proxy, Security promoted to visible
  */
 
 export const routes = {
@@ -22,8 +29,6 @@ export const routes = {
   // PERSONAL SECTION - Always visible to authenticated users
   // ==========================================================================
   personal: {
-    // Note: App.jsx renders AdminInfraDashboard at /admin/ for admin users
-    // AppsLauncher is available at /admin/apps for the apps launcher view
     dashboard: {
       path: '/admin/',
       component: 'AppsLauncher',
@@ -56,7 +61,7 @@ export const routes = {
       description: 'Browse and install apps and extensions'
     },
 
-    // Account
+    // Account (unchanged)
     account: {
       section: 'Account',
       icon: 'UserCircleIcon',
@@ -88,9 +93,9 @@ export const routes = {
       }
     },
 
-    // Subscription
+    // Subscription & Credits (merged from "My Subscription" + "Credits & Usage")
     subscription: {
-      section: 'My Subscription',
+      section: 'Subscription & Credits',
       icon: 'CreditCardIcon',
       roles: ['admin', 'power_user', 'user', 'viewer'],
       children: {
@@ -117,27 +122,12 @@ export const routes = {
           component: 'PaymentMethods',
           roles: ['admin', 'power_user', 'user', 'viewer'],
           name: 'Payment Methods'
-        }
-      }
-    },
-
-    // Credits & Usage
-    credits: {
-      section: 'Credits & Usage',
-      icon: 'CurrencyDollarIcon',
-      roles: ['admin', 'power_user', 'user', 'viewer'],
-      children: {
-        dashboard: {
-          path: '/admin/billing/credits',
-          component: 'CreditDashboard',
-          roles: ['admin', 'power_user', 'user', 'viewer'],
-          name: 'Credit Dashboard'
         },
-        tiers: {
+        creditsAndTiers: {
           path: '/admin/billing/tiers/compare',
           component: 'TierComparison',
           roles: ['admin', 'power_user', 'user', 'viewer'],
-          name: 'Pricing Tiers'
+          name: 'Credits & Tiers'
         }
       }
     }
@@ -232,6 +222,7 @@ export const routes = {
         }
       },
 
+      // Billing & Plans — consolidated from 8 nav items to 5
       billingPlans: {
         section: 'Billing & Plans',
         icon: 'CreditCardIcon',
@@ -255,35 +246,46 @@ export const routes = {
             roles: ['admin'],
             name: 'Pricing Rules'
           },
+          revenue: {
+            path: '/admin/billing/revenue',
+            component: 'RevenueDashboard',
+            roles: ['admin'],
+            name: 'Revenue Dashboard'
+          },
+          creditManagement: {
+            path: '/admin/billing/credits',
+            component: 'CreditPurchase',
+            roles: ['admin'],
+            name: 'Credit Management'
+          },
+          // Keep old paths routable but hidden from nav
           systemBilling: {
             path: '/admin/billing/system',
             component: 'BillingDashboard',
             roles: ['admin'],
-            name: 'Billing Analytics'
+            name: 'Billing Analytics',
+            nav: false
           },
           userBilling: {
             path: '/admin/billing/user',
             component: 'UserBillingDashboard',
             roles: ['admin'],
-            name: 'User Billing'
+            name: 'User Billing',
+            nav: false
           },
           overview: {
             path: '/admin/billing/overview',
             component: 'SystemBillingOverview',
             roles: ['admin'],
-            name: 'System Billing Overview'
-          },
-          credits: {
-            path: '/admin/billing/credits',
-            component: 'CreditDashboard',
-            roles: ['admin'],
-            name: 'Credits'
+            name: 'System Billing Overview',
+            nav: false
           },
           creditPurchase: {
             path: '/admin/billing/credits/purchase',
             component: 'CreditPurchase',
             roles: ['admin'],
-            name: 'Buy Credits'
+            name: 'Buy Credits',
+            nav: false
           },
           tierComparison: {
             path: '/admin/billing/tiers/compare',
@@ -295,6 +297,7 @@ export const routes = {
         }
       },
 
+      // AI & Models — consolidated from 12 nav items to 7
       aiModels: {
         section: 'AI & Models',
         icon: 'CpuChipIcon',
@@ -304,19 +307,7 @@ export const routes = {
             path: '/admin/ai',
             component: 'LLMHub',
             roles: ['admin'],
-            name: 'AI Overview'
-          },
-          management: {
-            path: '/admin/ai/management',
-            component: 'LLMManagement',
-            roles: ['admin'],
-            name: 'LLM Management'
-          },
-          providers: {
-            path: '/admin/ai/providers',
-            component: 'LiteLLMManagement',
-            roles: ['admin'],
-            name: 'Providers'
+            name: 'AI Hub'
           },
           unifiedModels: {
             path: '/admin/ai/models',
@@ -324,47 +315,11 @@ export const routes = {
             roles: ['admin'],
             name: 'Model Catalog'
           },
-          modelRegistry: {
-            path: '/admin/ai/registry',
-            component: 'AIModelManagement',
-            roles: ['admin'],
-            name: 'Model Registry'
-          },
-          openrouter: {
-            path: '/admin/ai/openrouter',
-            component: 'OpenRouterSettings',
-            roles: ['admin'],
-            name: 'OpenRouter'
-          },
-          usage: {
-            path: '/admin/ai/usage',
-            component: 'LLMUsage',
-            roles: ['admin'],
-            name: 'Usage Analytics'
-          },
           modelLists: {
             path: '/admin/ai/model-lists',
             component: 'ModelListManagement',
             roles: ['admin'],
             name: 'Model Lists'
-          },
-          localModels: {
-            path: '/admin/ai/local-models',
-            component: 'LocalModelsManagement',
-            roles: ['admin'],
-            name: 'Local Models'
-          },
-          ragServices: {
-            path: '/admin/ai/rag-services',
-            component: 'RAGServicesManagement',
-            roles: ['admin'],
-            name: 'RAG Services'
-          },
-          gpuServices: {
-            path: '/admin/ai/gpu-services',
-            component: 'GPUServicesManagement',
-            roles: ['admin'],
-            name: 'GPU Services'
           },
           colonel: {
             path: '/admin/ai/colonel',
@@ -372,6 +327,67 @@ export const routes = {
             roles: ['admin'],
             name: 'The Colonel',
             icon: 'SparklesIcon'
+          },
+          localModels: {
+            path: '/admin/ai/local-models',
+            component: 'LocalModelsManagement',
+            roles: ['admin'],
+            name: 'Local Models'
+          },
+          gpuServices: {
+            path: '/admin/ai/gpu-services',
+            component: 'GPUServicesManagement',
+            roles: ['admin'],
+            name: 'GPU Services'
+          },
+          ragServices: {
+            path: '/admin/ai/rag-services',
+            component: 'RAGServicesManagement',
+            roles: ['admin'],
+            name: 'RAG Services'
+          },
+          // Demoted from nav — accessible via AI Hub tabs or direct URL
+          management: {
+            path: '/admin/ai/management',
+            component: 'LLMManagement',
+            roles: ['admin'],
+            name: 'LLM Management',
+            nav: false
+          },
+          providers: {
+            path: '/admin/ai/providers',
+            component: 'LiteLLMManagement',
+            roles: ['admin'],
+            name: 'Providers',
+            nav: false
+          },
+          modelRegistry: {
+            path: '/admin/ai/registry',
+            component: 'AIModelManagement',
+            roles: ['admin'],
+            name: 'Model Registry',
+            nav: false
+          },
+          openrouter: {
+            path: '/admin/ai/openrouter',
+            component: 'OpenRouterSettings',
+            roles: ['admin'],
+            name: 'OpenRouter',
+            nav: false
+          },
+          usage: {
+            path: '/admin/ai/usage',
+            component: 'LLMUsage',
+            roles: ['admin'],
+            name: 'Usage Analytics',
+            nav: false
+          },
+          graniteKeys: {
+            path: '/admin/ai/granite-keys',
+            component: 'GraniteApiKeysManagement',
+            roles: ['admin'],
+            name: 'Granite API Keys',
+            nav: false
           },
           colonelSetup: {
             path: '/admin/ai/colonel/setup',
@@ -390,6 +406,7 @@ export const routes = {
         }
       },
 
+      // Infrastructure — minor cleanup
       infrastructure: {
         section: 'Infrastructure',
         icon: 'ServerIcon',
@@ -413,12 +430,6 @@ export const routes = {
             roles: ['admin'],
             name: 'Hardware'
           },
-          localUsers: {
-            path: '/admin/infra/local-users',
-            component: 'LocalUserManagement',
-            roles: ['admin'],
-            name: 'Local Users'
-          },
           network: {
             path: '/admin/infra/network',
             component: 'Network',
@@ -435,7 +446,21 @@ export const routes = {
             path: '/admin/infra/traefik',
             component: 'TraefikConfig',
             roles: ['admin'],
-            name: 'Traefik'
+            name: 'Reverse Proxy'
+          },
+          security: {
+            path: '/admin/system/security',
+            component: 'Security',
+            roles: ['admin'],
+            name: 'Security'
+          },
+          // Keep routable but hidden from nav
+          localUsers: {
+            path: '/admin/infra/local-users',
+            component: 'LocalUserManagement',
+            roles: ['admin'],
+            name: 'Local Users',
+            nav: false
           },
           traefikDashboard: {
             path: '/admin/infra/traefik/dashboard',
@@ -485,16 +510,11 @@ export const routes = {
             roles: ['admin'],
             name: 'Forgejo Git Server',
             nav: false
-          },
-          security: {
-            path: '/admin/system/security',
-            component: 'Security',
-            roles: ['admin'],
-            name: 'System Security'
           }
         }
       },
 
+      // Monitoring — consolidated from 12 nav items to 6
       monitoring: {
         section: 'Monitoring',
         icon: 'ChartBarIcon',
@@ -505,68 +525,6 @@ export const routes = {
             component: 'AnalyticsDashboard',
             roles: ['admin'],
             name: 'Analytics'
-          },
-          analyticsAdvanced: {
-            path: '/admin/monitoring/analytics/advanced',
-            component: 'AdvancedAnalytics',
-            roles: ['admin'],
-            name: 'Advanced Analytics',
-            nav: false
-          },
-          usageAnalytics: {
-            path: '/admin/monitoring/usage-analytics',
-            component: 'UsageAnalytics',
-            roles: ['admin'],
-            name: 'Usage Analytics'
-          },
-          usageMetrics: {
-            path: '/admin/monitoring/usage-metrics',
-            component: 'UsageMetrics',
-            roles: ['admin'],
-            name: 'Usage Metrics'
-          },
-          overview: {
-            path: '/admin/monitoring/overview',
-            component: 'MonitoringOverview',
-            roles: ['admin'],
-            name: 'Overview'
-          },
-          grafana: {
-            path: '/admin/monitoring/grafana',
-            component: 'GrafanaConfig',
-            roles: ['admin'],
-            name: 'Grafana'
-          },
-          grafanaDashboards: {
-            path: '/admin/monitoring/grafana/dashboards',
-            component: 'GrafanaViewer',
-            roles: ['admin'],
-            name: 'Grafana Dashboards',
-            nav: false
-          },
-          prometheus: {
-            path: '/admin/monitoring/prometheus',
-            component: 'PrometheusConfig',
-            roles: ['admin'],
-            name: 'Prometheus'
-          },
-          umami: {
-            path: '/admin/monitoring/umami',
-            component: 'UmamiConfig',
-            roles: ['admin'],
-            name: 'Umami'
-          },
-          umamiDashboard: {
-            path: '/admin/monitoring/umami-dashboard',
-            component: 'UmamiDashboard',
-            roles: ['admin'],
-            name: 'Umami Dashboard'
-          },
-          websiteMonitor: {
-            path: '/admin/monitoring/website-monitor',
-            component: 'WebsiteMonitor',
-            roles: ['admin'],
-            name: 'Website Monitor'
           },
           logs: {
             path: '/admin/monitoring/logs',
@@ -585,6 +543,82 @@ export const routes = {
             component: 'SystemAuditLog',
             roles: ['admin'],
             name: 'Audit Log'
+          },
+          websiteMonitor: {
+            path: '/admin/monitoring/website-monitor',
+            component: 'WebsiteMonitor',
+            roles: ['admin'],
+            name: 'Uptime Monitor'
+          },
+          externalTools: {
+            path: '/admin/monitoring/tools',
+            component: 'ExternalMonitoringTools',
+            roles: ['admin'],
+            name: 'External Tools'
+          },
+          // Demoted from nav — accessible via External Tools or direct URL
+          grafana: {
+            path: '/admin/monitoring/grafana',
+            component: 'GrafanaConfig',
+            roles: ['admin'],
+            name: 'Grafana',
+            nav: false
+          },
+          grafanaDashboards: {
+            path: '/admin/monitoring/grafana/dashboards',
+            component: 'GrafanaViewer',
+            roles: ['admin'],
+            name: 'Grafana Dashboards',
+            nav: false
+          },
+          prometheus: {
+            path: '/admin/monitoring/prometheus',
+            component: 'PrometheusConfig',
+            roles: ['admin'],
+            name: 'Prometheus',
+            nav: false
+          },
+          umami: {
+            path: '/admin/monitoring/umami',
+            component: 'UmamiConfig',
+            roles: ['admin'],
+            name: 'Umami',
+            nav: false
+          },
+          umamiDashboard: {
+            path: '/admin/monitoring/umami-dashboard',
+            component: 'UmamiConfig',
+            roles: ['admin'],
+            name: 'Umami Dashboard',
+            nav: false
+          },
+          overview: {
+            path: '/admin/monitoring/overview',
+            component: 'MonitoringOverview',
+            roles: ['admin'],
+            name: 'Monitoring Overview',
+            nav: false
+          },
+          analyticsAdvanced: {
+            path: '/admin/monitoring/analytics/advanced',
+            component: 'AdvancedAnalytics',
+            roles: ['admin'],
+            name: 'Advanced Analytics',
+            nav: false
+          },
+          usageAnalytics: {
+            path: '/admin/monitoring/usage-analytics',
+            component: 'UsageAnalytics',
+            roles: ['admin'],
+            name: 'Usage Analytics',
+            nav: false
+          },
+          usageMetrics: {
+            path: '/admin/monitoring/usage-metrics',
+            component: 'UsageMetrics',
+            roles: ['admin'],
+            name: 'Usage Metrics',
+            nav: false
           }
         }
       },
@@ -666,7 +700,6 @@ export const routes = {
             name: 'Purchase History',
             nav: false
           }
-          // Note: Marketplace is defined in personal.marketplace, not duplicated here
         }
       }
     }
@@ -688,15 +721,14 @@ export const routes = {
     { from: '/admin/system/invite-codes', to: '/admin/people/invite-codes', type: 'permanent' },
     { from: '/admin/system/authentication', to: '/admin/people/authentication', type: 'permanent' },
 
-    // Billing & Plans
+    // Billing & Plans — old paths redirect to consolidated destinations
     { from: '/admin/system/subscription-management', to: '/admin/billing/tiers', type: 'permanent' },
     { from: '/admin/system/app-management', to: '/admin/billing/apps', type: 'permanent' },
     { from: '/admin/system/pricing-management', to: '/admin/billing/pricing', type: 'permanent' },
-    { from: '/admin/system/billing', to: '/admin/billing/system', type: 'permanent' },
-    { from: '/admin/billing/dashboard', to: '/admin/billing/user', type: 'permanent' },
-    { from: '/admin/billing/overview', to: '/admin/billing/overview', type: 'permanent' },
+    { from: '/admin/system/billing', to: '/admin/billing/revenue', type: 'permanent' },
+    { from: '/admin/billing/dashboard', to: '/admin/billing/revenue', type: 'permanent' },
     { from: '/admin/credits', to: '/admin/billing/credits', type: 'permanent' },
-    { from: '/admin/credits/purchase', to: '/admin/billing/credits/purchase', type: 'permanent' },
+    { from: '/admin/credits/purchase', to: '/admin/billing/credits', type: 'permanent' },
     { from: '/admin/credits/tiers', to: '/admin/billing/tiers/compare', type: 'permanent' },
 
     // AI & Models
@@ -728,12 +760,11 @@ export const routes = {
     { from: '/admin/traefik/metrics', to: '/admin/infra/traefik/metrics', type: 'permanent' },
     { from: '/admin/infrastructure/migration', to: '/admin/infra/migration', type: 'permanent' },
 
-    // Monitoring
-    { from: '/admin/monitoring/logs', to: '/admin/monitoring/logs', type: 'permanent' },
+    // Monitoring — old paths redirect to consolidated destinations
     { from: '/admin/analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
-    { from: '/admin/system/analytics', to: '/admin/monitoring/analytics/advanced', type: 'permanent' },
-    { from: '/admin/system/usage-analytics', to: '/admin/monitoring/usage-analytics', type: 'permanent' },
-    { from: '/admin/system/usage-metrics', to: '/admin/monitoring/usage-metrics', type: 'permanent' },
+    { from: '/admin/system/analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
+    { from: '/admin/system/usage-analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
+    { from: '/admin/system/usage-metrics', to: '/admin/monitoring/analytics', type: 'permanent' },
 
     // Integrations
     { from: '/admin/platform/settings', to: '/admin/integrations/credentials', type: 'permanent' },
@@ -745,6 +776,7 @@ export const routes = {
     { from: '/admin/system/extensions', to: '/admin/platform/extensions', type: 'permanent' },
     { from: '/admin/extensions', to: '/admin/platform/extensions', type: 'permanent' },
     { from: '/admin/purchases', to: '/admin/platform/purchases', type: 'permanent' },
+
     // Legacy personal routes
     { from: '/admin/user-settings', to: '/admin/account/profile', type: 'permanent' },
     { from: '/admin/billing', to: '/admin/subscription/plan', type: 'permanent' }

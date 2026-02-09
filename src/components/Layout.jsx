@@ -147,7 +147,6 @@ export default function Layout({ children }) {
     return {
       account: true,
       subscription: true,
-      credits: true,
       organization: true,
       peopleAccess: true,
       billingPlans: true,
@@ -422,11 +421,8 @@ export default function Layout({ children }) {
                 {renderSectionHeader('Account')}
                 {renderNavSection('account', navStructure.personal.account)}
 
-                {renderSectionHeader('My Subscription')}
+                {renderSectionHeader('Subscription & Credits')}
                 {renderNavSection('subscription', navStructure.personal.subscription)}
-
-                {renderSectionHeader('Credits & Usage')}
-                {renderNavSection('credits', navStructure.personal.credits)}
 
                 {(userOrgRole === 'admin' || userOrgRole === 'owner') && (
                   <>

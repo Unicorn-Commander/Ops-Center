@@ -98,9 +98,9 @@ const ApiDocumentation = lazy(() => import('./pages/ApiDocumentation'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 
 // System pages (lazy loaded)
-// AIModelManagement was deprecated - using ModelListManagement instead
-const AIModelManagement = lazy(() => import('./pages/admin/ModelListManagement'));
 const ModelListManagement = lazy(() => import('./pages/admin/ModelListManagement'));
+// AIModelManagement is an alias for ModelListManagement (legacy)
+const AIModelManagement = ModelListManagement;
 const Services = lazy(() => import('./pages/Services'));
 const System = lazy(() => import('./pages/System'));
 const HardwareManagement = lazy(() => import('./pages/HardwareManagement'));
@@ -157,7 +157,8 @@ const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
 const UserDashboard = lazy(() => import('./pages/UserDashboard'));
 
 // Credit & Usage pages (lazy loaded)
-const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
+// CreditDashboard was removed — billing/credits now uses CreditPurchase
+const CreditDashboard = lazy(() => import('./pages/CreditPurchase'));
 const CreditPurchase = lazy(() => import('./pages/CreditPurchase'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
 const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
@@ -169,8 +170,11 @@ const GrafanaConfig = lazy(() => import('./pages/GrafanaConfig'));
 const GrafanaViewer = lazy(() => import('./pages/GrafanaViewer'));
 const PrometheusConfig = lazy(() => import('./pages/PrometheusConfig'));
 const UmamiConfig = lazy(() => import('./pages/UmamiConfig'));
-const UmamiDashboard = lazy(() => import('./pages/admin/UmamiDashboard'));
 const WebsiteMonitor = lazy(() => import('./pages/admin/WebsiteMonitor'));
+const ExternalMonitoringTools = lazy(() => import('./pages/admin/ExternalMonitoringTools'));
+
+// Revenue Dashboard (consolidates BillingDashboard + UserBillingDashboard + SystemBillingOverview)
+const RevenueDashboard = lazy(() => import('./pages/admin/RevenueDashboard'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -432,6 +436,7 @@ function AppRoutes() {
                   <Route path="billing/tiers/compare" element={<TierComparison />} />
                   <Route path="billing/apps" element={<AppManagement />} />
                   <Route path="billing/pricing" element={<DynamicPricingManagement />} />
+                  <Route path="billing/revenue" element={<RevenueDashboard />} />
                   <Route path="billing/system" element={<BillingDashboard />} />
                   <Route path="billing/user" element={<UserBillingDashboard />} />
                   <Route path="billing/overview" element={<SystemBillingOverview />} />
@@ -518,12 +523,13 @@ function AppRoutes() {
                   <Route path="monitoring/analytics/advanced" element={<AdvancedAnalytics />} />
                   <Route path="monitoring/usage-analytics" element={<UsageAnalytics />} />
                   <Route path="monitoring/usage-metrics" element={<UsageMetrics />} />
+                  <Route path="monitoring/tools" element={<ExternalMonitoringTools />} />
                   <Route path="monitoring/overview" element={<MonitoringOverview />} />
                   <Route path="monitoring/grafana" element={<GrafanaConfig />} />
                   <Route path="monitoring/grafana/dashboards" element={<GrafanaViewer />} />
                   <Route path="monitoring/prometheus" element={<PrometheusConfig />} />
                   <Route path="monitoring/umami" element={<UmamiConfig />} />
-                  <Route path="monitoring/umami-dashboard" element={<UmamiDashboard />} />
+                  <Route path="monitoring/umami-dashboard" element={<UmamiConfig />} />
                   <Route path="monitoring/website-monitor" element={<WebsiteMonitor />} />
                   <Route path="monitoring/logs" element={<Logs />} />
                   <Route path="monitoring/alerts" element={<AlertsManagement />} />
