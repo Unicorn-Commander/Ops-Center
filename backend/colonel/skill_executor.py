@@ -424,12 +424,23 @@ async def postgresql_list_tables(database: str = "unicorn_db") -> str:
     )
 
 
-async def postgresql_query(query: str, database: str = "unicorn_db") -> str:
-    """Run a read-only SQL query."""
-    # Safety: only allow SELECT
+async def postgresql_query(query: str, database: str = "unicorn_db", write_enabled: bool = False) -> str:
+    """Run a SQL query. Write ops (INSERT/UPDATE/DELETE) allowed for write-capable models."""
     q_upper = query.strip().upper()
-    if not q_upper.startswith("SELECT") and not q_upper.startswith("\\D") and not q_upper.startswith("EXPLAIN"):
-        return "Only SELECT, \\d, and EXPLAIN queries are allowed."
+
+    # Always allowed
+    read_prefixes = ("SELECT", "\\D", "EXPLAIN", "WITH")
+    # Allowed only when write-capable
+    write_prefixes = ("INSERT", "UPDATE", "DELETE")
+
+    if any(q_upper.startswith(p) for p in read_prefixes):
+        pass  # always OK
+    elif write_enabled and any(q_upper.startswith(p) for p in write_prefixes):
+        pass  # write-capable model — allowed
+    else:
+        if write_enabled:
+            return "Only SELECT, INSERT, UPDATE, DELETE, WITH, \\d, and EXPLAIN are allowed. DROP/ALTER/TRUNCATE are always blocked."
+        return "Only SELECT, \\d, and EXPLAIN queries are allowed. (Write operations require a write-capable model.)"
 
     return await bash_execute(
         f"docker exec unicorn-postgresql psql -U unicorn -d {database} -c \"{query}\"",
@@ -489,7 +500,10 @@ EXECUTOR_MAP = {
     # PostgreSQL Operations
     "postgresql-ops__list_databases": lambda **kw: postgresql_list_databases(),
     "postgresql-ops__list_tables": lambda **kw: postgresql_list_tables(kw.get("database", "unicorn_db")),
-    "postgresql-ops__query": lambda **kw: postgresql_query(kw["query"], kw.get("database", "unicorn_db")),
+    "postgresql-ops__query": lambda **kw: postgresql_query(
+        kw["query"], kw.get("database", "unicorn_db"),
+        write_enabled=kw.pop("_write_enabled", False),
+    ),
     "postgresql-ops__stats": lambda **kw: postgresql_stats(),
 
     # Keycloak Auth

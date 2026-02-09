@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from typing import Dict, List, Any, Optional
 
 from fastapi import WebSocket
@@ -63,7 +64,8 @@ class SkillRouter:
         return result
 
     async def execute(
-        self, ws: WebSocket, func_name: str, params: Dict[str, Any], config: ColonelConfig
+        self, ws: WebSocket, func_name: str, params: Dict[str, Any], config: ColonelConfig,
+        write_enabled: bool = False,
     ) -> str:
         """
         Execute a skill action and return the result string.
@@ -80,13 +82,43 @@ class SkillRouter:
         needs_confirm = get_confirmation_required(self.skills, func_name)
 
         # Also check safety patterns for bash commands
+        confirm_reason = None
         if func_name == "bash-execution__run_command" and "command" in params:
             confirm_reason = requires_confirmation(params["command"])
             if confirm_reason:
                 needs_confirm = True
 
-        # TODO: Implement confirmation flow in a future iteration
-        # For now, just proceed (the safety module already blocks truly dangerous commands)
+        # ─── Confirmation flow ───────────────────────────────────────────
+        if needs_confirm:
+            confirm_id = str(uuid.uuid4())[:8]
+            if not confirm_reason:
+                confirm_reason = f"Execute {action_name} on {skill_name}?"
+
+            await ws.send_json(WSConfirmFrame(
+                id=confirm_id,
+                skill_name=skill_name,
+                action=action_name,
+                description=confirm_reason,
+                params=params,
+            ).model_dump())
+
+            event = asyncio.Event()
+            self._pending_confirmations[confirm_id] = event
+            try:
+                await asyncio.wait_for(event.wait(), timeout=60.0)
+                confirmed = self._confirmation_results.pop(confirm_id, False)
+            except asyncio.TimeoutError:
+                confirmed = False
+                await ws.send_json(WSSkillResultFrame(
+                    skill_name=skill_name, action=action_name,
+                    success=False, output="Confirmation timed out (60s)",
+                ).model_dump())
+            finally:
+                self._pending_confirmations.pop(confirm_id, None)
+                self._confirmation_results.pop(confirm_id, None)
+
+            if not confirmed:
+                return "Action cancelled by user."
 
         # Send skill_start frame
         try:
@@ -98,6 +130,11 @@ class SkillRouter:
         except Exception:
             pass
 
+        # Inject _write_enabled for executors that need it
+        exec_params = {**params}
+        if write_enabled:
+            exec_params["_write_enabled"] = True
+
         # Execute
         start_time = time.monotonic()
         try:
@@ -106,7 +143,7 @@ class SkillRouter:
                 result = f"Unknown skill action: {func_name}"
                 success = False
             else:
-                result = await executor(**params)
+                result = await executor(**exec_params)
                 success = True
         except Exception as e:
             result = f"Skill execution error: {e}"

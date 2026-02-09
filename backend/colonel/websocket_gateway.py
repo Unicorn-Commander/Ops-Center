@@ -24,6 +24,7 @@ from colonel.models import (
     WSConfirmFrame, WSPingFrame, WSPongFrame,
 )
 from colonel.config import get_colonel_config, LITELLM_URL, REDIS_HOST, REDIS_PORT, SESSION_TTL
+from colonel.safety import is_write_capable_model
 from colonel.system_prompt import build_system_prompt
 
 logger = logging.getLogger("colonel.ws")
@@ -188,12 +189,16 @@ class ColonelGateway:
 
         self._connections[session.id] = ws
 
+        # Determine write capability based on model
+        write_enabled = is_write_capable_model(config.model, config.write_capable_models)
+
         # Send initial status
         await ws.send_json({
             "type": "connected",
             "session_id": session.id,
             "colonel_name": config.name,
             "server_name": config.server_name,
+            "write_enabled": write_enabled,
         })
 
         logger.info(f"Colonel WS connected: user={user_email}, session={session.id}")
@@ -251,11 +256,11 @@ class ColonelGateway:
                 await self._save_session(session)
 
                 # Stream LLM response
-                await self._stream_response(ws, session, config, user)
+                await self._stream_response(ws, session, config, user, write_enabled)
 
     # ─── LLM Streaming ──────────────────────────────────────────────────
 
-    async def _stream_response(self, ws: WebSocket, session: ColonelSession, config: ColonelConfig, user: dict):
+    async def _stream_response(self, ws: WebSocket, session: ColonelSession, config: ColonelConfig, user: dict, write_enabled: bool = False):
         """Call LLM and stream the response back over WebSocket."""
 
         # Recall memories (sub-phase 1c)
@@ -291,6 +296,7 @@ class ColonelGateway:
             memories=memories,
             graph_context=graph_context,
             skill_descriptions=skill_descriptions,
+            write_enabled=write_enabled,
         )
 
         # Prepare messages for LLM
@@ -428,7 +434,8 @@ class ColonelGateway:
 
                     # Execute skill
                     result = await self.skill_router.execute(
-                        ws, func_name, func_args, config
+                        ws, func_name, func_args, config,
+                        write_enabled=write_enabled,
                     )
 
                     # Add tool result to messages

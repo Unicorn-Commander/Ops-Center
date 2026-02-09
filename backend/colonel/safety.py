@@ -5,9 +5,10 @@ Validates commands against blocked patterns, requires confirmation for
 dangerous operations, and sanitizes output.
 """
 
+import fnmatch
 import re
 import logging
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 logger = logging.getLogger("colonel.safety")
 
@@ -128,3 +129,11 @@ def validate_docker_command(container_name: str, action: str) -> Tuple[bool, Opt
         return (False, f"Container '{container_name}' is a critical service and cannot be {action}ped")
 
     return (True, None)
+
+
+def is_write_capable_model(model: str, patterns: List[str]) -> bool:
+    """Check if the current model matches any write-capable pattern."""
+    for pattern in patterns:
+        if fnmatch.fnmatch(model.lower(), pattern.lower()):
+            return True
+    return False

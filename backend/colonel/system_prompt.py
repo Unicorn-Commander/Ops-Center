@@ -124,6 +124,7 @@ def build_system_prompt(
     memories: Optional[List[str]] = None,
     graph_context: Optional[str] = None,
     skill_descriptions: Optional[str] = None,
+    write_enabled: bool = False,
 ) -> str:
     """Build the full system prompt for the LLM."""
 
@@ -156,17 +157,37 @@ def build_system_prompt(
             skill_descriptions,
         ])
 
-    prompt_parts.extend([
-        "",
-        "## Safety Rules",
-        "- NEVER execute destructive commands (rm -rf /, drop database, etc.) without explicit user confirmation",
-        "- NEVER expose secrets, API keys, passwords, or tokens in your responses",
-        "- ALWAYS sanitize command output to redact sensitive values",
-        "- If a command looks dangerous, explain the risk and ask for confirmation before proceeding",
-        "- When showing logs, omit lines containing passwords or tokens",
-        "- Do not modify Docker compose files or configuration files directly",
-        "- Prefer read-only operations (inspect, logs, stats) over write operations (restart, stop)",
-    ])
+    if write_enabled:
+        prompt_parts.extend([
+            "",
+            "## Capabilities",
+            f"You are powered by {config.model}, a write-capable model with FULL system access.",
+            "You can:",
+            "- Execute any bash command (within safety limits)",
+            "- Start, stop, restart Docker containers (user will be asked to confirm)",
+            "- Run INSERT, UPDATE, DELETE SQL queries (user will be asked to confirm)",
+            "- Modify files, settings, and configurations",
+            "- Manage services, users, and deployments",
+            "",
+            "## Safety Rules",
+            "- Destructive commands (rm -rf /, DROP DATABASE, shutdown, etc.) are always blocked",
+            "- NEVER expose secrets, API keys, passwords, or tokens in your responses",
+            "- ALWAYS sanitize command output to redact sensitive values",
+            "- For write operations, explain what you'll do and why — the user will be asked to confirm",
+            "- When showing logs, omit lines containing passwords or tokens",
+        ])
+    else:
+        prompt_parts.extend([
+            "",
+            "## Safety Rules",
+            "- NEVER execute destructive commands (rm -rf /, drop database, etc.)",
+            "- NEVER expose secrets, API keys, passwords, or tokens in your responses",
+            "- ALWAYS sanitize command output to redact sensitive values",
+            "- Do not modify Docker compose files or configuration files directly",
+            "- Prefer read-only operations (inspect, logs, stats) over write operations (restart, stop)",
+            "- SQL queries are limited to SELECT only",
+            "- When showing logs, omit lines containing passwords or tokens",
+        ])
 
     if memories:
         prompt_parts.extend([

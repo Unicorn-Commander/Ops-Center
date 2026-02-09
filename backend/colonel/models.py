@@ -126,6 +126,18 @@ class ColonelConfig(BaseModel):
         "docker-management", "bash-execution", "system-status",
         "service-health", "log-viewer"
     ])
+    write_capable_models: List[str] = Field(default_factory=lambda: [
+        "anthropic/claude-opus-4*",
+        "anthropic/claude-sonnet-4-5*",
+        "claude-opus-4*",
+        "claude-sonnet-4-5*",
+        "openai/gpt-5*",
+        "openai/gpt-4o*",
+        "openai/o1*",
+        "openai/o3*",
+        "google/gemini-2*-pro*",
+        "google/gemini-2.5-flash*",
+    ])
     admin_only: bool = True
     onboarded: bool = False
     created_at: Optional[str] = None
@@ -152,4 +164,5 @@ class ColonelConfigUpdate(BaseModel):
     personality: Optional[ColonelPersonality] = None
     model: Optional[str] = None
     enabled_skills: Optional[List[str]] = None
+    write_capable_models: Optional[List[str]] = None
     admin_only: Optional[bool] = None

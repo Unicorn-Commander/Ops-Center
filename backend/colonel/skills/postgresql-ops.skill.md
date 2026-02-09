@@ -1,6 +1,6 @@
 ---
 name: postgresql-ops
-description: Query and monitor PostgreSQL databases (read-only operations)
+description: Query and monitor PostgreSQL databases
 actions:
   - name: list_databases
     description: List all PostgreSQL databases with sizes
@@ -17,12 +17,12 @@ actions:
         default: unicorn_db
 
   - name: query
-    description: Run a read-only SQL query (SELECT, EXPLAIN only)
-    confirmation_required: false
+    description: "Run a SQL query. Write operations (INSERT, UPDATE, DELETE) available with write-capable models."
+    confirmation_required: true
     parameters:
       query:
         type: string
-        description: SQL query to execute (SELECT or EXPLAIN only)
+        description: SQL query to execute
         required: true
       database:
         type: string
@@ -34,6 +34,6 @@ actions:
     confirmation_required: false
     parameters: {}
 ---
-PostgreSQL operations skill. Provides read-only access to PostgreSQL databases
-running in the unicorn-postgresql container. Write operations (INSERT, UPDATE,
-DELETE, DROP, ALTER) are blocked for safety.
+PostgreSQL operations skill. Read operations (SELECT, EXPLAIN) always available.
+Write operations (INSERT, UPDATE, DELETE) unlocked when using a write-capable model.
+DROP, ALTER, and TRUNCATE are always blocked.
