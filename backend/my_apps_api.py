@@ -306,7 +306,7 @@ async def get_org_features(org_id: str, conn) -> set:
 async def get_user_tier_features(user_tier: str, conn) -> set:
     """Get all app keys enabled for user's tier"""
     # Validate tier before database query
-    valid_tiers = ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'founder-friend', 'byok', 'managed', 'nda-autopilot', 'partnerpulse', 'm10_partner']
+    valid_tiers = ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'founder_friend', 'founder-friend', 'byok', 'managed', 'nda-autopilot', 'partnerpulse', 'm10_partner']
     if user_tier.lower() not in valid_tiers:
         raise HTTPException(status_code=400, detail=f"Invalid subscription tier: {user_tier}")
 
