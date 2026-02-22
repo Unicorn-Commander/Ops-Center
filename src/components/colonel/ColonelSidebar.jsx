@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = Math.max(0, now - then);
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
 const ColonelAvatar = ({ size = 'md' }) => {
   const sizes = { sm: 'w-5 h-5', md: 'w-8 h-8', lg: 'w-12 h-12', xl: 'w-16 h-16' };
   return <img src="/logos/The_Colonel.webp" alt="The Colonel" className={`${sizes[size] || sizes.md} rounded-full object-cover`} />;
@@ -32,7 +47,9 @@ export default function ColonelSidebar({
     }
     try {
       setMemoryLoading(true);
-      const res = await fetch(`/api/v1/colonel/memory/search?q=${encodeURIComponent(memoryQuery)}&limit=10`);
+      const res = await fetch(`/api/v1/colonel/memory/search?q=${encodeURIComponent(memoryQuery)}&limit=10`, {
+        credentials: 'include',
+      });
       if (res.ok) {
         const data = await res.json();
         setMemoryResults(data.results || []);
@@ -51,21 +68,52 @@ export default function ColonelSidebar({
     return () => clearTimeout(timeout);
   }, [memoryQuery, searchMemory]);
 
-  const quickActions = [
+  const SKILL_ACTIONS = {
+    'system-status':       { label: 'System Status', prompt: 'Show me the full system status' },
+    'docker-management':   { label: 'Containers', prompt: 'List all running containers' },
+    'bash-execution':      { label: 'Disk Usage', prompt: 'Check disk usage across all drives' },
+    'gpu-monitoring':      { label: 'GPU Status', prompt: 'Show GPU memory and utilization' },
+    'log-viewer':          { label: 'Recent Logs', prompt: 'Show recent error logs from all containers' },
+    'service-health':      { label: 'Service Health', prompt: 'Run a health check on all services' },
+    'network-diagnostics': { label: 'Network Check', prompt: 'Run network diagnostics' },
+    'postgresql-ops':      { label: 'Databases', prompt: 'List PostgreSQL databases and sizes' },
+    'traefik-management':  { label: 'Routes', prompt: 'List all Traefik routes' },
+    'backup-management':   { label: 'Backups', prompt: 'Show backup status' },
+    'resource-cleanup':    { label: 'Cleanup', prompt: 'Check for cleanup opportunities' },
+    'frontend-management': { label: 'UI Changes', prompt: 'What can you change in the Ops-Center UI?' },
+  };
+
+  const [quickActions, setQuickActions] = useState([
     { label: 'System Status', prompt: 'Show me the full system status' },
     { label: 'Containers', prompt: 'List all running containers' },
     { label: 'Disk Usage', prompt: 'Check disk usage across all drives' },
     { label: 'GPU Status', prompt: 'Show GPU memory and utilization' },
     { label: 'Recent Logs', prompt: 'Show recent error logs from all containers' },
     { label: 'Service Health', prompt: 'Run a health check on all services' },
-  ];
+  ]);
+
+  // Load dynamic quick actions based on skills
+  useEffect(() => {
+    fetch('/api/v1/colonel/skills', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.skills) {
+          const enabled = data.skills.filter(s => s.enabled);
+          const matched = enabled
+            .map(s => SKILL_ACTIONS[s.name])
+            .filter(Boolean);
+          if (matched.length >= 4) setQuickActions(matched);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-y-0 left-0 z-50 flex" onClick={onClose}>
+    <div className="fixed inset-y-0 right-0 z-50 flex flex-row-reverse" onClick={onClose}>
       <div
-        className="w-72 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden"
+        className="w-72 bg-gray-900 border-l border-gray-700 flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -134,9 +182,12 @@ export default function ColonelSidebar({
                     }`}
                   >
                     <p className="truncate font-medium">{session.title || 'New Session'}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {session.message_count} messages
-                    </p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                      <span>{session.message_count} messages</span>
+                      {(session.updated_at || session.created_at) && (
+                        <span>· {timeAgo(session.updated_at || session.created_at)}</span>
+                      )}
+                    </div>
                   </button>
                 ))
               )}

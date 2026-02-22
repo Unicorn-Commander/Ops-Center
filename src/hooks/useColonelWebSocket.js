@@ -86,6 +86,8 @@ export default function useColonelWebSocket(sessionId = null) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
         reconnectAttempts.current++;
         reconnectTimer.current = setTimeout(connect, delay);
+      } else {
+        setError('Disconnected. Unable to reconnect.');
       }
     };
 

@@ -122,6 +122,10 @@ class ColonelConfig(BaseModel):
     mission: Literal["devops", "monitoring", "security", "general"] = "devops"
     personality: ColonelPersonality = Field(default_factory=ColonelPersonality)
     model: str = Field(default="claude-opus-4-6")
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=4096, ge=256, le=16384)
+    context_window: int = Field(default=16384, ge=1024, le=262144)
+    custom_instructions: str = Field(default="")
     enabled_skills: List[str] = Field(default_factory=lambda: [
         "docker-management", "bash-execution", "system-status",
         "service-health", "log-viewer"
@@ -163,6 +167,11 @@ class ColonelConfigUpdate(BaseModel):
     mission: Optional[Literal["devops", "monitoring", "security", "general"]] = None
     personality: Optional[ColonelPersonality] = None
     model: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    context_window: Optional[int] = None
+    custom_instructions: Optional[str] = None
     enabled_skills: Optional[List[str]] = None
     write_capable_models: Optional[List[str]] = None
     admin_only: Optional[bool] = None
+    onboarded: Optional[bool] = None

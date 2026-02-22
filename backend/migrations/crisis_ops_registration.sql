@@ -12,14 +12,14 @@ INSERT INTO add_ons (
     base_price, is_active, is_featured, sort_order,
     features
 ) VALUES (
-    'Crisis Management Ops',
+    'Crisis Ops',
     'crisis-ops',
     'Case management platform for investigations and crisis response',
     'Full-featured investigation management with knowledge graphs, timeline analysis, evidence management, strategy domains, and multi-role access control. Designed for investigators, clients, and legal teams.',
     'services',
     'crisis_ops_access',
     'https://crisis.magicunicorn.dev',
-    '/logos/crisis-ops-logo.svg',
+    '/logos/crisis-ops-logo.png',
     0.00,
     TRUE,
     FALSE,
@@ -30,6 +30,7 @@ ON CONFLICT (slug) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
     launch_url = EXCLUDED.launch_url,
+    icon_url = EXCLUDED.icon_url,
     features = EXCLUDED.features,
     is_active = TRUE;
 

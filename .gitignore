@@ -42,6 +42,9 @@ __pycache__/
 # Build artifacts
 dist/
 build/
+public/assets/
+public/sw.js
+public/workbox-*.js
 
 # Environment
 .env.local

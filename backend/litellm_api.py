@@ -346,8 +346,14 @@ async def require_admin_from_session(request: Request) -> Dict:
 # ============================================================================
 
 class ChatMessage(BaseModel):
-    role: str = Field(..., description="Message role (system, user, assistant)")
-    content: str = Field(..., description="Message content")
+    role: str = Field(..., description="Message role (system, user, assistant, tool)")
+    content: Optional[str] = Field(None, description="Message content (null for assistant tool_calls)")
+    tool_calls: Optional[List[dict]] = Field(None, description="Tool calls from assistant")
+    tool_call_id: Optional[str] = Field(None, description="Tool call ID (for tool role messages)")
+    name: Optional[str] = Field(None, description="Function name (for tool role messages)")
+
+    class Config:
+        extra = "allow"
 
 
 class ChatCompletionRequest(BaseModel):
@@ -726,7 +732,8 @@ async def get_user_id(
             'sk-centerdeep-service-key-2025': 'centerdeep-service',
             'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
             'sk-open-webui-service-key-2026': 'open-webui-service',
-            'sk-colonel-service-key-2026': 'colonel-service'
+            'sk-colonel-service-key-2026': 'colonel-service',
+            'sk-majiks-service-key-2025': 'majiks-service'
         }
 
         # FIX P0: Map service names to actual UUIDs from database (not strings)
@@ -738,7 +745,8 @@ async def get_user_id(
             'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
             'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',  # UUID for partnerpulse-service org
             'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',    # UUID for open-webui-service org
-            'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37'        # Colonel uses brigade org for billing
+            'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # Colonel uses brigade org for billing
+            'majiks-service': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'        # Majiks Studio service org
         }
 
         if token in service_keys:
@@ -889,7 +897,7 @@ async def chat_completions(
                 logger.info(f"User {user_id} has {detected_provider} BYOK")
 
         # Estimate tokens for pre-check (rough estimate)
-        estimated_tokens = sum(len(msg.content.split()) * 1.5 for msg in request.messages)
+        estimated_tokens = sum(len((msg.content or "").split()) * 1.5 for msg in request.messages)
         estimated_tokens = int(estimated_tokens)
 
         # Calculate estimated cost (ASYNC NOW)
@@ -939,8 +947,23 @@ async def chat_completions(
                 logger.info(f"User {user_id} using individual billing (no org)")
 
         # Prepare request for LiteLLM proxy
+        # Serialize messages preserving tool_calls, tool_call_id, name fields
+        serialized_messages = []
+        for msg in request.messages:
+            m = {"role": msg.role}
+            if msg.content is not None:
+                m["content"] = msg.content
+            elif msg.role != "assistant":
+                m["content"] = ""
+            if msg.tool_calls:
+                m["tool_calls"] = msg.tool_calls
+            if msg.tool_call_id:
+                m["tool_call_id"] = msg.tool_call_id
+            if msg.name:
+                m["name"] = msg.name
+            serialized_messages.append(m)
         proxy_request = {
-            "messages": [{"role": msg.role, "content": msg.content} for msg in request.messages],
+            "messages": serialized_messages,
             "max_tokens": request.max_tokens or power_config["max_tokens"],
             "temperature": request.temperature or power_config["temperature"],
             "stream": request.stream,

@@ -9,6 +9,7 @@ import json
 import logging
 import time
 from typing import Optional
+from pathlib import Path
 
 import docker
 import psutil
@@ -19,6 +20,8 @@ logger = logging.getLogger("colonel.skill_executor")
 
 # Docker client (lazy init)
 _docker_client = None
+OPS_CENTER_DIR = Path(__file__).resolve().parents[2]
+OPS_CENTER_BACKUPS = OPS_CENTER_DIR / "backups"
 
 
 def _get_docker():
@@ -458,6 +461,199 @@ async def postgresql_stats() -> str:
     )
 
 
+# ─── Traefik Management ────────────────────────────────────────────────
+
+async def traefik_list_routers() -> str:
+    return await bash_execute("curl -sS http://traefik:8080/api/http/routers", timeout=10)
+
+
+async def traefik_list_services() -> str:
+    return await bash_execute("curl -sS http://traefik:8080/api/http/services", timeout=10)
+
+
+async def traefik_list_middlewares() -> str:
+    return await bash_execute("curl -sS http://traefik:8080/api/http/middlewares", timeout=10)
+
+
+async def traefik_list_tls_certs() -> str:
+    return await bash_execute("curl -sS http://traefik:8080/api/tls/certificates", timeout=10)
+
+
+async def traefik_restart() -> str:
+    return await bash_execute("docker restart traefik", timeout=30)
+
+
+# ─── Backup Management ────────────────────────────────────────────────
+
+async def backup_trigger(backup_dir: Optional[str] = None, dry_run: bool = False) -> str:
+    script = OPS_CENTER_DIR / "scripts" / "automated-backup.sh"
+    cmd = f"bash {script}"
+    if dry_run:
+        cmd += " --dry-run"
+    env_parts = []
+    if backup_dir:
+        env_parts.append(f"BACKUP_DIR={backup_dir}")
+    else:
+        env_parts.append(f"BACKUP_DIR={OPS_CENTER_BACKUPS}")
+    env_parts.append("LOG_FILE=/tmp/uc-cloud-backup.log")
+    env_prefix = " ".join(env_parts) + " " if env_parts else ""
+    return await bash_execute(env_prefix + cmd, timeout=120)
+
+
+async def backup_list(backup_dir: Optional[str] = None, limit: int = 10) -> str:
+    target_dir = backup_dir or str(OPS_CENTER_BACKUPS)
+    cmd = f"ls -1t {target_dir} 2>/dev/null | head -n {int(limit)}"
+    return await bash_execute(cmd, timeout=10)
+
+
+async def backup_restore_database(backup_file: str) -> str:
+    cmd = (
+        "set -e; "
+        f"test -f '{backup_file}'; "
+        "SAFETY_BACKUP=/home/muut/backups/database/unicorn_db_before_restore_$(date +%Y%m%d_%H%M%S).sql; "
+        "docker exec unicorn-postgresql pg_dump -U unicorn -d unicorn_db --format=plain --no-owner --no-acl > \"$SAFETY_BACKUP\"; "
+        f"cat '{backup_file}' | docker exec -i unicorn-postgresql psql -U unicorn -d unicorn_db > /dev/null 2>&1; "
+        "echo \"Restore complete. Safety backup: $SAFETY_BACKUP\""
+    )
+    return await bash_execute(cmd, timeout=120)
+
+
+async def backup_cleanup_old(days: int = 7, keep: int = 3, backup_dir: Optional[str] = None) -> str:
+    env_parts = ["LOG_FILE=/tmp/uc-cloud-backup-cleanup.log"]
+    if backup_dir:
+        env_parts.append(f"BACKUP_DIR={backup_dir}")
+    else:
+        env_parts.append(f"BACKUP_DIR={OPS_CENTER_BACKUPS}")
+    env_prefix = " ".join(env_parts) + " " if env_parts else ""
+    script = OPS_CENTER_DIR / "scripts" / "cleanup-old-backups.sh"
+    cmd = (
+        f"bash {script} "
+        f"--days {int(days)} --keep {int(keep)} --force"
+    )
+    return await bash_execute(env_prefix + cmd, timeout=120)
+
+
+# ─── GPU Monitoring ───────────────────────────────────────────────────
+
+async def gpu_summary() -> str:
+    return await bash_execute(
+        "nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu "
+        "--format=csv,noheader,nounits",
+        timeout=10,
+    )
+
+
+async def gpu_vram_usage() -> str:
+    return await bash_execute(
+        "nvidia-smi --query-gpu=index,name,memory.used,memory.free,memory.total "
+        "--format=csv,noheader,nounits",
+        timeout=10,
+    )
+
+
+async def gpu_temperatures() -> str:
+    return await bash_execute(
+        "nvidia-smi --query-gpu=index,name,temperature.gpu "
+        "--format=csv,noheader,nounits",
+        timeout=10,
+    )
+
+
+async def gpu_process_list() -> str:
+    return await bash_execute(
+        "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory "
+        "--format=csv,noheader,nounits",
+        timeout=10,
+    )
+
+
+# ─── Network Diagnostics ──────────────────────────────────────────────
+
+async def net_port_check(host: str, port: int, timeout: int = 3) -> str:
+    cmd = (
+        f"timeout {int(timeout)} bash -c '</dev/tcp/{host}/{int(port)}' "
+        "&& echo 'open' || echo 'closed'"
+    )
+    return await bash_execute(cmd, timeout=10)
+
+
+async def net_dns_lookup(hostname: str) -> str:
+    cmd = f"getent hosts {hostname} || nslookup {hostname}"
+    return await bash_execute(cmd, timeout=10)
+
+
+async def net_list_docker_networks() -> str:
+    return await bash_execute("docker network ls", timeout=10)
+
+
+async def net_inspect_docker_network(network_name: str) -> str:
+    return await bash_execute(f"docker network inspect {network_name}", timeout=10)
+
+
+# ─── Resource Cleanup ────────────────────────────────────────────────
+
+async def cleanup_disk_usage() -> str:
+    return await bash_execute("df -h", timeout=10)
+
+
+async def cleanup_docker_prune(include_volumes: bool = False) -> str:
+    cmd = "docker system prune -f"
+    if include_volumes:
+        cmd += " --volumes"
+    return await bash_execute(cmd, timeout=60)
+
+
+async def cleanup_logs(max_size_mb: int = 50) -> str:
+    max_mb = int(max_size_mb)
+    cmd = (
+        f"find {OPS_CENTER_DIR} -path '*logs*' -type f "
+        f"-size +{max_mb}M -print -exec truncate -s 0 {{}} \\;"
+    )
+    return await bash_execute(cmd, timeout=60)
+
+
+# ─── LiteLLM Management ──────────────────────────────────────────────
+
+async def litellm_health_check() -> str:
+    return await bash_execute("curl -sS http://localhost:4000/health", timeout=10)
+
+
+async def litellm_list_models() -> str:
+    import os
+    key = os.getenv("LITELLM_MASTER_KEY", "")
+    header = f"-H 'Authorization: Bearer {key}'" if key else ""
+    cmd = f"curl -sS {header} http://localhost:4000/v1/models"
+    return await bash_execute(cmd, timeout=15)
+
+
+async def litellm_generate_master_key() -> str:
+    import secrets
+    key = f"sk-litellm-{secrets.token_hex(24)}"
+    return (
+        f"Generated key: {key}\n"
+        "Next steps: update LITELLM_MASTER_KEY in environment and restart unicorn-litellm-wilmer."
+    )
+
+
+# ─── Keycloak Helper ──────────────────────────────────────────────────
+
+import os
+_KC_CONTAINER = os.getenv("KEYCLOAK_CONTAINER", "unicorn-keycloak")
+_KC_ADMIN_USER = os.getenv("KEYCLOAK_ADMIN_USER", "admin")
+_KC_ADMIN_PASS = os.getenv("KEYCLOAK_ADMIN_PASSWORD", "REMOVED-KEYCLOAK_ADMIN_PASSWORD")
+
+
+async def _keycloak_exec(kcadm_args: str, timeout: int = 15) -> str:
+    """Run kcadm.sh command after authenticating."""
+    auth_cmd = (
+        f"docker exec {_KC_CONTAINER} /opt/keycloak/bin/kcadm.sh config credentials "
+        f"--server http://localhost:8080 --realm master "
+        f"--user {_KC_ADMIN_USER} --password {_KC_ADMIN_PASS} 2>/dev/null"
+    )
+    run_cmd = f"docker exec {_KC_CONTAINER} /opt/keycloak/bin/kcadm.sh {kcadm_args}"
+    return await bash_execute(f"{auth_cmd} && {run_cmd}", timeout=timeout)
+
+
 # ─── Executor Dispatch Map ──────────────────────────────────────────────
 
 EXECUTOR_MAP = {
@@ -506,21 +702,74 @@ EXECUTOR_MAP = {
     ),
     "postgresql-ops__stats": lambda **kw: postgresql_stats(),
 
+    # Traefik Management
+    "traefik-management__list_routers": lambda **kw: traefik_list_routers(),
+    "traefik-management__list_services": lambda **kw: traefik_list_services(),
+    "traefik-management__list_middlewares": lambda **kw: traefik_list_middlewares(),
+    "traefik-management__list_tls_certs": lambda **kw: traefik_list_tls_certs(),
+    "traefik-management__restart_traefik": lambda **kw: traefik_restart(),
+
+    # Backup Management
+    "backup-management__trigger_backup": lambda **kw: backup_trigger(
+        kw.get("backup_dir"), kw.get("dry_run", False)
+    ),
+    "backup-management__list_backups": lambda **kw: backup_list(
+        kw.get("backup_dir"), kw.get("limit", 10)
+    ),
+    "backup-management__restore_database": lambda **kw: backup_restore_database(
+        kw["backup_file"]
+    ),
+    "backup-management__cleanup_old_backups": lambda **kw: backup_cleanup_old(
+        kw.get("days", 7), kw.get("keep", 3), kw.get("backup_dir")
+    ),
+
+    # GPU Monitoring
+    "gpu-monitoring__summary": lambda **kw: gpu_summary(),
+    "gpu-monitoring__vram_usage": lambda **kw: gpu_vram_usage(),
+    "gpu-monitoring__temperatures": lambda **kw: gpu_temperatures(),
+    "gpu-monitoring__process_list": lambda **kw: gpu_process_list(),
+
+    # Network Diagnostics
+    "network-diagnostics__port_check": lambda **kw: net_port_check(
+        kw["host"], kw["port"], kw.get("timeout", 3)
+    ),
+    "network-diagnostics__dns_lookup": lambda **kw: net_dns_lookup(
+        kw["hostname"]
+    ),
+    "network-diagnostics__list_docker_networks": lambda **kw: net_list_docker_networks(),
+    "network-diagnostics__inspect_docker_network": lambda **kw: net_inspect_docker_network(
+        kw["network_name"]
+    ),
+
+    # Resource Cleanup
+    "resource-cleanup__disk_usage": lambda **kw: cleanup_disk_usage(),
+    "resource-cleanup__docker_prune": lambda **kw: cleanup_docker_prune(
+        kw.get("include_volumes", False)
+    ),
+    "resource-cleanup__cleanup_logs": lambda **kw: cleanup_logs(
+        kw.get("max_size_mb", 50)
+    ),
+
+    # LiteLLM Management
+    "litellm-management__health_check": lambda **kw: litellm_health_check(),
+    "litellm-management__list_models": lambda **kw: litellm_list_models(),
+    "litellm-management__generate_master_key": lambda **kw: litellm_generate_master_key(),
+
     # Keycloak Auth
-    "keycloak-auth__list_users": lambda **kw: bash_execute(
-        "docker exec uchub-keycloak /opt/keycloak/bin/kcadm.sh get users --realm uchub --fields username,email,enabled --limit 50",
+    "keycloak-auth__list_users": lambda **kw: _keycloak_exec(
+        "get users --realm uchub --fields username,email,enabled --limit 50",
         timeout=15,
     ),
-    "keycloak-auth__list_realms": lambda **kw: bash_execute(
-        "docker exec uchub-keycloak /opt/keycloak/bin/kcadm.sh get realms --fields realm,enabled",
+    "keycloak-auth__list_realms": lambda **kw: _keycloak_exec(
+        "get realms --fields realm,enabled",
         timeout=10,
     ),
-    "keycloak-auth__user_info": lambda **kw: bash_execute(
-        f"docker exec uchub-keycloak /opt/keycloak/bin/kcadm.sh get users --realm uchub -q username={kw['username']} --fields id,username,email,enabled,emailVerified",
+    "keycloak-auth__user_info": lambda **kw: _keycloak_exec(
+        f"get users --realm uchub -q username={kw['username']} --fields id,username,email,enabled,emailVerified",
         timeout=10,
     ),
 
-    # Forgejo Management
+    # Forgejo Management (uses CLI inside container)
     "forgejo-management__list_repos": lambda **kw: bash_execute(
         "docker exec unicorn-forgejo gitea admin repo list --limit 50 2>/dev/null || echo 'Forgejo CLI not available'",
         timeout=10,
@@ -529,4 +778,156 @@ EXECUTOR_MAP = {
         "docker exec unicorn-forgejo gitea admin org list 2>/dev/null || echo 'Forgejo CLI not available'",
         timeout=10,
     ),
+
+    # Frontend Management
+    "frontend-management__read_source": lambda **kw: frontend_read_source(kw["path"]),
+    "frontend-management__list_files": lambda **kw: frontend_list_files(kw.get("path", "src")),
+    "frontend-management__edit_source": lambda **kw: frontend_edit_source(
+        kw["path"], kw["old_text"], kw["new_text"]
+    ),
+    "frontend-management__build_frontend": lambda **kw: frontend_build(),
+    "frontend-management__deploy_frontend": lambda **kw: frontend_deploy(),
+    "frontend-management__get_build_status": lambda **kw: frontend_build_status(),
 }
+
+
+# ─── Frontend Management Executors ────────────────────────────────────
+
+import pathlib as _pathlib
+
+# Resolve ops-center root (works both in container at /app and on host)
+_OPS_ROOT = _pathlib.Path(os.getenv("OPS_CENTER_ROOT", "/app"))
+_SRC_ROOT = _OPS_ROOT
+
+
+def _safe_frontend_path(rel_path: str) -> _pathlib.Path:
+    """Validate and resolve a relative path within the ops-center tree.
+    Only allows access to src/, public/, package.json, vite.config.*, tailwind.config.*"""
+    clean = rel_path.lstrip("/").replace("\\", "/")
+    # Block path traversal
+    if ".." in clean:
+        raise ValueError("Path traversal not allowed")
+    resolved = (_SRC_ROOT / clean).resolve()
+    # Must stay within ops-center root
+    if not str(resolved).startswith(str(_SRC_ROOT.resolve())):
+        raise ValueError("Path outside ops-center root")
+    # Only allow specific directories/files
+    allowed_prefixes = ("src/", "public/logos/", "public/index.html", "package.json",
+                        "vite.config", "tailwind.config", "postcss.config", "index.html")
+    if not any(clean.startswith(p) or clean == p for p in allowed_prefixes):
+        raise ValueError(f"Access restricted to src/, public/logos/, and config files. Got: {clean}")
+    return resolved
+
+
+async def frontend_read_source(path: str) -> str:
+    """Read a frontend source file."""
+    try:
+        resolved = _safe_frontend_path(path)
+        if not resolved.exists():
+            return f"File not found: {path}"
+        if resolved.stat().st_size > 100_000:
+            return f"File too large ({resolved.stat().st_size} bytes). Read a smaller file or use a specific section."
+        return resolved.read_text(encoding="utf-8")
+    except ValueError as e:
+        return f"Access denied: {e}"
+    except Exception as e:
+        return f"Error reading {path}: {e}"
+
+
+async def frontend_list_files(path: str = "src") -> str:
+    """List files in a frontend directory."""
+    try:
+        resolved = _safe_frontend_path(path)
+        if not resolved.is_dir():
+            return f"Not a directory: {path}"
+        entries = sorted(resolved.iterdir())
+        lines = []
+        for entry in entries[:100]:  # limit to 100 entries
+            rel = str(entry.relative_to(_SRC_ROOT))
+            suffix = "/" if entry.is_dir() else f"  ({entry.stat().st_size} bytes)"
+            lines.append(f"  {rel}{suffix}")
+        return f"Directory: {path}\n" + "\n".join(lines)
+    except ValueError as e:
+        return f"Access denied: {e}"
+    except Exception as e:
+        return f"Error listing {path}: {e}"
+
+
+async def frontend_edit_source(path: str, old_text: str, new_text: str) -> str:
+    """Edit a frontend file by string replacement."""
+    try:
+        resolved = _safe_frontend_path(path)
+        if not resolved.exists():
+            return f"File not found: {path}"
+        content = resolved.read_text(encoding="utf-8")
+        count = content.count(old_text)
+        if count == 0:
+            return f"old_text not found in {path}. Make sure the text matches exactly (including whitespace)."
+        if count > 1:
+            return f"old_text found {count} times in {path}. Provide more context to make it unique."
+        new_content = content.replace(old_text, new_text, 1)
+        resolved.write_text(new_content, encoding="utf-8")
+        return f"Successfully edited {path}. Changed {len(old_text)} chars to {len(new_text)} chars.\nRemember to build and deploy for changes to take effect."
+    except ValueError as e:
+        return f"Access denied: {e}"
+    except Exception as e:
+        return f"Error editing {path}: {e}"
+
+
+async def frontend_build() -> str:
+    """Run npm build."""
+    try:
+        result = await bash_execute(
+            f"cd {_SRC_ROOT} && npm run build 2>&1 | tail -30",
+            timeout=60,
+        )
+        return f"Build output:\n{result}"
+    except Exception as e:
+        return f"Build failed: {e}"
+
+
+async def frontend_deploy() -> str:
+    """Copy dist/ to public/ to make changes live."""
+    try:
+        dist = _SRC_ROOT / "dist"
+        public = _SRC_ROOT / "public"
+        if not dist.exists():
+            return "No dist/ directory found. Run build first."
+        result = await bash_execute(
+            f"cp -r {dist}/* {public}/ && echo 'Deployed successfully'",
+            timeout=15,
+        )
+        return result
+    except Exception as e:
+        return f"Deploy failed: {e}"
+
+
+async def frontend_build_status() -> str:
+    """Check the last build status."""
+    try:
+        dist = _SRC_ROOT / "dist"
+        if not dist.exists():
+            return "No dist/ directory. Frontend has not been built yet."
+        index = dist / "index.html"
+        if not index.exists():
+            return "dist/ exists but no index.html. Build may have failed."
+        import time
+        mtime = index.stat().st_mtime
+        age = int(time.time() - mtime)
+        if age < 60:
+            age_str = f"{age}s ago"
+        elif age < 3600:
+            age_str = f"{age // 60}m ago"
+        elif age < 86400:
+            age_str = f"{age // 3600}h ago"
+        else:
+            age_str = f"{age // 86400}d ago"
+        assets = list((dist / "assets").glob("*.js")) if (dist / "assets").exists() else []
+        total_size = sum(f.stat().st_size for f in assets)
+        return (
+            f"Last build: {age_str}\n"
+            f"Assets: {len(assets)} JS files, {total_size // 1024}KB total\n"
+            f"Status: Ready to deploy"
+        )
+    except Exception as e:
+        return f"Error checking build: {e}"

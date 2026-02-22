@@ -29,6 +29,9 @@ import { initTouchOptimizations } from './utils/touchOptimization';
 // Import Extensions Context Provider
 import { ExtensionsProvider } from './contexts/ExtensionsContext';
 
+// Import Colonel Context Provider (global Colonel status)
+import { ColonelProvider } from './contexts/ColonelContext';
+
 // Eagerly load RootRedirect (needed on first render for root route)
 import RootRedirect from './components/RootRedirect';
 
@@ -280,7 +283,9 @@ function AdminContent({ children }) {
     <SystemProvider>
       <OrganizationProvider>
         <ExtensionsProvider>
-          {children}
+          <ColonelProvider>
+            {children}
+          </ColonelProvider>
         </ExtensionsProvider>
       </OrganizationProvider>
     </SystemProvider>

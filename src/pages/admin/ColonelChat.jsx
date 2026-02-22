@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Highlight, themes } from 'prism-react-renderer';
 import useColonelWebSocket from '../../hooks/useColonelWebSocket';
 import ColonelSidebar from '../../components/colonel/ColonelSidebar';
+import GeneralModal from '../../components/colonel/GeneralModal';
 
 // ─── Icons (inline SVG to avoid extra deps) ────────────────────────────
 
@@ -74,49 +76,174 @@ function MessageBubble({ message }) {
   );
 }
 
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="text-gray-500 hover:text-gray-300 transition-colors text-[10px] flex items-center gap-1"
+      title="Copy to clipboard"
+    >
+      {copied ? (
+        <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copied</>
+      ) : (
+        <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>Copy</>
+      )}
+    </button>
+  );
+}
+
+function renderInlineMarkdown(text) {
+  if (!text) return text;
+  // Process: **bold**, *italic*, `code`, [links](url)
+  const tokens = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
+  return tokens.map((token, i) => {
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={i}>{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith('*') && token.endsWith('*') && !token.startsWith('**')) {
+      return <em key={i}>{token.slice(1, -1)}</em>;
+    }
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return (
+        <code key={i} className="bg-gray-800 px-1 py-0.5 rounded text-purple-300 text-xs">
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline">
+          {linkMatch[1]}
+        </a>
+      );
+    }
+    return token;
+  });
+}
+
 function renderContent(content) {
   if (!content) return null;
 
-  // Split by code blocks
+  // Split by fenced code blocks
   const parts = content.split(/(```[\s\S]*?```)/g);
 
   return parts.map((part, i) => {
+    // Fenced code block
     if (part.startsWith('```') && part.endsWith('```')) {
-      const lines = part.slice(3, -3);
-      const firstNewline = lines.indexOf('\n');
-      const lang = firstNewline > 0 ? lines.slice(0, firstNewline).trim() : '';
-      const code = firstNewline > 0 ? lines.slice(firstNewline + 1) : lines;
+      const inner = part.slice(3, -3);
+      const firstNewline = inner.indexOf('\n');
+      const lang = firstNewline > 0 ? inner.slice(0, firstNewline).trim() : '';
+      const code = firstNewline > 0 ? inner.slice(firstNewline + 1) : inner;
+      // Map common language aliases for Prism
+      const langMap = { sh: 'bash', shell: 'bash', yml: 'yaml', dockerfile: 'docker', js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby', rs: 'rust', tf: 'hcl' };
+      const prismLang = langMap[lang] || lang || 'bash';
       return (
-        <pre key={i} className="bg-gray-950 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono text-green-300 border border-gray-800">
-          {lang && <div className="text-gray-500 text-[10px] mb-1">{lang}</div>}
-          <code>{code}</code>
-        </pre>
+        <div key={i} className="relative group my-2">
+          <div className="flex items-center justify-between bg-gray-800 rounded-t-lg px-3 py-1.5 border border-gray-700 border-b-0">
+            <span className="text-gray-500 text-[10px] font-mono">{lang || 'text'}</span>
+            <CopyButton text={code} />
+          </div>
+          <Highlight theme={themes.nightOwl} code={code} language={prismLang}>
+            {({ style, tokens, getLineProps, getTokenProps }) => (
+              <pre className="rounded-b-lg p-3 overflow-x-auto text-xs font-mono border border-gray-700 border-t-0" style={{ ...style, margin: 0, background: '#0a0a1a' }}>
+                {tokens.map((line, li) => (
+                  <div key={li} {...getLineProps({ line })}>
+                    {line.map((token, ti) => (
+                      <span key={ti} {...getTokenProps({ token })} />
+                    ))}
+                  </div>
+                ))}
+              </pre>
+            )}
+          </Highlight>
+        </div>
       );
     }
 
-    // Bold: **text**
-    const boldParts = part.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <span key={i}>
-        {boldParts.map((bp, j) => {
-          if (bp.startsWith('**') && bp.endsWith('**')) {
-            return <strong key={j}>{bp.slice(2, -2)}</strong>;
-          }
-          // Inline code: `text`
-          const codeParts = bp.split(/(`[^`]+`)/g);
-          return codeParts.map((cp, k) => {
-            if (cp.startsWith('`') && cp.endsWith('`')) {
-              return (
-                <code key={`${j}-${k}`} className="bg-gray-800 px-1 py-0.5 rounded text-purple-300 text-xs">
-                  {cp.slice(1, -1)}
-                </code>
-              );
-            }
-            return cp;
-          });
-        })}
-      </span>
-    );
+    // Process non-code text line by line for block-level markdown
+    const lines = part.split('\n');
+    const elements = [];
+    let listItems = [];
+    let listType = null; // 'ul' or 'ol'
+
+    const flushList = () => {
+      if (listItems.length > 0) {
+        const Tag = listType === 'ol' ? 'ol' : 'ul';
+        const cls = listType === 'ol'
+          ? 'list-decimal list-inside space-y-0.5 my-1 text-gray-300'
+          : 'list-disc list-inside space-y-0.5 my-1 text-gray-300';
+        elements.push(<Tag key={`list-${elements.length}`} className={cls}>{listItems}</Tag>);
+        listItems = [];
+        listType = null;
+      }
+    };
+
+    lines.forEach((line, li) => {
+      const trimmed = line.trimStart();
+
+      // Headers
+      if (trimmed.startsWith('### ')) {
+        flushList();
+        elements.push(<h4 key={`${i}-${li}`} className="text-sm font-semibold text-gray-100 mt-3 mb-1">{renderInlineMarkdown(trimmed.slice(4))}</h4>);
+        return;
+      }
+      if (trimmed.startsWith('## ')) {
+        flushList();
+        elements.push(<h3 key={`${i}-${li}`} className="text-base font-semibold text-gray-100 mt-3 mb-1">{renderInlineMarkdown(trimmed.slice(3))}</h3>);
+        return;
+      }
+      if (trimmed.startsWith('# ')) {
+        flushList();
+        elements.push(<h2 key={`${i}-${li}`} className="text-lg font-bold text-gray-100 mt-3 mb-1">{renderInlineMarkdown(trimmed.slice(2))}</h2>);
+        return;
+      }
+
+      // Horizontal rule
+      if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+        flushList();
+        elements.push(<hr key={`${i}-${li}`} className="border-gray-700 my-2" />);
+        return;
+      }
+
+      // Unordered list items
+      if (/^[-*+]\s/.test(trimmed)) {
+        if (listType !== 'ul') flushList();
+        listType = 'ul';
+        listItems.push(<li key={`${i}-${li}`}>{renderInlineMarkdown(trimmed.replace(/^[-*+]\s/, ''))}</li>);
+        return;
+      }
+
+      // Ordered list items
+      const olMatch = trimmed.match(/^(\d+)\.\s(.*)$/);
+      if (olMatch) {
+        if (listType !== 'ol') flushList();
+        listType = 'ol';
+        listItems.push(<li key={`${i}-${li}`}>{renderInlineMarkdown(olMatch[2])}</li>);
+        return;
+      }
+
+      // Regular text (or blank line)
+      flushList();
+      if (trimmed === '') {
+        if (li > 0 && li < lines.length - 1) {
+          elements.push(<div key={`${i}-${li}`} className="h-2" />);
+        }
+      } else {
+        elements.push(<span key={`${i}-${li}`}>{renderInlineMarkdown(line)}{li < lines.length - 1 ? '\n' : ''}</span>);
+      }
+    });
+
+    flushList();
+    return <span key={i}>{elements}</span>;
   });
 }
 
@@ -231,13 +358,43 @@ function ConfirmationDialog({ confirm, onConfirm, onDeny }) {
 
 // ─── Empty State ────────────────────────────────────────────────────────
 
-function EmptyState({ colonelName }) {
-  const suggestions = [
-    'What containers are running?',
-    'Show me system status',
-    'Check the health of all services',
-    'Show recent PostgreSQL logs',
-  ];
+// Map skill names to suggested prompts and icons
+const SKILL_SUGGESTIONS = {
+  'docker-management':   { text: 'What containers are running?', icon: '🐳' },
+  'system-status':       { text: 'Show me full system status', icon: '📊' },
+  'service-health':      { text: 'Check the health of all services', icon: '🏥' },
+  'log-viewer':          { text: 'Show recent error logs', icon: '📋' },
+  'gpu-monitoring':      { text: 'Show GPU memory and utilization', icon: '🎮' },
+  'postgresql-ops':      { text: 'List PostgreSQL databases', icon: '🐘' },
+  'bash-execution':      { text: 'What disk space is available?', icon: '💾' },
+  'network-diagnostics': { text: 'Check network connectivity', icon: '🌐' },
+  'traefik-management':  { text: 'List all Traefik routes', icon: '🔀' },
+  'backup-management':   { text: 'Show backup status', icon: '💿' },
+  'resource-cleanup':    { text: 'Check for cleanup opportunities', icon: '🧹' },
+  'keycloak-auth':       { text: 'Show Keycloak user count', icon: '🔑' },
+  'litellm-management':  { text: 'Check LLM proxy health', icon: '🤖' },
+  'forgejo-management':  { text: 'Show Git repositories', icon: '📦' },
+  'frontend-management': { text: 'What can you change in the UI?', icon: '🎨' },
+};
+
+const FALLBACK_SUGGESTIONS = [
+  { text: 'What containers are running?', icon: '🐳' },
+  { text: 'Show me system status', icon: '📊' },
+  { text: 'Check the health of all services', icon: '🏥' },
+  { text: 'Show recent error logs', icon: '📋' },
+  { text: 'Show GPU memory and utilization', icon: '🎮' },
+  { text: 'What disk space is available?', icon: '💾' },
+];
+
+function EmptyState({ colonelName, onSuggestion, skills }) {
+  // Build suggestions from loaded skills, fall back to defaults
+  const suggestions = React.useMemo(() => {
+    if (!skills || skills.length === 0) return FALLBACK_SUGGESTIONS;
+    const matched = skills
+      .filter(s => s.enabled && SKILL_SUGGESTIONS[s.name])
+      .map(s => SKILL_SUGGESTIONS[s.name]);
+    return matched.length >= 4 ? matched.slice(0, 6) : FALLBACK_SUGGESTIONS;
+  }, [skills]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-8 py-16">
@@ -250,9 +407,11 @@ function EmptyState({ colonelName }) {
         {suggestions.map((s, i) => (
           <button
             key={i}
-            className="text-left px-4 py-3 bg-gray-800/50 hover:bg-purple-900/30 border border-gray-700/50 hover:border-purple-700/30 rounded-xl text-sm text-gray-300 transition-all"
+            onClick={() => onSuggestion?.(s.text)}
+            className="text-left px-4 py-3 bg-gray-800/50 hover:bg-purple-900/30 border border-gray-700/50 hover:border-purple-700/30 rounded-xl text-sm text-gray-300 transition-all group"
           >
-            {s}
+            <span className="mr-2 group-hover:scale-110 inline-block transition-transform">{s.icon}</span>
+            {s.text}
           </button>
         ))}
       </div>
@@ -263,12 +422,11 @@ function EmptyState({ colonelName }) {
 // ─── Model Selector ─────────────────────────────────────────────────────
 
 const COLONEL_MODELS = [
-  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'Anthropic', badge: 'Latest' },
-  { id: 'claude-opus-4.5', name: 'Claude Opus 4.5', provider: 'Anthropic' },
-  { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', badge: 'Fast' },
-  { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5', provider: 'Moonshot', badge: '262K ctx' },
-  { id: 'openai/gpt-5.2-codex', name: 'GPT-5.2 Codex', provider: 'OpenAI', badge: '400K ctx' },
-  { id: 'openai/gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini', provider: 'OpenAI', badge: 'Budget' },
+  { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'Anthropic', badge: 'Latest' },
+  { id: 'anthropic/claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'Anthropic', badge: 'Recommended' },
+  { id: 'anthropic/claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'Anthropic', badge: 'Fast' },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
+  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Free)', provider: 'Google', badge: 'Free' },
 ];
 
 function ModelSelector({ currentModel, onModelChange, disabled }) {
@@ -315,8 +473,10 @@ function ModelSelector({ currentModel, onModelChange, disabled }) {
               {m.badge && (
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                   m.badge === 'Latest' ? 'bg-purple-800/60 text-purple-300' :
+                  m.badge === 'Recommended' ? 'bg-emerald-800/60 text-emerald-300' :
                   m.badge === 'Fast' ? 'bg-blue-800/60 text-blue-300' :
                   m.badge === 'Budget' ? 'bg-green-800/60 text-green-300' :
+                  m.badge === 'Free' ? 'bg-gray-800 text-gray-300' :
                   'bg-gray-800 text-gray-400'
                 }`}>{m.badge}</span>
               )}
@@ -354,6 +514,16 @@ export default function ColonelChat({ popout = false }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [currentModel, setCurrentModel] = useState(null);
+  const [generalOpen, setGeneralOpen] = useState(false);
+  const [loadedSkills, setLoadedSkills] = useState([]);
+
+  // Load skills for dynamic suggestions
+  useEffect(() => {
+    fetch('/api/v1/colonel/skills', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.skills) setLoadedSkills(data.skills); })
+      .catch(() => {});
+  }, []);
 
   // Load current model from config
   useEffect(() => {
@@ -394,6 +564,18 @@ export default function ColonelChat({ popout = false }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeSkill]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (sidebarOpen) setSidebarOpen(false);
+        if (generalOpen) setGeneralOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen, generalOpen]);
 
   const handlePopOut = () => {
     window.open(
@@ -472,6 +654,15 @@ export default function ColonelChat({ popout = false }) {
               Status
             </button>
           )}
+          {!isPopout && (
+            <button
+              onClick={() => setGeneralOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700/50 rounded-lg text-xs text-gray-300 transition-colors"
+              title="The General — Multi-Colonel overview"
+            >
+              <span className="text-sm">🎖️</span> General
+            </button>
+          )}
           <button
             onClick={startNewSession}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700/50 rounded-lg text-xs text-gray-300 transition-colors"
@@ -502,7 +693,7 @@ export default function ColonelChat({ popout = false }) {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto py-4">
         {messages.length === 0 ? (
-          <EmptyState colonelName={colonelName} />
+          <EmptyState colonelName={colonelName} skills={loadedSkills} onSuggestion={(text) => { if (connected) sendMessage(text); }} />
         ) : (
           <>
             {messages.map((msg, i) => (
@@ -548,6 +739,9 @@ export default function ColonelChat({ popout = false }) {
         serverName={serverName}
         online={connected}
       />
+
+      {/* The General Modal */}
+      <GeneralModal open={generalOpen} onClose={() => setGeneralOpen(false)} />
     </div>
   );
 }

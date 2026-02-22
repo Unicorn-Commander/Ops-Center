@@ -181,6 +181,14 @@ async def complete_onboarding(config_data: dict, admin: dict = Depends(_require_
         config.personality = ColonelPersonality(**config_data["personality"])
     if "model" in config_data:
         config.model = config_data["model"]
+    if "temperature" in config_data:
+        config.temperature = config_data["temperature"]
+    if "max_tokens" in config_data:
+        config.max_tokens = config_data["max_tokens"]
+    if "context_window" in config_data:
+        config.context_window = config_data["context_window"]
+    if "custom_instructions" in config_data:
+        config.custom_instructions = config_data["custom_instructions"]
     if "enabled_skills" in config_data:
         config.enabled_skills = config_data["enabled_skills"]
     if "admin_only" in config_data:
@@ -246,6 +254,8 @@ async def detect_environment(admin: dict = Depends(_require_admin)):
         {"id": "system-status", "name": "System Status", "detected": True},
         {"id": "service-health", "name": "Service Health", "detected": len(result["containers"]) > 0},
         {"id": "log-viewer", "name": "Log Viewer", "detected": len(result["containers"]) > 0},
+        {"id": "network-diagnostics", "name": "Network Diagnostics", "detected": True},
+        {"id": "resource-cleanup", "name": "Resource Cleanup", "detected": True},
     ]
 
     # Auto-detect optional skills
@@ -262,6 +272,21 @@ async def detect_environment(admin: dict = Depends(_require_admin)):
         result["available_skills"].append(
             {"id": "forgejo-management", "name": "Forgejo Git", "detected": True}
         )
+    if any("traefik" in n for n in container_names):
+        result["available_skills"].append(
+            {"id": "traefik-management", "name": "Traefik Management", "detected": True}
+        )
+    if any("litellm" in n or "wilmer" in n for n in container_names):
+        result["available_skills"].append(
+            {"id": "litellm-management", "name": "LiteLLM Management", "detected": True}
+        )
+    if result["gpus"]:
+        result["available_skills"].append(
+            {"id": "gpu-monitoring", "name": "GPU Monitoring", "detected": True}
+        )
+    result["available_skills"].append(
+        {"id": "backup-management", "name": "Backup Management", "detected": True}
+    )
 
     return result
 

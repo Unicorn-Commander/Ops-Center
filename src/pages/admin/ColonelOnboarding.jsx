@@ -47,6 +47,10 @@ export default function ColonelOnboarding() {
     mission: 'devops',
     personality: { formality: 7, verbosity: 5, humor: 4 },
     model: 'anthropic/claude-sonnet-4-5-20250929',
+    temperature: 0.3,
+    max_tokens: 4096,
+    context_window: 16384,
+    custom_instructions: '',
     enabled_skills: [],
     admin_only: true,
   });
@@ -75,12 +79,21 @@ export default function ColonelOnboarding() {
   const handleDeploy = async () => {
     setLoading(true);
     try {
-      const resp = await fetch('/api/v1/colonel/onboard', {
-        method: 'POST',
+      const payload = { ...config, onboarded: true };
+      let resp = await fetch('/api/v1/colonel/config', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       });
+      if (!resp.ok) {
+        resp = await fetch('/api/v1/colonel/onboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+      }
       if (resp.ok) {
         navigate('/admin/ai/colonel');
       } else {
@@ -368,6 +381,55 @@ export default function ColonelOnboarding() {
                 </button>
               ))}
             </div>
+            <div className="mt-6 space-y-4">
+              <h3 className="text-sm font-semibold text-gray-300">Advanced Settings</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Temperature</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="2"
+                    value={config.temperature}
+                    onChange={e => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Max Tokens</label>
+                  <input
+                    type="number"
+                    min="256"
+                    max="16384"
+                    value={config.max_tokens}
+                    onChange={e => setConfig(prev => ({ ...prev, max_tokens: parseInt(e.target.value) || 0 }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Context Window</label>
+                  <input
+                    type="number"
+                    min="1024"
+                    max="262144"
+                    value={config.context_window}
+                    onChange={e => setConfig(prev => ({ ...prev, context_window: parseInt(e.target.value) || 0 }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Custom Instructions</label>
+                <textarea
+                  value={config.custom_instructions}
+                  onChange={e => setConfig(prev => ({ ...prev, custom_instructions: e.target.value }))}
+                  rows={4}
+                  placeholder="Optional: add custom system instructions for The Colonel."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                />
+              </div>
+            </div>
           </div>
         )}
 
@@ -381,9 +443,18 @@ export default function ColonelOnboarding() {
                 <div className="text-gray-400">Server</div><div>{config.server_name}</div>
                 <div className="text-gray-400">Mission</div><div className="capitalize">{config.mission}</div>
                 <div className="text-gray-400">Model</div><div>{MODELS.find(m => m.id === config.model)?.label || config.model}</div>
+                <div className="text-gray-400">Temperature</div><div>{config.temperature}</div>
+                <div className="text-gray-400">Max Tokens</div><div>{config.max_tokens}</div>
+                <div className="text-gray-400">Context Window</div><div>{config.context_window}</div>
                 <div className="text-gray-400">Access</div><div>{config.admin_only ? 'Admin Only' : 'All Users'}</div>
                 <div className="text-gray-400">Skills</div><div>{config.enabled_skills.length} enabled</div>
               </div>
+              {config.custom_instructions && (
+                <div className="bg-gray-800/50 rounded-lg p-3">
+                  <div className="text-gray-400 text-xs mb-2">Custom Instructions</div>
+                  <div className="text-xs text-gray-300 whitespace-pre-wrap">{config.custom_instructions}</div>
+                </div>
+              )}
               <div className="bg-gray-800/50 rounded-lg p-3">
                 <div className="text-gray-400 text-xs mb-2">Personality</div>
                 <div className="flex gap-4 text-xs">

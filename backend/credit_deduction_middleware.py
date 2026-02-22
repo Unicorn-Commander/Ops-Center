@@ -190,7 +190,8 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     'sk-centerdeep-service-key-2025': 'centerdeep-service',
                     'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
                     'sk-open-webui-service-key-2026': 'open-webui-service',
-                    'sk-colonel-service-key-2026': 'colonel-service'
+                    'sk-colonel-service-key-2026': 'colonel-service',
+                    'sk-majiks-service-key-2025': 'majiks-service'
                 }
 
                 # Map service names to organization UUIDs (matches litellm_api.py)
@@ -201,7 +202,8 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',
                     'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',
                     'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
-                    'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37'
+                    'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
+                    'majiks-service': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
                 }
 
                 # Internal services exempt from billing
@@ -619,7 +621,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     "message": f"Insufficient credits. {message}",
                     "estimated_cost": estimated_cost,
                     "org_credits": org_id is not None,
-                    "org_id": org_id,
+                    "org_id": str(org_id) if org_id else None,
                     "upgrade_url": "/admin/subscription/plan"
                 },
                 headers={

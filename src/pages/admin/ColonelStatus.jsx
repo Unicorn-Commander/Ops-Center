@@ -19,10 +19,10 @@ export default function ColonelStatus() {
   const fetchAll = useCallback(async () => {
     try {
       const [statusRes, skillsRes, auditRes, sessionsRes] = await Promise.allSettled([
-        fetch('/api/v1/colonel/status'),
-        fetch('/api/v1/colonel/skills'),
-        fetch('/api/v1/colonel/audit?limit=20'),
-        fetch('/api/v1/colonel/sessions'),
+        fetch('/api/v1/colonel/status', { credentials: 'include' }),
+        fetch('/api/v1/colonel/skills', { credentials: 'include' }),
+        fetch('/api/v1/colonel/audit?limit=20', { credentials: 'include' }),
+        fetch('/api/v1/colonel/sessions', { credentials: 'include' }),
       ]);
 
       if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
@@ -41,7 +41,7 @@ export default function ColonelStatus() {
         setSessions(data.sessions || []);
       }
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Failed to load Colonel status');
     } finally {
       setLoading(false);
     }
@@ -55,13 +55,19 @@ export default function ColonelStatus() {
 
   const toggleSkill = async (skillId) => {
     try {
-      const res = await fetch(`/api/v1/colonel/skills/${skillId}/toggle`, { method: 'PUT' });
+      const res = await fetch(`/api/v1/colonel/skills/${skillId}/toggle`, {
+        method: 'PUT',
+        credentials: 'include',
+      });
       if (res.ok) {
         const data = await res.json();
         setSkills(prev => prev.map(s => s.id === skillId ? { ...s, enabled: data.enabled } : s));
+      } else {
+        setError('Failed to toggle skill');
       }
     } catch (e) {
       console.error('Failed to toggle skill:', e);
+      setError('Failed to toggle skill');
     }
   };
 

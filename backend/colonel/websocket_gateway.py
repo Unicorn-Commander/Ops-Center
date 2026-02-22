@@ -204,7 +204,7 @@ class ColonelGateway:
         logger.info(f"Colonel WS connected: user={user_email}, session={session.id}")
 
         try:
-            await self._message_loop(ws, session, config, user)
+            await self._message_loop(ws, session, config, user, write_enabled)
         except WebSocketDisconnect:
             logger.info(f"Colonel WS disconnected: session={session.id}")
         except Exception as e:
@@ -216,7 +216,7 @@ class ColonelGateway:
         finally:
             self._connections.pop(session.id, None)
 
-    async def _message_loop(self, ws: WebSocket, session: ColonelSession, config: ColonelConfig, user: dict):
+    async def _message_loop(self, ws: WebSocket, session: ColonelSession, config: ColonelConfig, user: dict, write_enabled: bool = False):
         """Main message receive loop."""
         while True:
             raw = await ws.receive_text()
@@ -317,8 +317,22 @@ class ColonelGateway:
             _id_remap[raw_id] = new_id
             return new_id
 
+        def _select_context_messages(all_messages: List[ChatMessage], context_window: int) -> List[ChatMessage]:
+            # Rough heuristic: 1 token ~= 4 chars. Keep most recent messages within budget.
+            max_chars = max(int(context_window) * 4, 2048)
+            selected: List[ChatMessage] = []
+            total = 0
+            for msg in reversed(all_messages):
+                content_len = len(msg.content or "")
+                if selected and total + content_len > max_chars:
+                    break
+                selected.append(msg)
+                total += content_len
+            return list(reversed(selected))
+
         llm_messages = [{"role": "system", "content": system_prompt}]
-        for m in session.messages[-20:]:  # Last 20 messages for context window
+        context_messages = _select_context_messages(session.messages, config.context_window)
+        for m in context_messages:
             msg_dict = {"role": m.role, "content": m.content}
             if m.tool_call_id:
                 msg_dict["tool_call_id"] = _id_remap.get(m.tool_call_id, m.tool_call_id)
@@ -501,8 +515,8 @@ class ColonelGateway:
             "model": config.model,
             "messages": messages,
             "stream": True,
-            "temperature": 0.7,
-            "max_tokens": 4096,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
         }
         if tools:
             payload["tools"] = tools

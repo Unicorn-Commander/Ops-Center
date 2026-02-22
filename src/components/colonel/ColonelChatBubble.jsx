@@ -51,13 +51,57 @@ function MiniMessage({ message }) {
           ? 'bg-purple-600/80 text-white'
           : 'bg-gray-800/80 border border-purple-800/20 text-gray-200'
       }`}>
-        <span className="whitespace-pre-wrap break-words">{message.content}</span>
+        <div className="whitespace-pre-wrap break-words">
+          {isUser ? message.content : renderContent(message.content)}
+        </div>
         {message._streaming && (
           <span className="inline-block w-1.5 h-3 bg-purple-400 animate-pulse ml-0.5" />
         )}
       </div>
     </div>
   );
+}
+
+function renderContent(content) {
+  if (!content) return null;
+
+  const parts = content.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const lines = part.slice(3, -3);
+      const firstNewline = lines.indexOf('\n');
+      const lang = firstNewline > 0 ? lines.slice(0, firstNewline).trim() : '';
+      const code = firstNewline > 0 ? lines.slice(firstNewline + 1) : lines;
+      return (
+        <pre key={i} className="bg-gray-950 rounded-lg p-2 my-1 overflow-x-auto text-[11px] font-mono text-green-300 border border-gray-800">
+          {lang && <div className="text-gray-500 text-[10px] mb-1">{lang}</div>}
+          <code>{code}</code>
+        </pre>
+      );
+    }
+
+    const boldParts = part.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <span key={i}>
+        {boldParts.map((bp, j) => {
+          if (bp.startsWith('**') && bp.endsWith('**')) {
+            return <strong key={j}>{bp.slice(2, -2)}</strong>;
+          }
+          const codeParts = bp.split(/(`[^`]+`)/g);
+          return codeParts.map((cp, k) => {
+            if (cp.startsWith('`') && cp.endsWith('`')) {
+              return (
+                <code key={`${j}-${k}`} className="bg-gray-800 px-1 py-0.5 rounded text-purple-300 text-[11px]">
+                  {cp.slice(1, -1)}
+                </code>
+              );
+            }
+            return cp;
+          });
+        })}
+      </span>
+    );
+  });
 }
 
 // ─── Main Chat Bubble Component ─────────────────────────────────────────
@@ -74,7 +118,7 @@ export default function ColonelChatBubble() {
 
   const {
     connected, connecting, colonelName,
-    messages, isStreaming,
+    messages, isStreaming, error, clearError,
     activeSkill, pendingConfirm,
     sendMessage, confirmAction, startNewSession,
   } = useColonelWebSocket();
@@ -179,6 +223,12 @@ export default function ColonelChatBubble() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto py-2">
+            {error && (
+              <div className="mx-2 my-1 px-2 py-1.5 bg-red-900/30 border border-red-800/50 rounded text-[11px] text-red-300 flex items-center justify-between">
+                <span>{error}</span>
+                <button onClick={clearError} className="text-red-400 hover:text-red-300 text-[10px]">Dismiss</button>
+              </div>
+            )}
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-6">
                 <img src="/logos/The_Colonel.webp" alt="" className="w-12 h-12 rounded-full mb-3 opacity-80" />
