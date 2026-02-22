@@ -747,6 +747,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/subscriptions/",  # Subscription management - REST API operations
         "/api/v1/system/",  # System status - REST API operations
         "/api/v1/billing/",  # Billing analytics - REST API operations
+        "/a2a",  # A2A JSON-RPC endpoint - external service-to-service calls
+        "/.well-known/",  # A2A agent card discovery - public protocol endpoint
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -885,6 +887,15 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to start alert checker: {e}")
         # Don't block startup if alert checking fails
+
+    # Register Colonel with Brigade (fire-and-forget background task)
+    try:
+        from colonel.a2a_server import register_with_brigade
+        asyncio.create_task(register_with_brigade())
+        logger.info("Colonel Brigade registration task launched (background)")
+    except Exception as e:
+        logger.warning(f"Could not launch Colonel Brigade registration: {e}")
+        # Don't block startup — Colonel works standalone
 
 
 async def check_alerts_periodically():

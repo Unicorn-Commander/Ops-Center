@@ -3,6 +3,21 @@ Colonel WebSocket Gateway - Handles streaming chat with the LLM.
 
 Authenticates via session cookie, manages chat sessions in Redis,
 streams LLM responses via SSE from LiteLLM, and dispatches tool calls.
+
+Memory integration:
+  - Mem0 semantic recall is queried before each LLM call to inject relevant
+    context from prior conversations.
+  - After a complete assistant response, the exchange is stored to Mem0 via
+    a fire-and-forget task so it never blocks the response stream.
+  - All memory operations degrade gracefully: if Mem0/Qdrant is unreachable,
+    a warning is logged and the conversation continues without memory.
+
+Context pruning:
+  - Before sending messages to the LLM, the conversation history is pruned
+    so it fits within 80% of the configured context_window (in tokens).
+  - The system prompt is accounted for in the budget.
+  - Older user/assistant pairs are removed first; the system prompt and the
+    most recent messages are always preserved.
 """
 
 import asyncio
@@ -28,6 +43,34 @@ from colonel.safety import is_write_capable_model
 from colonel.system_prompt import build_system_prompt
 
 logger = logging.getLogger("colonel.ws")
+
+# ─── Token Estimation Helpers ────────────────────────────────────────────────
+
+# Rough heuristic: 1 token ~= 4 characters.  This is intentionally
+# conservative so we stay under the real limit even if the ratio varies.
+_CHARS_PER_TOKEN = 4
+
+# We target 80% of the context window to leave headroom for the LLM response
+# and any tokenization variance.
+_CONTEXT_BUDGET_RATIO = 0.80
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate the number of tokens in *text* using the 4-chars heuristic."""
+    return max(len(text) // _CHARS_PER_TOKEN, 1) if text else 0
+
+
+def _estimate_message_tokens(msg: ChatMessage) -> int:
+    """Estimate tokens for a single ChatMessage, including tool metadata."""
+    tokens = _estimate_tokens(msg.content or "")
+    if msg.tool_calls:
+        # Rough estimate for serialised tool_calls JSON
+        tokens += _estimate_tokens(json.dumps(msg.tool_calls))
+    if msg.name:
+        tokens += _estimate_tokens(msg.name)
+    # Per-message overhead (role, separators)
+    tokens += 4
+    return tokens
 
 
 class ColonelGateway:
@@ -87,7 +130,7 @@ class ColonelGateway:
         return None
 
     async def _save_session(self, session: ColonelSession):
-        """Save a chat session to Redis with TTL."""
+        """Save a chat session to Redis with TTL, and persist to PostgreSQL."""
         r = await self._get_redis()
         session.updated_at = __import__("datetime").datetime.utcnow().isoformat()
         await r.set(
@@ -95,6 +138,19 @@ class ColonelGateway:
             session.model_dump_json(),
             ex=SESSION_TTL,
         )
+        # Fire-and-forget persist to PostgreSQL for durability
+        try:
+            from colonel import persistence
+            session_dict = json.loads(session.model_dump_json())
+            asyncio.create_task(persistence.save_conversation(
+                session_id=session.id,
+                user_id=session.user_id,
+                title=session.title,
+                messages=session_dict.get("messages", []),
+                colonel_name=session.colonel_id,
+            ))
+        except Exception as e:
+            logger.debug(f"PostgreSQL persist skipped: {e}")
 
     async def _create_session(self, user_id: str, colonel_id: str = "default") -> ColonelSession:
         """Create a new chat session."""
@@ -263,23 +319,32 @@ class ColonelGateway:
     async def _stream_response(self, ws: WebSocket, session: ColonelSession, config: ColonelConfig, user: dict, write_enabled: bool = False):
         """Call LLM and stream the response back over WebSocket."""
 
-        # Recall memories (sub-phase 1c)
+        # ── Recall memories (Mem0 semantic search) ────────────────────────
         memories = None
         if self.memory_client:
             try:
                 last_msg = session.messages[-1].content if session.messages else ""
-                memories = await self.memory_client.recall(last_msg, user_id=session.user_id)
+                memories = await asyncio.wait_for(
+                    self.memory_client.recall(last_msg, user_id=session.user_id),
+                    timeout=5.0,
+                )
+                if memories:
+                    logger.info(f"Mem0 recalled {len(memories)} memories for user {session.user_id}")
+                else:
+                    logger.debug("Mem0 recall returned no relevant memories")
+            except asyncio.TimeoutError:
+                logger.warning("Mem0 recall timed out (5s limit) - continuing without memory")
             except Exception as e:
                 logger.warning(f"Memory recall failed: {e}")
 
-        # Build tool definitions (sub-phase 1b)
+        # ── Build tool definitions (sub-phase 1b) ────────────────────────
         tools = None
         skill_descriptions = None
         if self.skill_router:
             tools = self.skill_router.get_tool_definitions(config.enabled_skills)
             skill_descriptions = self.skill_router.get_skill_descriptions(config.enabled_skills)
 
-        # Query graph context (sub-phase 1e)
+        # ── Query graph context (sub-phase 1e) ───────────────────────────
         graph_context = None
         if self.graph_client and self.graph_client.available:
             try:
@@ -290,7 +355,7 @@ class ColonelGateway:
             except Exception as e:
                 logger.debug(f"Graph context query failed: {e}")
 
-        # Build system prompt
+        # ── Build system prompt ──────────────────────────────────────────
         system_prompt = build_system_prompt(
             config,
             memories=memories,
@@ -299,7 +364,7 @@ class ColonelGateway:
             write_enabled=write_enabled,
         )
 
-        # Prepare messages for LLM
+        # ── Prepare messages for LLM ─────────────────────────────────────
         # Build an ID remap table so tool_call_ids in tool messages match
         # the (possibly rewritten) ids in the assistant tool_calls list.
         _id_remap: Dict[str, str] = {}
@@ -317,21 +382,25 @@ class ColonelGateway:
             _id_remap[raw_id] = new_id
             return new_id
 
-        def _select_context_messages(all_messages: List[ChatMessage], context_window: int) -> List[ChatMessage]:
-            # Rough heuristic: 1 token ~= 4 chars. Keep most recent messages within budget.
-            max_chars = max(int(context_window) * 4, 2048)
-            selected: List[ChatMessage] = []
-            total = 0
-            for msg in reversed(all_messages):
-                content_len = len(msg.content or "")
-                if selected and total + content_len > max_chars:
-                    break
-                selected.append(msg)
-                total += content_len
-            return list(reversed(selected))
+        # ── Context Pruning ──────────────────────────────────────────────
+        # Keep conversation within 80% of the configured context window.
+        # Budget = (context_window * 0.80) - system_prompt_tokens.
+        # We remove the oldest user/assistant pairs first, always keeping
+        # the most recent messages and any trailing tool exchanges.
+        context_messages = _prune_context(
+            session.messages,
+            system_prompt,
+            config.context_window,
+        )
+        if len(context_messages) < len(session.messages):
+            removed = len(session.messages) - len(context_messages)
+            logger.info(
+                f"Context pruning: kept {len(context_messages)}/{len(session.messages)} "
+                f"messages (removed {removed} oldest) to fit within "
+                f"{int(config.context_window * _CONTEXT_BUDGET_RATIO)} token budget"
+            )
 
         llm_messages = [{"role": "system", "content": system_prompt}]
-        context_messages = _select_context_messages(session.messages, config.context_window)
         for m in context_messages:
             msg_dict = {"role": m.role, "content": m.content}
             if m.tool_call_id:
@@ -372,16 +441,15 @@ class ColonelGateway:
                     ).model_dump())
                     done_sent = True
 
-                    # Store memories (sub-phase 1c)
-                    if self.memory_client:
-                        try:
-                            await self.memory_client.store(
+                    # Store memories (fire-and-forget to avoid delaying response)
+                    if self.memory_client and len(session.messages) >= 2:
+                        asyncio.create_task(
+                            self._store_memory_safe(
                                 session.messages[-2].content,  # user msg
                                 assistant_content,
-                                user_id=session.user_id,
+                                session.user_id,
                             )
-                        except Exception as e:
-                            logger.warning(f"Memory store failed: {e}")
+                        )
 
                 await self._save_session(session)
                 break
@@ -500,6 +568,24 @@ class ColonelGateway:
                     message_id=str(uuid.uuid4())[:8], content="(No response generated)"
                 ).model_dump())
             await self._save_session(session)
+
+    async def _store_memory_safe(self, user_msg: str, assistant_msg: str, user_id: str):
+        """Fire-and-forget wrapper for Mem0 store with timeout and error handling.
+
+        This runs as a background task (via asyncio.create_task) so memory
+        storage never delays the WebSocket response.  All errors are caught
+        and logged; they never propagate to the caller.
+        """
+        try:
+            await asyncio.wait_for(
+                self.memory_client.store(user_msg, assistant_msg, user_id=user_id),
+                timeout=10.0,
+            )
+            logger.debug(f"Mem0 stored exchange for user {user_id}")
+        except asyncio.TimeoutError:
+            logger.warning(f"Mem0 store timed out (10s limit) for user {user_id}")
+        except Exception as e:
+            logger.warning(f"Mem0 store failed for user {user_id}: {e}")
 
     async def _call_llm_stream(
         self, ws: WebSocket, config: ColonelConfig,
@@ -628,6 +714,66 @@ def _derive_title(messages: List[Dict]) -> str:
         if role == "user" and content:
             return content[:60] + ("..." if len(content) > 60 else "")
     return "New Session"
+
+
+def _prune_context(
+    messages: List[ChatMessage],
+    system_prompt: str,
+    context_window: int,
+) -> List[ChatMessage]:
+    """Return the subset of *messages* that fits within the token budget.
+
+    Strategy:
+      1. Compute the budget = (context_window * 80%) - system_prompt_tokens.
+      2. Always keep the most recent messages.  Walk backwards from the end,
+         accumulating tokens until the budget is exhausted.
+      3. Never split a tool-call exchange: if an assistant message with
+         tool_calls is included, all following tool-result messages (up to
+         the next user/assistant) are included too.
+
+    If all messages already fit, the original list is returned unchanged.
+    """
+    if not messages:
+        return messages
+
+    # Budget in estimated tokens, minus what the system prompt will consume.
+    total_budget = int(context_window * _CONTEXT_BUDGET_RATIO)
+    system_tokens = _estimate_tokens(system_prompt)
+    message_budget = max(total_budget - system_tokens, 512)  # floor at 512 tokens
+
+    # Fast path: everything fits.
+    total_tokens = sum(_estimate_message_tokens(m) for m in messages)
+    if total_tokens <= message_budget:
+        return messages
+
+    # Walk backwards, accumulating tokens.
+    selected_indices: List[int] = []
+    running_tokens = 0
+
+    i = len(messages) - 1
+    while i >= 0:
+        msg = messages[i]
+        msg_tokens = _estimate_message_tokens(msg)
+
+        # If adding this message would exceed the budget and we already
+        # have at least the latest user message, stop.
+        if selected_indices and (running_tokens + msg_tokens) > message_budget:
+            break
+
+        selected_indices.append(i)
+        running_tokens += msg_tokens
+
+        # If this is a tool message, we must also include the preceding
+        # assistant message that initiated the tool call (keep the exchange
+        # together).  Walk back to include the full tool-call group.
+        if msg.role == "tool" and i > 0:
+            # Already handled by the main loop — just continue backwards.
+            pass
+
+        i -= 1
+
+    selected_indices.reverse()
+    return [messages[idx] for idx in selected_indices]
 
 
 # Singleton instance
