@@ -374,6 +374,7 @@ export default function SubscriptionCancel() {
               Take a break for up to 3 months
             </p>
             <button
+              onClick={() => navigate('/admin/subscription/plan')}
               className="mt-2 text-green-400 hover:text-green-300 text-sm font-medium"
             >
               Pause Instead →
@@ -387,6 +388,7 @@ export default function SubscriptionCancel() {
               Let us help solve any issues you're facing
             </p>
             <button
+              onClick={() => window.open('mailto:support@unicorncommander.com')}
               className="mt-2 text-purple-400 hover:text-purple-300 text-sm font-medium"
             >
               Get Help →

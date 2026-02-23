@@ -18,7 +18,7 @@ export function ColonelProvider({ children }) {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/colonel/status');
+      const res = await fetch('/api/v1/colonel/status', { credentials: 'include' });
       if (!res.ok) return;
       const data = await res.json();
       setOnline(data.online);
@@ -34,7 +34,7 @@ export function ColonelProvider({ children }) {
 
   const checkOnboarded = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/colonel/onboarded');
+      const res = await fetch('/api/v1/colonel/onboarded', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setOnboarded(data.onboarded);

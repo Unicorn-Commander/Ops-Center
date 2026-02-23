@@ -96,7 +96,7 @@ export default function OrganizationRoles() {
   const fetchRoles = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/org/roles');
+      const response = await fetch('/api/v1/org/roles', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch roles');
 
       const data = await response.json();

@@ -15,7 +15,8 @@ import {
   DocumentTextIcon,
   ShieldExclamationIcon,
   CommandLineIcon,
-  XMarkIcon
+  XMarkIcon,
+  FireIcon
 } from '@heroicons/react/24/outline';
 
 // Animation variants
@@ -75,7 +76,7 @@ export default function Security() {
   const loadAuditLogs = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/audit/logs?limit=50');
+      const response = await fetch('/api/v1/audit/logs?limit=50', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setAuditLogs(data.logs || []);
@@ -92,7 +93,7 @@ export default function Security() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/users');
+      const response = await fetch('/api/v1/users', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users || []);
@@ -107,7 +108,7 @@ export default function Security() {
   const loadApiKeys = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/api-keys');
+      const response = await fetch('/api/v1/api-keys', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setApiKeys(data.api_keys || []);
@@ -122,7 +123,7 @@ export default function Security() {
   const loadSessions = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/sessions');
+      const response = await fetch('/api/v1/sessions', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions || []);

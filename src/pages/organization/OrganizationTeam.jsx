@@ -77,16 +77,13 @@ export default function OrganizationTeam() {
   useEffect(() => {
     // Wait for OrganizationContext to finish loading
     if (orgLoading) {
-      console.log('[OrganizationTeam] Waiting for organizations to load...');
       return;
     }
 
     if (currentOrg) {
-      console.log('[OrganizationTeam] Loading members for org:', currentOrg.id);
       fetchMembers();
       fetchStats();
     } else {
-      console.log('[OrganizationTeam] No current organization set');
       setLoading(false);
     }
   }, [currentOrg, orgLoading, page, rowsPerPage, searchQuery]);

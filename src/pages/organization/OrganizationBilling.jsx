@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useOrganization } from '../../contexts/OrganizationContext';
 import {
@@ -9,13 +10,9 @@ import {
   DocumentTextIcon,
   CheckCircleIcon,
   XMarkIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
   BanknotesIcon,
   CalendarIcon,
-  ClockIcon,
-  ExclamationTriangleIcon,
-  ArrowPathIcon
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
 const containerVariants = {
@@ -38,6 +35,7 @@ const itemVariants = {
 export default function OrganizationBilling() {
   const { theme, currentTheme } = useTheme();
   const { currentOrg } = useOrganization();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
 
@@ -88,7 +86,7 @@ export default function OrganizationBilling() {
 
   const fetchCurrentUser = async () => {
     try {
-      const response = await fetch('/api/v1/user');
+      const response = await fetch('/api/v1/user', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch user');
 
       const data = await response.json();
@@ -105,7 +103,7 @@ export default function OrganizationBilling() {
     try {
       // Note: Organization billing endpoint might not exist yet in backend
       // This will need to be created or map to subscription API
-      const response = await fetch(`/api/v1/org/${currentOrg.id}/billing`);
+      const response = await fetch(`/api/v1/org/${currentOrg.id}/billing`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch billing data');
 
       const data = await response.json();
@@ -226,7 +224,7 @@ export default function OrganizationBilling() {
                 {formatCurrency(billing.subscription.amount)}
                 <span className={`text-sm ${theme.text.secondary}`}>/{billing.subscription.interval}</span>
               </div>
-              <button className={`w-full px-4 py-2 ${theme.button} rounded-lg transition-colors`}>
+              <button onClick={() => navigate('/admin/subscription/plan')} className={`w-full px-4 py-2 ${theme.button} rounded-lg transition-colors`}>
                 Change Plan
               </button>
             </div>
@@ -397,7 +395,7 @@ export default function OrganizationBilling() {
                 <DocumentTextIcon className="h-6 w-6 text-purple-500" />
                 <h2 className={`text-xl font-semibold ${theme.text.primary}`}>Invoice History</h2>
               </div>
-              <button className="text-blue-400 hover:text-blue-300 text-sm transition-colors">
+              <button onClick={() => navigate('/admin/subscription/billing')} className="text-blue-400 hover:text-blue-300 text-sm transition-colors">
                 View All Invoices
               </button>
             </div>
@@ -469,7 +467,7 @@ export default function OrganizationBilling() {
                     Your subscription will remain active until the end of the current billing period
                   </div>
                 </div>
-                <button className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">
+                <button onClick={() => navigate('/admin/subscription/cancel')} className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">
                   Cancel Plan
                 </button>
               </div>

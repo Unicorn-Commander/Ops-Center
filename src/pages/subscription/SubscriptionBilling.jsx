@@ -39,6 +39,8 @@ const formatDate = (dateString) => {
 
 // Status badge component
 const StatusBadge = ({ status }) => {
+  if (!status) return null;
+
   const colors = {
     paid: 'bg-green-500/20 text-green-400 border-green-500/30',
     pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -89,8 +91,8 @@ export default function SubscriptionBilling() {
     setError(null);
     try {
       const [invoicesRes, cycleRes] = await Promise.all([
-        fetch('/api/v1/billing/invoices?limit=50'),
-        fetch('/api/v1/billing/cycle')
+        fetch('/api/v1/billing/invoices?limit=50', { credentials: 'include' }),
+        fetch('/api/v1/billing/cycle', { credentials: 'include' })
       ]);
 
       // Handle invoices response
@@ -148,7 +150,7 @@ export default function SubscriptionBilling() {
 
   const handleDownloadInvoice = async (invoiceId) => {
     try {
-      const res = await fetch(`/api/v1/billing/invoices/${invoiceId}/pdf`);
+      const res = await fetch(`/api/v1/billing/invoices/${invoiceId}/pdf`, { credentials: 'include' });
 
       if (!res.ok) {
         const errorText = await res.text();
@@ -203,6 +205,7 @@ export default function SubscriptionBilling() {
     try {
       const res = await fetch(`/api/v1/billing/invoices/${invoiceId}/retry`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         }

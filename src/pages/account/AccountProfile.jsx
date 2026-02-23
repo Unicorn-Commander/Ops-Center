@@ -75,7 +75,7 @@ export default function AccountProfile() {
 
   const loadProfile = async () => {
     try {
-      const response = await fetch('/api/v1/auth/session');
+      const response = await fetch('/api/v1/auth/session', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         if (data.user) {
@@ -158,6 +158,7 @@ export default function AccountProfile() {
 
       const response = await fetch('/api/v1/auth/profile', {
         method: 'PUT',
+        credentials: 'include',
         body: formData
       });
 

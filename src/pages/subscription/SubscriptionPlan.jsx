@@ -58,6 +58,8 @@ const TierBadge = ({ tier }) => {
 
 // Status badge component
 const StatusBadge = ({ status }) => {
+  if (!status) return null;
+
   const colors = {
     active: 'bg-green-500/20 text-green-400 border-green-500/30',
     trialing: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
