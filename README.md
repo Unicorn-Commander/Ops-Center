@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.5.1-blue.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-purple.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
@@ -385,6 +385,12 @@ mypy backend/
 ---
 
 ## 🌟 Recent Updates
+
+### v2.5.1 (February 22, 2026)
+- **Frontend Quality Audit**: 108 files fixed - dead code removal, credentials sweep (232 fetch calls), monitoring persistence, SPA routing fixes
+- **SSO Cookie Fix**: All API fetch calls now include `credentials: 'include'` for proper cross-domain authentication
+- **Monitoring Persistence**: Umami, Grafana, and Prometheus config pages now save settings to localStorage
+- **Dead Code Cleanup**: 3 unused files deleted, unused imports removed across 10 files
 
 ### v2.4.0 (November 29, 2025) - Image Generation + P0 Fixes
 

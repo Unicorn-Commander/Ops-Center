@@ -5,6 +5,36 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-02-22
+
+### Fixed
+- **Frontend Audit Sweep**: Comprehensive 108-file frontend quality audit and fix
+  - Removed dead code: 3 unused files deleted (useColonelSkills.js, useColonelMemory.js, CommandOutput.jsx)
+  - Removed unused imports across 10 files (App.jsx, Layout.jsx, RootRedirect.jsx, ColonelChat.jsx, UserDetail.jsx, AccountAPIKeys.jsx)
+  - Removed duplicate routes for `platform/white-label` and `apps` in App.jsx
+  - Removed debug `console.log` statements from App.jsx, Layout.jsx, OrganizationTeam.jsx
+  - Fixed Dashboard.jsx quick actions: `window.location.href` → `navigate()` for SPA routing
+  - Fixed swapped Visitors/Page Views labels in UmamiConfig.jsx
+  - Fixed hardcoded `localhost:8084` URLs in UmamiConfig, GrafanaConfig, PrometheusConfig, GrafanaViewer → relative paths
+  - Added `credentials: 'include'` to 232 fetch() calls across 74 files for proper SSO cookie handling
+  - Added `StatusBadge` null checks in SubscriptionBilling and SubscriptionPlan to prevent crashes
+  - Added missing `FireIcon` import in Security.jsx
+  - Wired OrganizationBilling buttons (Change Plan, View Invoices, Cancel)
+  - Wired SubscriptionCancel buttons (Pause Instead → plan page, Get Help → email)
+  - Added WebSocket `streamBuffer` reset on session change in useColonelWebSocket.js
+  - Replaced mock session fallback with empty array in AccountSecurity.jsx
+
+### Improved
+- **Monitoring Config Persistence**: UmamiConfig, GrafanaConfig, PrometheusConfig now save settings to localStorage and restore on page load (previously lost on refresh)
+- **GrafanaViewer Preferences**: Theme, time range, and refresh interval now persist via localStorage
+- **Colonel API Standardization**: ColonelSidebar.jsx now uses colonelApi.js instead of raw fetch calls
+- **Dynamic URLs**: AccountAPIKeys.jsx now uses `window.location.origin` instead of hardcoded domain
+
+### Changed
+- Version bumped from v2.4.0 to v2.5.0 in Layout.jsx footer
+
+---
+
 ## [2.3.0] - 2025-11-09
 
 ### Major Refactoring: Feature → App Terminology

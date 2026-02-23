@@ -2,7 +2,7 @@
 
 Comprehensive documentation for the UC-Cloud Ops-Center platform.
 
-**Last Updated**: November 14, 2025
+**Last Updated**: February 22, 2026
 
 ---
 
@@ -59,6 +59,45 @@ Comprehensive documentation for the UC-Cloud Ops-Center platform.
   - Error codes
   - Support scenarios
 
+### 👤 User Guides (`user/`)
+
+- **[DASHBOARD_GUIDE.md](./user/DASHBOARD_GUIDE.md)** (NEW - February 2026)
+  - End-user dashboard walkthrough
+  - Credit balance, usage tracking, subscription management
+  - Apps Marketplace, account settings, BYOK setup
+  - Tips for getting the most out of the platform
+
+- **[GETTING_STARTED_WITH_BILLING.md](./user/GETTING_STARTED_WITH_BILLING.md)**
+  - Complete billing onboarding guide
+  - Credit system explained
+  - Subscription tiers and comparison
+  - BYOK setup instructions
+  - FAQ for common billing questions
+
+### 🔧 Admin Guides (`admin/`)
+
+- **[ADMIN_DASHBOARD_GUIDE.md](./admin/ADMIN_DASHBOARD_GUIDE.md)** (NEW - February 2026)
+  - Admin dashboard overview and sections
+  - Critical services monitoring
+  - GPU status, local inference providers
+  - Quick actions and key admin pages
+  - Admin vs User Dashboard comparison
+  - Version history and admin tips
+
+- **[MONITORING_CONFIG_GUIDE.md](./admin/MONITORING_CONFIG_GUIDE.md)** (NEW - February 2026)
+  - Umami Analytics configuration
+  - Grafana Dashboards setup and embedded viewer
+  - Prometheus Metrics and scrape targets
+  - localStorage persistence (v2.5.1)
+  - Troubleshooting monitoring issues
+
+- **[ADMIN_BILLING_GUIDE.md](./admin/ADMIN_BILLING_GUIDE.md)**
+  - Dynamic pricing configuration
+  - Credit allocation and management
+  - Subscription management and overrides
+  - Revenue analytics (MRR, ARR, churn, LTV)
+  - User support and refund procedures
+
 ### 🔗 Integration (`integration/`)
 
 - **[OPS_CENTER_INTEGRATION_GUIDE.md](./integration/OPS_CENTER_INTEGRATION_GUIDE.md)** (32 KB, 1,800+ lines)
@@ -105,15 +144,17 @@ Comprehensive documentation for the UC-Cloud Ops-Center platform.
 
 ## Documentation Stats
 
-**Total Documentation**: 206 KB across 8 major guides
+**Total Documentation**: ~230 KB across 13 major guides
 - Architecture: 87 KB (2 guides)
 - Billing: 81 KB (3 guides)
 - Integration: 38 KB (2 guides)
 - Overview: 11 KB (1 guide)
+- User Guides: ~8 KB (2 guides)
+- Admin Guides: ~12 KB (3 guides)
 
-**Lines of Documentation**: ~6,500 lines
-**Code Examples**: Python, Node.js, Curl, SQL
-**Diagrams**: Flow charts, architecture diagrams, decision trees
+**Lines of Documentation**: ~7,500+ lines
+**Code Examples**: Python, Node.js, Curl, SQL, Bash
+**Diagrams**: Flow charts, architecture diagrams, decision trees, ASCII tables
 
 ---
 
@@ -138,7 +179,15 @@ For questions about:
 
 ---
 
-## Recent Additions (November 14, 2025)
+## Recent Additions (February 22, 2026)
+
+New user-facing and admin-facing help documentation:
+- ✅ **User Dashboard Guide** - End-user walkthrough of the personal dashboard
+- ✅ **Admin Dashboard Guide** - System admin infrastructure monitoring reference
+- ✅ **Monitoring Config Guide** - Umami, Grafana, Prometheus configuration
+- ✅ README index updated with new documentation sections
+
+### Previous Additions (November 14, 2025)
 
 All 8 documentation files created during comprehensive audit and consolidation:
 - ✅ Provider key systems audit (3 systems analyzed)
