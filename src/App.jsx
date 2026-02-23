@@ -64,7 +64,6 @@ const NotificationSettings = lazy(() => import('./pages/NotificationSettings'));
 const SubscriptionPlan = lazy(() => import('./pages/subscription/SubscriptionPlan'));
 const SubscriptionUsage = lazy(() => import('./pages/subscription/SubscriptionUsage'));
 const SubscriptionBilling = lazy(() => import('./pages/subscription/SubscriptionBilling'));
-const SubscriptionPayment = lazy(() => import('./pages/subscription/SubscriptionPayment'));
 const PaymentMethods = lazy(() => import('./pages/subscription/PaymentMethods'));
 const SubscriptionUpgrade = lazy(() => import('./pages/subscription/SubscriptionUpgrade'));
 const SubscriptionDowngrade = lazy(() => import('./pages/subscription/SubscriptionDowngrade'));
@@ -160,8 +159,6 @@ const TraefikConfig = lazy(() => import('./pages/TraefikConfig'));
 const UserDashboard = lazy(() => import('./pages/UserDashboard'));
 
 // Credit & Usage pages (lazy loaded)
-// CreditDashboard was removed — billing/credits now uses CreditPurchase
-const CreditDashboard = lazy(() => import('./pages/CreditPurchase'));
 const CreditPurchase = lazy(() => import('./pages/CreditPurchase'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
 const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
@@ -211,7 +208,6 @@ function ProtectedRoute({ children }) {
           localStorage.setItem('authToken', data.token);
           // Use 'userInfo' key to match Layout.jsx
           localStorage.setItem('userInfo', JSON.stringify(data.user));
-          console.log('DEBUG: Stored userInfo:', data.user);
           setAuthenticated(true);
         }
       })
@@ -445,7 +441,7 @@ function AppRoutes() {
                   <Route path="billing/system" element={<BillingDashboard />} />
                   <Route path="billing/user" element={<UserBillingDashboard />} />
                   <Route path="billing/overview" element={<SystemBillingOverview />} />
-                  <Route path="billing/credits" element={<CreditDashboard />} />
+                  <Route path="billing/credits" element={<CreditPurchase />} />
                   <Route path="billing/credits/purchase" element={<CreditPurchase />} />
 
                   {/* AI & Models */}
@@ -507,7 +503,6 @@ function AppRoutes() {
                   <Route path="system/subscription-management" element={<Navigate to="/admin/billing/tiers" replace />} />
                   <Route path="system/app-management" element={<Navigate to="/admin/billing/apps" replace />} />
                   <Route path="system/pricing-management" element={<Navigate to="/admin/billing/pricing" replace />} />
-                  <Route path="platform/white-label" element={<WhiteLabelBuilder />} />
                   {/* Local User Management - consolidated to single route */}
                   <Route path="system/local-users" element={<Navigate to="/admin/infra/local-users" replace />} />
                   <Route path="system/usage-metrics" element={<Navigate to="/admin/monitoring/usage-metrics" replace />} />
@@ -581,7 +576,6 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* APPS LAUNCHER & MARKETPLACE - User-Facing Apps */}
                   {/* ============================================================ */}
-                  <Route path="apps" element={<AppsLauncher />} />
                   <Route path="apps/marketplace" element={<AppMarketplace />} />
                   <Route path="apps/my" element={<MyApps />} />
 

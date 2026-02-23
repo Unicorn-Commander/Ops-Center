@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSystem } from '../../contexts/SystemContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getGlassmorphismStyles } from '../../styles/glassmorphism';
@@ -118,6 +118,7 @@ const getIconForAction = (action) => {
 export default function AdminDashboard() {
   const { systemData, services, fetchSystemStatus, fetchServices } = useSystem();
   const { theme, currentTheme } = useTheme();
+  const navigate = useNavigate();
 
   // State
   const [gpuInfo, setGpuInfo] = useState(null);
@@ -369,16 +370,16 @@ export default function AdminDashboard() {
   const handleQuickAction = (action) => {
     switch(action) {
       case 'view-logs':
-        window.location.href = '/admin/monitoring/logs';
+        navigate('/admin/monitoring/logs');
         break;
       case 'refresh':
         refreshAll();
         break;
       case 'gpu-services':
-        window.location.href = '/admin/system/gpu-services';
+        navigate('/admin/ai/gpu-services');
         break;
       case 'traefik':
-        window.location.href = '/admin/network/traefik-dashboard';
+        navigate('/admin/infra/traefik/dashboard');
         break;
     }
   };

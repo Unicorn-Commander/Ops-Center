@@ -23,8 +23,6 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   ShieldCheckIcon,
-  ServerIcon,
-  SparklesIcon,
   CurrencyDollarIcon,
   LockClosedIcon,
   BoltIcon,
@@ -34,8 +32,7 @@ import {
   InformationCircleIcon,
   ClipboardDocumentIcon,
   CodeBracketIcon,
-  PencilIcon,
-  BeakerIcon
+  PencilIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
 

@@ -128,11 +128,6 @@ export default function Layout({ children }) {
   const userRole = userInfo.role || 'viewer';
   const userOrgRole = userInfo.org_role || null;
 
-  // Debug logging
-  console.log('DEBUG Layout: userInfo from localStorage:', userInfo);
-  console.log('DEBUG Layout: userRole:', userRole);
-  console.log('DEBUG Layout: userOrgRole:', userOrgRole);
-
   // Collapsible section state management - Load from localStorage
   const loadSectionState = () => {
     const saved = localStorage.getItem('navSectionState');
@@ -373,7 +368,7 @@ export default function Layout({ children }) {
 
                   {/* Version */}
                   <div className={`text-xs ${currentTheme === 'unicorn' ? 'text-purple-300/60' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-500'} font-mono`}>
-                    v2.4.0
+                    v2.5.0
                   </div>
                 </>
               )}
