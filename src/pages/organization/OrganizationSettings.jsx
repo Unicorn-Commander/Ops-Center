@@ -80,7 +80,7 @@ export default function OrganizationSettings() {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/org/${currentOrg.id}/settings`);
+      const response = await fetch(`/api/v1/org/${currentOrg.id}/settings`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch settings');
 
       const data = await response.json();
@@ -100,6 +100,7 @@ export default function OrganizationSettings() {
     try {
       const response = await fetch(`/api/v1/org/${currentOrg.id}/settings`, {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
       });

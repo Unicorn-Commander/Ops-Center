@@ -67,7 +67,7 @@ export default function SubscriptionUsage() {
 
   const fetchCurrentUsage = async () => {
     try {
-      const response = await fetch('/api/v1/usage/current');
+      const response = await fetch('/api/v1/usage/current', { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -123,7 +123,7 @@ export default function SubscriptionUsage() {
       const periodMap = { week: 'weekly', month: 'monthly', year: 'monthly' };
       const apiPeriod = periodMap[period] || 'weekly';
 
-      const response = await fetch(`/api/v1/usage/history?period=${apiPeriod}`);
+      const response = await fetch(`/api/v1/usage/history?period=${apiPeriod}`, { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -196,7 +196,7 @@ export default function SubscriptionUsage() {
   const handleExport = async () => {
     try {
       setErrors(prev => ({ ...prev, export: null }));
-      const res = await fetch(`/api/v1/usage/export?period=${period}`);
+      const res = await fetch(`/api/v1/usage/export?period=${period}`, { credentials: 'include' });
 
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);

@@ -79,32 +79,14 @@ export default function AccountSecurity() {
 
   const loadSessions = async () => {
     try {
-      const response = await fetch('/api/v1/auth/sessions');
+      const response = await fetch('/api/v1/auth/sessions', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions || []);
       }
     } catch (error) {
       console.error('Failed to load sessions:', error);
-      // Mock data for demonstration
-      setSessions([
-        {
-          id: 'current',
-          device: 'Current Session',
-          location: 'San Francisco, CA',
-          ip: '192.168.1.1',
-          lastActive: 'Active now',
-          isCurrent: true
-        },
-        {
-          id: '2',
-          device: 'Chrome on Windows',
-          location: 'New York, NY',
-          ip: '192.168.1.2',
-          lastActive: '2 hours ago',
-          isCurrent: false
-        }
-      ]);
+      setSessions([]);
     } finally {
       setLoading(false);
     }
@@ -148,6 +130,7 @@ export default function AccountSecurity() {
     try {
       const response = await fetch('/api/v1/auth/password', {
         method: 'PUT',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -186,7 +169,8 @@ export default function AccountSecurity() {
 
     try {
       const response = await fetch(`/api/v1/auth/sessions/${sessionId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
 
       if (response.ok) {

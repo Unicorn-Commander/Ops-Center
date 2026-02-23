@@ -107,6 +107,7 @@ function AddPaymentMethodForm({ onSuccess, onCancel, theme }) {
       // Attach payment method to customer
       const res = await fetch('/api/v1/billing/payment-methods', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           payment_method_id: paymentMethod.id,
@@ -224,7 +225,7 @@ function SubscriptionPaymentContent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/v1/billing/payment-methods');
+      const res = await fetch('/api/v1/billing/payment-methods', { credentials: 'include' });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -267,7 +268,8 @@ function SubscriptionPaymentContent() {
   const handleSetDefault = async (paymentMethodId) => {
     try {
       const res = await fetch(`/api/v1/billing/payment-methods/${paymentMethodId}/default`, {
-        method: 'POST'
+        method: 'POST',
+        credentials: 'include'
       });
 
       if (!res.ok) {
@@ -289,7 +291,8 @@ function SubscriptionPaymentContent() {
 
     try {
       const res = await fetch(`/api/v1/billing/payment-methods/${paymentMethodId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
 
       if (!res.ok) {
