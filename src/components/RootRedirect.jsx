@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useSystem } from '../contexts/SystemContext';
 import MarketplaceLanding from '../pages/public/MarketplaceLanding';
 import LoadingScreen from './LoadingScreen';
 

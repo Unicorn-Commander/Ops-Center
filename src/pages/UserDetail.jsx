@@ -61,31 +61,6 @@ import {
   PersonOff as PersonOffIcon,
   NavigateNext as NavigateNextIcon,
 } from '@mui/icons-material';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip as ChartTooltip,
-  Legend,
-  Filler,
-} from 'chart.js';
-
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  ChartTooltip,
-  Legend,
-  Filler
-);
-
 const UserDetail = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
