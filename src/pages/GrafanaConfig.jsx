@@ -37,7 +37,7 @@ export default function GrafanaConfig() {
     is_default: false,
   });
 
-  const API_BASE = 'http://localhost:8084/api/v1/monitoring/grafana';
+  const API_BASE = '/api/v1/monitoring/grafana';
 
   // Load health status on mount
   useEffect(() => {

@@ -36,7 +36,7 @@ export default function PrometheusConfig() {
     labels: {}
   });
 
-  const API_BASE = 'http://localhost:8084/api/v1/monitoring/prometheus';
+  const API_BASE = '/api/v1/monitoring/prometheus';
 
   // Load health status on mount
   useEffect(() => {

@@ -248,6 +248,7 @@ export default function useColonelWebSocket(sessionId = null) {
     if (sessionId && sessionId !== currentSessionId) {
       setCurrentSessionId(sessionId);
       setMessages([]); // Clear messages for new session
+      streamBuffer.current = '';
       disconnect();
       // Small delay then reconnect
       setTimeout(connect, 100);
