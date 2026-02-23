@@ -95,7 +95,7 @@ export default function TestingLab() {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch('/api/v1/llm/test/templates');
+      const res = await fetch('/api/v1/llm/test/templates', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load templates');
       const data = await res.json();
       setTemplates(data);
@@ -109,7 +109,7 @@ export default function TestingLab() {
 
   const fetchModels = async () => {
     try {
-      const res = await fetch('/api/v1/llm/models?limit=100');
+      const res = await fetch('/api/v1/llm/models?limit=100', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load models');
       const data = await res.json();
 
@@ -142,7 +142,7 @@ export default function TestingLab() {
   const fetchHistory = async () => {
     setLoadingHistory(true);
     try {
-      const res = await fetch('/api/v1/llm/test/history?limit=10');
+      const res = await fetch('/api/v1/llm/test/history?limit=10', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load history');
       const data = await res.json();
       setHistory(data.tests || []);

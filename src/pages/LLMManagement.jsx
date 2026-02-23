@@ -58,6 +58,7 @@ export default function LLMManagement({ showSnackbar }) {
     setLoading(true);
     try {
       const response = await fetch('/api/v1/llm/providers', {
+        credentials: 'include',
         headers: { 'X-Admin-Token': localStorage.getItem('adminToken') || '' }
       });
       if (!response.ok) throw new Error('Failed to fetch providers');
@@ -75,9 +76,11 @@ export default function LLMManagement({ showSnackbar }) {
     try {
       const [usageRes, costsRes] = await Promise.all([
         fetch('/api/v1/llm/usage?period=7d', {
+          credentials: 'include',
           headers: { 'X-Admin-Token': localStorage.getItem('adminToken') || '' }
         }),
         fetch('/api/v1/llm/costs?period=30d', {
+          credentials: 'include',
           headers: { 'X-Admin-Token': localStorage.getItem('adminToken') || '' }
         })
       ]);
@@ -101,6 +104,7 @@ export default function LLMManagement({ showSnackbar }) {
   const fetchCacheStats = async () => {
     try {
       const response = await fetch('/api/v1/llm/cache-stats', {
+        credentials: 'include',
         headers: { 'X-Admin-Token': localStorage.getItem('adminToken') || '' }
       });
       if (response.ok) {
@@ -115,6 +119,7 @@ export default function LLMManagement({ showSnackbar }) {
   const handleClearCache = async () => {
     try {
       const response = await fetch('/api/v1/llm/cache/clear', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'X-Admin-Token': localStorage.getItem('adminToken') || '' }
       });
@@ -131,6 +136,7 @@ export default function LLMManagement({ showSnackbar }) {
     try {
       showSnackbar('Testing provider...', 'info');
       const response = await fetch(`/api/v1/llm/providers/${provider.provider_id}/test`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'X-Admin-Token': localStorage.getItem('adminToken') || '' }
       });

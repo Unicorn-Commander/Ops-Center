@@ -18,7 +18,7 @@ export default function PublicStatusPage() {
 
   const fetchStatus = async () => {
     try {
-      const response = await fetch('/api/v1/website-monitor/public-status');
+      const response = await fetch('/api/v1/website-monitor/public-status', { credentials: 'include' });
       if (!response.ok) {
         throw new Error('Failed to fetch status');
       }

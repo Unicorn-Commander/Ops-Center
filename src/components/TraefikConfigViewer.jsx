@@ -53,6 +53,7 @@ const TraefikConfigViewer = ({ open, onClose }) => {
     setLoading(true);
     try {
       const response = await fetch('/api/v1/traefik/config', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -73,6 +74,7 @@ const TraefikConfigViewer = ({ open, onClose }) => {
   const loadBackups = async () => {
     try {
       const response = await fetch('/api/v1/traefik/config/backups', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -106,6 +108,7 @@ const TraefikConfigViewer = ({ open, onClose }) => {
 
     try {
       const response = await fetch(`/api/v1/traefik/config/restore/${selectedBackup.id}`, {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`

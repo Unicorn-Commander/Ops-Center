@@ -47,7 +47,7 @@ const UmamiDashboard = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/v1/umami/dashboard?period=${period}`);
+      const response = await fetch(`/api/v1/umami/dashboard?period=${period}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch analytics');
       const data = await response.json();
       setDashboardData(data);
@@ -61,9 +61,9 @@ const UmamiDashboard = () => {
   const fetchWebsiteDetails = async (websiteId) => {
     try {
       const [statsRes, pageviewsRes, metricsRes] = await Promise.all([
-        fetch(`/api/v1/umami/websites/${websiteId}/stats?period=${period}`),
-        fetch(`/api/v1/umami/websites/${websiteId}/pageviews?period=${period}`),
-        fetch(`/api/v1/umami/websites/${websiteId}/metrics?metric_type=url&period=${period}`)
+        fetch(`/api/v1/umami/websites/${websiteId}/stats?period=${period}`, { credentials: 'include' }),
+        fetch(`/api/v1/umami/websites/${websiteId}/pageviews?period=${period}`, { credentials: 'include' }),
+        fetch(`/api/v1/umami/websites/${websiteId}/metrics?metric_type=url&period=${period}`, { credentials: 'include' })
       ]);
 
       const stats = await statsRes.json();

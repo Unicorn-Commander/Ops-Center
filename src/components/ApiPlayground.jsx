@@ -36,6 +36,7 @@ const ApiPlayground = () => {
 
       const options = {
         method,
+        credentials: 'include',
         headers: headersObj
       };
 

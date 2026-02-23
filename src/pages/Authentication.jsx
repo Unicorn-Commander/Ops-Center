@@ -35,7 +35,7 @@ const Authentication = () => {
 
   const fetchKeycloakStatus = async () => {
     try {
-      const response = await fetch('/api/v1/system/keycloak/status');
+      const response = await fetch('/api/v1/system/keycloak/status', { credentials: 'include' });
       const data = await response.json();
       setKeycloakStatus(data);
     } catch (error) {
@@ -45,7 +45,7 @@ const Authentication = () => {
 
   const fetchOAuthClients = async () => {
     try {
-      const response = await fetch('/api/v1/system/keycloak/clients');
+      const response = await fetch('/api/v1/system/keycloak/clients', { credentials: 'include' });
       const data = await response.json();
       setOauthClients(data.clients || []);
     } catch (error) {
@@ -55,7 +55,7 @@ const Authentication = () => {
 
   const fetchAPICredentials = async () => {
     try {
-      const response = await fetch('/api/v1/system/keycloak/api-credentials');
+      const response = await fetch('/api/v1/system/keycloak/api-credentials', { credentials: 'include' });
       const data = await response.json();
       setApiCredentials(data);
     } catch (error) {
@@ -65,7 +65,7 @@ const Authentication = () => {
 
   const fetchSessionConfig = async () => {
     try {
-      const response = await fetch('/api/v1/system/keycloak/session-config');
+      const response = await fetch('/api/v1/system/keycloak/session-config', { credentials: 'include' });
       const data = await response.json();
       setSessionConfig(data);
     } catch (error) {
@@ -75,7 +75,7 @@ const Authentication = () => {
 
   const fetchSSLStatus = async () => {
     try {
-      const response = await fetch('/api/v1/system/keycloak/ssl-status');
+      const response = await fetch('/api/v1/system/keycloak/ssl-status', { credentials: 'include' });
       const data = await response.json();
       setSslStatus(data);
     } catch (error) {
@@ -85,7 +85,7 @@ const Authentication = () => {
 
   const fetchServices = async () => {
     try {
-      const response = await fetch('/api/v1/services');
+      const response = await fetch('/api/v1/services', { credentials: 'include' });
       const data = await response.json();
       setServices(data);
     } catch (error) {
@@ -97,6 +97,7 @@ const Authentication = () => {
     setTestingConnection(true);
     try {
       const response = await fetch('/api/v1/system/keycloak/test-connection', {
+        credentials: 'include',
         method: 'POST'
       });
       const result = await response.json();

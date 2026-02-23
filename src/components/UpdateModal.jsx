@@ -34,7 +34,7 @@ const UpdateModal = ({ isOpen, onClose, theme }) => {
 
   const fetchUpdateStatus = async () => {
     try {
-      const response = await fetch('/api/v1/updates/status');
+      const response = await fetch('/api/v1/updates/status', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setUpdateStatus(data);
@@ -46,7 +46,7 @@ const UpdateModal = ({ isOpen, onClose, theme }) => {
 
   const fetchChangelog = async () => {
     try {
-      const response = await fetch('/api/v1/updates/changelog?limit=5');
+      const response = await fetch('/api/v1/updates/changelog?limit=5', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setChangelog(data.changelog || []);
@@ -62,6 +62,7 @@ const UpdateModal = ({ isOpen, onClose, theme }) => {
       setUpdateResult(null);
       
       const response = await fetch('/api/v1/updates/check', {
+        credentials: 'include',
         method: 'POST'
       });
       
@@ -100,6 +101,7 @@ const UpdateModal = ({ isOpen, onClose, theme }) => {
       setUpdateResult(null);
       
       const response = await fetch(`/api/v1/updates/apply?backup_first=${backupEnabled}`, {
+        credentials: 'include',
         method: 'POST'
       });
       

@@ -74,7 +74,7 @@ const LocalUserManagement = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/v1/admin/system/local-users');
+      const response = await fetch('/api/v1/admin/system/local-users', { credentials: 'include' });
       const data = await response.json();
 
       if (data.success) {
@@ -101,7 +101,7 @@ const LocalUserManagement = () => {
 
   const fetchGroups = async () => {
     try {
-      const response = await fetch('/api/v1/admin/system/local-users/groups');
+      const response = await fetch('/api/v1/admin/system/local-users/groups', { credentials: 'include' });
       const data = await response.json();
       if (data.success) {
         setAvailableGroups(data.groups || []);
@@ -113,7 +113,7 @@ const LocalUserManagement = () => {
 
   const fetchUserSSHKeys = async (username) => {
     try {
-      const response = await fetch(`/api/v1/admin/system/local-users/${username}/ssh-keys`);
+      const response = await fetch(`/api/v1/admin/system/local-users/${username}/ssh-keys`, { credentials: 'include' });
       const data = await response.json();
       if (data.success) {
         setUserSSHKeys(data.keys || []);
@@ -204,6 +204,7 @@ const LocalUserManagement = () => {
 
     try {
       const response = await fetch('/api/v1/admin/system/local-users', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser),
@@ -226,6 +227,7 @@ const LocalUserManagement = () => {
   const handleDeleteUser = async (username) => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${username}`, {
+        credentials: 'include',
         method: 'DELETE',
       });
 
@@ -244,6 +246,7 @@ const LocalUserManagement = () => {
   const handleToggleSudo = async (username, currentHasSudo) => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${username}/sudo`, {
+        credentials: 'include',
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_sudo: !currentHasSudo }),
@@ -277,6 +280,7 @@ const LocalUserManagement = () => {
 
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${selectedUser.username}/ssh-keys`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: newSSHKey }),
@@ -298,6 +302,7 @@ const LocalUserManagement = () => {
   const handleDeleteSSHKey = async (keyId) => {
     try {
       const response = await fetch(`/api/v1/admin/system/local-users/${selectedUser.username}/ssh-keys/${keyId}`, {
+        credentials: 'include',
         method: 'DELETE',
       });
 

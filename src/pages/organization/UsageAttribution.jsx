@@ -119,6 +119,7 @@ export default function UsageAttribution() {
       }
 
       const response = await fetch(url, {
+        credentials: 'include',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
       });
 

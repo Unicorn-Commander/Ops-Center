@@ -27,6 +27,7 @@ export default function AdminBilling({ showSnackbar }) {
   const fetchConfig = async () => {
     try {
       const response = await fetch('/api/v1/billing/config', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -45,7 +46,7 @@ export default function AdminBilling({ showSnackbar }) {
 
   const checkServicesStatus = async () => {
     try {
-      const response = await fetch('/api/v1/billing/services/status');
+      const response = await fetch('/api/v1/billing/services/status', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setServicesStatus(data);
@@ -58,6 +59,7 @@ export default function AdminBilling({ showSnackbar }) {
   const saveConfig = async () => {
     try {
       const response = await fetch('/api/v1/billing/config', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,6 +122,7 @@ export default function AdminBilling({ showSnackbar }) {
     try {
       if (type === 'provider-key') {
         const response = await fetch('/api/v1/billing/config/provider-keys', {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -141,6 +144,7 @@ export default function AdminBilling({ showSnackbar }) {
         }
 
         const response = await fetch('/api/v1/billing/config/subscription-tiers', {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -153,6 +157,7 @@ export default function AdminBilling({ showSnackbar }) {
         showSnackbar('Subscription tier saved successfully');
       } else if (type === 'stripe') {
         const response = await fetch('/api/v1/billing/config/stripe', {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -175,6 +180,7 @@ export default function AdminBilling({ showSnackbar }) {
   const deleteProviderKey = async (provider) => {
     try {
       const response = await fetch(`/api/v1/billing/config/provider-keys/${provider}`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''

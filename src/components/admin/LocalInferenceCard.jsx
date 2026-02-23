@@ -233,8 +233,8 @@ export default function LocalInferenceCard({
 
       // Fetch module status and providers in parallel
       const [statusRes, providersRes] = await Promise.allSettled([
-        fetch('/api/v1/local-inference/status'),
-        fetch('/api/v1/local-inference/providers')
+        fetch('/api/v1/local-inference/status', { credentials: 'include' }),
+        fetch('/api/v1/local-inference/providers', { credentials: 'include' })
       ]);
 
       // Handle status response

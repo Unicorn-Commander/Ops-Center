@@ -56,9 +56,11 @@ export default function SystemBillingOverview() {
       // Load system-wide billing data
       const [systemRes, orgsRes] = await Promise.all([
         fetch('/api/v1/org-billing/billing/system', {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch('/api/v1/organizations', {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         })
       ]);

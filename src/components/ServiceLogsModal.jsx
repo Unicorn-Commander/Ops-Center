@@ -35,7 +35,7 @@ export default function ServiceLogsModal({ service, onClose }) {
     const fetchLogs = async () => {
       try {
         // In a real implementation, this would be an API call
-        const response = await fetch(`/api/v1/services/${service.name}/logs?lines=${maxLines}`);
+        const response = await fetch(`/api/v1/services/${service.name}/logs?lines=${maxLines}`, { credentials: 'include' });
         if (response.ok) {
           const logData = await response.json();
           setLogs(logData.logs || []);

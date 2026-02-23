@@ -99,6 +99,7 @@ export function SystemProvider({ children }) {
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       
       const response = await fetch('/api/v1/system/status', {
+        credentials: 'include',
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -124,6 +125,7 @@ export function SystemProvider({ children }) {
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       
       const response = await fetch('/api/v1/services', {
+        credentials: 'include',
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -140,7 +142,7 @@ export function SystemProvider({ children }) {
 
   const fetchModels = async () => {
     try {
-      const response = await fetch('/api/v1/models/installed');
+      const response = await fetch('/api/v1/models/installed', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       
@@ -192,6 +194,7 @@ export function SystemProvider({ children }) {
   const controlService = async (containerName, action) => {
     try {
       const response = await fetch(`/api/v1/services/${containerName}/action`, {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

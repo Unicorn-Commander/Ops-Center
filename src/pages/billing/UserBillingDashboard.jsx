@@ -49,6 +49,7 @@ export default function UserBillingDashboard() {
       setError(null);
 
       const response = await fetch('/api/v1/org-billing/billing/user', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -124,6 +125,7 @@ export default function UserBillingDashboard() {
   const loadOrgUsageBreakdown = async (orgId) => {
     try {
       const response = await fetch(`/api/v1/org-billing/credits/${orgId}/usage`, {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }

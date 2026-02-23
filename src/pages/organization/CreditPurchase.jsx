@@ -97,6 +97,7 @@ export default function CreditPurchase() {
   const loadCreditPool = async () => {
     try {
       const response = await fetch(`/api/v1/org-billing/credits/${currentOrg.id}`, {
+        credentials: 'include',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
       });
 
@@ -153,6 +154,7 @@ export default function CreditPurchase() {
       const response = await fetch(
         `/api/v1/org-billing/credits/${currentOrg.id}/add?credits=${credits}&purchase_amount=${price}`,
         {
+          credentials: 'include',
           method: 'POST',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }

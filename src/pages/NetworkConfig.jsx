@@ -164,7 +164,7 @@ export default function NetworkConfig() {
   const fetchNetworkConfig = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/v1/system/network');
+      const response = await fetch('/api/v1/system/network', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch network configuration');
       const data = await response.json();
       setNetworkConfig(data);
@@ -194,6 +194,7 @@ export default function NetworkConfig() {
 
     try {
       const response = await fetch('/api/v1/system/network/test', {
+        credentials: 'include',
         method: 'POST'
       });
 
@@ -242,6 +243,7 @@ export default function NetworkConfig() {
       };
 
       const response = await fetch('/api/v1/system/network', {
+        credentials: 'include',
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

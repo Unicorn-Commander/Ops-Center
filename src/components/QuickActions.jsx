@@ -106,6 +106,7 @@ export default function QuickActions({ systemStatus, services }) {
           const criticalServices = ['vllm', 'open-webui'];
           for (const serviceName of criticalServices) {
             await fetch(`/api/v1/services/${serviceName}/action`, {
+              credentials: 'include',
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ action: 'restart' })
@@ -121,6 +122,7 @@ export default function QuickActions({ systemStatus, services }) {
           
           for (const serviceName of nonCriticalServices) {
             await fetch(`/api/v1/services/${serviceName}/action`, {
+              credentials: 'include',
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ action: 'stop' })
@@ -133,6 +135,7 @@ export default function QuickActions({ systemStatus, services }) {
           for (const service of services) {
             if (service.status !== 'healthy') {
               await fetch(`/api/v1/services/${service.name}/action`, {
+                credentials: 'include',
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'start' })

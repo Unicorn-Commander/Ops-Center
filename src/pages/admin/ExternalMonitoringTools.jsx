@@ -38,7 +38,7 @@ export default function ExternalMonitoringTools() {
 
     // Check Grafana
     try {
-      const res = await fetch('/api/v1/monitoring/grafana/health');
+      const res = await fetch('/api/v1/monitoring/grafana/health', { credentials: 'include' });
       checks.grafana = res.ok ? 'connected' : 'unreachable';
     } catch {
       checks.grafana = 'not_configured';
@@ -46,7 +46,7 @@ export default function ExternalMonitoringTools() {
 
     // Check Prometheus
     try {
-      const res = await fetch('/api/v1/monitoring/prometheus/health');
+      const res = await fetch('/api/v1/monitoring/prometheus/health', { credentials: 'include' });
       checks.prometheus = res.ok ? 'connected' : 'unreachable';
     } catch {
       checks.prometheus = 'not_configured';
@@ -54,7 +54,7 @@ export default function ExternalMonitoringTools() {
 
     // Check Umami
     try {
-      const res = await fetch('/api/v1/monitoring/umami/health');
+      const res = await fetch('/api/v1/monitoring/umami/health', { credentials: 'include' });
       checks.umami = res.ok ? 'connected' : 'unreachable';
     } catch {
       checks.umami = 'not_configured';

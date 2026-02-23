@@ -8,7 +8,7 @@ export default function LandingAppShowcase() {
 
   useEffect(() => {
     // Fetch apps from API
-    fetch('/api/v1/apps/list')
+    fetch('/api/v1/apps/list', { credentials: 'include' })
       .then(res => res.json())
       .then(data => setApps(data.apps || []))
       .catch(err => console.error('Failed to load apps:', err));

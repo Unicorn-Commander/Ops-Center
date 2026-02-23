@@ -86,6 +86,7 @@ const TraefikRouteEditor = ({ open, onClose, route, onSave }) => {
   const loadServices = async () => {
     try {
       const response = await fetch('/api/v1/traefik/services', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }

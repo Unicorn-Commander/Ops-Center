@@ -26,6 +26,7 @@ const useSystemSettings = () => {
     try {
       const token = getAuthToken();
       const response = await fetch('/api/v1/admin/settings', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -69,6 +70,7 @@ const useSystemSettings = () => {
     try {
       const token = getAuthToken();
       const response = await fetch('/api/v1/admin/settings/categories', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -95,6 +97,7 @@ const useSystemSettings = () => {
     try {
       const token = getAuthToken();
       const response = await fetch(`/api/v1/admin/settings/${key}`, {
+        credentials: 'include',
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -140,6 +143,7 @@ const useSystemSettings = () => {
     try {
       const token = getAuthToken();
       const response = await fetch('/api/v1/admin/settings/bulk-update', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

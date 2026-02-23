@@ -35,12 +35,15 @@ export default function CreditDashboard() {
 
       const [balanceRes, usageRes, accountRes] = await Promise.all([
         fetch('/api/v1/credits/balance', {
+          credentials: 'include',
           headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch('/api/v1/credits/usage/summary', {
+          credentials: 'include',
           headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch('/api/v1/credits/openrouter/account', {
+          credentials: 'include',
           headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
         })
       ]);

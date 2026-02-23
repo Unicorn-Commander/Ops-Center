@@ -89,6 +89,7 @@ const TraefikRoutes = () => {
     try {
       // NEW: Fetch REAL live routes from Docker labels
       const response = await fetch('/api/v1/traefik/live/routes', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -129,6 +130,7 @@ const TraefikRoutes = () => {
 
     try {
       const response = await fetch(`/api/v1/traefik/routes/${routeId}`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -166,6 +168,7 @@ const TraefikRoutes = () => {
   const handleTest = async (routeId) => {
     try {
       const response = await fetch(`/api/v1/traefik/routes/${routeId}/test`, {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -232,6 +235,7 @@ const TraefikRoutes = () => {
       const method = routeData.id ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
+        credentials: 'include',
         method,
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,

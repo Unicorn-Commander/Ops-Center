@@ -74,7 +74,7 @@ export default function AccountNotifications() {
 
   const loadNotificationSettings = async () => {
     try {
-      const response = await fetch('/api/v1/auth/session');
+      const response = await fetch('/api/v1/auth/session', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         if (data.user && data.user.notifications) {
@@ -102,6 +102,7 @@ export default function AccountNotifications() {
 
     try {
       const response = await fetch('/api/v1/auth/notifications', {
+        credentials: 'include',
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'

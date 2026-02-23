@@ -62,7 +62,7 @@ export default function ServiceConfigModal({ service, onClose, onSave }) {
     const loadConfig = async () => {
       try {
         // In a real implementation, this would fetch from API
-        const response = await fetch(`/api/v1/services/${service.name}/config`);
+        const response = await fetch(`/api/v1/services/${service.name}/config`, { credentials: 'include' });
         if (response.ok) {
           const configData = await response.json();
           setConfig(configData);

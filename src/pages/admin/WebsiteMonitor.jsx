@@ -92,7 +92,7 @@ const WebsiteMonitor = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/v1/website-monitor/websites');
+      const response = await fetch('/api/v1/website-monitor/websites', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch websites');
       const data = await response.json();
       setWebsites(data.websites || []);
@@ -107,6 +107,7 @@ const WebsiteMonitor = () => {
     setChecking(true);
     try {
       const response = await fetch('/api/v1/website-monitor/check-all', {
+        credentials: 'include',
         method: 'POST'
       });
       if (!response.ok) throw new Error('Failed to check websites');
@@ -121,6 +122,7 @@ const WebsiteMonitor = () => {
   const checkSingleWebsite = async (websiteId) => {
     try {
       const response = await fetch(`/api/v1/website-monitor/websites/${websiteId}/check`, {
+        credentials: 'include',
         method: 'POST'
       });
       if (!response.ok) throw new Error('Failed to check website');
@@ -133,6 +135,7 @@ const WebsiteMonitor = () => {
   const addWebsite = async () => {
     try {
       const response = await fetch('/api/v1/website-monitor/websites', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -149,6 +152,7 @@ const WebsiteMonitor = () => {
   const updateWebsite = async () => {
     try {
       const response = await fetch(`/api/v1/website-monitor/websites/${selectedWebsite.id}`, {
+        credentials: 'include',
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -166,6 +170,7 @@ const WebsiteMonitor = () => {
     if (!window.confirm('Are you sure you want to delete this website?')) return;
     try {
       const response = await fetch(`/api/v1/website-monitor/websites/${websiteId}`, {
+        credentials: 'include',
         method: 'DELETE'
       });
       if (!response.ok) throw new Error('Failed to delete website');
@@ -178,7 +183,7 @@ const WebsiteMonitor = () => {
   const fetchHistory = async (websiteId) => {
     setHistoryLoading(true);
     try {
-      const response = await fetch(`/api/v1/website-monitor/websites/${websiteId}/history?limit=50`);
+      const response = await fetch(`/api/v1/website-monitor/websites/${websiteId}/history?limit=50`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch history');
       const data = await response.json();
       setWebsiteHistory(data.checks || []);
@@ -204,7 +209,7 @@ const WebsiteMonitor = () => {
   const discoverWebsites = async () => {
     setDiscovering(true);
     try {
-      const response = await fetch('/api/v1/website-monitor/discover');
+      const response = await fetch('/api/v1/website-monitor/discover', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to discover websites');
       const data = await response.json();
       setDiscoveredSites(data.discovered || []);
@@ -234,6 +239,7 @@ const WebsiteMonitor = () => {
         }));
 
       const response = await fetch('/api/v1/website-monitor/bulk-add', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(websitesToAdd)

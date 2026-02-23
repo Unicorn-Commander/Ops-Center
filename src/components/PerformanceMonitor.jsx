@@ -78,6 +78,7 @@ const PerformanceMonitor = () => {
     const fetchApiMetrics = async () => {
       try {
         const response = await fetch('/api/v1/analytics/performance', {
+          credentials: 'include',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
           }

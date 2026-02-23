@@ -75,6 +75,7 @@ const TraefikMetrics = () => {
     setLoading(true);
     try {
       const response = await fetch(`/api/v1/traefik/metrics?range=${timeRange}`, {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -110,6 +111,7 @@ const TraefikMetrics = () => {
   const handleExport = async () => {
     try {
       const response = await fetch(`/api/v1/traefik/metrics/export?range=${timeRange}`, {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }

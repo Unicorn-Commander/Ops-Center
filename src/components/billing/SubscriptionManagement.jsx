@@ -53,6 +53,7 @@ export default function SubscriptionManagement({
     try {
       // Fetch subscription details
       const subResponse = await fetch('/api/v1/billing/subscription', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -64,6 +65,7 @@ export default function SubscriptionManagement({
 
       // Fetch usage stats
       const usageResponse = await fetch('/api/v1/billing/account/usage', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -75,6 +77,7 @@ export default function SubscriptionManagement({
 
       // Fetch invoices
       const invoiceResponse = await fetch('/api/v1/billing/invoices', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -86,6 +89,7 @@ export default function SubscriptionManagement({
 
       // Fetch payment method
       const paymentResponse = await fetch('/api/v1/billing/payment-method', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -105,6 +109,7 @@ export default function SubscriptionManagement({
   const handleCancelSubscription = async () => {
     try {
       const response = await fetch('/api/v1/billing/subscription/cancel', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
@@ -125,6 +130,7 @@ export default function SubscriptionManagement({
   const handleUpdatePaymentMethod = async () => {
     try {
       const response = await fetch('/api/v1/billing/payment-method/update', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''

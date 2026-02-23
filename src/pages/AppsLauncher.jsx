@@ -53,7 +53,7 @@ const AppsLauncher = () => {
   const fetchApps = async () => {
     try {
       // NEW API: tier-filtered apps the user has access to
-      const response = await fetch('/api/v1/my-apps/authorized');
+      const response = await fetch('/api/v1/my-apps/authorized', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch apps');
 
       const data = await response.json();

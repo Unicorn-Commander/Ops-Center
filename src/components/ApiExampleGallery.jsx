@@ -40,6 +40,7 @@ const ApiExampleGallery = () => {
           curl: `curl -X GET https://unicorncommander.ai/api/v1/admin/users \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/admin/users', {
+  credentials: 'include',
   headers: {
     'Authorization': \`Bearer \${token}\`
   }
@@ -74,6 +75,7 @@ print(f"Found {len(users)} users")`
     "subscription_tier": "starter"
   }'`,
           javascript: `const newUser = await fetch('/api/v1/admin/users/comprehensive', {
+  credentials: 'include',
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${token}\`,
@@ -124,6 +126,7 @@ user = response.json()`
 });
 
 const response = await fetch(\`/api/v1/admin/users?\${params}\`, {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const users = await response.json();`,
@@ -152,6 +155,7 @@ users = response.json()`
           curl: `curl -X GET https://unicorncommander.ai/api/v1/organizations \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/organizations', {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const orgs = await response.json();`,
@@ -176,6 +180,7 @@ orgs = response.json()`
     "description": "Enterprise customer"
   }'`,
           javascript: `const org = await fetch('/api/v1/organizations', {
+  credentials: 'include',
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${token}\`,
@@ -211,6 +216,7 @@ orgs = response.json()`
           curl: `curl -X GET https://unicorncommander.ai/api/v1/billing/plans \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/billing/plans', {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const plans = await response.json();
@@ -234,6 +240,7 @@ for plan in plans:
           curl: `curl -X GET https://unicorncommander.ai/api/v1/billing/subscriptions/current \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/billing/subscriptions/current', {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const subscription = await response.json();
@@ -267,6 +274,7 @@ print(f"Status: {subscription['status']}")`
     "temperature": 0.7
   }'`,
           javascript: `const result = await fetch('/api/v1/llm/chat/completions', {
+  credentials: 'include',
   method: 'POST',
   headers: {
     'Authorization': \`Bearer \${token}\`,
@@ -310,6 +318,7 @@ print(result['choices'][0]['message']['content'])`
           curl: `curl -X GET https://unicorncommander.ai/api/v1/llm/models \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/llm/models', {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const models = await response.json();
@@ -335,6 +344,7 @@ for model in models['data']:
           curl: `curl -X GET https://unicorncommander.ai/api/v1/system/status \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/system/status', {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const status = await response.json();
@@ -357,6 +367,7 @@ print(f"Memory: {status['memory_percent']}%")`
           curl: `curl -X GET https://unicorncommander.ai/api/v1/admin/users/analytics/summary \\
   -H "Authorization: Bearer REMOVED"`,
           javascript: `const response = await fetch('/api/v1/admin/users/analytics/summary', {
+  credentials: 'include',
   headers: { 'Authorization': \`Bearer \${token}\` }
 });
 const analytics = await response.json();

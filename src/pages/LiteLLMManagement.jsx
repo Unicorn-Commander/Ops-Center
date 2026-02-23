@@ -207,6 +207,7 @@ const AddProviderModal = ({ isOpen, onClose, onAdd, theme }) => {
     setTestResult(null);
     try {
       const response = await fetch('/api/v1/llm/test', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -533,6 +534,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, providers: null }));
       const response = await fetch('/api/v1/llm/providers', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -565,6 +567,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, statistics: null }));
       const response = await fetch('/api/v1/llm/usage', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -600,6 +603,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, usage: null }));
       const response = await fetch(`/api/v1/llm/usage?period=${timeRange}`, {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -656,6 +660,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, addProvider: null }));
       const response = await fetch('/api/v1/llm/providers', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -681,6 +686,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, testProvider: null }));
       const response = await fetch(`/api/v1/llm/providers/${provider.id}/test`, {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -708,6 +714,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, deleteProvider: null }));
       const response = await fetch(`/api/v1/llm/providers/${provider.id}`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -732,6 +739,7 @@ export default function LiteLLMManagement() {
     try {
       setErrors(prev => ({ ...prev, updateStrategy: null }));
       const response = await fetch('/api/v1/llm/routing/rules', {
+        credentials: 'include',
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

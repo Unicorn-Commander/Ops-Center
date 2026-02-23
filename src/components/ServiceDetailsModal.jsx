@@ -11,7 +11,7 @@ export default function ServiceDetailsModal({ service, isOpen, onClose, onViewLo
     
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/services/${service.container_name}/stats`);
+      const response = await fetch(`/api/v1/services/${service.container_name}/stats`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setStats(data.stats);

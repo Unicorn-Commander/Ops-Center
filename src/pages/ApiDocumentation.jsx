@@ -41,7 +41,7 @@ const ApiDocumentation = () => {
 
   const handleDownloadSpec = async () => {
     try {
-      const response = await fetch('/api/v1/docs/openapi.json');
+      const response = await fetch('/api/v1/docs/openapi.json', { credentials: 'include' });
       const spec = await response.json();
 
       const blob = new Blob([JSON.stringify(spec, null, 2)], {

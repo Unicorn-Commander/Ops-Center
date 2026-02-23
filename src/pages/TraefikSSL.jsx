@@ -79,6 +79,7 @@ const TraefikSSL = () => {
   const loadCertificates = async () => {
     try {
       const response = await fetch('/api/v1/traefik/certificates', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -118,6 +119,7 @@ const TraefikSSL = () => {
     const attemptRenew = async (attempt = 0) => {
       try {
         const response = await fetch(`/api/v1/traefik/certificates/${certId}/renew`, {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -165,6 +167,7 @@ const TraefikSSL = () => {
     const attemptRenewAll = async (attempt = 0) => {
       try {
         const response = await fetch('/api/v1/traefik/certificates/renew', {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`

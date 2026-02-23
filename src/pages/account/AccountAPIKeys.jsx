@@ -608,6 +608,7 @@ const API_KEY = "${apiKey}";
 
 // Example: Chat completion
 fetch(\`\${BASE_URL}/v1/chat/completions\`, {
+  credentials: 'include',
   method: "POST",
   headers: {
     "Authorization": \`Bearer \${API_KEY}\`,

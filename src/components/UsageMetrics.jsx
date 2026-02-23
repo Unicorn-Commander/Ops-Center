@@ -49,6 +49,7 @@ export default function UsageMetrics() {
       setError(null);
 
       const response = await fetch(`/api/v1/credits/usage/metrics?range=${timeRange}`, {
+        credentials: 'include',
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
       });
 

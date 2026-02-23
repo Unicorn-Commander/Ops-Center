@@ -118,7 +118,7 @@ export default function NameCheapSettings() {
     setError(null);
 
     try {
-      const response = await fetch('https://api.ipify.org?format=json');
+      const response = await fetch('https://api.ipify.org?format=json', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to detect IP');
 
       const data = await response.json();

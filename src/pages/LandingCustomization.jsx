@@ -17,7 +17,7 @@ const LandingCustomization = () => {
 
   const loadConfiguration = async () => {
     try {
-      const response = await fetch('/api/v1/landing/config');
+      const response = await fetch('/api/v1/landing/config', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setConfig(data);
@@ -32,7 +32,7 @@ const LandingCustomization = () => {
 
   const loadThemes = async () => {
     try {
-      const response = await fetch('/api/v1/landing/themes');
+      const response = await fetch('/api/v1/landing/themes', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setThemes(data);
@@ -46,6 +46,7 @@ const LandingCustomization = () => {
     setSaving(true);
     try {
       const response = await fetch('/api/v1/landing/config', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -69,6 +70,7 @@ const LandingCustomization = () => {
   const applyThemePreset = async (preset) => {
     try {
       const response = await fetch(`/api/v1/landing/theme/${preset}`, {
+        credentials: 'include',
         method: 'POST'
       });
       
@@ -154,6 +156,7 @@ const LandingCustomization = () => {
     if (window.confirm('Are you sure you want to reset to default configuration? This cannot be undone.')) {
       try {
         const response = await fetch('/api/v1/landing/reset', {
+          credentials: 'include',
           method: 'POST'
         });
         

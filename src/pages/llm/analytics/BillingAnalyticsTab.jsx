@@ -55,7 +55,7 @@ const BillingAnalyticsTab = ({ dateRange, setDateRange }) => {
   const fetchBillingAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/billing/analytics/summary?range=' + dateRange);
+      const response = await fetch('/api/v1/billing/analytics/summary?range=' + dateRange, { credentials: 'include' });
       const data = await response.json();
 
       setBillingMetrics({

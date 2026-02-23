@@ -225,7 +225,7 @@ function AIModelManagementCore() {
 
         searchUrl += '&limit=100';
 
-        const response = await fetch(searchUrl);
+        const response = await fetch(searchUrl, { credentials: 'include' });
 
         if (response.ok) {
           let data = await response.json();

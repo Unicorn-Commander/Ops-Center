@@ -115,7 +115,7 @@ export default function Logs() {
 
   const loadLogSources = async () => {
     try {
-      const response = await fetch('/api/v1/logs/sources');
+      const response = await fetch('/api/v1/logs/sources', { credentials: 'include' });
       const data = await response.json();
       setLogSources(data.sources || []);
       
@@ -147,6 +147,7 @@ export default function Logs() {
       }
       
       const response = await fetch('/api/v1/logs/search', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(filters)
@@ -265,6 +266,7 @@ export default function Logs() {
       }
 
       const response = await fetch('/api/v1/logs/export', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filters, format: 'json' })
@@ -304,6 +306,7 @@ export default function Logs() {
       };
 
       const response = await fetch('/api/v1/logs/search/advanced', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(searchRequest)

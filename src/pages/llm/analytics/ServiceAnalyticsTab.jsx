@@ -55,8 +55,8 @@ const ServiceAnalyticsTab = ({ dateRange, setDateRange }) => {
   const fetchServiceAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/services/analytics?range=' + dateRange);
-      const statusResponse = await fetch('/api/v1/system/status');
+      const response = await fetch('/api/v1/services/analytics?range=' + dateRange, { credentials: 'include' });
+      const statusResponse = await fetch('/api/v1/system/status', { credentials: 'include' });
 
       const data = await response.json();
       const statusData = await statusResponse.json();

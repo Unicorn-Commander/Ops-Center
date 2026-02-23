@@ -33,7 +33,7 @@ const OpenRouterSettings = () => {
   const fetchProvider = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/llm/providers');
+      const response = await fetch('/api/v1/llm/providers', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch providers');
 
       const data = await response.json();
@@ -61,6 +61,7 @@ const OpenRouterSettings = () => {
     setSaving(true);
     try {
       const response = await fetch(`/api/v1/llm/providers/${provider.id}`, {
+        credentials: 'include',
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,6 +94,7 @@ const OpenRouterSettings = () => {
 
     try {
       const response = await fetch('/api/v1/llm/chat/completions', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

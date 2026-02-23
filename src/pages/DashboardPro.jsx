@@ -244,7 +244,7 @@ export default function DashboardPro() {
   
   const fetchHardwareInfo = async () => {
     try {
-      const response = await fetch('/api/v1/system/hardware');
+      const response = await fetch('/api/v1/system/hardware', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch hardware info');
       const data = await response.json();
       setHardwareInfo(data);

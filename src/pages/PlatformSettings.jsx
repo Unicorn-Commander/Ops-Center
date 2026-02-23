@@ -74,6 +74,7 @@ const PlatformSettings = () => {
 
     try {
       const response = await fetch('/api/v1/platform/settings', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -120,6 +121,7 @@ const PlatformSettings = () => {
 
     try {
       const response = await fetch('/api/v1/platform/settings', {
+        credentials: 'include',
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -174,6 +176,7 @@ const PlatformSettings = () => {
     try {
       const response = await fetch('/api/v1/platform/settings/test', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -212,6 +215,7 @@ const PlatformSettings = () => {
 
     try {
       const response = await fetch('/api/v1/platform/settings/restart', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`

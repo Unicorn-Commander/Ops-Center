@@ -47,6 +47,7 @@ export default function ModelRegistry({ showSnackbar }) {
 
     try {
       const response = await fetch('/api/v1/llm/models', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -92,6 +93,7 @@ export default function ModelRegistry({ showSnackbar }) {
   const handleAddModel = async (modelData) => {
     try {
       const response = await fetch('/api/v1/llm/models', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,6 +122,7 @@ export default function ModelRegistry({ showSnackbar }) {
 
     try {
       const response = await fetch(`/api/v1/llm/models/${model.model_id}`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
@@ -139,6 +142,7 @@ export default function ModelRegistry({ showSnackbar }) {
 
   const handleTestModel = async (modelId, prompt) => {
     const response = await fetch(`/api/v1/llm/models/${modelId}/test`, {
+      credentials: 'include',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

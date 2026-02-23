@@ -58,7 +58,7 @@ const ApiEndpointList = ({ onEndpointSelect, selectedEndpoint }) => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/v1/docs/endpoints');
+      const response = await fetch('/api/v1/docs/endpoints', { credentials: 'include' });
 
       if (!response.ok) {
         throw new Error('Failed to load endpoints');

@@ -87,6 +87,7 @@ const TraefikServices = () => {
   const loadServices = async () => {
     try {
       const response = await fetch('/api/v1/traefik/services', {
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
@@ -123,6 +124,7 @@ const TraefikServices = () => {
     setLoading(true);
     try {
       const response = await fetch('/api/v1/traefik/services/discover', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -168,6 +170,7 @@ const TraefikServices = () => {
       const method = editingService ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
+        credentials: 'include',
         method,
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -211,6 +214,7 @@ const TraefikServices = () => {
 
     try {
       const response = await fetch(`/api/v1/traefik/services/${serviceId}`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`

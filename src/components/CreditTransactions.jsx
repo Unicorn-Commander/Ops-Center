@@ -38,6 +38,7 @@ export default function CreditTransactions() {
       });
 
       const response = await fetch(`/api/v1/credits/transactions?${params}`, {
+        credentials: 'include',
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
       });
 

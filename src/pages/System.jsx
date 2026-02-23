@@ -350,7 +350,7 @@ export default function System() {
 
   const fetchHardwareInfo = async () => {
     try {
-      const response = await fetch('/api/v1/system/hardware');
+      const response = await fetch('/api/v1/system/hardware', { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -377,7 +377,7 @@ export default function System() {
 
   const fetchDiskIo = async () => {
     try {
-      const response = await fetch('/api/v1/system/disk-io');
+      const response = await fetch('/api/v1/system/disk-io', { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -404,7 +404,7 @@ export default function System() {
 
   const fetchNetworkStats = async () => {
     try {
-      const response = await fetch('/api/v1/network/status');
+      const response = await fetch('/api/v1/network/status', { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -480,6 +480,7 @@ export default function System() {
   const handleKillProcess = async (pid) => {
     try {
       const response = await fetch(`/api/v1/system/process/${pid}`, {
+        credentials: 'include',
         method: 'DELETE'
       });
 
@@ -504,6 +505,7 @@ export default function System() {
   const handleClearCache = async () => {
     try {
       const response = await fetch('/api/v1/system/cache', {
+        credentials: 'include',
         method: 'DELETE'
       });
 

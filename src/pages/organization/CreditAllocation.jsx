@@ -88,12 +88,15 @@ export default function CreditAllocation() {
 
       const [membersRes, allocationsRes, poolRes] = await Promise.all([
         fetch(`/api/v1/org/org/${currentOrg.id}/members`, {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch(`/api/v1/org-billing/credits/${currentOrg.id}/allocations`, {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch(`/api/v1/org-billing/credits/${currentOrg.id}`, {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         })
       ]);
@@ -142,6 +145,7 @@ export default function CreditAllocation() {
       const response = await fetch(
         `/api/v1/org-billing/credits/${currentOrg.id}/allocate`,
         {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -176,6 +180,7 @@ export default function CreditAllocation() {
       const response = await fetch(
         `/api/v1/org-billing/credits/${currentOrg.id}/allocate`,
         {
+          credentials: 'include',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -206,6 +211,7 @@ export default function CreditAllocation() {
         return fetch(
           `/api/v1/org-billing/credits/${currentOrg.id}/allocate`,
           {
+            credentials: 'include',
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

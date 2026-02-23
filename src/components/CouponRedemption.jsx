@@ -21,6 +21,7 @@ export default function CouponRedemption({ onSuccess }) {
       setResult(null);
 
       const response = await fetch('/api/v1/credits/coupons/redeem', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

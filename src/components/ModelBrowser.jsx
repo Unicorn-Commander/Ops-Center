@@ -41,7 +41,7 @@ const ModelBrowser = () => {
       if (maxCost) params.append('max_cost', maxCost);
       if (minContext) params.append('min_context', minContext);
 
-      const response = await fetch(`/api/v1/llm/models?${params}`);
+      const response = await fetch(`/api/v1/llm/models?${params}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch models');
 
       const data = await response.json();
@@ -59,6 +59,7 @@ const ModelBrowser = () => {
     setTesting(modelName);
     try {
       const response = await fetch('/api/v1/llm/chat/completions', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

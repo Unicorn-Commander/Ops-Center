@@ -25,7 +25,7 @@ export const DeploymentProvider = ({ children }) => {
 
   const fetchDeploymentConfig = async () => {
     try {
-      const response = await fetch('/api/v1/deployment/config');
+      const response = await fetch('/api/v1/deployment/config', { credentials: 'include' });
       if (response.ok) {
         const config = await response.json();
         setDeployment({

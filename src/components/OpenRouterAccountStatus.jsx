@@ -21,6 +21,7 @@ export default function OpenRouterAccountStatus({ account, onRefresh }) {
       setSuccess(null);
 
       const response = await fetch('/api/v1/credits/openrouter/sync', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('authToken')}`
@@ -52,6 +53,7 @@ export default function OpenRouterAccountStatus({ account, onRefresh }) {
       setSuccess(null);
 
       const response = await fetch('/api/v1/credits/openrouter/create', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('authToken')}`
@@ -88,6 +90,7 @@ export default function OpenRouterAccountStatus({ account, onRefresh }) {
       setDeleteDialogOpen(false);
 
       const response = await fetch('/api/v1/credits/openrouter/delete', {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('authToken')}`

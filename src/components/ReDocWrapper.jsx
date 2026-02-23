@@ -26,7 +26,7 @@ const ReDocWrapper = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/v1/docs/openapi.json');
+      const response = await fetch('/api/v1/docs/openapi.json', { credentials: 'include' });
 
       if (!response.ok) {
         throw new Error(`Failed to load API spec: ${response.statusText}`);

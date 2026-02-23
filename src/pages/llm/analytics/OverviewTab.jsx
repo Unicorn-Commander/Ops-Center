@@ -34,10 +34,10 @@ const OverviewTab = ({ dateRange, setDateRange }) => {
     try {
       // Fetch from multiple endpoints in parallel
       const [usersRes, billingRes, servicesRes, analyticsRes] = await Promise.all([
-        fetch('/api/v1/admin/users/analytics/summary'),
-        fetch('/api/v1/billing/analytics/summary'),
-        fetch('/api/v1/services/status'),
-        fetch('/api/v1/analytics/usage/overview?range=' + dateRange)
+        fetch('/api/v1/admin/users/analytics/summary', { credentials: 'include' }),
+        fetch('/api/v1/billing/analytics/summary', { credentials: 'include' }),
+        fetch('/api/v1/services/status', { credentials: 'include' }),
+        fetch('/api/v1/analytics/usage/overview?range=' + dateRange, { credentials: 'include' })
       ]);
 
       const usersData = await usersRes.json();

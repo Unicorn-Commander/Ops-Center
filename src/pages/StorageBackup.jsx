@@ -80,7 +80,7 @@ export default function StorageBackup() {
   const loadStorageData = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/storage/info');
+      const response = await fetch('/api/v1/storage/info', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch storage data');
       const data = await response.json();
       setStorageData(data);
@@ -100,7 +100,7 @@ export default function StorageBackup() {
 
   const loadBackupData = async () => {
     try {
-      const response = await fetch('/api/v1/backups');
+      const response = await fetch('/api/v1/backups', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch backup data');
       const data = await response.json();
       setBackupData(data);
@@ -124,7 +124,7 @@ export default function StorageBackup() {
 
   const loadCloudConfig = async () => {
     try {
-      const response = await fetch('/api/v1/backups/cloud-config');
+      const response = await fetch('/api/v1/backups/cloud-config', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setCloudConfig(data);
@@ -143,6 +143,7 @@ export default function StorageBackup() {
   const handleCreateBackup = async () => {
     try {
       const response = await fetch('/api/v1/backups/create', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ backup_type: 'manual' }),
@@ -165,6 +166,7 @@ export default function StorageBackup() {
   const handleRestoreBackup = async (backupId, options) => {
     try {
       const response = await fetch(`/api/v1/backups/${backupId}/restore`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(options),
@@ -188,6 +190,7 @@ export default function StorageBackup() {
 
     try {
       const response = await fetch(`/api/v1/backups/${backupId}`, {
+        credentials: 'include',
         method: 'DELETE',
       });
 
@@ -207,6 +210,7 @@ export default function StorageBackup() {
   const handleSaveBackupConfig = async (config) => {
     try {
       const response = await fetch('/api/v1/backups/config', {
+        credentials: 'include',
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -230,6 +234,7 @@ export default function StorageBackup() {
   const handleSaveCloudConfig = async (config) => {
     try {
       const response = await fetch('/api/v1/backups/cloud-config', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -250,6 +255,7 @@ export default function StorageBackup() {
   const handleTestCloudConnection = async (config) => {
     try {
       const response = await fetch('/api/v1/backups/cloud-config/test', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -265,6 +271,7 @@ export default function StorageBackup() {
   const handleVerifyBackup = async (backupId) => {
     try {
       const response = await fetch(`/api/v1/backups/${backupId}/verify`, {
+        credentials: 'include',
         method: 'POST',
       });
 
@@ -284,6 +291,7 @@ export default function StorageBackup() {
   const handleCleanup = async (items) => {
     try {
       const response = await fetch('/api/v1/storage/cleanup', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),

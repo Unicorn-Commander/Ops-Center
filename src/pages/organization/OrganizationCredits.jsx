@@ -94,6 +94,7 @@ export default function OrganizationCredits() {
       setError(null);
 
       const response = await fetch(`/api/v1/org-billing/credits/${currentOrg.id}`, {
+        credentials: 'include',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
       });
 

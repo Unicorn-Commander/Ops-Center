@@ -47,7 +47,7 @@ const AppMarketplace = () => {
 
   const fetchMarketplaceApps = async () => {
     try {
-      const response = await fetch('/api/v1/my-apps/marketplace');
+      const response = await fetch('/api/v1/my-apps/marketplace', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch marketplace apps');
 
       const data = await response.json();

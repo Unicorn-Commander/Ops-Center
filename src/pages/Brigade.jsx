@@ -18,7 +18,7 @@ export default function Brigade() {
 
   const fetchUsage = async () => {
     try {
-      const response = await fetch('/api/v1/brigade/usage');
+      const response = await fetch('/api/v1/brigade/usage', { credentials: 'include' });
       const data = await response.json();
       setUsage(data);
     } catch (error) {
@@ -28,7 +28,7 @@ export default function Brigade() {
 
   const fetchTaskHistory = async () => {
     try {
-      const response = await fetch('/api/v1/brigade/tasks/history');
+      const response = await fetch('/api/v1/brigade/tasks/history', { credentials: 'include' });
       const data = await response.json();
       setTaskHistory(data.tasks || []);
     } catch (error) {

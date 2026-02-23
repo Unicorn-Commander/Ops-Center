@@ -29,6 +29,7 @@ export default function UserAccount({ showSnackbar, userInfo, refreshUserInfo })
     try {
       setLoadingUsage(true);
       const response = await fetch('/api/v1/billing/account/usage', {
+        credentials: 'include',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
         }
@@ -47,7 +48,7 @@ export default function UserAccount({ showSnackbar, userInfo, refreshUserInfo })
 
   const fetchSubscriptionTiers = async () => {
     try {
-      const response = await fetch('/api/v1/billing/config/subscription-tiers');
+      const response = await fetch('/api/v1/billing/config/subscription-tiers', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setSubscriptionTiers(data);
@@ -67,6 +68,7 @@ export default function UserAccount({ showSnackbar, userInfo, refreshUserInfo })
   const handleSaveKey = async () => {
     try {
       const response = await fetch('/api/v1/billing/account/byok-keys', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,6 +90,7 @@ export default function UserAccount({ showSnackbar, userInfo, refreshUserInfo })
   const handleDeleteKey = async (provider) => {
     try {
       const response = await fetch(`/api/v1/billing/account/byok-keys/${provider}`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: {
           'X-Admin-Token': localStorage.getItem('adminToken') || ''
@@ -113,6 +116,7 @@ export default function UserAccount({ showSnackbar, userInfo, refreshUserInfo })
   const handleUpgrade = async (tier) => {
     try {
       const response = await fetch('/api/v1/billing/account/subscription', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

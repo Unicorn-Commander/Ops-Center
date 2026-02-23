@@ -72,12 +72,15 @@ export default function OrganizationBillingPro() {
       // Load all data in parallel
       const [billingRes, allocationsRes, usageRes] = await Promise.all([
         fetch(`/api/v1/org-billing/billing/org/${currentOrg.id}`, {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch(`/api/v1/org-billing/credits/${currentOrg.id}/allocations`, {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch(`/api/v1/org-billing/credits/${currentOrg.id}/usage`, {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         })
       ]);
@@ -140,6 +143,7 @@ export default function OrganizationBillingPro() {
   const handleAddCredits = async (amount, purchaseAmount) => {
     try {
       const response = await fetch(`/api/v1/org-billing/credits/${currentOrg.id}/add?credits=${amount}&purchase_amount=${purchaseAmount}`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
       });
@@ -157,6 +161,7 @@ export default function OrganizationBillingPro() {
   const handleAllocateCredits = async (userId, credits, resetPeriod, notes) => {
     try {
       const response = await fetch(`/api/v1/org-billing/credits/${currentOrg.id}/allocate`, {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

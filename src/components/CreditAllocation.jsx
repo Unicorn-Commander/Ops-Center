@@ -35,6 +35,7 @@ export default function CreditAllocation() {
     try {
       setLoading(true);
       const response = await fetch(`/api/v1/admin/users?search=${encodeURIComponent(query)}&limit=10`, {
+        credentials: 'include',
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
       });
 
@@ -62,6 +63,7 @@ export default function CreditAllocation() {
       setSuccess(null);
 
       const response = await fetch('/api/v1/admin/credits/allocate', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,6 +109,7 @@ export default function CreditAllocation() {
       setSuccess(null);
 
       const response = await fetch('/api/v1/admin/credits/bulk-allocate', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -150,6 +153,7 @@ export default function CreditAllocation() {
       setSuccess(null);
 
       const response = await fetch('/api/v1/admin/credits/refund', {
+        credentials: 'include',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -186,6 +190,7 @@ export default function CreditAllocation() {
   const loadHistory = async () => {
     try {
       const response = await fetch('/api/v1/admin/credits/history?limit=50', {
+        credentials: 'include',
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` }
       });
 

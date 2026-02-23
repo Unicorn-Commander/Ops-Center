@@ -43,7 +43,7 @@ export default function RootRedirect() {
 
       // Check for OAuth session
       try {
-        const response = await fetch('/api/v1/auth/session');
+        const response = await fetch('/api/v1/auth/session', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           if (data.authenticated) {
@@ -59,7 +59,7 @@ export default function RootRedirect() {
       // User is NOT authenticated - fetch landing page mode
       // Note: System settings endpoint may not exist, default to direct_sso
       try {
-        const response = await fetch('/api/v1/system/settings');
+        const response = await fetch('/api/v1/system/settings', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           setLandingMode(data.landing_page_mode || 'direct_sso');

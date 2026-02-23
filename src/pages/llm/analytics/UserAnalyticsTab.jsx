@@ -58,7 +58,7 @@ const UserAnalyticsTab = ({ dateRange, setDateRange }) => {
   const fetchUserAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/admin/users/analytics/summary?range=' + dateRange);
+      const response = await fetch('/api/v1/admin/users/analytics/summary?range=' + dateRange, { credentials: 'include' });
       const data = await response.json();
 
       setUserMetrics({

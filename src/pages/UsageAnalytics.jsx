@@ -161,14 +161,14 @@ const UsageAnalytics = () => {
         performanceRes,
         quotasRes
       ] = await Promise.all([
-        fetch(`${baseUrl}/overview?${params}`),
-        fetch(`${baseUrl}/patterns?${params}`),
-        fetch(`${baseUrl}/by-user?${params}`),
-        fetch(`${baseUrl}/by-service?${params}`),
-        fetch(`${baseUrl}/costs?${params}`),
-        fetch(`${baseUrl}/optimization?${params}`),
-        fetch(`${baseUrl}/performance?${params}`),
-        fetch(`${baseUrl}/quotas?${params}`)
+        fetch(`${baseUrl}/overview?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/patterns?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/by-user?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/by-service?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/costs?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/optimization?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/performance?${params}`, { credentials: 'include' }),
+        fetch(`${baseUrl}/quotas?${params}`, { credentials: 'include' })
       ]);
 
       // Parse responses

@@ -87,7 +87,7 @@ export default function SubscriptionManagement() {
   const loadPlans = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/subscriptions/plans');
+      const response = await fetch('/api/v1/subscriptions/plans', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setPlans(data);
@@ -177,6 +177,7 @@ export default function SubscriptionManagement() {
       const method = modalMode === 'create' ? 'POST' : 'PUT';
 
       const response = await fetch(url, {
+        credentials: 'include',
         method,
         headers: {
           'Content-Type': 'application/json'
@@ -204,6 +205,7 @@ export default function SubscriptionManagement() {
 
     try {
       const response = await fetch(`/api/v1/subscriptions/plans/${planToDelete.id}`, {
+        credentials: 'include',
         method: 'DELETE'
       });
 

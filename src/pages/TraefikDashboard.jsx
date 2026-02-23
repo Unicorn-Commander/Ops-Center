@@ -69,12 +69,15 @@ const TraefikDashboard = () => {
       // NEW: Fetch REAL live data from Docker labels
       const [overviewResponse, routesResponse, servicesResponse] = await Promise.all([
         fetch('/api/v1/traefik/live/overview', {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch('/api/v1/traefik/live/routes', {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         }),
         fetch('/api/v1/traefik/live/services', {
+          credentials: 'include',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         })
       ]);
