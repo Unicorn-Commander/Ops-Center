@@ -32,7 +32,7 @@ export default function GrafanaViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const API_BASE = 'http://localhost:8084/api/v1/monitoring/grafana';
+  const API_BASE = '/api/v1/monitoring/grafana';
   const GRAFANA_URL = 'http://localhost:3102';
 
   useEffect(() => {

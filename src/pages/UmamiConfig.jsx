@@ -38,7 +38,7 @@ export default function UmamiConfig() {
   const [selectedWebsite, setSelectedWebsite] = useState(null);
   const [websiteStats, setWebsiteStats] = useState(null);
 
-  const API_BASE = 'http://localhost:8084/api/v1/monitoring/umami';
+  const API_BASE = '/api/v1/monitoring/umami';
 
   // Load health status on mount
   useEffect(() => {
@@ -335,11 +335,11 @@ export default function UmamiConfig() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <div className="text-gray-400 text-sm">Visitors</div>
-                  <div className="text-white text-2xl font-bold">{websiteStats.pageviews?.value || 0}</div>
+                  <div className="text-white text-2xl font-bold">{websiteStats.uniques?.value || 0}</div>
                 </div>
                 <div>
                   <div className="text-gray-400 text-sm">Page Views</div>
-                  <div className="text-white text-2xl font-bold">{websiteStats.uniques?.value || 0}</div>
+                  <div className="text-white text-2xl font-bold">{websiteStats.pageviews?.value || 0}</div>
                 </div>
                 <div>
                   <div className="text-gray-400 text-sm">Bounce Rate</div>
