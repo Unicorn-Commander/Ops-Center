@@ -38,6 +38,14 @@ export default function PrometheusConfig() {
 
   const API_BASE = '/api/v1/monitoring/prometheus';
 
+  // Load saved config from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('ops-prometheus-config');
+    if (saved) {
+      try { setConfig(prev => ({ ...prev, ...JSON.parse(saved) })); } catch {}
+    }
+  }, []);
+
   // Load health status on mount
   useEffect(() => {
     checkHealth();
@@ -125,7 +133,8 @@ export default function PrometheusConfig() {
   };
 
   const handleSave = () => {
-    setSuccess('Configuration saved successfully');
+    localStorage.setItem('ops-prometheus-config', JSON.stringify(config));
+    setSuccess('Configuration saved to local storage');
     checkHealth();
   };
 

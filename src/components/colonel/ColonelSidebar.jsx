@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import * as colonelApi from '../../services/colonelApi';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -47,13 +48,8 @@ export default function ColonelSidebar({
     }
     try {
       setMemoryLoading(true);
-      const res = await fetch(`/api/v1/colonel/memory/search?q=${encodeURIComponent(memoryQuery)}&limit=10`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setMemoryResults(data.results || []);
-      }
+      const data = await colonelApi.searchMemory(memoryQuery, 10);
+      setMemoryResults(data.results || []);
     } catch {
       // ignore
     } finally {
@@ -94,8 +90,7 @@ export default function ColonelSidebar({
 
   // Load dynamic quick actions based on skills
   useEffect(() => {
-    fetch('/api/v1/colonel/skills', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
+    colonelApi.getSkills()
       .then(data => {
         if (data?.skills) {
           const enabled = data.skills.filter(s => s.enabled);

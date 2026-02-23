@@ -39,6 +39,14 @@ export default function GrafanaConfig() {
 
   const API_BASE = '/api/v1/monitoring/grafana';
 
+  // Load saved config from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('ops-grafana-config');
+    if (saved) {
+      try { setConfig(prev => ({ ...prev, ...JSON.parse(saved) })); } catch {}
+    }
+  }, []);
+
   // Load health status on mount
   useEffect(() => {
     checkHealth();
@@ -150,7 +158,8 @@ export default function GrafanaConfig() {
   };
 
   const handleSave = () => {
-    setSuccess('Configuration saved successfully');
+    localStorage.setItem('ops-grafana-config', JSON.stringify(config));
+    setSuccess('Configuration saved to local storage');
     checkHealth();
   };
 

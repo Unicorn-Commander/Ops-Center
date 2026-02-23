@@ -232,7 +232,7 @@ export default function AccountAPIKeys() {
         'OpenAI-compatible API',
         'Perfect for multi-server deployments'
       ],
-      getKeyUrl: 'https://unicorncommander.ai/admin/account/api-keys',
+      getKeyUrl: `${window.location.origin}/admin/account/api-keys`,
       keyFormat: 'uc_sk_...',
       description: 'Unicorn Commander API (this platform or remote instance)'
     },

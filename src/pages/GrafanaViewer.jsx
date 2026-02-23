@@ -35,6 +35,24 @@ export default function GrafanaViewer() {
   const API_BASE = '/api/v1/monitoring/grafana';
   const GRAFANA_URL = 'http://localhost:3102';
 
+  // Load saved viewer preferences from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('ops-grafana-viewer-prefs');
+    if (saved) {
+      try {
+        const prefs = JSON.parse(saved);
+        if (prefs.theme) setTheme(prefs.theme);
+        if (prefs.refreshInterval !== undefined) setRefreshInterval(prefs.refreshInterval);
+        if (prefs.timeRange) setTimeRange(prefs.timeRange);
+      } catch {}
+    }
+  }, []);
+
+  // Persist viewer preferences to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('ops-grafana-viewer-prefs', JSON.stringify({ theme, refreshInterval, timeRange }));
+  }, [theme, refreshInterval, timeRange]);
+
   useEffect(() => {
     loadDashboards();
   }, []);
