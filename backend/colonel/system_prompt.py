@@ -75,6 +75,65 @@ def _get_gpu_info() -> Optional[str]:
     return None
 
 
+def _get_project_context() -> Optional[str]:
+    """Read CLAUDE.md files from known project roots to inject codebase context."""
+    claude_md_paths = [
+        "/home/muut/UC-Cloud-production/CLAUDE.md",
+        "/home/muut/UC-Cloud-production/services/ops-center/CLAUDE.md",
+    ]
+    sections = []
+    for path in claude_md_paths:
+        try:
+            import pathlib
+            p = pathlib.Path(path)
+            if p.exists():
+                content = p.read_text(encoding="utf-8", errors="replace")
+                # Truncate each file to first 3000 chars to keep prompt manageable
+                if len(content) > 3000:
+                    content = content[:3000] + "\n... (truncated)"
+                label = str(p.parent.name) + "/" + p.name
+                sections.append(f"### {label}\n{content}")
+        except Exception:
+            continue
+
+    if not sections:
+        return None
+    return "\n\n".join(sections)
+
+
+def _get_codebase_structure() -> Optional[str]:
+    """Get a high-level view of the UC-Cloud codebase structure."""
+    try:
+        import pathlib
+        root = pathlib.Path("/home/muut/UC-Cloud-production")
+        if not root.exists():
+            return None
+
+        lines = ["UC-Cloud-production/"]
+        # Show top-level entries
+        for entry in sorted(root.iterdir()):
+            if entry.name.startswith(".") and entry.name not in (".gitmodules",):
+                continue
+            if entry.is_dir():
+                lines.append(f"  {entry.name}/")
+                # Show one level deeper for key directories
+                if entry.name in ("services", "extensions", "config", "scripts", "docs"):
+                    try:
+                        for sub in sorted(entry.iterdir()):
+                            if sub.name.startswith("."):
+                                continue
+                            suffix = "/" if sub.is_dir() else ""
+                            lines.append(f"    {sub.name}{suffix}")
+                    except PermissionError:
+                        pass
+            else:
+                lines.append(f"  {entry.name}")
+
+        return "\n".join(lines[:60])  # Cap at 60 lines
+    except Exception:
+        return None
+
+
 def _get_docker_context() -> str:
     """Get running Docker containers summary."""
     try:
@@ -140,7 +199,10 @@ def build_system_prompt(
         f"Current time: {now} UTC.",
         "",
         "## Mission",
-        "Manage and administer this server, assist with development, and keep services healthy.",
+        "You are a full-stack development assistant AND server administrator.",
+        "You can read, write, edit, and search files anywhere on the server.",
+        "You can use git for version control, run bash commands, manage Docker, and query databases.",
+        "You have Claude Code-like capabilities through your tools — use them proactively.",
         f"Current mission focus: {config.mission}.",
         "",
         "## Communication Style",
@@ -183,12 +245,36 @@ def build_system_prompt(
         "- Forgejo Git Server",
     ]
 
+    # Project context from CLAUDE.md files
+    project_ctx = _get_project_context()
+    if project_ctx:
+        prompt_parts.extend([
+            "",
+            "## Project Context (from CLAUDE.md)",
+            "Key facts about this server's codebase and configuration:",
+            project_ctx,
+        ])
+
+    # Codebase structure
+    codebase = _get_codebase_structure()
+    if codebase:
+        prompt_parts.extend([
+            "",
+            "## Codebase Structure",
+            codebase,
+        ])
+
     if skill_descriptions:
         prompt_parts.extend([
             "",
             "## Available Skills",
-            "You have tools available. Use them to answer questions about the server, containers, and services.",
-            "When the user asks about system status, containers, logs, etc., call the appropriate tool rather than guessing.",
+            "You have tools available. Use them proactively:",
+            "- For questions about files, code, or projects → use file-operations (read_file, list_directory, search_content, edit_file, write_file)",
+            "- For git operations → use git-operations (status, diff, log, commit, branch, push)",
+            "- For system/server questions → use system-status, docker-management, service-health",
+            "- For bash commands → use bash-execution (with persistent working directory per session)",
+            "- Always read files before editing them. Use search_content to find relevant code.",
+            "- Use edit_file for surgical changes, write_file only for new files.",
             skill_descriptions,
         ])
 

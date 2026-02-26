@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
+from typing import Optional, Dict
 from pathlib import Path
 
 import docker
@@ -173,15 +173,44 @@ async def docker_manage_container(container_name: str, action: str) -> str:
 
 # ─── Bash Execution ─────────────────────────────────────────────────────
 
-async def bash_execute(command: str, timeout: int = 30) -> str:
-    """Execute a bash command with safety validation."""
+# ─── Persistent Working Directory ─────────────────────────────────────
+# Keyed by session_id → cwd path. Updated when 'cd' is detected in commands.
+_session_cwd: Dict[str, str] = {}
+
+DEFAULT_CWD = "/home/muut/UC-Cloud-production"
+
+
+def get_session_cwd(session_id: str = None) -> str:
+    """Get the current working directory for a session."""
+    if session_id and session_id in _session_cwd:
+        cwd = _session_cwd[session_id]
+        # Verify the directory still exists
+        if Path(cwd).is_dir():
+            return cwd
+    return DEFAULT_CWD
+
+
+def set_session_cwd(session_id: str, cwd: str):
+    """Set the working directory for a session."""
+    if session_id and Path(cwd).is_dir():
+        _session_cwd[session_id] = cwd
+
+
+async def bash_execute(command: str, timeout: int = 30, session_id: str = None) -> str:
+    """Execute a bash command with safety validation and persistent working directory."""
     allowed, reason = validate_command(command)
     if not allowed:
         return f"Blocked: {reason}"
 
+    cwd = get_session_cwd(session_id)
+
     try:
+        # Wrap command to capture the final CWD after execution
+        # This allows 'cd' commands to persist across calls
+        wrapped = f'cd "{cwd}" 2>/dev/null; {command}; echo "___CWD___:$(pwd)"'
+
         process = await asyncio.create_subprocess_shell(
-            command,
+            wrapped,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -192,6 +221,15 @@ async def bash_execute(command: str, timeout: int = 30) -> str:
             return f"Command timed out after {timeout}s"
 
         output = stdout.decode("utf-8", errors="replace")
+
+        # Extract and save the final CWD
+        if "___CWD___:" in output:
+            parts = output.rsplit("___CWD___:", 1)
+            output = parts[0]
+            new_cwd = parts[1].strip()
+            if new_cwd and session_id:
+                set_session_cwd(session_id, new_cwd)
+
         if stderr:
             err = stderr.decode("utf-8", errors="replace")
             if err.strip():
@@ -638,6 +676,363 @@ async def litellm_generate_master_key() -> str:
 # ─── Keycloak Helper ──────────────────────────────────────────────────
 
 import os
+import re as _re
+import fnmatch as _fnmatch
+
+
+# ─── File Operations ─────────────────────────────────────────────────────
+
+# Paths that are always blocked from reading/writing
+_BLOCKED_PATH_PATTERNS = [
+    "/etc/shadow", "/etc/gshadow", "/etc/sudoers",
+    "*.pem", "*.key", "*id_rsa*", "*id_ed25519*",
+]
+_BLOCKED_PATH_CONTAINS = [
+    "/.ssh/", "/acme.json",
+]
+# Filenames that should never be read/written by the Colonel
+_BLOCKED_FILENAMES = [".env", ".env.auth", ".env.billing", ".env.local", ".env.production"]
+
+
+def _validate_file_path(path: str, for_write: bool = False) -> tuple:
+    """Validate a file path for safety. Returns (allowed, reason)."""
+    from pathlib import Path as _P
+    try:
+        resolved = _P(path).resolve()
+        path_str = str(resolved)
+    except Exception as e:
+        return (False, f"Invalid path: {e}")
+
+    # Block path traversal attempts
+    if ".." in path:
+        return (False, "Path traversal (..) not allowed")
+
+    # Block sensitive files
+    for pattern in _BLOCKED_PATH_PATTERNS:
+        if _fnmatch.fnmatch(path_str, pattern) or _fnmatch.fnmatch(resolved.name, pattern):
+            return (False, f"Access denied: matches blocked pattern")
+
+    for segment in _BLOCKED_PATH_CONTAINS:
+        if segment in path_str:
+            return (False, f"Access denied: path contains blocked segment")
+
+    if resolved.name in _BLOCKED_FILENAMES:
+        return (False, f"Access denied: {resolved.name} files contain secrets")
+
+    # For writes, additional restrictions
+    if for_write:
+        # Never write to /etc, /boot, /proc, /sys
+        system_dirs = ["/etc/", "/boot/", "/proc/", "/sys/", "/dev/"]
+        for d in system_dirs:
+            if path_str.startswith(d):
+                return (False, f"Cannot write to system directory: {d}")
+
+    return (True, None)
+
+
+async def file_read(path: str, offset: int = 1, limit: int = 200) -> str:
+    """Read a file and return its contents with line numbers."""
+    allowed, reason = _validate_file_path(path)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    from pathlib import Path as _P
+    target = _P(path)
+
+    if not target.exists():
+        return f"File not found: {path}"
+    if target.is_dir():
+        return f"Path is a directory: {path}. Use list_directory instead."
+    if target.stat().st_size > 2_000_000:  # 2MB limit
+        return f"File too large ({target.stat().st_size:,} bytes). Use offset/limit or read sections."
+
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+        lines = text.split("\n")
+        total = len(lines)
+
+        # Apply offset (1-based) and limit
+        start = max(0, offset - 1)
+        end = start + limit
+        selected = lines[start:end]
+
+        # Format with line numbers
+        numbered = []
+        for i, line in enumerate(selected, start=start + 1):
+            # Truncate very long lines
+            display = line[:500] + "..." if len(line) > 500 else line
+            numbered.append(f"{i:>6}\t{display}")
+
+        header = f"File: {path} ({total} lines total)"
+        if start > 0 or end < total:
+            header += f" [showing lines {start + 1}-{min(end, total)}]"
+
+        return header + "\n" + "\n".join(numbered)
+    except Exception as e:
+        return f"Error reading {path}: {e}"
+
+
+async def file_write(path: str, content: str) -> str:
+    """Write content to a file."""
+    allowed, reason = _validate_file_path(path, for_write=True)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    from pathlib import Path as _P
+    target = _P(path)
+
+    try:
+        # Create parent directories if needed
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return f"Successfully wrote {len(content):,} chars to {path}"
+    except Exception as e:
+        return f"Error writing {path}: {e}"
+
+
+async def file_edit(path: str, old_text: str, new_text: str) -> str:
+    """Edit a file by exact string replacement."""
+    allowed, reason = _validate_file_path(path, for_write=True)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    from pathlib import Path as _P
+    target = _P(path)
+
+    if not target.exists():
+        return f"File not found: {path}"
+
+    try:
+        content = target.read_text(encoding="utf-8")
+        count = content.count(old_text)
+
+        if count == 0:
+            return f"old_text not found in {path}. Make sure the text matches exactly (including whitespace and indentation)."
+        if count > 1:
+            return f"old_text found {count} times in {path}. Provide more surrounding context to make it unique."
+
+        new_content = content.replace(old_text, new_text, 1)
+        target.write_text(new_content, encoding="utf-8")
+        return f"Successfully edited {path}. Replaced {len(old_text)} chars with {len(new_text)} chars."
+    except Exception as e:
+        return f"Error editing {path}: {e}"
+
+
+async def file_list_directory(path: str, pattern: str = None) -> str:
+    """List directory contents or find files matching a glob pattern."""
+    from pathlib import Path as _P
+    import glob as _glob_mod
+
+    # Check if the path itself is a glob pattern
+    if any(c in path for c in ["*", "?", "["]):
+        try:
+            matches = sorted(_glob_mod.glob(path, recursive=True))
+            if not matches:
+                return f"No files matching pattern: {path}"
+            lines = []
+            for m in matches[:200]:  # cap at 200 results
+                p = _P(m)
+                suffix = "/" if p.is_dir() else f"  ({p.stat().st_size:,} bytes)"
+                lines.append(f"  {m}{suffix}")
+            result = f"Found {len(matches)} matches"
+            if len(matches) > 200:
+                result += f" (showing first 200)"
+            return result + ":\n" + "\n".join(lines)
+        except Exception as e:
+            return f"Error with glob pattern: {e}"
+
+    target = _P(path)
+    if not target.exists():
+        return f"Path not found: {path}"
+    if not target.is_dir():
+        return f"Not a directory: {path}. Use read_file to read file contents."
+
+    try:
+        if pattern:
+            matches = sorted(target.glob(pattern))
+        else:
+            matches = sorted(target.iterdir())
+
+        if not matches:
+            if pattern:
+                return f"No files matching '{pattern}' in {path}"
+            return f"Directory is empty: {path}"
+
+        lines = []
+        for entry in matches[:200]:
+            rel = str(entry.relative_to(target)) if not pattern or "**" not in pattern else str(entry)
+            if entry.is_dir():
+                lines.append(f"  {rel}/")
+            else:
+                size = entry.stat().st_size
+                lines.append(f"  {rel}  ({size:,} bytes)")
+
+        header = f"Directory: {path}"
+        if pattern:
+            header += f" (pattern: {pattern})"
+        header += f"\n{len(matches)} entries"
+        if len(matches) > 200:
+            header += " (showing first 200)"
+        return header + ":\n" + "\n".join(lines)
+    except Exception as e:
+        return f"Error listing {path}: {e}"
+
+
+async def file_search_content(pattern: str, path: str, file_pattern: str = None, max_results: int = 50) -> str:
+    """Search file contents using grep. Returns matching lines with file paths and line numbers."""
+    max_r = int(max_results)
+
+    # Use grep (universally available in the container)
+    cmd_parts = ["grep", "-rn", "--color=never", f"-m {max_r}"]
+    if file_pattern:
+        cmd_parts.append(f"--include='{file_pattern}'")
+    # Escape single quotes in pattern for shell safety
+    safe_pattern = pattern.replace("'", "'\\''")
+    cmd_parts.append(f"'{safe_pattern}'")
+    cmd_parts.append(f"'{path}'")
+
+    cmd = " ".join(cmd_parts)
+    result = await bash_execute(cmd, timeout=15)
+
+    if not result.strip() or result == "(no output)":
+        return f"No matches for pattern '{pattern}' in {path}"
+
+    # Count matches
+    lines = [l for l in result.strip().split("\n") if l.strip()]
+    header = f"Found {len(lines)} matches for '{pattern}' in {path}"
+    if file_pattern:
+        header += f" (files: {file_pattern})"
+    return header + ":\n" + result
+
+
+# ─── Git Operations ──────────────────────────────────────────────────────
+
+_ALLOWED_GIT_DIRS = [
+    "/home/muut/UC-Cloud-production",
+    "/home/muut/UC-Cloud-production/services/ops-center",
+    "/home/muut/UC-Cloud-production/Unicorn-Brigade",
+    "/home/muut/UC-Cloud-production/Center-Deep-Pro",
+    "/home/muut/",
+]
+
+
+def _validate_git_repo(repo_path: str) -> tuple:
+    """Validate that a path is an allowed git repo. Returns (allowed, reason)."""
+    from pathlib import Path as _P
+    resolved = str(_P(repo_path).resolve())
+
+    for allowed in _ALLOWED_GIT_DIRS:
+        if resolved.startswith(allowed.rstrip("/")):
+            return (True, None)
+
+    return (False, f"Git operations only allowed in: {', '.join(_ALLOWED_GIT_DIRS)}")
+
+
+def _git_safe_cmd(repo_path: str, git_args: str) -> str:
+    """Build a git command with safe.directory workaround for container ownership."""
+    return f"git -C {repo_path} -c safe.directory={repo_path} {git_args}"
+
+
+async def git_status(repo_path: str) -> str:
+    """Show git status."""
+    allowed, reason = _validate_git_repo(repo_path)
+    if not allowed:
+        return f"Blocked: {reason}"
+    return await bash_execute(_git_safe_cmd(repo_path, "status"), timeout=10)
+
+
+async def git_diff(repo_path: str, target: str = "unstaged", file_path: str = None) -> str:
+    """Show git diff."""
+    allowed, reason = _validate_git_repo(repo_path)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    args = "diff"
+    if target == "staged":
+        args += " --cached"
+    elif target != "unstaged":
+        args += f" {target}"
+
+    if file_path:
+        args += f" -- {file_path}"
+
+    return await bash_execute(_git_safe_cmd(repo_path, args), timeout=15)
+
+
+async def git_log(repo_path: str, count: int = 10, oneline: bool = True) -> str:
+    """Show git log."""
+    allowed, reason = _validate_git_repo(repo_path)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    fmt = "--oneline" if oneline else '--format=%h %an %ai %s'
+    return await bash_execute(
+        _git_safe_cmd(repo_path, f"log {fmt} -n {int(count)}"),
+        timeout=10,
+    )
+
+
+async def git_commit(repo_path: str, message: str, files: str) -> str:
+    """Stage files and commit."""
+    allowed, reason = _validate_git_repo(repo_path)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    # Stage files
+    stage_result = await bash_execute(
+        _git_safe_cmd(repo_path, f"add {files}"), timeout=10
+    )
+    if "Blocked:" in stage_result or "Error" in stage_result:
+        return f"Stage failed: {stage_result}"
+
+    # Commit — use heredoc for message to handle special chars
+    commit_cmd = f"""{_git_safe_cmd(repo_path, 'commit -m')} "$(cat <<'COLONEL_EOF'
+{message}
+
+Co-Authored-By: Col. Corelli <colonel@unicorncommander.ai>
+COLONEL_EOF
+)"
+"""
+    return await bash_execute(commit_cmd, timeout=15)
+
+
+async def git_branch(repo_path: str, action: str = "list", branch_name: str = None) -> str:
+    """List, create, or switch branches."""
+    allowed, reason = _validate_git_repo(repo_path)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    if action == "list":
+        return await bash_execute(_git_safe_cmd(repo_path, "branch -a"), timeout=10)
+    elif action == "current":
+        return await bash_execute(_git_safe_cmd(repo_path, "branch --show-current"), timeout=5)
+    elif action == "create":
+        if not branch_name:
+            return "branch_name is required for 'create' action"
+        return await bash_execute(_git_safe_cmd(repo_path, f"checkout -b {branch_name}"), timeout=10)
+    elif action == "checkout":
+        if not branch_name:
+            return "branch_name is required for 'checkout' action"
+        return await bash_execute(_git_safe_cmd(repo_path, f"checkout {branch_name}"), timeout=10)
+    else:
+        return f"Unknown branch action: {action}"
+
+
+async def git_push(repo_path: str, remote: str = "origin", branch: str = None) -> str:
+    """Push commits to remote."""
+    allowed, reason = _validate_git_repo(repo_path)
+    if not allowed:
+        return f"Blocked: {reason}"
+
+    args = f"push {remote}"
+    if branch:
+        args += f" {branch}"
+
+    return await bash_execute(_git_safe_cmd(repo_path, args), timeout=30)
+
+
+# ─── Keycloak Helper ──────────────────────────────────────────────────
+
 _KC_CONTAINER = os.getenv("KEYCLOAK_CONTAINER", "unicorn-keycloak")
 _KC_ADMIN_USER = os.getenv("KEYCLOAK_ADMIN_USER", "admin")
 _KC_ADMIN_PASS = os.getenv("KEYCLOAK_ADMIN_PASSWORD", "REMOVED-KEYCLOAK_ADMIN_PASSWORD")
@@ -668,9 +1063,9 @@ EXECUTOR_MAP = {
         kw["container_name"], kw["action"]
     ),
 
-    # Bash Execution
+    # Bash Execution (with persistent CWD per session)
     "bash-execution__run_command": lambda **kw: bash_execute(
-        kw["command"], kw.get("timeout", 30)
+        kw["command"], kw.get("timeout", 30), session_id=kw.get("_session_id")
     ),
 
     # System Status
@@ -777,6 +1172,39 @@ EXECUTOR_MAP = {
     "forgejo-management__list_orgs": lambda **kw: bash_execute(
         "docker exec unicorn-forgejo gitea admin org list 2>/dev/null || echo 'Forgejo CLI not available'",
         timeout=10,
+    ),
+
+    # File Operations
+    "file-operations__read_file": lambda **kw: file_read(
+        kw["path"], kw.get("offset", 1), kw.get("limit", 200)
+    ),
+    "file-operations__write_file": lambda **kw: file_write(kw["path"], kw["content"]),
+    "file-operations__edit_file": lambda **kw: file_edit(
+        kw["path"], kw["old_text"], kw["new_text"]
+    ),
+    "file-operations__list_directory": lambda **kw: file_list_directory(
+        kw["path"], kw.get("pattern")
+    ),
+    "file-operations__search_content": lambda **kw: file_search_content(
+        kw["pattern"], kw["path"], kw.get("file_pattern"), kw.get("max_results", 50)
+    ),
+
+    # Git Operations
+    "git-operations__status": lambda **kw: git_status(kw["repo_path"]),
+    "git-operations__diff": lambda **kw: git_diff(
+        kw["repo_path"], kw.get("target", "unstaged"), kw.get("file_path")
+    ),
+    "git-operations__log": lambda **kw: git_log(
+        kw["repo_path"], kw.get("count", 10), kw.get("oneline", True)
+    ),
+    "git-operations__commit": lambda **kw: git_commit(
+        kw["repo_path"], kw["message"], kw["files"]
+    ),
+    "git-operations__branch": lambda **kw: git_branch(
+        kw["repo_path"], kw.get("action", "list"), kw.get("branch_name")
+    ),
+    "git-operations__push": lambda **kw: git_push(
+        kw["repo_path"], kw.get("remote", "origin"), kw.get("branch")
     ),
 
     # Frontend Management

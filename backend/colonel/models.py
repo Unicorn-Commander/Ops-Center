@@ -127,8 +127,12 @@ class ColonelConfig(BaseModel):
     context_window: int = Field(default=16384, ge=1024, le=262144)
     custom_instructions: str = Field(default="")
     enabled_skills: List[str] = Field(default_factory=lambda: [
-        "docker-management", "bash-execution", "system-status",
-        "service-health", "log-viewer"
+        "file-operations", "git-operations",
+        "bash-execution", "docker-management", "system-status",
+        "service-health", "log-viewer", "postgresql-ops",
+        "traefik-management", "backup-management", "gpu-monitoring",
+        "network-diagnostics", "resource-cleanup", "litellm-management",
+        "keycloak-auth", "forgejo-management", "frontend-management",
     ])
     write_capable_models: List[str] = Field(default_factory=lambda: [
         "anthropic/claude-opus-4*",

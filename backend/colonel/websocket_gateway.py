@@ -518,6 +518,7 @@ class ColonelGateway:
                     result = await self.skill_router.execute(
                         ws, func_name, func_args, config,
                         write_enabled=write_enabled,
+                        session_id=session.id,
                     )
 
                     # Add tool result to messages

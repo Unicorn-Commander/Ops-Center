@@ -65,7 +65,7 @@ class SkillRouter:
 
     async def execute(
         self, ws: WebSocket, func_name: str, params: Dict[str, Any], config: ColonelConfig,
-        write_enabled: bool = False,
+        write_enabled: bool = False, session_id: str = None,
     ) -> str:
         """
         Execute a skill action and return the result string.
@@ -130,10 +130,12 @@ class SkillRouter:
         except Exception:
             pass
 
-        # Inject _write_enabled for executors that need it
+        # Inject _write_enabled and _session_id for executors that need them
         exec_params = {**params}
         if write_enabled:
             exec_params["_write_enabled"] = True
+        if session_id:
+            exec_params["_session_id"] = session_id
 
         # Execute
         start_time = time.monotonic()
