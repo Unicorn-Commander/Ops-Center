@@ -1049,6 +1049,100 @@ async def _keycloak_exec(kcadm_args: str, timeout: int = 15) -> str:
     return await bash_execute(f"{auth_cmd} && {run_cmd}", timeout=timeout)
 
 
+# ─── Brigade Delegation ─────────────────────────────────────────────────
+
+import httpx as _httpx
+
+_BRIGADE_URL = os.getenv("BRIGADE_API_URL", "http://brigade-api:8100")
+_BRIGADE_KEY = os.getenv("BRIGADE_API_KEY", "")
+
+
+async def brigade_delegate_task(agent_id: str, task: str, context: str = "") -> str:
+    """Delegate a task to a Unicorn Brigade agent via A2A protocol."""
+    if not _BRIGADE_KEY:
+        return "ERROR: BRIGADE_API_KEY not configured. Cannot communicate with Brigade."
+
+    message = task
+    if context:
+        message = f"Context: {context}\n\nTask: {task}"
+
+    url = f"{_BRIGADE_URL}/api/v1/a2a/agents/{agent_id}/invoke"
+    payload = {
+        "task": message,
+        "context": {
+            "requesting_agent_id": "colonel-corelli",
+            "requesting_agent_name": "Col. Corelli (Ops-Center)",
+        },
+        "conversation_history": [],
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "X-API-Key": _BRIGADE_KEY,
+    }
+
+    try:
+        async with _httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code == 404:
+                return f"Agent '{agent_id}' not found in Brigade. Use list_agents to see available agents."
+            if resp.status_code == 401:
+                return "Authentication failed. BRIGADE_API_KEY may be invalid."
+            resp.raise_for_status()
+            data = resp.json()
+            # A2A response: 'result' has text, 'output_data' has tool_calls
+            result_text = data.get("result", "") or ""
+            if isinstance(result_text, dict):
+                result_text = result_text.get("content", str(result_text))
+            # If no text result, summarize tool call results
+            if not result_text.strip():
+                output = data.get("output_data", {}) or {}
+                tool_calls = output.get("tool_calls", [])
+                if tool_calls:
+                    parts = [f"Agent used {len(tool_calls)} tool(s):"]
+                    for tc in tool_calls[:5]:  # Show max 5
+                        name = tc.get("name", "?")
+                        res = tc.get("result", {})
+                        parts.append(f"  - {name}: {json.dumps(res)[:150]}")
+                    result_text = "\n".join(parts)
+                else:
+                    result_text = "(No response from agent)"
+            status = data.get("status", "unknown")
+            duration = data.get("duration_seconds", 0)
+            model = data.get("model_used", "unknown")
+            return (
+                f"Brigade agent '{agent_id}' responded (status={status}, "
+                f"model={model}, {duration:.1f}s):\n{result_text}"
+            )
+    except _httpx.TimeoutException:
+        return f"Timeout waiting for Brigade agent '{agent_id}' (120s limit)."
+    except _httpx.HTTPStatusError as e:
+        return f"Brigade API error: {e.response.status_code} - {e.response.text[:200]}"
+    except Exception as e:
+        return f"Failed to contact Brigade: {str(e)}"
+
+
+async def brigade_list_agents() -> str:
+    """List available Brigade agents via A2A discovery (public endpoint)."""
+    url = f"{_BRIGADE_URL}/api/v1/a2a/agents"
+    try:
+        async with _httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            agents = data.get("agents", [])
+            if not agents:
+                return "No agents available in Brigade."
+            lines = ["Available Brigade agents:\n"]
+            for a in agents:
+                aid = a.get("id", "?")
+                name = a.get("name", "?")
+                desc = a.get("description", "")[:80]
+                lines.append(f"  {aid}: {name} — {desc}")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Failed to query Brigade agents: {str(e)}"
+
+
 # ─── Executor Dispatch Map ──────────────────────────────────────────────
 
 EXECUTOR_MAP = {
@@ -1216,6 +1310,12 @@ EXECUTOR_MAP = {
     "frontend-management__build_frontend": lambda **kw: frontend_build(),
     "frontend-management__deploy_frontend": lambda **kw: frontend_deploy(),
     "frontend-management__get_build_status": lambda **kw: frontend_build_status(),
+
+    # Brigade Delegation
+    "brigade-delegation__delegate_task": lambda **kw: brigade_delegate_task(
+        kw["agent_id"], kw["task"], kw.get("context", "")
+    ),
+    "brigade-delegation__list_agents": lambda **kw: brigade_list_agents(),
 }
 
 

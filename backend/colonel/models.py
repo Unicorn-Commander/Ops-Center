@@ -133,6 +133,7 @@ class ColonelConfig(BaseModel):
         "traefik-management", "backup-management", "gpu-monitoring",
         "network-diagnostics", "resource-cleanup", "litellm-management",
         "keycloak-auth", "forgejo-management", "frontend-management",
+        "brigade-delegation",
     ])
     write_capable_models: List[str] = Field(default_factory=lambda: [
         "anthropic/claude-opus-4*",
