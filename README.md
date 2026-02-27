@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.5.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.5.2-blue.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-purple.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
@@ -70,6 +70,14 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 - **8 Integrated Services**: Chat, Search, TTS, STT, Git, Brigade, Bolt, Presentations
 - **Single Sign-On**: Keycloak SSO across all apps
 - **Feature Management**: Admin control over which tiers get which apps
+
+### 🎖️ The Colonel - AI Server Management
+- **Claude Code-Caliber AI**: GPU-accelerated AI agent for server management via chat
+- **18 Built-in Skills**: Docker, system status, GPU monitoring, Traefik, PostgreSQL, backups, file ops, git, bash, and more
+- **Brigade Delegation**: Seamlessly delegate to 17 specialist agents (finance, legal, research, coding, DevOps, data science)
+- **SKILL.md Format**: Extensible skill system with YAML-defined tools
+- **WebSocket Streaming**: Real-time streaming responses with tool execution visibility
+- **Persistent Sessions**: PostgreSQL-backed sessions with Redis caching
 
 ### 📊 Analytics & Monitoring
 - **Real-Time Dashboards**: User growth, API usage, revenue trends
@@ -159,6 +167,11 @@ https://unicorncommander.ai
 ops-center/
 ├── backend/                      # FastAPI backend
 │   ├── server.py                 # Main application
+│   ├── colonel/                  # The Colonel AI agent system
+│   │   ├── skill_executor.py     # 67 tool executors (Docker, git, Brigade, etc.)
+│   │   ├── skill_loader.py       # SKILL.md parser → OpenAI tool definitions
+│   │   ├── models.py             # Session, config, WebSocket frame models
+│   │   └── skills/               # 18 skill definitions (.skill.md files)
 │   ├── user_management_api.py    # User CRUD + bulk ops
 │   ├── billing_analytics_api.py  # Billing & subscriptions
 │   ├── org_api.py                # Organization management
@@ -386,6 +399,11 @@ mypy backend/
 
 ## 🌟 Recent Updates
 
+### v2.5.2 (February 27, 2026)
+- **Colonel → Brigade Delegation**: One-way A2A delegation to 17 specialist agents for research, coding, finance, legal, medical, and more
+- **Service-to-Service Auth**: Secure BRIGADE_ADMIN_KEY authentication between Colonel and Brigade
+- **18 Skills Total**: brigade-delegation added to Colonel's skill repertoire
+
 ### v2.5.1 (February 22, 2026)
 - **Frontend Quality Audit**: 108 files fixed - dead code removal, credentials sweep (232 fetch calls), monitoring persistence, SPA routing fixes
 - **SSO Cookie Fix**: All API fetch calls now include `credentials: 'include'` for proper cross-domain authentication
@@ -424,7 +442,7 @@ mypy backend/
 
 Ops-Center integrates seamlessly with the entire UC-Cloud platform:
 
-- **🎖️ Unicorn Brigade** - AI agent platform (47+ pre-built agents)
+- **🎖️ Unicorn Brigade** - AI agent platform (17 production agents) — Colonel delegates tasks via A2A
 - **💬 Open-WebUI** - AI chat interface
 - **🔍 Center-Deep** - AI metasearch engine (70+ search engines)
 - **🎤 Unicorn Orator** - Professional TTS service

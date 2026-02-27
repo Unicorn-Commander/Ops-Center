@@ -5,6 +5,30 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2026-02-27
+
+### Added
+- **Colonel → Brigade Delegation**: One-way A2A delegation from Colonel to Unicorn Brigade
+  - New `brigade-delegation` skill with `delegate_task` and `list_agents` actions
+  - Colonel can delegate research, coding, finance, legal, medical, and other domain tasks to Brigade's 17 specialist agents
+  - Uses A2A protocol (JSON-RPC over HTTP) for inter-service communication
+  - Agent discovery via public A2A endpoint, task execution via authenticated invoke
+  - Handles timeouts (120s), auth errors, missing agents, and empty responses gracefully
+
+### Configuration
+- **Brigade Auth**: Added `BRIGADE_ADMIN_KEY` to Brigade container for service-to-service authentication
+- **Ops-Center Env**: Added `BRIGADE_API_URL` and `BRIGADE_API_KEY` environment variables
+- **Docker Compose**: Updated `docker-compose.brigade.yml` and `docker-compose.direct.yml`
+
+### Files Added
+- `backend/colonel/skills/brigade-delegation.skill.md` - Skill definition (YAML frontmatter)
+
+### Files Modified
+- `backend/colonel/skill_executor.py` - Added `brigade_delegate_task()` and `brigade_list_agents()` executors
+- `backend/colonel/models.py` - Added `brigade-delegation` to default `enabled_skills`
+
+---
+
 ## [2.5.1] - 2026-02-22
 
 ### Fixed
