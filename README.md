@@ -67,7 +67,7 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 
 ### 🎨 Apps Marketplace
 - **Dynamic Tier-Based Access**: Apps appear/disappear based on subscription tier
-- **8 Integrated Services**: Chat, Search, TTS, STT, Git, Brigade, Bolt, Presentations
+- **12 Integrated Services**: Chat, Search, TTS, STT, Git, Brigade, Bolt, Presentations, Email Marketing, Social Media, Analytics, Partner Management
 - **Single Sign-On**: Keycloak SSO across all apps
 - **Feature Management**: Admin control over which tiers get which apps
 
@@ -101,7 +101,8 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 ### 1. Clone the Repository
 
 ```bash
-cd /home/muut/Production/UC-Cloud/services/ops-center
+git clone https://git.unicorncommander.ai/UnicornCommander/Ops-Center.git
+cd Ops-Center
 ```
 
 ### 2. Configure Environment
@@ -410,6 +411,23 @@ mypy backend/
 - **Monitoring Persistence**: Umami, Grafana, and Prometheus config pages now save settings to localStorage
 - **Dead Code Cleanup**: 3 unused files deleted, unused imports removed across 10 files
 
+### v2.5.0 (January 31, 2026) - Org Features + User Dashboard
+
+**Added**:
+- ✨ Organization-level feature grants (per-org app access regardless of tier)
+- ✨ User Dashboard with credit balance, usage, subscription info
+- ✨ Service API Keys management GUI (service-to-service auth)
+- ✨ Configurable billing (BILLING_ENABLED toggle, CREDIT_EXEMPT_TIERS)
+- ✨ Claude model ID mappings (claude-opus-4, claude-sonnet-4, etc.)
+- 📊 `org_features` table for per-org feature grants
+- 🔑 Admin API for org feature management (CRUD endpoints)
+- 📧 Marketing stack integration (Listmonk + Postiz as Ops-Center add-ons)
+
+**Fixed**:
+- 🐛 Billing analytics 500 error (table name typo)
+- 🐛 GPU services 404 error (endpoint mismatch)
+- 🐛 Redis host default (unicorn-lago-redis → unicorn-redis)
+
 ### v2.4.0 (November 29, 2025) - Image Generation + P0 Fixes
 
 **Added**:
@@ -452,6 +470,8 @@ Ops-Center integrates seamlessly with the entire UC-Cloud platform:
 - **🔐 Keycloak** - Enterprise SSO (uchub realm)
 - **💳 Lago + Stripe** - Advanced billing system
 - **🐙 Forgejo** - Self-hosted Git server
+- **📧 Listmonk** - Email marketing platform
+- **📱 Postiz** - Social media scheduling
 
 All services share:
 - ✅ Single Sign-On (Keycloak)
@@ -527,13 +547,14 @@ docker exec unicorn-postgresql psql -U unicorn -d unicorn_db -c "SELECT 1;"
 
 ## 📈 Roadmap
 
-### Phase 2: Enhanced Analytics (In Progress)
-- 📊 User growth charts and heatmaps
-- 📉 Churn analysis and retention metrics
-- 💰 Revenue forecasting and LTV calculations
-- ⚠️ Real-time alerts and notifications
+### Phase 2: Enhanced Analytics (Complete ✅)
+- ✅ User growth charts and dashboards
+- ✅ Usage tracking with API metering
+- ✅ Revenue tracking via Lago + Stripe
+- ✅ Organization-level feature grants
+- ✅ User Dashboard with credit/usage overview
 
-### Phase 3: Advanced Organization Management
+### Phase 3: Advanced Organization Management (In Progress)
 - 🏢 Team hierarchies and nested teams
 - 🎭 Custom roles per organization
 - 📦 Resource quotas and limits
@@ -589,7 +610,7 @@ Built with ❤️ by the UC-Cloud team using:
 
 - **📧 Email**: support@magicunicorn.tech
 - **💬 Discord**: [Join our community](https://discord.gg/unicorn-commander)
-- **🐛 Issues**: [GitHub Issues](https://github.com/Unicorn-Commander/Ops-Center/issues)
+- **🐛 Issues**: [GitHub Issues](https://git.unicorncommander.ai/UnicornCommander/Ops-Center/issues)
 - **📚 Docs**: [Complete Documentation](https://docs.unicorncommander.ai)
 
 ---
