@@ -386,17 +386,20 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
                 async with app.state.db_pool.acquire() as conn:
                     # First, try to find org membership by joining through users table
                     # This handles Keycloak sub (zitadel_id) -> internal user ID -> org membership
+                    # Also join subscription_tiers to get the tier_code for apps access
                     result = await conn.fetchrow("""
-                        SELECT om.org_id, om.role, o.name as org_name
+                        SELECT om.org_id, om.role, o.name as org_name,
+                               st.tier_code as subscription_tier
                         FROM users u
                         JOIN organization_members om ON u.id::text = om.user_id
                         JOIN organizations o ON om.org_id = o.id
+                        LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
                         WHERE u.zitadel_id = $1
                         LIMIT 1
                     """, uid)
 
                     if result:
-                        logger.info(f"Found org membership in database for Keycloak user {uid}: {result['org_id']}")
+                        logger.info(f"Found org membership in database for Keycloak user {uid}: {result['org_id']} (tier: {result.get('subscription_tier', 'unknown')})")
                         return {
                             "org_id": str(result["org_id"]),
                             "org_name": result["org_name"],
@@ -417,14 +420,15 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
                         return {
                             "org_id": str(result["org_id"]),
                             "org_name": result["org_name"],
-                            "org_role": result["role"].lower() if result["role"] else "member"
+                            "org_role": result["role"].lower() if result["role"] else "member",
+                            "subscription_tier": result["subscription_tier"] or "trial"
                         }
             else:
                 logger.warning("Database pool not available for org membership lookup")
         except Exception as db_err:
             logger.error(f"Database lookup for org membership failed: {db_err}")
 
-        return {"org_id": None, "org_name": None, "org_role": None}
+        return {"org_id": None, "org_name": None, "org_role": None, "subscription_tier": "trial"}
 
     try:
         # Import here to avoid circular dependency
@@ -475,14 +479,17 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
         return {
             "org_id": org_id,
             "org_name": org_name,
-            "org_role": org_role
+            "org_role": org_role,
+            "subscription_tier": "trial"  # Default for Keycloak-based lookup
         }
     except Exception as e:
         logger.error(f"Error getting user org context: {e}")
         return {
             "org_id": None,
             "org_name": None,
-            "org_role": "member"
+            "org_role": "member",
+            "subscription_tier": "trial"
+
         }
 
 
@@ -5684,7 +5691,8 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         "created": time.time(),
                         "org_id": org_context.get("org_id"),
                         "org_name": org_context.get("org_name"),
-                        "org_role": org_context.get("org_role")
+                        "org_role": org_context.get("org_role"),
+                        "subscription_tier": org_context.get("subscription_tier", "trial")  # For apps access control
                     }
                     print(f"Session created with token: {session_token[:10]}...")
                     # Note: sessions is RedisSessionManager, not a dict

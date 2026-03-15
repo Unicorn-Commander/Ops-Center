@@ -104,8 +104,13 @@ async def get_current_user_tier(request: Request) -> str:
             tier = user.get("subscription_tier") or user.get("tier")
 
         # If tier not set or invalid, try database fallback
-        # Valid tiers: vip_founder, byok, managed, founder_friend, trial, starter, professional, enterprise
-        valid_tiers = ['vip_founder', 'byok', 'managed', 'founder_friend', 'founder-friend', 'trial', 'starter', 'professional', 'enterprise', 'nda-autopilot', 'partnerpulse', 'm10_partner']
+        # Valid tiers: All tiers from subscription_tiers table
+        valid_tiers = [
+            'vip_founder', 'byok', 'managed', 'founder_friend', 'founder-friend',
+            'trial', 'starter', 'professional', 'enterprise',
+            'nda-autopilot', 'partnerpulse', 'm10_partner',
+            'human_interest', 'loopnet_starter', 'loopnet_professional'
+        ]
         if not tier or tier not in valid_tiers:
             # Try database fallback - get tier from user's organization
             # First try to get user's Keycloak sub (stored as zitadel_id in users table)
@@ -305,8 +310,13 @@ async def get_org_features(org_id: str, conn) -> set:
 
 async def get_user_tier_features(user_tier: str, conn) -> set:
     """Get all app keys enabled for user's tier"""
-    # Validate tier before database query
-    valid_tiers = ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'founder_friend', 'founder-friend', 'byok', 'managed', 'nda-autopilot', 'partnerpulse', 'm10_partner']
+    # Validate tier before database query - include all tiers from subscription_tiers table
+    valid_tiers = [
+        'trial', 'starter', 'professional', 'enterprise',
+        'vip_founder', 'founder_friend', 'founder-friend', 'byok', 'managed',
+        'nda-autopilot', 'partnerpulse', 'm10_partner',
+        'human_interest', 'loopnet_starter', 'loopnet_professional'
+    ]
     if user_tier.lower() not in valid_tiers:
         raise HTTPException(status_code=400, detail=f"Invalid subscription tier: {user_tier}")
 
