@@ -16,6 +16,11 @@ Thumbs.db
 *.swp
 *.swo
 
+# Secrets
+.secrets/
+*.secrets
+.env.secrets
+
 # Environment variables
 .env.auth
 .env.local
