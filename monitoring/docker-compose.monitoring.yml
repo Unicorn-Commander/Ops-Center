@@ -147,7 +147,7 @@ services:
     container_name: ops-center-redis-exporter
     restart: unless-stopped
     environment:
-      - REDIS_ADDR=redis://unicorn-redis:6379
+      - REDIS_ADDR=redis://:${REDIS_PASSWORD}@unicorn-redis:6379
       - REDIS_EXPORTER_LOG_FORMAT=json
     networks:
       - unicorn-network

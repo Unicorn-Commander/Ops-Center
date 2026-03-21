@@ -138,6 +138,7 @@ services:
     restart: unless-stopped
     environment:
       REDIS_ADDR: "unicorn-redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
     ports:
       - "9121:9121"
     networks:

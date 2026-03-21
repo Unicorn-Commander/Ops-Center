@@ -41,7 +41,7 @@ services:
       - LAGO_PUBLIC_URL=https://billing-api.magicunicorn.dev
       - REMOVED
       # Redis for sessions
-      - REDIS_URL=redis://unicorn-redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@unicorn-redis:6379/0
       # PostgreSQL Database
       - POSTGRES_HOST=postgresql
       - POSTGRES_PORT=5432
