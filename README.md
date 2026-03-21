@@ -2,13 +2,13 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.5.2-blue.svg)
+![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-purple.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
 ![React](https://img.shields.io/badge/react-18-61dafb.svg)
 
-**The Central Hub for Managing Your Entire AI Infrastructure**
+**The Central Hub for Managing Your Entire AI Infrastructure — Now with Federated Inference Mesh**
 
 [Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [API Reference](#-api-reference)
 
@@ -18,16 +18,17 @@
 
 ## 🎯 What is Ops-Center?
 
-Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosystem - your single pane of glass for managing users, organizations, subscriptions, LLM infrastructure, and services across your entire AI platform.
+Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosystem - your single pane of glass for managing users, organizations, subscriptions, LLM infrastructure, and federated AI services across your entire platform.
 
 **Think of it like:**
 - 🏢 **AWS Console** - Infrastructure management at scale
 - 👥 **Auth0 Dashboard** - Complete user and authentication control
 - 💰 **Stripe Dashboard** - Subscription and billing management
 - 🤖 **LiteLLM Proxy** - Multi-provider LLM orchestration
+- 🌐 **Kubernetes Federation** - Multi-node inference mesh with cloud GPU bursting
 - 📊 **Grafana** - Real-time analytics and monitoring
 
-**All in one beautiful, unified interface.**
+**All in one beautiful, unified interface with zero-trust security.**
 
 ---
 
@@ -79,11 +80,21 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 - **WebSocket Streaming**: Real-time streaming responses with tool execution visibility
 - **Persistent Sessions**: PostgreSQL-backed sessions with Redis caching
 
+### 🌐 Federation Inference Mesh
+- **Multi-Node Federation**: Peer-to-peer mesh connecting home servers, cloud GPUs, and API providers
+- **Smart Routing**: Tier-aware, constraint-based routing to the best available inference backend
+- **Cloud GPU Bursting**: On-demand Lambda Labs GPU provisioning with auto-shutdown on idle
+- **Service Discovery**: Automatic hardware detection and service catalog across all nodes
+- **Multi-Step Pipelines**: Chain inference steps (e.g., music generation + artwork) across nodes
+- **Zero Trust Security**: Per-node signed JWTs, per-service ACLs, circuit breakers, full audit trail
+- **Brigade Agent Federation**: Cross-node agent discovery and delegation
+
 ### 📊 Analytics & Monitoring
 - **Real-Time Dashboards**: User growth, API usage, revenue trends
 - **Service Health**: Monitor all services in real-time
 - **Usage Analytics**: API calls, credits consumed, costs per service
 - **Audit Logs**: Complete activity tracking across all operations
+- **Federation Audit**: Routing decision log with candidates, constraints, and scoring
 
 ---
 
@@ -173,6 +184,16 @@ ops-center/
 │   │   ├── skill_loader.py       # SKILL.md parser → OpenAI tool definitions
 │   │   ├── models.py             # Session, config, WebSocket frame models
 │   │   └── skills/               # 18 skill definitions (.skill.md files)
+│   ├── federation/               # Federation inference mesh
+│   │   ├── node_registry.py      # Peer node registration & heartbeat
+│   │   ├── inference_router.py   # Tier-aware, constraint-based routing
+│   │   ├── hardware_detector.py  # Auto-detect GPUs & services
+│   │   ├── cloud_provisioner.py  # Lambda Labs GPU provisioning
+│   │   ├── pipeline_engine.py    # Multi-step inference pipelines
+│   │   ├── auth.py               # Per-node signed JWTs (v3.1)
+│   │   ├── resilience.py         # Circuit breakers & audit log (v3.1)
+│   │   └── access_control.py     # Per-service ACL (v3.1)
+│   ├── routers/federation.py     # 20+ federation API endpoints
 │   ├── user_management_api.py    # User CRUD + bulk ops
 │   ├── billing_analytics_api.py  # Billing & subscriptions
 │   ├── org_api.py                # Organization management
@@ -234,6 +255,8 @@ ops-center/
 - **Reverse Proxy**: Traefik (SSL/TLS)
 - **Networks**: Multi-network architecture
 - **Orchestration**: Docker Compose
+- **Federation**: Peer-to-peer inference mesh with cloud GPU bursting (Lambda Labs)
+- **Cloud GPU**: Auto-provisioning with persistent S3 model cache and idle auto-shutdown
 
 ---
 
@@ -282,7 +305,7 @@ http://localhost:8084/api/v1  # Local development
 ```
 
 ### Authentication
-All admin endpoints require Keycloak SSO authentication via session cookies or Bearer tokens.
+All admin endpoints require Keycloak SSO authentication via session cookies or Bearer tokens. Federation endpoints use per-node HMAC-SHA256 signed JWTs.
 
 ### Key Endpoints
 
@@ -330,6 +353,22 @@ GET    /billing/invoices               # Invoice history
 ```bash
 GET    /my-apps/authorized             # Apps user can access (tier-filtered)
 GET    /my-apps/marketplace            # Apps available for purchase
+```
+
+#### Federation Mesh
+```bash
+GET    /federation/health              # Public health check (no auth)
+POST   /federation/register            # Node self-registration
+POST   /federation/heartbeat           # Node heartbeat with load/capacity
+GET    /federation/nodes               # List all federated nodes
+GET    /federation/services            # Unified service catalog
+GET    /federation/topology            # Federation map
+POST   /federation/route               # Find best inference backend
+POST   /federation/pipelines/execute   # Execute multi-step workflow
+GET    /federation/agents              # Cross-node agent discovery
+GET    /federation/audit               # Routing decision audit log (admin)
+GET    /federation/circuits            # Circuit breaker status (admin)
+POST   /federation/cloud/provision     # Provision cloud GPU on demand
 ```
 
 **Complete API documentation**: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
@@ -400,55 +439,27 @@ mypy backend/
 
 ## 🌟 Recent Updates
 
-### v2.5.2 (February 27, 2026)
-- **Colonel → Brigade Delegation**: One-way A2A delegation to 17 specialist agents for research, coding, finance, legal, medical, and more
-- **Service-to-Service Auth**: Secure BRIGADE_ADMIN_KEY authentication between Colonel and Brigade
-- **18 Skills Total**: brigade-delegation added to Colonel's skill repertoire
+### v3.1.0 (March 21, 2026) - Zero Trust Security + Resilience
+- **Per-Node Signed JWTs**: HMAC-SHA256 tokens with replay prevention replace shared API keys for federation auth
+- **Circuit Breakers**: Per-peer failure isolation prevents cascading failures across the federation mesh
+- **Per-Service ACLs**: Tier-based access control per inference service type (e.g., trial users blocked from music/image gen)
+- **Routing Audit Trail**: Every federation routing decision logged to PostgreSQL with full scoring details
+- **Brigade Agent Federation**: Cross-node agent discovery via `GET /federation/agents`
+- **Distributed Locking**: Redis-based locks prevent duplicate cloud GPU provisioning
 
-### v2.5.1 (February 22, 2026)
-- **Frontend Quality Audit**: 108 files fixed - dead code removal, credentials sweep (232 fetch calls), monitoring persistence, SPA routing fixes
-- **SSO Cookie Fix**: All API fetch calls now include `credentials: 'include'` for proper cross-domain authentication
-- **Monitoring Persistence**: Umami, Grafana, and Prometheus config pages now save settings to localStorage
-- **Dead Code Cleanup**: 3 unused files deleted, unused imports removed across 10 files
+### v3.0.0 (March 21, 2026) - Federation Inference Mesh
+- **Peer-to-Peer Mesh**: ~9,000 lines across 29 files — federated inference across home servers, cloud GPUs, and API providers
+- **Smart Routing**: Tier-aware, constraint-based routing to the best available inference backend
+- **Cloud GPU Bursting**: Lambda Labs auto-provisioning with idle shutdown and persistent S3 model cache
+- **4 Admin Pages**: Federation settings, node management, visual topology, unified service catalog
+- **Multi-Step Pipelines**: Chain inference steps across nodes (e.g., music generation + artwork)
+- **No single competing platform** covers all 8 requirements (heterogeneous hardware, multi-modal, hybrid cloud routing, idle GPU management, federated auth, billing, service discovery, multi-instance)
+
+### v2.5.2 (February 27, 2026) - Colonel + Brigade A2A
+- **Colonel → Brigade Delegation**: One-way A2A delegation to 17 specialist agents for research, coding, finance, legal, medical, and more
 
 ### v2.5.0 (January 31, 2026) - Org Features + User Dashboard
-
-**Added**:
-- ✨ Organization-level feature grants (per-org app access regardless of tier)
-- ✨ User Dashboard with credit balance, usage, subscription info
-- ✨ Service API Keys management GUI (service-to-service auth)
-- ✨ Configurable billing (BILLING_ENABLED toggle, CREDIT_EXEMPT_TIERS)
-- ✨ Claude model ID mappings (claude-opus-4, claude-sonnet-4, etc.)
-- 📊 `org_features` table for per-org feature grants
-- 🔑 Admin API for org feature management (CRUD endpoints)
-- 📧 Marketing stack integration (Listmonk + Postiz as Ops-Center add-ons)
-
-**Fixed**:
-- 🐛 Billing analytics 500 error (table name typo)
-- 🐛 GPU services 404 error (endpoint mismatch)
-- 🐛 Redis host default (unicorn-lago-redis → unicorn-redis)
-
-### v2.4.0 (November 29, 2025) - Image Generation + P0 Fixes
-
-**Added**:
-- ✨ OpenAI GPT Image 1 & Image 1 Mini models
-- ✨ Google Gemini Imagen 3 & Gemini 2.5 Flash Image
-- ✨ Ollama Cloud provider support
-- ✨ OpenRouter image generation support
-- 📊 Model categorization by BYOK vs Platform
-- 🎨 Image category badges (pink #e91e63)
-
-**Fixed**:
-- 🐛 Image generation routing (DALL-E→OpenAI, Imagen→Gemini, SD→OpenRouter)
-- 🐛 Service auth UUID mapping (using database UUIDs)
-- 🐛 API get_db_pool() parameter errors
-- 🐛 Missing database tables (app_definitions, landing_page_settings, features)
-- 🐛 Log errors (eliminated app_definitions errors)
-
-**Performance**:
-- ⚡ 100% test pass rate (17/17 tests)
-- ⚡ All P0 bugs fixed
-- ⚡ API response times: 2-8ms (38x faster than Stripe)
+- Organization-level feature grants, user dashboard, service API keys management, configurable billing
 
 **[Complete Changelog](CHANGELOG.md)**
 
@@ -482,15 +493,18 @@ All services share:
 
 ---
 
-## 🔒 Security
+## 🔒 Security — Zero Trust / Defense-in-Depth
 
 - **🔐 SSO Authentication**: Keycloak with Google, GitHub, Microsoft providers
 - **🔑 API Key Management**: Bcrypt hashing, secure storage
-- **👮 Role-Based Access**: 5-tier role hierarchy (admin → viewer)
-- **📝 Audit Logging**: Complete activity tracking
+- **👮 Role-Based Access**: 5-tier role hierarchy (admin → viewer) + per-service ACLs
+- **📝 Audit Logging**: Complete activity tracking + federation routing audit trail
 - **🛡️ Input Validation**: Pydantic models, SQL injection protection
 - **🔒 HTTPS/TLS**: SSL certificates via Traefik
 - **💰 PCI Compliance**: Stripe handles all card data
+- **🌐 Federation Security**: Per-node HMAC-SHA256 signed JWTs with replay prevention (JTI + 60s expiry)
+- **🔄 Circuit Breakers**: Per-peer failure isolation (3 failures → 30s cooldown → half-open test)
+- **🔐 Credential Encryption**: Fernet encryption for stored secrets, CSRF protection, rate limiting
 
 ---
 
@@ -554,13 +568,20 @@ docker exec unicorn-postgresql psql -U unicorn -d unicorn_db -c "SELECT 1;"
 - ✅ Organization-level feature grants
 - ✅ User Dashboard with credit/usage overview
 
-### Phase 3: Advanced Organization Management (In Progress)
+### Phase 3: Federation Inference Mesh (Complete ✅)
+- ✅ Peer-to-peer federated inference across multiple servers
+- ✅ Cloud GPU auto-provisioning (Lambda Labs)
+- ✅ Zero trust security (signed JWTs, circuit breakers, ACLs)
+- ✅ Full routing audit trail
+- ✅ Brigade agent federation
+
+### Phase 4: Advanced Organization Management (In Progress)
 - 🏢 Team hierarchies and nested teams
 - 🎭 Custom roles per organization
 - 📦 Resource quotas and limits
 - 🔐 Per-organization SSO providers
 
-### Phase 4: Self-Service & Automation
+### Phase 5: Self-Service & Automation
 - 🤖 Automated provisioning on signup
 - 📈 Usage-based tier upgrades
 - 💬 AI-powered chatbot support
