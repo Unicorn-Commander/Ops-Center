@@ -111,5 +111,6 @@ class HardwareDetector:
             "image_gen": "/api/v1/images/generate",
             "music_gen": "/api/v1/music/generate",
             "reranker": "/api/v1/rerank",
+            "agents": "/api/v1/a2a/agents/{id}/invoke",
         }
         return mapping.get(service_type, "/api/v1/inference")

@@ -64,11 +64,35 @@ except ImportError:
     SERVICE_CREDIT_COSTS = None  # type: ignore[assignment]
 
 try:
+    from .auth import FederationAuth, get_federation_auth, verify_federation_request
+except Exception as exc:
+    logger.warning("Failed to import FederationAuth: %s", exc)
+    FederationAuth = None  # type: ignore[assignment,misc]
+    get_federation_auth = None  # type: ignore[assignment]
+    verify_federation_request = None  # type: ignore[assignment]
+
+try:
     from .cloud_provisioner import CloudProvisioner, get_cloud_provisioner
 except Exception as exc:
     logger.warning("Failed to import CloudProvisioner: %s", exc)
     CloudProvisioner = None  # type: ignore[assignment,misc]
     get_cloud_provisioner = None  # type: ignore[assignment]
+
+try:
+    from .resilience import (
+        CircuitBreaker,
+        DistributedLock,
+        RoutingAuditLog,
+        get_circuit_breaker,
+        get_routing_audit_log,
+    )
+except Exception as exc:
+    logger.warning("Failed to import resilience module: %s", exc)
+    CircuitBreaker = None  # type: ignore[assignment,misc]
+    DistributedLock = None  # type: ignore[assignment,misc]
+    RoutingAuditLog = None  # type: ignore[assignment,misc]
+    get_circuit_breaker = None  # type: ignore[assignment]
+    get_routing_audit_log = None  # type: ignore[assignment]
 
 try:
     from .pipelines import (
@@ -86,7 +110,17 @@ except Exception as exc:
     PipelineStep = None  # type: ignore[assignment,misc]
     get_pipeline_registry = None  # type: ignore[assignment]
 
+try:
+    from .access_control import ServiceAccessControl, get_service_access_control
+except Exception as exc:
+    logger.warning("Failed to import ServiceAccessControl: %s", exc)
+    ServiceAccessControl = None  # type: ignore[assignment,misc]
+    get_service_access_control = None  # type: ignore[assignment]
+
 __all__ = [
+    "FederationAuth",
+    "get_federation_auth",
+    "verify_federation_request",
     "NodeRegistry",
     "NodeAgent",
     "InferenceRouter",
@@ -104,4 +138,11 @@ __all__ = [
     "PipelineRegistry",
     "PipelineStep",
     "get_pipeline_registry",
+    "ServiceAccessControl",
+    "get_service_access_control",
+    "CircuitBreaker",
+    "DistributedLock",
+    "RoutingAuditLog",
+    "get_circuit_breaker",
+    "get_routing_audit_log",
 ]

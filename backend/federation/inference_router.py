@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from federation.node_registry import NodeRegistry
+from federation.resilience import get_circuit_breaker, get_routing_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ class InferenceRouter:
         model = request.get("model")
         priority = request.get("priority", "balanced")
         require_model = bool(model)
+        request_id = str(uuid.uuid4())
+        circuit_breaker = get_circuit_breaker()
+        audit_log = get_routing_audit_log()
 
         logger.debug(
             "Routing request: service_type=%s model=%s priority=%s user_tier=%s",
@@ -130,9 +134,13 @@ class InferenceRouter:
             cloud["_target"] = "cloud"
             candidates.append(cloud)
 
+        total_candidates = len(candidates)
+
         # 2. Apply constraint filtering
         if constraints:
             candidates = self._apply_constraints(candidates, constraints)
+
+        candidates_after_constraints = len(candidates)
 
         # 3. Determine search order based on user tier
         if user_tier and user_tier in self.FREE_TIERS:
@@ -155,17 +163,33 @@ class InferenceRouter:
                 local_candidates = [c for c in candidates if c.get("_target") == "self"]
                 if local_candidates:
                     result = self._build_result("local", local_candidates[0], request)
+                    result["request_id"] = request_id
                     logger.info(
                         "Routed %s to local service (model=%s, tier=%s)", service_type, model, user_tier
+                    )
+                    await audit_log.log_decision(
+                        request_id=request_id, service_type=service_type, model=model,
+                        user_id=request.get("user_id"), user_tier=user_tier,
+                        candidates_found=total_candidates,
+                        candidates_after_constraints=candidates_after_constraints,
+                        constraints_applied=constraints,
+                        selected_target="local", selected_node_id=self.local_node_id,
+                        selected_reason="Local service available", outcome="routed",
                     )
                     return result
             elif target == "peer":
                 peer_candidates = [c for c in candidates if c.get("_target") == "peer"]
+                # Filter out peers with open circuits
+                peer_candidates = [
+                    c for c in peer_candidates
+                    if circuit_breaker.can_request(c.get("node_id", ""))
+                ]
                 if peer_candidates:
                     scored = self._rank_candidates(peer_candidates, request, priority)
                     if scored:
                         best = scored[0][1]
                         result = self._build_result("federated", best, request)
+                        result["request_id"] = request_id
                         logger.info(
                             "Routed %s to peer node %s (model=%s, score=%.1f, tier=%s)",
                             service_type,
@@ -173,6 +197,16 @@ class InferenceRouter:
                             model,
                             scored[0][0],
                             user_tier,
+                        )
+                        await audit_log.log_decision(
+                            request_id=request_id, service_type=service_type, model=model,
+                            user_id=request.get("user_id"), user_tier=user_tier,
+                            candidates_found=total_candidates,
+                            candidates_after_constraints=candidates_after_constraints,
+                            constraints_applied=constraints,
+                            selected_target="peer", selected_node_id=best.get("node_id"),
+                            selected_reason=f"Best peer (score={scored[0][0]:.1f})",
+                            routing_score=scored[0][0], outcome="routed",
                         )
                         return result
             elif target == "cloud_gpu":
@@ -184,12 +218,24 @@ class InferenceRouter:
                     if existing and existing.federation_node_id:
                         provisioner.record_request(existing.id)
                         result = self._build_cloud_gpu_result(existing, request)
+                        result["request_id"] = request_id
                         logger.info(
                             "Routed %s to existing cloud GPU %s (node=%s, tier=%s)",
                             service_type,
                             existing.gpu_type,
                             existing.federation_node_id,
                             user_tier,
+                        )
+                        await audit_log.log_decision(
+                            request_id=request_id, service_type=service_type, model=model,
+                            user_id=request.get("user_id"), user_tier=user_tier,
+                            candidates_found=total_candidates,
+                            candidates_after_constraints=candidates_after_constraints,
+                            constraints_applied=constraints,
+                            selected_target="cloud_gpu",
+                            selected_node_id=existing.federation_node_id,
+                            selected_reason=f"Existing cloud GPU ({existing.gpu_type})",
+                            outcome="routed",
                         )
                         return result
 
@@ -205,6 +251,7 @@ class InferenceRouter:
                     if instance and instance.federation_node_id:
                         provisioner.record_request(instance.id)
                         result = self._build_cloud_gpu_result(instance, request)
+                        result["request_id"] = request_id
                         logger.info(
                             "Routed %s to new cloud GPU %s (node=%s, tier=%s)",
                             service_type,
@@ -212,23 +259,53 @@ class InferenceRouter:
                             instance.federation_node_id,
                             user_tier,
                         )
+                        await audit_log.log_decision(
+                            request_id=request_id, service_type=service_type, model=model,
+                            user_id=request.get("user_id"), user_tier=user_tier,
+                            candidates_found=total_candidates,
+                            candidates_after_constraints=candidates_after_constraints,
+                            constraints_applied=constraints,
+                            selected_target="cloud_gpu",
+                            selected_node_id=instance.federation_node_id,
+                            selected_reason=f"Provisioned new cloud GPU ({instance.gpu_type})",
+                            outcome="provisioning",
+                        )
                         return result
             elif target == "cloud":
                 cloud_candidates = [c for c in candidates if c.get("_target") == "cloud"]
                 if cloud_candidates:
                     result = self._build_result("cloud", cloud_candidates[0], request)
+                    result["request_id"] = request_id
                     logger.info(
                         "Routed %s to cloud via LiteLLM (model=%s, tier=%s)", service_type, model, user_tier
+                    )
+                    await audit_log.log_decision(
+                        request_id=request_id, service_type=service_type, model=model,
+                        user_id=request.get("user_id"), user_tier=user_tier,
+                        candidates_found=total_candidates,
+                        candidates_after_constraints=candidates_after_constraints,
+                        constraints_applied=constraints,
+                        selected_target="cloud", selected_node_id="cloud",
+                        selected_reason="Cloud fallback via LiteLLM", outcome="routed",
                     )
                     return result
 
         # 5. No target found
+        await audit_log.log_decision(
+            request_id=request_id, service_type=service_type, model=model,
+            user_id=request.get("user_id"), user_tier=user_tier,
+            candidates_found=total_candidates,
+            candidates_after_constraints=candidates_after_constraints,
+            constraints_applied=constraints,
+            selected_target="none", outcome="no_capacity",
+            selected_reason="No local, federated, or cloud backend could satisfy the request",
+        )
         return {
             "route_type": "none",
             "reason": "No local, federated, or cloud backend could satisfy the request",
             "service_type": service_type,
             "model": model,
-            "request_id": str(uuid.uuid4()),
+            "request_id": request_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -253,6 +330,14 @@ class InferenceRouter:
         Returns:
             Dict with response data and metadata (latency_ms, status_code).
         """
+        circuit_breaker = get_circuit_breaker()
+
+        # Check circuit breaker before attempting the request
+        if not circuit_breaker.can_request(node_id):
+            raise ConnectionError(
+                f"Circuit breaker OPEN for node {node_id} — peer is unreachable"
+            )
+
         node = await self.registry.get_node(node_id)
         if not node:
             raise ValueError(f"Unknown federation node: {node_id}")
@@ -288,6 +373,9 @@ class InferenceRouter:
             response.raise_for_status()
             response_data = response.json()
 
+            # Proxy succeeded — record success in circuit breaker
+            circuit_breaker.record_success(node_id)
+
             # Record usage if metering is available
             if self.meter:
                 try:
@@ -315,16 +403,21 @@ class InferenceRouter:
         except httpx.TimeoutException:
             latency_ms = (time.monotonic() - start_time) * 1000
             self._record_latency(node_id, latency_ms)
+            circuit_breaker.record_failure(node_id)
             logger.error("Proxy request to %s timed out after %.0fms", node_id, latency_ms)
             raise
         except httpx.HTTPStatusError as exc:
             latency_ms = (time.monotonic() - start_time) * 1000
             self._record_latency(node_id, latency_ms)
+            # Only trip the circuit breaker for server errors (5xx), not client errors (4xx)
+            if exc.response.status_code >= 500:
+                circuit_breaker.record_failure(node_id)
             logger.error(
                 "Proxy request to %s failed: HTTP %d", node_id, exc.response.status_code
             )
             raise
         except Exception as exc:
+            circuit_breaker.record_failure(node_id)
             logger.error("Proxy request to %s failed: %s", node_id, exc)
             raise
 

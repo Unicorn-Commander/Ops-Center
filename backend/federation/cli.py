@@ -191,6 +191,17 @@ def _auth_token() -> Optional[str]:
 
 
 def _auth_headers(token: Optional[str] = None) -> Dict[str, str]:
+    """Build auth headers — uses per-node signed JWTs when available,
+    falls back to raw Bearer token for backward compatibility."""
+    try:
+        from federation.auth import get_federation_auth
+
+        fed_auth = get_federation_auth()
+        if fed_auth.shared_key or fed_auth.auth_mode == "node_keys":
+            return fed_auth.get_auth_headers()
+    except Exception:
+        pass
+    # Fallback: raw shared key (backward compatible)
     key = token or _auth_token()
     if key:
         return {"Authorization": f"Bearer {key}"}

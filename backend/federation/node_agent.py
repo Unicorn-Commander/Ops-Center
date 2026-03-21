@@ -21,6 +21,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
 
+from federation.auth import get_federation_auth
 from federation.hardware_detector import HardwareDetector
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ LOCAL_SERVICES = [
     ("artwork-studio", 8095, "image_gen", "/health", None),
     ("majiks-studio", 8091, "music_gen", "/health", None),
     ("granite-proxy", 8089, "llm", "/health", None),
+    ("brigade", 8100, "agents", "/health", "/api/v1/agents"),
 ]
 
 # Module-level singleton
@@ -338,6 +340,9 @@ class NodeAgent:
             # OpenAI-compatible format: {"data": [{"id": "model-name"}, ...]}
             if isinstance(data, dict) and "data" in data:
                 return [m.get("id", "") for m in data["data"] if m.get("id")]
+            # Brigade agents format: {"agents": [{"id": "agent-id"}, ...]}
+            if isinstance(data, dict) and "agents" in data:
+                return [m.get("id", "") for m in data["agents"] if m.get("id")]
             # Simple list format
             if isinstance(data, list):
                 return [str(m) for m in data]
@@ -356,6 +361,7 @@ class NodeAgent:
             "reranker": "/v1/rerank",
             "image_gen": "/v1/images/generate",
             "music_gen": "/v1/music/generate",
+            "agents": "/api/v1/a2a/agents/{id}/invoke",
         }
         return mapping.get(service_type, "/v1/inference")
 
@@ -364,7 +370,18 @@ class NodeAgent:
     # ------------------------------------------------------------------
 
     def _headers(self) -> Dict[str, str]:
-        """Build authentication headers for peer requests."""
+        """Build authentication headers for peer requests.
+
+        Uses per-node signed JWTs via FederationAuth. Falls back to raw
+        Bearer token if FederationAuth is not configured (backward compat).
+        """
+        try:
+            fed_auth = get_federation_auth()
+            if fed_auth.shared_key or fed_auth.auth_mode == "node_keys":
+                return fed_auth.get_auth_headers()
+        except Exception:
+            pass
+        # Fallback: raw shared key (backward compatible)
         headers: Dict[str, str] = {}
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"

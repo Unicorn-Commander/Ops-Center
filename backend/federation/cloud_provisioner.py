@@ -33,6 +33,8 @@ from enum import Enum
 
 import httpx
 
+from federation.resilience import DistributedLock
+
 logger = logging.getLogger("federation.cloud_provisioner")
 
 
@@ -128,6 +130,12 @@ class CloudProvisioner:
         # Active instances tracker
         self.instances: Dict[str, CloudInstance] = {}
         self._client: Optional[httpx.AsyncClient] = None
+        self._distributed_lock: Optional[DistributedLock] = None
+
+    def set_redis(self, redis_client) -> None:
+        """Set the Redis client for distributed locking."""
+        if redis_client:
+            self._distributed_lock = DistributedLock(redis_client)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -151,6 +159,7 @@ class CloudProvisioner:
         Provision a cloud GPU instance for a specific service type.
 
         Called by the federation router when no local/peer capacity exists.
+        Uses a distributed lock to prevent duplicate provisioning.
 
         Returns CloudInstance once it's ready, or None if provisioning failed.
         """
@@ -158,6 +167,57 @@ class CloudProvisioner:
             logger.debug("Cloud GPU provisioning is disabled")
             return None
 
+        lock_name = f"provision:{service_type}"
+        holder_id = uuid.uuid4().hex[:8]
+        lock_acquired = False
+
+        # Try to acquire distributed lock to prevent duplicate provisioning
+        if self._distributed_lock:
+            lock_acquired = await self._distributed_lock.acquire(lock_name, holder_id)
+            if not lock_acquired:
+                # Another process is already provisioning for this service type.
+                # Wait up to 30 seconds for it to finish, then check for a ready instance.
+                logger.info(
+                    f"Provisioning lock held for {service_type}, waiting for existing provision"
+                )
+                for _ in range(6):
+                    await asyncio.sleep(5)
+                    existing = self.find_ready_instance(service_type)
+                    if existing:
+                        logger.info(
+                            f"Instance appeared while waiting for lock: {existing.id}"
+                        )
+                        return existing
+                    if not await self._distributed_lock.is_locked(lock_name):
+                        # Lock released but no instance appeared — try again
+                        lock_acquired = await self._distributed_lock.acquire(
+                            lock_name, holder_id
+                        )
+                        if lock_acquired:
+                            break
+                if not lock_acquired:
+                    logger.warning(
+                        f"Could not acquire provisioning lock for {service_type} after waiting"
+                    )
+                    return None
+
+        try:
+            return await self._do_provision(
+                service_type, model, provider, gpu_type, user_tier
+            )
+        finally:
+            if lock_acquired and self._distributed_lock:
+                await self._distributed_lock.release(lock_name, holder_id)
+
+    async def _do_provision(
+        self,
+        service_type: str,
+        model: Optional[str],
+        provider: Optional[str],
+        gpu_type: Optional[str],
+        user_tier: Optional[str],
+    ) -> Optional[CloudInstance]:
+        """Internal provisioning logic (called under distributed lock)."""
         # Check limits
         active = [
             i for i in self.instances.values()

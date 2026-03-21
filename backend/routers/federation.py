@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 import redis.asyncio as aioredis
 
 from database.connection import get_db_pool
+from federation.auth import verify_federation_request
 from federation.hardware_detector import HardwareDetector
 from federation.inference_router import InferenceRouter
 from federation.metering_aggregator import MeteringAggregator
@@ -25,7 +26,7 @@ router = APIRouter(
 
 
 class FederationServicePayload(BaseModel):
-    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker"]
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents"]
     models: List[str] = Field(default_factory=list)
     endpoint_path: Optional[str] = None
     status: str = "running"
@@ -69,7 +70,7 @@ class RoutingConstraints(BaseModel):
 
 
 class RouteRequest(BaseModel):
-    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker"]
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents"]
     model: Optional[str] = None
     min_vram_mb: Optional[int] = None
     latency_sensitive: bool = True
@@ -81,7 +82,7 @@ class RouteRequest(BaseModel):
 class UsagePayload(BaseModel):
     source_node_id: str
     target_node_id: str
-    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker"]
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents"]
     model: Optional[str] = None
     tokens_in: int = 0
     tokens_out: int = 0
@@ -119,13 +120,20 @@ async def require_admin(request: Request):
 
 
 def _federation_secret_ok(request: Request) -> bool:
-    expected = os.getenv("FEDERATION_SHARED_SECRET", "")
-    if not expected:
+    """Verify federation request auth — JWT (preferred) or legacy shared key.
+
+    Uses verify_federation_request() from federation.auth which supports:
+    - Per-node signed JWTs (new, zero-trust)
+    - Raw Bearer shared-key tokens (backward compatible)
+    - X-Federation-Key / X-Federation-Secret headers (backward compatible)
+    - Open mode when no key is configured (development)
+    """
+    is_valid, node_id, error = verify_federation_request(request)
+    if is_valid:
+        # Stash the authenticated node_id on the request state for downstream use
+        request.state.federation_node_id = node_id
         return True
-    auth_header = request.headers.get("authorization", "")
-    if auth_header == f"Bearer {expected}":
-        return True
-    return request.headers.get("x-federation-secret") == expected
+    return False
 
 
 async def get_registry(request: Request) -> NodeRegistry:
@@ -198,6 +206,33 @@ async def list_services_by_type(
     return {"services": await registry.get_service_catalog(service_type=service_type)}
 
 
+@router.get("/agents")
+async def list_federation_agents(
+    request: Request,
+    registry: NodeRegistry = Depends(get_registry),
+):
+    """List all agents available across the federation.
+
+    Returns agents from all online nodes that have Brigade running,
+    including which node hosts each agent.
+    """
+    catalog = await registry.get_service_catalog()
+    agents = []
+    for service in catalog:
+        if service.get("service_type") == "agents":
+            node_id = service.get("node_id", "unknown")
+            node_name = service.get("node_name", "unknown")
+            for agent_id in service.get("models", []):
+                agents.append({
+                    "agent_id": agent_id,
+                    "node_id": node_id,
+                    "node_name": node_name,
+                    "endpoint": service.get("endpoint_path", "/api/v1/a2a/agents/{id}/invoke"),
+                    "status": service.get("status", "unknown"),
+                })
+    return {"agents": agents, "total": len(agents)}
+
+
 @router.post("/route")
 async def route_inference(
     payload: RouteRequest,
@@ -205,6 +240,17 @@ async def route_inference(
     registry: NodeRegistry = Depends(get_registry),
 ):
     from federation.credit_estimator import estimate_credits
+    from federation.access_control import get_service_access_control
+
+    # Check service ACL before routing
+    acl = get_service_access_control()
+    access = await acl.check_access(
+        service_type=payload.service_type,
+        user_tier=payload.user_tier,
+        user_id=payload.user_id,
+    )
+    if not access["allowed"]:
+        raise HTTPException(403, f"Access denied: {access['reason']}")
 
     local_node_id = request.headers.get("x-local-node-id") or os.getenv("FEDERATION_LOCAL_NODE_ID")
     router_service = InferenceRouter(registry, local_node_id=local_node_id)
@@ -218,6 +264,12 @@ async def route_inference(
         tier_markup_percentage=25.0,  # TODO: look up from DB based on user_tier
     )
     route["credits"] = credit_info
+
+    # Attach access control info so callers know about credit requirements
+    route["access"] = {
+        "requires_credits": access["requires_credits"],
+        "is_free": access["is_free"],
+    }
 
     return route
 
@@ -461,3 +513,29 @@ async def get_pipeline_execution(
     if execution is None:
         raise HTTPException(status_code=404, detail="Execution not found")
     return execution.get_status()
+
+
+# ---------------------------------------------------------------------------
+# Audit & Circuit Breakers
+# ---------------------------------------------------------------------------
+
+@router.get("/audit")
+async def routing_audit(
+    service_type: Optional[str] = None,
+    outcome: Optional[str] = None,
+    user_tier: Optional[str] = None,
+    limit: int = 100,
+    _admin=Depends(require_admin),
+):
+    """Query the routing decision audit log."""
+    from federation.resilience import get_routing_audit_log
+    audit = get_routing_audit_log()
+    return await audit.query(service_type=service_type, outcome=outcome, user_tier=user_tier, limit=limit)
+
+
+@router.get("/circuits")
+async def circuit_status(_admin=Depends(require_admin)):
+    """Get circuit breaker status for all peers."""
+    from federation.resilience import get_circuit_breaker
+    cb = get_circuit_breaker()
+    return cb.get_status()

@@ -33,6 +33,14 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- Add agents type to existing enum (idempotent)
+DO $$
+BEGIN
+    ALTER TYPE inference_service_type ADD VALUE IF NOT EXISTS 'agents';
+EXCEPTION WHEN duplicate_object THEN
+    NULL;
+END $$;
+
 -- ==============================================================================
 -- TABLE: federation_nodes
 -- Purpose: Each row represents a UC-Cloud instance in the federation mesh.
