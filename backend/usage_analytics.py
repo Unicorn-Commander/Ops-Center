@@ -166,8 +166,10 @@ async def get_redis():
     """Get Redis client with lazy initialization"""
     global redis_client
     if redis_client is None:
+        _redis_pw = os.getenv("REDIS_PASSWORD", "")
+        _redis_auth = f":{_redis_pw}@" if _redis_pw else ""
         redis_client = await aioredis.from_url(
-            f"redis://{REDIS_HOST}:{REDIS_PORT}",
+            f"redis://{_redis_auth}{REDIS_HOST}:{REDIS_PORT}",
             encoding="utf-8",
             decode_responses=True
         )

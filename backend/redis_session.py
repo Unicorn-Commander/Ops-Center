@@ -20,7 +20,8 @@ class RedisSessionManager:
         port: int = 6379,
         db: int = 0,
         ttl: int = 7200,  # 2 hours in seconds
-        key_prefix: str = "session:"
+        key_prefix: str = "session:",
+        password: Optional[str] = None
     ):
         """
         Initialize Redis session manager
@@ -37,6 +38,7 @@ class RedisSessionManager:
         self.db = db
         self.ttl = ttl
         self.key_prefix = key_prefix
+        self.password = password
         self._client: Optional[redis.Redis] = None
 
         # Initialize connection
@@ -49,6 +51,7 @@ class RedisSessionManager:
                 host=self.host,
                 port=self.port,
                 db=self.db,
+                password=self.password,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_timeout=5,
@@ -241,5 +244,6 @@ redis_session_manager = RedisSessionManager(
     port=int(os.getenv("REDIS_PORT", "6379")),
     db=int(os.getenv("REDIS_DB", "0")),
     ttl=int(os.getenv("SESSION_TTL", "7200")),  # 2 hours
-    key_prefix=os.getenv("SESSION_KEY_PREFIX", "session:")
+    key_prefix=os.getenv("SESSION_KEY_PREFIX", "session:"),
+    password=os.getenv("REDIS_PASSWORD", None)
 )

@@ -6,6 +6,7 @@ them in Redis for historical data retrieval.
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import psutil
@@ -61,6 +62,7 @@ class MetricsCollector:
                 host=redis_host,
                 port=redis_port,
                 db=redis_db,
+                password=os.getenv("REDIS_PASSWORD", None),
                 decode_responses=True,
                 socket_timeout=5,
                 socket_connect_timeout=5

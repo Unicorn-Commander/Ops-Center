@@ -52,7 +52,7 @@ cipher_suite = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str)
 
 # Redis client
 try:
-    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=os.getenv("REDIS_PASSWORD", None), decode_responses=True)
 except Exception as e:
     logger.error(f"Redis connection failed: {e}")
     redis_client = None
