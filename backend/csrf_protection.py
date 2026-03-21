@@ -122,7 +122,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/monitoring/grafana/",  # Grafana integration API (monitoring)
             "/api/v1/admin/users/",  # User management and API key endpoints
             "/api/v1/org/",  # Organization management API
-            "/api/v1/org"    # Organization management API (without trailing slash)
+            "/api/v1/org",   # Organization management API (without trailing slash)
+            "/api/v1/federation/",  # Federation API (machine-to-machine, uses API key auth)
+            "/api/v1/admin/federation/"  # Federation settings API (admin auth, not CSRF)
         }
         self.enabled = enabled
         self.sessions_store = sessions_store or {}

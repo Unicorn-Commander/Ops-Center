@@ -138,6 +138,12 @@ const AlertsManagement = lazy(() => import('./pages/admin/AlertsManagement'));
 const WebhooksManagement = lazy(() => import('./pages/admin/WebhooksManagement'));
 const SystemAuditLog = lazy(() => import('./pages/admin/SystemAuditLog'));
 
+// Federation pages (lazy loaded)
+const FederationSettings = lazy(() => import('./pages/admin/FederationSettings'));
+const FederationNodes = lazy(() => import('./pages/admin/FederationNodes'));
+const FederationTopology = lazy(() => import('./pages/admin/FederationTopology'));
+const FederationServiceCatalog = lazy(() => import('./pages/admin/FederationServiceCatalog'));
+
 // Colonel AI Command System (Phase 1)
 const ColonelChat = lazy(() => import('./pages/admin/ColonelChat'));
 const ColonelOnboarding = lazy(() => import('./pages/admin/ColonelOnboarding'));
@@ -478,6 +484,10 @@ function AppRoutes() {
                   <Route path="infra/traefik/ssl" element={<TraefikSSL />} />
                   <Route path="infra/traefik/metrics" element={<TraefikMetrics />} />
                   <Route path="infra/migration" element={<MigrationWizard />} />
+                  <Route path="infra/federation" element={<FederationSettings />} />
+                  <Route path="infra/federation/nodes" element={<FederationNodes />} />
+                  <Route path="infra/federation/topology" element={<FederationTopology />} />
+                  <Route path="infra/federation/services" element={<FederationServiceCatalog />} />
 
                   {/* Platform */}
                   <Route path="platform/landing" element={<LandingCustomization />} />

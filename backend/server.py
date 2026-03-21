@@ -173,6 +173,11 @@ from routers.website_monitor import router as website_monitor_router
 
 # Alerts Management API (January 2026)
 from routers.alerts_api import router as alerts_router
+from routers.federation import router as federation_router
+
+# Federation Settings API (March 2026) - GUI configuration for federation
+from federation_settings_api import router as federation_settings_router
+from federation.startup import start_federation_agent, stop_federation_agent
 
 # Webhooks Management API (January 2026)
 from routers.webhooks_api import router as webhooks_router
@@ -756,6 +761,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/billing/",  # Billing analytics - REST API operations
         "/a2a",  # A2A JSON-RPC endpoint - external service-to-service calls
         "/.well-known/",  # A2A agent card discovery - public protocol endpoint
+        "/api/v1/federation/",  # Federation API - machine-to-machine, uses API key auth
+        "/api/v1/admin/federation/",  # Federation settings API - admin auth, not CSRF
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -904,6 +911,14 @@ async def startup_event():
         logger.warning(f"Could not launch Colonel Brigade registration: {e}")
         # Don't block startup — Colonel works standalone
 
+    # Start federation agent (heartbeat, discovery, peering)
+    try:
+        await start_federation_agent()
+        logger.info("Federation agent started successfully")
+    except Exception as e:
+        logger.warning(f"Could not start federation agent: {e}")
+        # Don't block startup — federation is optional
+
 
 async def check_alerts_periodically():
     """
@@ -934,6 +949,13 @@ async def shutdown_event():
             logger.info("Rate limiter closed")
         except Exception as e:
             logger.error(f"Error closing rate limiter: {e}")
+
+    # Stop federation agent
+    try:
+        await stop_federation_agent()
+        logger.info("Federation agent stopped")
+    except Exception as e:
+        logger.error(f"Error stopping federation agent: {e}")
 
     # Close credit system connections
     if hasattr(app.state, 'db_pool') and app.state.db_pool:
@@ -1087,6 +1109,10 @@ logger.info("Invite Codes User API endpoints registered at /api/v1/invite-codes"
 app.include_router(alerts_router)
 logger.info("Alerts Management API endpoints registered at /api/v1/monitoring/alerts")
 
+# Federation mesh management (March 2026)
+app.include_router(federation_router)
+logger.info("Federation API endpoints registered at /api/v1/federation")
+
 # Webhooks Management (January 2026)
 app.include_router(webhooks_router)
 logger.info("Webhooks Management API endpoints registered at /api/v1/admin/webhooks")
@@ -1150,6 +1176,10 @@ logger.info("GPU Services API endpoints registered at /api/v1/gpu-services")
 # Granite API Keys Management - February 2026
 app.include_router(granite_keys_router)
 logger.info("Granite API Keys endpoints registered at /api/v1/granite-keys")
+
+# Federation Settings API (Admin GUI) - March 2026
+app.include_router(federation_settings_router)
+logger.info("Federation Settings API endpoints registered at /api/v1/admin/federation")
 
 # Billing Analytics API
 app.include_router(billing_analytics_router)

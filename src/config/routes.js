@@ -510,6 +510,34 @@ export const routes = {
             roles: ['admin'],
             name: 'Forgejo Git Server',
             nav: false
+          },
+          federation: {
+            path: '/admin/infra/federation',
+            component: 'FederationSettings',
+            roles: ['admin'],
+            name: 'Federation',
+            icon: 'GlobeAltIcon'
+          },
+          federationNodes: {
+            path: '/admin/infra/federation/nodes',
+            component: 'FederationNodes',
+            roles: ['admin'],
+            name: 'Federation Nodes',
+            nav: false
+          },
+          federationTopology: {
+            path: '/admin/infra/federation/topology',
+            component: 'FederationTopology',
+            roles: ['admin'],
+            name: 'Federation Topology',
+            nav: false
+          },
+          federationServiceCatalog: {
+            path: '/admin/infra/federation/services',
+            component: 'FederationServiceCatalog',
+            roles: ['admin'],
+            name: 'Federation Services',
+            nav: false
           }
         }
       },
