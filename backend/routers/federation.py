@@ -18,6 +18,7 @@ from federation.hardware_detector import HardwareDetector
 from federation.inference_router import InferenceRouter
 from federation.metering_aggregator import MeteringAggregator
 from federation.node_registry import NodeRegistry
+from rate_limiter import rate_limit
 
 router = APIRouter(
     prefix="/api/v1/federation",
@@ -146,6 +147,7 @@ async def get_registry(request: Request) -> NodeRegistry:
 
 
 @router.post("/register")
+@rate_limit("federation_register")
 async def register_node(
     payload: NodeRegistrationPayload,
     request: Request,
@@ -157,6 +159,7 @@ async def register_node(
 
 
 @router.post("/heartbeat")
+@rate_limit("federation_heartbeat")
 async def heartbeat(
     payload: HeartbeatPayload,
     request: Request,
@@ -234,6 +237,7 @@ async def list_federation_agents(
 
 
 @router.post("/route")
+@rate_limit("federation_route")
 async def route_inference(
     payload: RouteRequest,
     request: Request,
@@ -305,7 +309,9 @@ async def usage_summary(
 
 
 @router.get("/health")
+@rate_limit("federation_health")
 async def federation_health(
+    request: Request,
     registry: NodeRegistry = Depends(get_registry),
 ):
     nodes = await registry.get_nodes(include_offline=True)
@@ -356,6 +362,7 @@ async def list_cloud_instances(
 
 
 @router.post("/cloud/provision")
+@rate_limit("federation_provision")
 async def provision_cloud_instance(
     request: Request,
     body: dict,

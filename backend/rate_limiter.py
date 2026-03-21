@@ -54,6 +54,12 @@ class RateLimitConfig:
             "read": self._parse_limit(os.environ.get("RATE_LIMIT_READ", "200/minute")),
             "write": self._parse_limit(os.environ.get("RATE_LIMIT_WRITE", "50/minute")),
             "health": None,  # No limit for health checks
+            # Federation-specific limits
+            "federation_register": self._parse_limit(os.environ.get("RATE_LIMIT_FED_REGISTER", "10/minute")),
+            "federation_heartbeat": self._parse_limit(os.environ.get("RATE_LIMIT_FED_HEARTBEAT", "60/minute")),
+            "federation_route": self._parse_limit(os.environ.get("RATE_LIMIT_FED_ROUTE", "100/minute")),
+            "federation_health": self._parse_limit(os.environ.get("RATE_LIMIT_FED_HEALTH", "120/minute")),
+            "federation_provision": self._parse_limit(os.environ.get("RATE_LIMIT_FED_PROVISION", "5/minute")),
         }
 
         # Admin bypass
