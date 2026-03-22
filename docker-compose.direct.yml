@@ -20,11 +20,11 @@ services:
     env_file:
       - .env.auth
     environment:
-      - EXTERNAL_HOST=magicunicorn.dev
+      - EXTERNAL_HOST=${EXTERNAL_HOST:-magicunicorn.dev}
       - EXTERNAL_PROTOCOL=https
       - OAUTH_CLIENT_ID=ops-center
       - OPS_CENTER_OAUTH_CLIENT_SECRET=REMOVED
-      - KEYCLOAK_URL=http://unicorn-keycloak:8080
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://unicorn-keycloak:8080}
       - KEYCLOAK_REALM=uchub
       - KEYCLOAK_ADMIN_USER=admin
       - KEYCLOAK_ADMIN_PASSWORD=REMOVED-KEYCLOAK_ADMIN_PASSWORD
@@ -34,19 +34,19 @@ services:
       - STRIPE_SECRET_KEY=sREMOVED
       - STRIPE_API_KEY=sREMOVED
       - SREMOVED
-      - STRIPE_SUCCESS_URL=https://magicunicorn.dev/signup-flow.html?success=true
-      - STRIPE_CANCEL_URL=https://magicunicorn.dev/signup-flow.html?canceled=true
+      - STRIPE_SUCCESS_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/signup-flow.html?success=true
+      - STRIPE_CANCEL_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/signup-flow.html?canceled=true
       # Lago Configuration
       - LAGO_API_URL=http://unicorn-lago-api:3000
-      - LAGO_PUBLIC_URL=https://billing-api.magicunicorn.dev
-      - REMOVED
+      - LAGO_PUBLIC_URL=${LAGO_PUBLIC_URL:-https://billing-api.magicunicorn.dev}
+      - LAGO_API_KEY=${LAGO_API_KEY:-2cf90633-b407-4be4-bf8d-a26424c7f2bb}
       # Redis for sessions
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@unicorn-redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@${REDIS_HOST:-unicorn-redis}:6379/0
       # PostgreSQL Database
-      - POSTGRES_HOST=postgresql
+      - POSTGRES_HOST=${POSTGRES_HOST:-unicorn-postgresql}
       - POSTGRES_PORT=5432
       - POSTGRES_USER=unicorn
-      - POSTGRES_PASSWORD=REMOVED
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-REMOVED}
       - POSTGRES_DB=unicorn_db
       # Credential Encryption Key (Fernet)
       - EREMOVED
@@ -64,42 +64,42 @@ services:
       - "traefik.http.services.ops-center-svc.loadbalancer.responseforwarding.flushinterval=-1"
 
       # Admin routes (highest priority for authenticated routes)
-      - "traefik.http.routers.ops-center-admin.rule=Host(`magicunicorn.dev`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.ops-center-admin.rule=Host(`${EXTERNAL_HOST:-magicunicorn.dev}`) && PathPrefix(`/admin`)"
       - "traefik.http.routers.ops-center-admin.priority=100"
-      - "traefik.http.routers.ops-center-admin.entrypoints=web,websecure"
+      - "traefik.http.routers.ops-center-admin.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-web},${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}"
       - "traefik.http.routers.ops-center-admin.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center-admin.service=ops-center-svc"
 
       # API routes
-      - "traefik.http.routers.ops-center-api-path.rule=Host(`magicunicorn.dev`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.ops-center-api-path.rule=Host(`${EXTERNAL_HOST:-magicunicorn.dev}`) && PathPrefix(`/api`)"
       - "traefik.http.routers.ops-center-api-path.priority=90"
-      - "traefik.http.routers.ops-center-api-path.entrypoints=web,websecure"
+      - "traefik.http.routers.ops-center-api-path.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-web},${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}"
       - "traefik.http.routers.ops-center-api-path.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center-api-path.service=ops-center-svc"
 
       # Auth routes
-      - "traefik.http.routers.ops-center-auth.rule=Host(`magicunicorn.dev`) && PathPrefix(`/auth`)"
+      - "traefik.http.routers.ops-center-auth.rule=Host(`${EXTERNAL_HOST:-magicunicorn.dev}`) && PathPrefix(`/auth`)"
       - "traefik.http.routers.ops-center-auth.priority=80"
-      - "traefik.http.routers.ops-center-auth.entrypoints=web,websecure"
+      - "traefik.http.routers.ops-center-auth.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-web},${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}"
       - "traefik.http.routers.ops-center-auth.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center-auth.service=ops-center-svc"
 
       # Root route (lowest priority, catches landing page)
-      - "traefik.http.routers.ops-center-root.rule=Host(`magicunicorn.dev`)"
+      - "traefik.http.routers.ops-center-root.rule=Host(`${EXTERNAL_HOST:-magicunicorn.dev}`)"
       - "traefik.http.routers.ops-center-root.priority=1"
-      - "traefik.http.routers.ops-center-root.entrypoints=web,websecure"
+      - "traefik.http.routers.ops-center-root.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-web},${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}"
       - "traefik.http.routers.ops-center-root.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center-root.service=ops-center-svc"
 
       # API subdomain HTTPS route
-      - "traefik.http.routers.ops-center-api-subdomain.rule=Host(`api.magicunicorn.dev`)"
-      - "traefik.http.routers.ops-center-api-subdomain.entrypoints=websecure"
+      - "traefik.http.routers.ops-center-api-subdomain.rule=Host(`api.${EXTERNAL_HOST:-magicunicorn.dev}`)"
+      - "traefik.http.routers.ops-center-api-subdomain.entrypoints=${TRAEFIK_ENTRYPOINT_HTTPS:-websecure}"
       - "traefik.http.routers.ops-center-api-subdomain.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ops-center-api-subdomain.service=ops-center-svc"
 
       # API subdomain HTTP route
-      - "traefik.http.routers.ops-center-api-http.rule=Host(`api.magicunicorn.dev`)"
-      - "traefik.http.routers.ops-center-api-http.entrypoints=web"
+      - "traefik.http.routers.ops-center-api-http.rule=Host(`api.${EXTERNAL_HOST:-magicunicorn.dev}`)"
+      - "traefik.http.routers.ops-center-api-http.entrypoints=${TRAEFIK_ENTRYPOINT_HTTP:-web}"
       - "traefik.http.routers.ops-center-api-http.service=ops-center-svc"
       # Note: No redirect middleware - Cloudflare handles HTTP→HTTPS redirect
 

@@ -21,7 +21,8 @@ Thumbs.db
 *.secrets
 .env.secrets
 
-# Environment variables
+# Environment variables (deployment-specific, not shared)
+.env
 .env.auth
 .env.local
 .env.development.local
