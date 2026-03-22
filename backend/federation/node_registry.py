@@ -2,7 +2,6 @@
 Federation node registry backed by Redis and PostgreSQL.
 """
 
-from __future__ import annotations
 
 from datetime import datetime, timezone
 import json

@@ -8,7 +8,6 @@ configured peer nodes. A heartbeat loop then reports GPU memory, load,
 and service status every 30 seconds.
 """
 
-from __future__ import annotations
 
 import asyncio
 import logging

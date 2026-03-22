@@ -2,7 +2,6 @@
 Hardware detection for federation node advertisement.
 """
 
-from __future__ import annotations
 
 import platform
 import shutil

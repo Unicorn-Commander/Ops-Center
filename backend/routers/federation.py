@@ -2,7 +2,6 @@
 Federation API router for Ops-Center.
 """
 
-from __future__ import annotations
 
 import os
 import sys

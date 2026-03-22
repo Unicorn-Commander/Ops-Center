@@ -6,7 +6,6 @@ scoring system that considers cost, latency, and quality. Supports local service
 peer federation nodes, and cloud API fallback via LiteLLM.
 """
 
-from __future__ import annotations
 
 import logging
 import os

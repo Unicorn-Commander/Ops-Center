@@ -6,7 +6,6 @@ reports to Lago billing system, and supports batch reporting to a designated
 billing node. Provides aggregated usage summaries by period.
 """
 
-from __future__ import annotations
 
 import json
 import logging

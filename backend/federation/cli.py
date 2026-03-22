@@ -15,7 +15,6 @@ Usage:
     python -m federation.cli hardware
 """
 
-from __future__ import annotations
 
 import argparse
 import os

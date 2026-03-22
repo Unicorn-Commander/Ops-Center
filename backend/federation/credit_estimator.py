@@ -19,7 +19,6 @@ Cost basis (1 credit ~ $0.001):
   llm              | varies      | per-token pricing       | varies
 """
 
-from __future__ import annotations
 
 from typing import Any, Dict
 
