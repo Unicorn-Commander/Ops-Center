@@ -43,6 +43,8 @@ class InferenceServiceType(enum.Enum):
     MUSIC_GEN = "music_gen"
     RERANKER = "reranker"
     AGENTS = "agents"
+    SEARCH = "search"
+    EXTRACTION = "extraction"
 
 
 class FederationNode(Base):

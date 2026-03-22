@@ -36,6 +36,8 @@ LOCAL_SERVICES = [
     ("majiks-studio", 8091, "music_gen", "/health", None),
     ("granite-proxy", 8089, "llm", "/health", None),
     ("brigade", 8100, "agents", "/health", "/api/v1/agents"),
+    ("centerdeep", 8888, "search", "/health", None),
+    ("granite-extraction", 8089, "extraction", "/health", None),
 ]
 
 class NodeAgent:

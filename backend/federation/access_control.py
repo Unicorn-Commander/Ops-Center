@@ -66,6 +66,18 @@ DEFAULT_SERVICE_ACL = {
         "require_credits": True,
         "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
     },
+    "search": {
+        "allowed_tiers": ["vip_founder", "founder_friend", "managed", "professional", "enterprise"],
+        "blocked_tiers": ["trial"],
+        "require_credits": True,
+        "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
+    },
+    "extraction": {
+        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "managed", "professional", "enterprise"],
+        "blocked_tiers": ["trial"],
+        "require_credits": True,
+        "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
+    },
 }
 
 

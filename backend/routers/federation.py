@@ -26,7 +26,7 @@ router = APIRouter(
 
 
 class FederationServicePayload(BaseModel):
-    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents"]
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents", "search", "extraction"]
     models: List[str] = Field(default_factory=list)
     endpoint_path: Optional[str] = None
     status: str = "running"
@@ -70,7 +70,7 @@ class RoutingConstraints(BaseModel):
 
 
 class RouteRequest(BaseModel):
-    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents"]
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents", "search", "extraction"]
     model: Optional[str] = None
     min_vram_mb: Optional[int] = None
     latency_sensitive: bool = True
@@ -82,7 +82,7 @@ class RouteRequest(BaseModel):
 class UsagePayload(BaseModel):
     source_node_id: str
     target_node_id: str
-    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents"]
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "music_gen", "reranker", "agents", "search", "extraction"]
     model: Optional[str] = None
     tokens_in: int = 0
     tokens_out: int = 0
