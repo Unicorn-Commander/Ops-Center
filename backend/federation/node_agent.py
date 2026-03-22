@@ -38,10 +38,6 @@ LOCAL_SERVICES = [
     ("brigade", 8100, "agents", "/health", "/api/v1/agents"),
 ]
 
-# Module-level singleton
-_agent_instance: Optional[NodeAgent] = None
-
-
 class NodeAgent:
     """Federation node agent that handles registration, heartbeats,
     and local service discovery.
@@ -396,6 +392,8 @@ class NodeAgent:
 # ------------------------------------------------------------------
 # Module-level singleton
 # ------------------------------------------------------------------
+
+_agent_instance: Optional[NodeAgent] = None
 
 
 def get_node_agent() -> NodeAgent:
