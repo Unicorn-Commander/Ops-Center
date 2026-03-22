@@ -25,19 +25,18 @@ from federation.hardware_detector import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
-# Local service definitions: (name, port, service_type, health_path, models_path)
+# Local service definitions: (name, docker_host, docker_port, host_port, service_type, health_path, models_path)
+# docker_host: container name for container-to-container; falls back to localhost:host_port
 LOCAL_SERVICES = [
-    ("llama-router", 8085, "llm", "/health", "/v1/models"),
-    ("whisperx", 9000, "stt", "/health", None),
-    ("kokoro-tts", 8880, "tts", "/health", None),
-    ("infinity-embeddings", 8082, "health", "/health", None),
-    ("infinity-reranker", 8083, "reranker", "/health", None),
-    ("artwork-studio", 8095, "image_gen", "/health", None),
-    ("majiks-studio", 8091, "music_gen", "/health", None),
-    ("granite-proxy", 8089, "llm", "/health", None),
-    ("brigade", 8100, "agents", "/health", "/api/v1/agents"),
-    ("centerdeep", 8888, "search", "/health", None),
-    ("granite-extraction", 8089, "extraction", "/health", None),
+    ("llama-router", "unicorn-llama-router", 8080, 8085, "llm", "/health", "/v1/models"),
+    ("whisperx", "whisperx-dev", 9000, 9000, "stt", "/health", None),
+    ("kokoro-tts", "kokoro-tts", 8880, 8880, "tts", "/health", None),
+    ("infinity-embeddings", "unicorn-infinity-proxy", 8080, 8086, "embeddings", "/health", None),
+    ("infinity-reranker", "unicorn-infinity-proxy", 8080, 8086, "reranker", "/health", None),
+    ("artwork-studio", "unicorn-artwork-api", 8095, 8095, "image_gen", "/health", None),
+    ("majiks-studio", "unicorn-majiks-api", 8090, 8091, "music_gen", "/health", None),
+    ("granite-proxy", "unicorn-granite-proxy", 8080, 8089, "extraction", "/health", None),
+    ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/agents"),
 ]
 
 class NodeAgent:
@@ -283,8 +282,8 @@ class NodeAgent:
         services = []
         async with httpx.AsyncClient(timeout=5.0) as client:
             tasks = [
-                self._check_service(client, name, port, svc_type, health_path, models_path)
-                for name, port, svc_type, health_path, models_path in LOCAL_SERVICES
+                self._check_service(client, name, docker_host, docker_port, host_port, svc_type, health_path, models_path)
+                for name, docker_host, docker_port, host_port, svc_type, health_path, models_path in LOCAL_SERVICES
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -293,37 +292,56 @@ class NodeAgent:
                 services.append(result)
             # Exceptions are silently ignored (service not available)
 
+        if services:
+            logger.info("Discovered %d local services: %s", len(services),
+                       ", ".join(s["service_type"] for s in services))
+
         return services
 
     async def _check_service(
         self,
         client: httpx.AsyncClient,
         name: str,
-        port: int,
+        docker_host: str,
+        docker_port: int,
+        host_port: int,
         service_type: str,
         health_path: str,
         models_path: Optional[str],
     ) -> Optional[Dict[str, Any]]:
-        """Check if a single local service is healthy and optionally fetch its models."""
-        url = f"http://localhost:{port}{health_path}"
-        try:
-            response = await client.get(url)
-            if response.status_code >= 400:
-                return None
-        except Exception:
+        """Check if a single local service is healthy and optionally fetch its models.
+        Tries Docker container name first, then falls back to localhost with host-mapped port."""
+        # Try Docker container name first (container-to-container)
+        urls_to_try = [
+            f"http://{docker_host}:{docker_port}{health_path}",
+            f"http://localhost:{host_port}{health_path}",
+        ]
+        url = None
+        for try_url in urls_to_try:
+            try:
+                response = await client.get(try_url)
+                if response.status_code < 400:
+                    url = try_url
+                    break
+            except Exception:
+                continue
+
+        if url is None:
             return None
 
-        # Service is healthy
+        # Service is healthy — extract base URL for model fetching
+        base_url = url.rsplit(health_path, 1)[0]
+
         models = []
         if models_path:
-            models = await self._fetch_models(client, port, models_path)
+            models = await self._fetch_models(client, base_url, models_path)
 
         endpoint_path = self._service_endpoint_path(service_type)
 
         return {
             "service_type": service_type,
             "name": name,
-            "port": port,
+            "port": host_port,
             "models": models,
             "endpoint_path": endpoint_path,
             "status": "running",
@@ -336,10 +354,10 @@ class NodeAgent:
         }
 
     async def _fetch_models(
-        self, client: httpx.AsyncClient, port: int, models_path: str
+        self, client: httpx.AsyncClient, base_url: str, models_path: str
     ) -> List[str]:
         """Fetch the model list from a service's /v1/models endpoint."""
-        url = f"http://localhost:{port}{models_path}"
+        url = f"{base_url}{models_path}"
         try:
             response = await client.get(url)
             if response.status_code >= 400:
