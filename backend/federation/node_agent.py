@@ -358,7 +358,8 @@ class NodeAgent:
         for try_url in urls_to_try:
             try:
                 response = await client.get(try_url)
-                if response.status_code < 400:
+                # < 500 means the service is running — 401/403 just means auth-protected
+                if response.status_code < 500:
                     url = try_url
                     break
             except Exception:
