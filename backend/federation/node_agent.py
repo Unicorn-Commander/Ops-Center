@@ -225,6 +225,17 @@ class NodeAgent:
             "services": self._discovered_services,
         }
 
+        # Self-heartbeat to keep our own node fresh in the local registry
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as local_client:
+                await local_client.post(
+                    "http://localhost:8084/api/v1/federation/heartbeat",
+                    json=payload,
+                    headers=self._headers(),
+                )
+        except Exception:
+            pass  # Local heartbeat failure is non-fatal
+
         if not self.peers:
             return
 
