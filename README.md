@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.3.0-blue.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-purple.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
@@ -81,12 +81,13 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 - **Persistent Sessions**: PostgreSQL-backed sessions with Redis caching
 
 ### 🌐 Federation Inference Mesh
-- **Multi-Node Federation**: Peer-to-peer mesh connecting home servers, cloud GPUs, and API providers
+- **4-Node WireGuard Mesh**: Encrypted peer-to-peer mesh via Headscale/Tailscale (`unicorncommander.net` MagicDNS)
+- **13 Services Auto-Discovered**: LLM (30 models), embeddings, reranker, search (4 tools), extraction, image/music gen, agents
+- **3 Federated Nodes**: Home GPU server (magicunicorn), VPS gateway (commander), Search server (centerdeep) + Mac Studio
+- **Service Auto-Discovery**: Per-deployment profiles (`home`, `vps`, `centerdeep`, `custom`) with Docker health checks every 30s
 - **Smart Routing**: Tier-aware, constraint-based routing to the best available inference backend
 - **Cloud GPU Bursting**: On-demand Lambda Labs GPU provisioning with auto-shutdown on idle
-- **Service Discovery**: Automatic hardware detection and service catalog across all nodes
-- **Multi-Step Pipelines**: Chain inference steps (e.g., music generation + artwork) across nodes
-- **Zero Trust Security**: Per-node signed JWTs, per-service ACLs, circuit breakers, full audit trail
+- **Zero Trust Security**: WireGuard encryption for internal traffic, per-node signed JWTs, per-service ACLs, circuit breakers
 - **Brigade Agent Federation**: Cross-node agent discovery and delegation
 
 ### 📊 Analytics & Monitoring
@@ -255,8 +256,9 @@ ops-center/
 - **Reverse Proxy**: Traefik (SSL/TLS)
 - **Networks**: Multi-network architecture
 - **Orchestration**: Docker Compose
-- **Federation**: Peer-to-peer inference mesh with cloud GPU bursting (Lambda Labs)
+- **Federation**: 4-node WireGuard mesh via Headscale with 13 auto-discovered services
 - **Cloud GPU**: Auto-provisioning with persistent S3 model cache and idle auto-shutdown
+- **Mesh Network**: Headscale coordination at `headscale.unicorncommander.ai`, MagicDNS via `unicorncommander.net`
 
 ---
 
@@ -439,6 +441,14 @@ mypy backend/
 
 ## 🌟 Recent Updates
 
+### v3.3.0 (March 22, 2026) - Mesh Network + Service Auto-Discovery
+- **4-Node WireGuard Mesh**: Encrypted peer-to-peer mesh via Headscale/Tailscale with MagicDNS (`unicorncommander.net`)
+- **13 Services Auto-Discovered**: Docker health-check-based discovery across 3 federated nodes
+- **Per-Deployment Profiles**: `FEDERATION_SERVICE_PROFILE` env var (home, vps, centerdeep, custom) for multi-site compose
+- **New Service Types**: `search` (CenterDeep tools) and `extraction` (Granite, Tika)
+- **Compose Parameterization**: `${VAR:-default}` substitution — git pulls no longer clobber deployment config
+- **Infrastructure**: `join-federation-network.sh`, Docker log rotation, Forgejo Actions CI runner
+
 ### v3.1.0 (March 21, 2026) - Zero Trust Security + Resilience
 - **Per-Node Signed JWTs**: HMAC-SHA256 tokens with replay prevention replace shared API keys for federation auth
 - **Circuit Breakers**: Per-peer failure isolation prevents cascading failures across the federation mesh
@@ -503,6 +513,7 @@ All services share:
 - **🔒 HTTPS/TLS**: SSL certificates via Traefik
 - **💰 PCI Compliance**: Stripe handles all card data
 - **🌐 Federation Security**: Per-node HMAC-SHA256 signed JWTs with replay prevention (JTI + 60s expiry)
+- **🔗 WireGuard Mesh**: All internal federation traffic encrypted via WireGuard tunnels (no Cloudflare for heartbeats)
 - **🔄 Circuit Breakers**: Per-peer failure isolation (3 failures → 30s cooldown → half-open test)
 - **🔐 Credential Encryption**: Fernet encryption for stored secrets, CSRF protection, rate limiting
 

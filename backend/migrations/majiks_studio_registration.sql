@@ -37,7 +37,7 @@ INSERT INTO tier_features (tier_id, feature_key, feature_value, enabled)
 SELECT st.id, 'majiks_studio_access', 'true', TRUE
 FROM subscription_tiers st
 WHERE st.is_active = TRUE
-  AND st.tier_code IN ('vip_founder', 'founder_friend', 'byok', 'managed', 'trial')
+  AND st.tier_code IN ('vip_founder', 'founder_friend', 'byok', 'managed', 'trial', 'professional')
 ON CONFLICT (tier_id, feature_key) DO UPDATE SET enabled = TRUE;
 
 COMMIT;

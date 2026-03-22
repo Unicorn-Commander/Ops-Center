@@ -41,7 +41,9 @@ services:
       - LAGO_PUBLIC_URL=${LAGO_PUBLIC_URL:-https://billing-api.magicunicorn.dev}
       - LAGO_API_KEY=${LAGO_API_KEY:-2cf90633-b407-4be4-bf8d-a26424c7f2bb}
       # Redis for sessions
+      - REDIS_HOST=${REDIS_HOST:-unicorn-redis}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@${REDIS_HOST:-unicorn-redis}:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       # PostgreSQL Database
       - POSTGRES_HOST=${POSTGRES_HOST:-unicorn-postgresql}
       - POSTGRES_PORT=5432
@@ -52,6 +54,15 @@ services:
       - EREMOVED
       # BYOK Encryption Key (for user API keys)
       - BREMOVED
+      # Federation Node Agent (peer-to-peer inference mesh)
+      - FEDERATION_NODE_ID=${FEDERATION_NODE_ID:-uc-magicunicorn}
+      - FEDERATION_NODE_NAME=${FEDERATION_NODE_NAME:-Magic Unicorn Home Server}
+      - FEDERATION_ENDPOINT_URL=${FEDERATION_ENDPOINT_URL:-https://magicunicorn.dev}
+      - FEDERATION_KEY=${FEDERATION_KEY:-REMOVED-FEDERATION_KEY}
+      - FEDERATION_PEERS=${FEDERATION_PEERS:-https://unicorncommander.ai}
+      - FEDERATION_ROLES=${FEDERATION_ROLES:-inference,billing}
+      - FEDERATION_REGION=${FEDERATION_REGION:-home-lan}
+      - FEDERATION_HEARTBEAT_INTERVAL=${FEDERATION_HEARTBEAT_INTERVAL:-30}
     networks:
       - web
       - unicorn-network
