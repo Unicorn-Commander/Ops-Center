@@ -25,19 +25,57 @@ from federation.hardware_detector import HardwareDetector
 
 logger = logging.getLogger(__name__)
 
-# Local service definitions: (name, docker_host, docker_port, host_port, service_type, health_path, models_path)
-# docker_host: container name for container-to-container; falls back to localhost:host_port
-LOCAL_SERVICES = [
-    ("llama-router", "unicorn-llama-router", 8080, 8085, "llm", "/health", "/v1/models"),
-    ("whisperx", "whisperx-dev", 9000, 9000, "stt", "/health", None),
-    ("kokoro-tts", "kokoro-tts", 8880, 8880, "tts", "/health", None),
-    ("infinity-embeddings", "unicorn-infinity-proxy", 8080, 8086, "embeddings", "/health", None),
-    ("infinity-reranker", "unicorn-infinity-proxy", 8080, 8086, "reranker", "/health", None),
-    ("artwork-studio", "unicorn-artwork-api", 8095, 8095, "image_gen", "/health", None),
-    ("majiks-studio", "unicorn-majiks-api", 8090, 8091, "music_gen", "/health", None),
-    ("granite-proxy", "unicorn-granite-proxy", 8080, 8089, "extraction", "/health", None),
-    ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/agents"),
-]
+# Default service definitions per deployment profile
+# Each entry: (name, docker_host, docker_port, host_port, service_type, health_path, models_path)
+#
+# Set FEDERATION_SERVICE_PROFILE env var to select which services to discover:
+#   "home"       — magicunicorn.dev (GPU inference server)
+#   "vps"        — unicorncommander.ai (gateway, LiteLLM, Brigade)
+#   "centerdeep" — centerdeep.online (search, extraction)
+#   "custom"     — uses FEDERATION_CUSTOM_SERVICES JSON env var
+#
+# Default: "home" (backward compatible)
+
+SERVICE_PROFILES = {
+    "home": [
+        ("llama-router", "unicorn-llama-router", 8080, 8085, "llm", "/health", "/v1/models"),
+        ("whisperx", "whisperx-dev", 9000, 9000, "stt", "/health", None),
+        ("kokoro-tts", "kokoro-tts", 8880, 8880, "tts", "/health", None),
+        ("infinity-embeddings", "unicorn-infinity-proxy", 8080, 8086, "embeddings", "/health", None),
+        ("infinity-reranker", "unicorn-infinity-proxy", 8080, 8086, "reranker", "/health", None),
+        ("artwork-studio", "unicorn-artwork-api", 8095, 8095, "image_gen", "/health", None),
+        ("majiks-studio", "unicorn-majiks-api", 8090, 8091, "music_gen", "/health", None),
+        ("granite-proxy", "unicorn-granite-proxy", 8080, 8089, "extraction", "/health", None),
+        ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/agents"),
+    ],
+    "vps": [
+        ("litellm", "uchub-litellm", 4000, 4000, "llm", "/health", "/v1/models"),
+        ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/agents"),
+    ],
+    "centerdeep": [
+        ("search-web", "center-deep-tool-search", 8001, 11001, "search", "/health", None),
+        ("search-deep", "center-deep-tool-deep-search", 8002, 11002, "search", "/health", None),
+        ("search-report", "center-deep-tool-report", 8003, 11003, "search", "/health", None),
+        ("search-academic", "center-deep-tool-academic", 8004, 11004, "search", "/health", None),
+        ("tika", "unicorn-tika", 9998, 9998, "extraction", "/tika", None),
+    ],
+}
+
+
+def _get_local_services():
+    """Get the service discovery list for this node's profile."""
+    profile = os.getenv("FEDERATION_SERVICE_PROFILE", "home")
+    if profile == "custom":
+        custom = os.getenv("FEDERATION_CUSTOM_SERVICES", "[]")
+        try:
+            return [tuple(s) for s in json.loads(custom)]
+        except Exception:
+            logger.warning("Failed to parse FEDERATION_CUSTOM_SERVICES, using empty list")
+            return []
+    return SERVICE_PROFILES.get(profile, SERVICE_PROFILES["home"])
+
+
+LOCAL_SERVICES = _get_local_services()
 
 class NodeAgent:
     """Federation node agent that handles registration, heartbeats,
