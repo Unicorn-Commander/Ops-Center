@@ -43,7 +43,6 @@ services:
       # Redis for sessions
       - REDIS_HOST=${REDIS_HOST:-unicorn-redis}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@${REDIS_HOST:-unicorn-redis}:6379/0
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       # PostgreSQL Database
       - POSTGRES_HOST=${POSTGRES_HOST:-unicorn-postgresql}
       - POSTGRES_PORT=5432
@@ -54,7 +53,7 @@ services:
       - EREMOVED
       # BYOK Encryption Key (for user API keys)
       - BREMOVED
-      # Federation Node Agent (peer-to-peer inference mesh)
+      # Federation Node Agent
       - FEDERATION_NODE_ID=${FEDERATION_NODE_ID:-uc-magicunicorn}
       - FEDERATION_NODE_NAME=${FEDERATION_NODE_NAME:-Magic Unicorn Home Server}
       - FEDERATION_ENDPOINT_URL=${FEDERATION_ENDPOINT_URL:-https://magicunicorn.dev}
@@ -63,6 +62,7 @@ services:
       - FEDERATION_ROLES=${FEDERATION_ROLES:-inference,billing}
       - FEDERATION_REGION=${FEDERATION_REGION:-home-lan}
       - FEDERATION_HEARTBEAT_INTERVAL=${FEDERATION_HEARTBEAT_INTERVAL:-30}
+      - FEDERATION_SERVICE_PROFILE=${FEDERATION_SERVICE_PROFILE:-home}
     networks:
       - web
       - unicorn-network

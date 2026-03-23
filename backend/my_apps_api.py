@@ -387,6 +387,21 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
     logger = logging.getLogger(__name__)
     logger.info(f"[MY-APPS] User tier detected: {user_tier}")
 
+    # Check if user is admin — admin gets all apps
+    session_token = request.cookies.get("session_token")
+    is_admin = False
+    if session_token:
+        try:
+            from redis_session import redis_session_manager
+            if session_token in redis_session_manager:
+                session_data = redis_session_manager[session_token]
+                user_data = session_data.get("user", {})
+                if user_data.get("role") == "admin":
+                    is_admin = True
+                    logger.info(f"[MY-APPS] Admin user detected — granting all apps")
+        except Exception as e:
+            logger.debug(f"[MY-APPS] Admin check failed: {e}")
+
     # Get user's current organization from session
     org_id = await get_user_org_from_session(request)
     logger.info(f"[MY-APPS] User org_id from session: {org_id}")
@@ -405,8 +420,18 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
         if org_features_set:
             logger.info(f"[MY-APPS] Org features for {org_id}: {org_features_set}")
 
-        # Combined features - user sees app if EITHER tier OR org grants access
-        enabled_features = tier_features.union(org_features_set)
+        # Admin users get ALL features
+        if is_admin:
+            all_features = await conn.fetch("SELECT feature_key FROM feature_definitions WHERE is_active = TRUE")
+            enabled_features = {row['feature_key'] for row in all_features}
+            # Also add any app-specific feature keys from add_ons
+            app_features = await conn.fetch("SELECT DISTINCT feature_key FROM add_ons WHERE feature_key IS NOT NULL AND is_active = TRUE")
+            enabled_features.update({row['feature_key'] for row in app_features})
+            logger.info(f"[MY-APPS] Admin override: {len(enabled_features)} features enabled")
+        else:
+            # Combined features - user sees app if EITHER tier OR org grants access
+            enabled_features = tier_features.union(org_features_set)
+
         logger.info(f"[MY-APPS] Combined enabled features: {enabled_features}")
 
         # Get all active apps
@@ -435,16 +460,9 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
             access_type = None
 
             if feature_key:
-                # Check if access comes from tier or org
-                in_tier = feature_key in tier_features
-                in_org = feature_key in org_features_set
-
-                if in_tier:
-                    # User's subscription tier includes this app
-                    access_type = 'tier_included'
-                elif in_org:
-                    # User's org has explicit grant for this app
-                    access_type = 'org_granted'
+                # Check if access comes from admin, tier, or org
+                if is_admin or feature_key in enabled_features:
+                    access_type = 'tier_included' if feature_key in tier_features else 'org_granted'
                 else:
                     # User has no access - skip
                     continue
