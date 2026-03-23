@@ -51,7 +51,7 @@
                                 <img src="${url.resourcesPath}/img/colonel-logo.png" alt="The Colonel Logo" class="uc1-logo" onerror="this.style.display='none'" />
                             </div>
                             <h1 class="uc1-title">Reset Password</h1>
-                            <p class="uc1-subtitle">UC-1 Pro Operations Center</p>
+                            <p class="uc1-subtitle">Secure sign-in for all services</p>
                         </header>
 
                         <div id="kc-content">
@@ -108,7 +108,7 @@
                         </div>
 
                         <footer class="uc1-footer">
-                            <p>&copy; 2025 Magic Unicorn Unconventional Technology & Stuff Inc</p>
+                            <p>&copy; 2026 Magic Unicorn Unconventional Technology &amp; Stuff Inc</p>
                         </footer>
                     </div>
                 </div>

@@ -51,7 +51,7 @@
                                 <img src="${url.resourcesPath}/img/colonel-logo.png" alt="The Colonel Logo" class="uc1-logo" onerror="this.style.display='none'" />
                             </div>
                             <h1 class="uc1-title">Verify Email</h1>
-                            <p class="uc1-subtitle">UC-1 Pro Operations Center</p>
+                            <p class="uc1-subtitle">Secure sign-in for all services</p>
                         </header>
 
                         <div id="kc-content">
@@ -68,7 +68,7 @@
                                 </#if>
 
                                 <div class="uc1-verify-email-instructions" style="text-align: center; color: rgba(255,255,255,0.9); margin-bottom: 25px; line-height: 1.6; font-size: 15px;">
-                                    <p style="margin-bottom: 15px;">${msg("emailVerifyInstruction1")}</p>
+                                    <p style="margin-bottom: 15px;">${msg("emailVerifyInstruction1", user.email)}</p>
                                     <p style="margin-bottom: 20px;">${msg("emailVerifyInstruction2")}
                                         <a href="${url.loginAction}" class="uc1-link">${msg("doClickHere")}</a>
                                         ${msg("emailVerifyInstruction3")}
@@ -79,7 +79,7 @@
                         </div>
 
                         <footer class="uc1-footer">
-                            <p>&copy; 2025 Magic Unicorn Unconventional Technology & Stuff Inc</p>
+                            <p>&copy; 2026 Magic Unicorn Unconventional Technology &amp; Stuff Inc</p>
                         </footer>
                     </div>
                 </div>
