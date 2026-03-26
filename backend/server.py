@@ -122,6 +122,9 @@ from routers.gpu_services import router as gpu_services_router
 # Granite API Keys Management
 from routers.granite_keys import router as granite_keys_router
 
+# Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
+from routers.inference_proxy import router as inference_proxy_router
+
 # Billing Analytics API
 from billing_analytics_api import router as billing_analytics_router
 
@@ -764,6 +767,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/.well-known/",  # A2A agent card discovery - public protocol endpoint
         "/api/v1/federation/",  # Federation API - machine-to-machine, uses API key auth
         "/api/v1/admin/federation/",  # Federation settings API - admin auth, not CSRF
+        "/api/v1/inference/",  # Inference proxy - programmatic API, session auth not CSRF
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -1177,6 +1181,10 @@ logger.info("GPU Services API endpoints registered at /api/v1/gpu-services")
 # Granite API Keys Management - February 2026
 app.include_router(granite_keys_router)
 logger.info("Granite API Keys endpoints registered at /api/v1/granite-keys")
+
+# Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
+app.include_router(inference_proxy_router)
+logger.info("Inference Proxy endpoints registered at /api/v1/inference")
 
 # Federation Settings API (Admin GUI) - March 2026
 app.include_router(federation_settings_router)

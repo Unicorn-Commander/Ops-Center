@@ -238,6 +238,17 @@ class RedisSessionManager:
             logger.info("Redis session manager connection closed")
 
 
+def _extract_redis_password():
+    """Extract password from REDIS_URL if REDIS_PASSWORD not set."""
+    url = os.getenv("REDIS_URL", "")
+    # Format: redis://:password@host:port/db
+    if "://" in url and "@" in url:
+        auth_part = url.split("://")[1].split("@")[0]
+        if auth_part.startswith(":") and len(auth_part) > 1:
+            return auth_part[1:]
+    return None
+
+
 # Create global instance with environment-based configuration
 redis_session_manager = RedisSessionManager(
     host=os.getenv("REDIS_HOST", "unicorn-redis"),
@@ -245,5 +256,5 @@ redis_session_manager = RedisSessionManager(
     db=int(os.getenv("REDIS_DB", "0")),
     ttl=int(os.getenv("SESSION_TTL", "7200")),  # 2 hours
     key_prefix=os.getenv("SESSION_KEY_PREFIX", "session:"),
-    password=os.getenv("REDIS_PASSWORD", None)
+    password=os.getenv("REDIS_PASSWORD") or _extract_redis_password()
 )
