@@ -96,12 +96,12 @@ async def get_current_user_tier(request: Request) -> str:
 
         session_data = sessions[session_token]
 
-        # Check for tier at root level (OAuth sessions) or nested under "user" key (legacy)
-        tier = session_data.get("subscription_tier")
+        # Check for tier — prefer nested "user" dict (from Keycloak), fall back to root level
+        user = session_data.get("user", {})
+        tier = user.get("subscription_tier") or user.get("tier")
         if not tier:
-            # Try legacy nested structure
-            user = session_data.get("user", {})
-            tier = user.get("subscription_tier") or user.get("tier")
+            # Fall back to root level (may be stale/default)
+            tier = session_data.get("subscription_tier")
 
         # If tier not set or invalid, try database fallback
         # Valid tiers: All tiers from subscription_tiers table

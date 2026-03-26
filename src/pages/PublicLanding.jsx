@@ -787,7 +787,7 @@ export default function PublicLanding() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {services.map((service, index) => {
             const isLocked = !hasAccess(service.title);
             const requiredTier = serviceTiers[service.title];
@@ -796,9 +796,9 @@ export default function PublicLanding() {
             return (
               <motion.div
                 key={service.title}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 * index }}
+                transition={{ duration: 0.35, delay: 0.05 * index }}
               >
                 <a
                   href={service.url}
@@ -808,95 +808,106 @@ export default function PublicLanding() {
                   onClick={(e) => handleServiceClick(e, service)}
                 >
                   <div
-                    className={`rounded-3xl shadow-lg transition-all duration-300 border border-white/20 overflow-hidden relative ${
+                    className={`relative rounded-2xl overflow-hidden transition-all duration-300 ${
                       isLocked
-                        ? 'opacity-60 hover:opacity-70'
-                        : 'hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]'
+                        ? 'opacity-40'
+                        : 'hover:-translate-y-1.5 hover:shadow-[0_8px_40px_rgba(139,92,246,0.25)]'
                     }`}
-                    style={{
-                      background: cardColor.gradient,
-                      height: '320px',
-                      display: 'flex',
-                      flexDirection: 'column'
-                    }}
+                    style={{ minHeight: '280px' }}
                   >
+                    {/* Gradient background */}
+                    <div className="absolute inset-0" style={{ background: cardColor.gradient }} />
+
+                    {/* Subtle noise texture overlay */}
+                    <div className="absolute inset-0 bg-white/[0.02]" />
+
+                    {/* Gradient border — visible by default, brighter on hover */}
+                    <div className="absolute inset-0 rounded-2xl border border-white/[0.08] group-hover:border-white/20 transition-colors duration-300" />
+
+                    {/* Top glow accent on hover */}
+                    <div
+                      className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                      style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }}
+                    />
+
                     {/* Lock Overlay */}
                     {isLocked && (
-                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
                         <div className="text-center">
-                          <LockClosedIcon className="h-12 w-12 text-white/90 mx-auto mb-2" />
-                          <div className="text-white font-semibold text-sm px-4">
-                            <div>Upgrade to unlock</div>
-                            <div className="text-xs mt-1 opacity-90 capitalize">{requiredTier} tier required</div>
-                          </div>
+                          <LockClosedIcon className="h-8 w-8 text-white/70 mx-auto mb-1.5" />
+                          <div className="text-white/70 font-medium text-xs capitalize">{requiredTier} tier required</div>
                         </div>
                       </div>
                     )}
 
-                    {/* Icon Section - Top */}
-                    <div className="p-6 pt-8 flex justify-center">
-                      <div
-                        className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg p-3"
-                        style={{ backgroundColor: cardColor.iconBg }}
-                      >
+                    {/* Card content */}
+                    <div className="relative z-[1] h-full flex flex-col p-6">
+                      {/* Tags — top right */}
+                      {service.featureKey && (() => {
+                        const tagMap = {
+                          'chat_access':        ['AI Chat', 'LLM'],
+                          'search_enabled':     ['Search', 'AI'],
+                          'bolt_access':        ['IDE', 'Full-Stack'],
+                          'brigade_access':     ['AI Agents', 'Orchestration'],
+                          'tts_enabled':        ['TTS', 'Voice'],
+                          'stt_enabled':        ['STT', 'Voice'],
+                          'forgejo':            ['Git', 'CI/CD'],
+                          'presenton_access':   ['Presentations', 'AI'],
+                          'partnerpulse':       ['Dating', 'Relationships'],
+                          'project_ops_access': ['Project Mgmt', 'Ops'],
+                          'umami_access':       ['Analytics', 'Privacy'],
+                          'listmonk':           ['Email', 'Marketing'],
+                          'postiz':             ['Social', 'Scheduling'],
+                          'nda_internal':       ['Business', 'NDA'],
+                          'nda_visualization':  ['Business', 'Workflow'],
+                          'nda_proposal':       ['Business', 'NDA'],
+                        };
+                        const tags = tagMap[service.featureKey] || ['App'];
+                        return (
+                          <div className="absolute top-4 right-4 flex gap-1.5">
+                            {tags.map(tag => (
+                              <span key={tag} className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-white/10 text-white/50 border border-white/[0.08]">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Icon — large, prominent */}
+                      <div className="mb-5 transition-transform duration-300 group-hover:scale-105">
                         {service.iconImage ? (
                           <img
                             src={service.iconImage}
                             alt={service.title}
-                            className="w-full h-full object-contain"
+                            className="w-14 h-14 object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.35)] rounded-xl"
                           />
                         ) : service.icon ? (
-                          <service.icon
-                            className="h-12 w-12"
-                            style={{ color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }}
-                          />
+                          <service.icon className="h-12 w-12 text-white/80 drop-shadow-lg" />
                         ) : (
-                          <ServerIcon
-                            className="h-12 w-12"
-                            style={{ color: cardColor.iconBg === '#ffffff' ? '#667eea' : '#ffffff' }}
-                          />
+                          <ServerIcon className="h-12 w-12 text-white/80 drop-shadow-lg" />
                         )}
                       </div>
-                    </div>
 
-                    {/* Content Section - White Background Bottom */}
-                    <div
-                      className="flex-1 flex flex-col px-6 pb-6 pt-4 mt-auto"
-                      style={{
-                        background: 'rgba(255,255,255,0.95)',
-                        borderTopLeftRadius: '24px',
-                        borderTopRightRadius: '24px'
-                      }}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="text-xl font-bold text-gray-900 leading-tight flex-1 text-center">
-                          {service.title}
-                        </h3>
-                      </div>
+                      {/* App name */}
+                      <h3 className="text-white font-bold text-lg leading-snug mb-2 tracking-tight">
+                        {service.title}
+                      </h3>
 
-                      {/* Access Type Badge */}
-                      {service.accessType === 'tier_included' && (
-                        <div className="flex justify-center mb-2">
-                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">
-                            ✓ Included
-                          </span>
-                        </div>
-                      )}
-
-                      <p className="text-gray-600 text-sm leading-relaxed text-center flex-1 line-clamp-2">
-                        {service.description?.length > 80
-                          ? service.description.substring(0, 80) + '...'
-                          : service.description}
+                      {/* Description — readable, multi-line */}
+                      <p className="text-white/60 text-sm leading-relaxed flex-1 line-clamp-3">
+                        {service.description}
                       </p>
 
-                      {/* Launch Button */}
-                      <button
-                        className="mt-3 w-full py-2 px-4 rounded-xl font-semibold text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
-                        style={{ background: cardColor.gradient }}
-                      >
-                        <span>Launch</span>
-                        <ArrowRightIcon className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                      </button>
+                      {/* Bottom row — launch hint */}
+                      <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                        <span className="text-white/30 text-xs font-medium group-hover:text-white/60 transition-colors duration-300">
+                          Launch app
+                        </span>
+                        <div className="w-7 h-7 rounded-full bg-white/[0.06] group-hover:bg-white/[0.15] flex items-center justify-center transition-all duration-300">
+                          <ArrowRightIcon className="h-3.5 w-3.5 text-white/40 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all duration-300" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </a>

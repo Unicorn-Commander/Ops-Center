@@ -735,6 +735,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/auth/logout",
         "/api/v1/auth/callback",
         "/api/v1/auth/csrf-token",  # CSRF token endpoint must be accessible
+        "/api/v1/auth/profile",  # Profile update - session-authenticated, multipart form upload
         "/api/v1/webhooks/lago",  # Lago webhooks
         "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
         "/api/v1/tier-check/health",  # Health checks
