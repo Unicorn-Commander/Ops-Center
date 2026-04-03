@@ -681,13 +681,75 @@ async def _auto_route(
 
         score += max_free_vram  # More free VRAM = higher score
 
-        # Prefer preferred nodes
+        # ── Cost awareness ──
+        # Local nodes are "free", cloud nodes cost money.
+        # Strongly prefer local unless pipeline explicitly wants cloud.
+        node_ip = str(row.get("ip_address", ""))
+        is_local = node_ip.startswith("192.168.") or node_ip.startswith("10.") or node_ip.startswith("100.")
+        if is_local:
+            score += 50000  # Strong local preference — cloud only as overflow
+        # Cloud nodes get no bonus (score stays at VRAM level)
+
+        # ── GPU capability matching ──
+        # Check if GPU architecture meets workload requirements
+        gpu_info = row.get("gpu_info") or []
+        if isinstance(gpu_info, str):
+            try:
+                gpu_info = json.loads(gpu_info)
+            except (json.JSONDecodeError, TypeError):
+                gpu_info = []
+
+        requested_model = pipeline_config.get("model", "")
+        for gpu in gpu_info:
+            gpu_id = gpu.get("id")
+            features = gpu.get("features", [])
+            arch = gpu.get("architecture", "")
+            compute_cap = float(gpu.get("compute_capability", "0") or "0")
+            vram_mb = gpu.get("vram_mb", 0)
+
+            # FP8 workloads need Ampere+ (compute 8.0+)
+            if pipeline_config.get("quant_method") == "fp8" and compute_cap < 8.0:
+                if gpu_id == best_gpu:
+                    score -= 20000  # Penalize — wrong architecture for FP8
+                continue
+
+            # Flash attention needs compute 7.5+
+            if "flash_attention" in features and gpu_id == best_gpu:
+                score += 2000  # Bonus for flash attention support
+
+            # Tensor cores bonus for generation workloads
+            if "tensor_cores" in features and workload_type in ("image", "music"):
+                score += 1000
+
+        # ── Model affinity ──
+        # If the requested model is already loaded on a GPU, prefer that GPU
+        # to avoid cold start (30-60s model loading)
+        loaded_models = row.get("loaded_models") or []
+        if isinstance(loaded_models, str):
+            try:
+                loaded_models = json.loads(loaded_models)
+            except (json.JSONDecodeError, TypeError):
+                loaded_models = []
+
+        payload_model = pipeline_config.get("model", "")
+        if not payload_model and isinstance(pipeline_config.get("payload"), dict):
+            payload_model = pipeline_config["payload"].get("model", "")
+
+        for lm in loaded_models:
+            lm_model = lm.get("model", "") if isinstance(lm, dict) else str(lm)
+            lm_gpu = lm.get("gpu", None) if isinstance(lm, dict) else None
+            if payload_model and payload_model in lm_model:
+                score += 30000  # Strong bonus — model already warm
+                if lm_gpu is not None:
+                    best_gpu = lm_gpu  # Use the GPU where it's loaded
+                break
+
+        # ── Preferred nodes (pipeline config) ──
         node_id = row["node_id"]
         for pref in preferred_nodes:
             pref_node = pref.split(":")[0] if ":" in pref else pref
             if node_id == pref_node:
-                score += 10000  # Strong preference bonus
-                # If preferred node specifies a GPU, use it
+                score += 10000  # Pipeline preference bonus
                 if ":" in pref:
                     try:
                         best_gpu = int(pref.split(":")[1].replace("gpu", ""))
@@ -695,7 +757,7 @@ async def _auto_route(
                         pass
                 break
 
-        # Parse queue depth — prefer nodes with shorter queues
+        # ── Queue depth penalty ──
         queue = row.get("queue_depth") or {}
         if isinstance(queue, str):
             try:
