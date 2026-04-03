@@ -47,6 +47,18 @@ logger = logging.getLogger(__name__)
 # Node is considered offline if no heartbeat for this many seconds
 HEARTBEAT_TIMEOUT = 90
 
+# Shared secret for node agent registration/heartbeat
+GPU_AGENT_KEY = os.environ.get("GPU_AGENT_KEY", "")
+
+
+async def verify_agent_key(request: Request):
+    """Verify node agent shared secret on register/heartbeat endpoints."""
+    if not GPU_AGENT_KEY:
+        return  # No key configured = open (backward compat)
+    auth = request.headers.get("X-Agent-Key", "")
+    if auth != GPU_AGENT_KEY:
+        raise HTTPException(status_code=401, detail="Invalid agent key")
+
 router = APIRouter(
     prefix="/api/v1/compute",
     tags=["compute-fabric"],
@@ -263,7 +275,7 @@ def _node_row_to_response(row) -> NodeResponse:
 # =============================================================================
 
 @router.post("/register")
-async def register_node(request: NodeRegistrationRequest):
+async def register_node(request: NodeRegistrationRequest, _=Depends(verify_agent_key)):
     """
     Register a GPU node with the control plane.
     Called by the GPU Agent on startup.
@@ -308,7 +320,7 @@ async def register_node(request: NodeRegistrationRequest):
 
 
 @router.post("/heartbeat")
-async def receive_heartbeat(request: HeartbeatRequest):
+async def receive_heartbeat(request: HeartbeatRequest, _=Depends(verify_agent_key)):
     """
     Receive heartbeat from a GPU Agent.
     Updates GPU status, loaded models, and queue depth.
