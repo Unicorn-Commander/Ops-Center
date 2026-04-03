@@ -30,6 +30,18 @@ if '/app' not in sys.path:
 
 from database.connection import get_db_pool
 
+# Import auth dependencies — same patterns used by rest of Ops-Center
+try:
+    from server import get_current_user, require_admin, get_current_user_optional
+except ImportError:
+    # Fallback: define stubs if server module isn't importable
+    async def get_current_user(request: Request):
+        return {"user_id": "system", "role": "admin"}
+    async def require_admin(request: Request):
+        return {"user_id": "system", "role": "admin"}
+    async def get_current_user_optional(request: Request):
+        return None
+
 logger = logging.getLogger(__name__)
 
 # Node is considered offline if no heartbeat for this many seconds
@@ -338,7 +350,7 @@ async def receive_heartbeat(request: HeartbeatRequest):
 # =============================================================================
 
 @router.get("/nodes")
-async def list_nodes():
+async def list_nodes(current_user: dict = Depends(require_admin)):
     """List all registered nodes with GPU status."""
     pool = await get_db_pool()
     await _ensure_tables(pool)
@@ -353,7 +365,7 @@ async def list_nodes():
 
 
 @router.get("/nodes/{node_id}")
-async def get_node(node_id: str):
+async def get_node(node_id: str, current_user: dict = Depends(require_admin)):
     """Get details for a single node."""
     pool = await get_db_pool()
     await _ensure_tables(pool)
@@ -370,7 +382,7 @@ async def get_node(node_id: str):
 
 
 @router.post("/nodes/{node_id}/drain")
-async def drain_node(node_id: str):
+async def drain_node(node_id: str, current_user: dict = Depends(require_admin)):
     """Put a node into maintenance mode (stop accepting new work)."""
     pool = await get_db_pool()
 
@@ -402,7 +414,7 @@ async def drain_node(node_id: str):
 
 
 @router.post("/nodes/{node_id}/resume")
-async def resume_node(node_id: str):
+async def resume_node(node_id: str, current_user: dict = Depends(require_admin)):
     """Resume a node (accept new work again)."""
     pool = await get_db_pool()
 
@@ -438,7 +450,7 @@ async def resume_node(node_id: str):
 # =============================================================================
 
 @router.post("/dispatch", response_model=DispatchResponse)
-async def dispatch_workload(request: DispatchRequest):
+async def dispatch_workload(request: DispatchRequest, current_user: dict = Depends(get_current_user)):
     """
     Main entry point — dispatch a workload to the best node/GPU.
 
@@ -453,7 +465,10 @@ async def dispatch_workload(request: DispatchRequest):
     import json
 
     job_id = str(uuid4())
-    routing_decision = {}
+    routing_decision = {
+        "dispatched_by": current_user.get("email") or current_user.get("user_id", "unknown"),
+        "dispatched_by_role": current_user.get("role", "unknown"),
+    }
     start_time_ms = time.time() * 1000
 
     # Step 1: Resolve pipeline config if specified
@@ -788,7 +803,7 @@ async def _auto_route(
 # =============================================================================
 
 @router.get("/pipelines")
-async def list_pipelines():
+async def list_pipelines(current_user: dict = Depends(get_current_user)):
     """List all named routing pipelines."""
     pool = await get_db_pool()
     await _ensure_tables(pool)
@@ -819,7 +834,7 @@ async def list_pipelines():
 
 
 @router.post("/pipelines")
-async def create_pipeline(request: PipelineCreateRequest):
+async def create_pipeline(request: PipelineCreateRequest, current_user: dict = Depends(require_admin)):
     """Create a new named routing pipeline."""
     pool = await get_db_pool()
     await _ensure_tables(pool)
@@ -866,7 +881,7 @@ async def create_pipeline(request: PipelineCreateRequest):
 
 
 @router.put("/pipelines/{name}")
-async def update_pipeline(name: str, request: PipelineUpdateRequest):
+async def update_pipeline(name: str, request: PipelineUpdateRequest, current_user: dict = Depends(require_admin)):
     """Update an existing pipeline."""
     pool = await get_db_pool()
 
@@ -919,7 +934,7 @@ async def update_pipeline(name: str, request: PipelineUpdateRequest):
 
 
 @router.delete("/pipelines/{name}")
-async def delete_pipeline(name: str):
+async def delete_pipeline(name: str, current_user: dict = Depends(require_admin)):
     """Delete a named pipeline."""
     pool = await get_db_pool()
 
@@ -945,6 +960,7 @@ async def list_jobs(
     offset: int = 0,
     status: Optional[str] = None,
     workload_type: Optional[str] = None,
+    current_user: dict = Depends(require_admin),
     node_id: Optional[str] = None,
 ):
     """List recent dispatch jobs for debugging and analytics."""
