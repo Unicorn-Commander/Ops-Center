@@ -30,6 +30,13 @@ if '/app' not in sys.path:
 
 from database.connection import get_db_pool
 
+# Import billing event emitter for dispatch integration
+try:
+    from routers.billing_events import emit_billing_event
+except ImportError:
+    async def emit_billing_event(pool, event_type, origin_property, origin_org_id=None, **kwargs):
+        pass  # Billing events module not available
+
 # Import auth dependencies — same patterns used by rest of Ops-Center
 try:
     from server import get_current_user, require_admin, get_current_user_optional
@@ -280,36 +287,41 @@ async def register_node(request: NodeRegistrationRequest, _=Depends(verify_agent
     Register a GPU node with the control plane.
     Called by the GPU Agent on startup.
     """
-    pool = await get_db_pool()
-    await _ensure_tables(pool)
-
     import json
+    import traceback
 
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            INSERT INTO compute_nodes (
-                node_id, hostname, ip_address, capabilities, gpu_info, engines,
-                last_heartbeat, updated_at
+    try:
+        pool = await get_db_pool()
+        await _ensure_tables(pool)
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                INSERT INTO compute_nodes (
+                    node_id, hostname, ip_address, capabilities, gpu_info, engines,
+                    last_heartbeat, updated_at
+                )
+                VALUES ($1, $2, $3::inet, $4::jsonb, $5::jsonb, $6::jsonb, NOW(), NOW())
+                ON CONFLICT (node_id) DO UPDATE SET
+                    hostname = EXCLUDED.hostname,
+                    ip_address = EXCLUDED.ip_address,
+                    capabilities = EXCLUDED.capabilities,
+                    gpu_info = EXCLUDED.gpu_info,
+                    engines = EXCLUDED.engines,
+                    last_heartbeat = NOW(),
+                    updated_at = NOW(),
+                    status = 'active'
+                RETURNING id, node_id
+            """,
+                request.node_id,
+                request.hostname,
+                request.ip,
+                json.dumps(request.capabilities),
+                json.dumps(request.gpus),
+                json.dumps(request.engines),
             )
-            VALUES ($1, $2, $3::inet, $4::jsonb, $5::jsonb, $6::jsonb, NOW(), NOW())
-            ON CONFLICT (node_id) DO UPDATE SET
-                hostname = EXCLUDED.hostname,
-                ip_address = EXCLUDED.ip_address,
-                capabilities = EXCLUDED.capabilities,
-                gpu_info = EXCLUDED.gpu_info,
-                engines = EXCLUDED.engines,
-                last_heartbeat = NOW(),
-                updated_at = NOW(),
-                status = 'active'
-            RETURNING id, node_id
-        """,
-            request.node_id,
-            request.hostname,
-            request.ip,
-            json.dumps(request.capabilities),
-            json.dumps(request.gpus),
-            json.dumps(request.engines),
-        )
+    except Exception as e:
+        logger.error("Node registration failed: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
     logger.info("Node registered: %s (%s)", request.node_id, request.hostname)
     return {
@@ -633,6 +645,26 @@ async def dispatch_workload(request: DispatchRequest, current_user: dict = Depen
             error,
             completed_at,
         )
+
+    # Step 5: Emit billing event for successful dispatches
+    if status in ("dispatched", "completed"):
+        try:
+            await emit_billing_event(
+                pool,
+                event_type="compute_used",
+                origin_property="commander",
+                origin_org_id=None,
+                origin_user_id=current_user.get("user_id") or current_user.get("sub"),
+                executed_on_property="commander",
+                executed_on_node_id=target_node,
+                service_type=request.workload_type,
+                model=request.payload.get("model"),
+                provider="local",
+                duration_ms=duration_ms,
+                payload={"job_id": job_id, "pipeline": request.pipeline, "target_gpu": target_gpu},
+            )
+        except Exception as billing_err:
+            logger.warning("Failed to emit billing event for job %s: %s", job_id, billing_err)
 
     return DispatchResponse(
         job_id=job_id,

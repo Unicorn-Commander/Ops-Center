@@ -124,7 +124,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/org/",  # Organization management API
             "/api/v1/org",   # Organization management API (without trailing slash)
             "/api/v1/federation/",  # Federation API (machine-to-machine, uses API key auth)
-            "/api/v1/admin/federation/"  # Federation settings API (admin auth, not CSRF)
+            "/api/v1/admin/federation/",  # Federation settings API (admin auth, not CSRF)
+            "/api/v1/compute/",  # GPU Compute Fabric API (machine-to-machine, uses agent key auth)
+            "/api/v1/inference/"  # Inference proxy API (machine-to-machine)
         }
         self.enabled = enabled
         self.sessions_store = sessions_store or {}

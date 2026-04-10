@@ -125,6 +125,12 @@ from routers.granite_keys import router as granite_keys_router
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 from routers.inference_proxy import router as inference_proxy_router
 
+# GPU Compute Fabric Control Plane - April 2026
+from routers.compute_api import router as compute_api_router
+
+# Billing Events API - April 2026
+from routers.billing_events import router as billing_events_router
+
 # Billing Analytics API
 from billing_analytics_api import router as billing_analytics_router
 
@@ -768,6 +774,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/federation/",  # Federation API - machine-to-machine, uses API key auth
         "/api/v1/admin/federation/",  # Federation settings API - admin auth, not CSRF
         "/api/v1/inference/",  # Inference proxy - programmatic API, session auth not CSRF
+        "/api/v1/compute/",  # GPU Compute Fabric - machine-to-machine, uses agent key auth
+        "/api/v1/billing/events",  # Billing Events API - machine-to-machine, uses agent key auth
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -1185,6 +1193,14 @@ logger.info("Granite API Keys endpoints registered at /api/v1/granite-keys")
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 app.include_router(inference_proxy_router)
 logger.info("Inference Proxy endpoints registered at /api/v1/inference")
+
+# GPU Compute Fabric Control Plane - April 2026
+app.include_router(compute_api_router)
+logger.info("GPU Compute Fabric endpoints registered at /api/v1/compute")
+
+# Billing Events API - April 2026
+app.include_router(billing_events_router)
+logger.info("Billing Events API endpoints registered at /api/v1/billing/events")
 
 # Federation Settings API (Admin GUI) - March 2026
 app.include_router(federation_settings_router)
@@ -5415,7 +5431,11 @@ async def direct_login(request: Request, credentials: dict):
         keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
 
         # Try to authenticate using Keycloak's password flow
-        auth_url = "https://auth.yoda.unicorncommander.ai" if "yoda.unicorncommander.ai" in str(request.url) else f"https://auth.{EXTERNAL_HOST}"
+        # Federated deployments (e.g. GFL) set KEYCLOAK_EXTERNAL_URL to point at the shared Keycloak
+        if "yoda.unicorncommander.ai" in str(request.url):
+            auth_url = "https://auth.yoda.unicorncommander.ai"
+        else:
+            auth_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"https://auth.{EXTERNAL_HOST}")
 
         # Use OAuth password grant with Keycloak endpoints
         token_url = f"{auth_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
@@ -5559,7 +5579,8 @@ async def oauth_login(request: Request):
     else:
         # Use the external host from environment
         redirect_uri = f"https://{EXTERNAL_HOST}/auth/callback"
-        auth_base = f"https://auth.{EXTERNAL_HOST}"
+        # Federated deployments (e.g. GFL) set KEYCLOAK_EXTERNAL_URL to point at the shared Keycloak
+        auth_base = os.getenv("KEYCLOAK_EXTERNAL_URL", f"https://auth.{EXTERNAL_HOST}")
 
     # Keycloak realm (default to "master" if not specified)
     keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
@@ -5580,7 +5601,7 @@ async def oauth_login(request: Request):
 async def login_google(request: Request):
     """Initiate Google OAuth via Keycloak"""
     keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
-    auth_url = f"https://auth.{EXTERNAL_HOST}"
+    auth_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"https://auth.{EXTERNAL_HOST}")
     redirect_uri = f"https://{EXTERNAL_HOST}/auth/callback"
 
     authorize_url = (
@@ -5599,7 +5620,7 @@ async def login_google(request: Request):
 async def login_github(request: Request):
     """Initiate GitHub OAuth via Keycloak"""
     keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
-    auth_url = f"https://auth.{EXTERNAL_HOST}"
+    auth_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"https://auth.{EXTERNAL_HOST}")
     redirect_uri = f"https://{EXTERNAL_HOST}/auth/callback"
 
     authorize_url = (
@@ -5618,7 +5639,7 @@ async def login_github(request: Request):
 async def login_microsoft(request: Request):
     """Initiate Microsoft OAuth via Keycloak"""
     keycloak_realm = os.getenv("KEYCLOAK_REALM", "master")
-    auth_url = f"https://auth.{EXTERNAL_HOST}"
+    auth_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"https://auth.{EXTERNAL_HOST}")
     redirect_uri = f"https://{EXTERNAL_HOST}/auth/callback"
 
     authorize_url = (
@@ -5688,7 +5709,10 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                 
                 # Get user info using external Keycloak URL
                 # Use external URL to ensure JWT validation succeeds
-                userinfo_url = f"https://auth.{EXTERNAL_HOST}/realms/{keycloak_realm}/protocol/openid-connect/userinfo"
+                # Fall back to auth.{EXTERNAL_HOST} for deployments that host their own Keycloak;
+                # federated deployments (e.g. GFL) must set KEYCLOAK_EXTERNAL_URL explicitly
+                keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"https://auth.{EXTERNAL_HOST}")
+                userinfo_url = f"{keycloak_external_url}/realms/{keycloak_realm}/protocol/openid-connect/userinfo"
 
                 print(f"Getting user info from: {userinfo_url}")
                 headers = {"Authorization": f"Bearer {access_token}"}
