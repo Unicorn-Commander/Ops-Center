@@ -744,6 +744,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/auth/logout",
         "/api/v1/auth/callback",
         "/api/v1/auth/csrf-token",  # CSRF token endpoint must be accessible
+        "/api/v1/auth/validate-key",  # Machine-to-machine key validation for mesh services
         "/api/v1/auth/profile",  # Profile update - session-authenticated, multipart form upload
         "/api/v1/webhooks/lago",  # Lago webhooks
         "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
@@ -4362,6 +4363,96 @@ async def update_profile(
     except Exception as e:
         logger.error(f"Error updating profile: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
+
+@app.post("/api/v1/auth/validate-key")
+async def validate_key_endpoint(request: Request):
+    """
+    Validate a UC API key and return user context for downstream services.
+
+    Used by mesh services (Center Deep Search, etc.) to authenticate requests
+    that carry a user's UC API key. Returns user identity, subscription tier,
+    organization, and role so the caller can apply its own tier/quota policy.
+
+    Request body: {"key": "uc_..."}
+
+    Responses:
+      200 {"valid": true, "user": {...}}   valid key
+      200 {"valid": false}                 invalid key
+      400                                  malformed request
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body must be JSON")
+
+    api_key = body.get("key") if isinstance(body, dict) else None
+    if not api_key or not isinstance(api_key, str):
+        raise HTTPException(status_code=400, detail="Missing 'key' field")
+
+    try:
+        from api_key_manager import get_api_key_manager
+        manager = get_api_key_manager()
+        key_info = await manager.validate_api_key(api_key)
+    except Exception as e:
+        logger.error(f"validate-key: api_key_manager error: {e}", exc_info=True)
+        return JSONResponse(status_code=200, content={"valid": False})
+
+    if not key_info:
+        return JSONResponse(status_code=200, content={"valid": False})
+
+    user_id = key_info.get("user_id")
+    permissions = key_info.get("permissions") or []
+
+    org_info = None
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT o.id AS org_id,
+                       o.name AS org_name,
+                       o.display_name AS org_display_name,
+                       o.plan_tier,
+                       o.subscription_tier,
+                       m.role
+                FROM organization_members m
+                JOIN organizations o ON o.id = m.org_id
+                WHERE m.user_id = $1
+                ORDER BY m.joined_at ASC
+                LIMIT 1
+                """,
+                user_id,
+            )
+            if row:
+                org_info = {
+                    "id": str(row["org_id"]),
+                    "name": row["org_name"],
+                    "display_name": row["org_display_name"],
+                    "plan_tier": row["plan_tier"],
+                    "subscription_tier": row["subscription_tier"],
+                    "role": row["role"],
+                }
+    except Exception as e:
+        logger.warning(f"validate-key: org lookup failed for user {user_id}: {e}")
+
+    effective_tier = None
+    if org_info:
+        effective_tier = org_info.get("subscription_tier") or org_info.get("plan_tier")
+    if not effective_tier:
+        effective_tier = "managed"
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "valid": True,
+            "user": {
+                "id": user_id,
+                "permissions": permissions,
+                "subscription_tier": effective_tier,
+                "organization": org_info,
+            },
+        },
+    )
+
 
 @app.get("/api/v1/auth/csrf-token")
 async def get_csrf_token_endpoint(request: Request):
