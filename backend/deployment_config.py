@@ -123,7 +123,17 @@ class DeploymentService:
     
     @staticmethod
     def get_branding() -> Dict[str, str]:
-        """Get branding configuration"""
+        """Get branding configuration. Env vars override hardcoded defaults."""
+        import os
+        if os.environ.get("BRANDING_COMPANY_NAME"):
+            return {
+                "name": os.environ.get("BRANDING_COMPANY_NAME", "Ops Center"),
+                "subtitle": os.environ.get("BRANDING_SUBTITLE", "Operations Center"),
+                "logo": os.environ.get("BRANDING_LOGO_URL", "/assets/ops-center-logo.png"),
+                "theme": os.environ.get("BRANDING_THEME", "gray"),
+                "primary_color": os.environ.get("BRANDING_PRIMARY_COLOR", "#7c3aed"),
+            }
+
         deployment_type = DeploymentService.detect_deployment_type()
         
         if deployment_type == "hardware-appliance":
