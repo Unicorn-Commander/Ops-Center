@@ -236,6 +236,7 @@ from provider_keys_api import router as provider_keys_router
 from uc_api_keys import router as uc_api_keys_router
 from platform_keys_api import router as platform_keys_router
 from llm_keys import router as llm_keys_router
+from vpn_keys import router as vpn_keys_router
 
 # Service API Keys Management (January 2026) - GUI-configurable service-to-service auth
 from service_keys_api import router as service_keys_router
@@ -753,6 +754,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
+        "/api/v1/network/vpn-keys",  # VPN pre-auth key management (admin, REST API)
+        "/api/v1/network/nodes",      # VPN node management (admin, REST API)
         "/api/llmcall",  # Bolt.DIY LLM proxy endpoint - external integration
         "/api/github-template",  # Bolt.DIY GitHub template proxy - external integration
         "/api/v1/email-provider/",  # Email provider API - testing and management
@@ -1238,6 +1241,8 @@ app.include_router(uc_api_keys_router)
 logger.info("UC API Keys endpoints registered at /api/v1/account/uc-api-keys")
 app.include_router(llm_keys_router)
 logger.info("LLM Keys endpoints registered at /api/v1/llm/keys")
+app.include_router(vpn_keys_router)
+logger.info("VPN Keys endpoints registered at /api/v1/network (vpn-keys, nodes)")
 app.include_router(platform_keys_router)
 logger.info("Platform Keys Management endpoints registered at /api/v1/admin/platform-keys (Admin only)")
 

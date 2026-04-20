@@ -436,6 +436,13 @@ export const routes = {
             roles: ['admin'],
             name: 'Network'
           },
+          vpnKeys: {
+            path: '/admin/infra/network/vpn-keys',
+            component: 'NetworkVPNKeys',
+            roles: ['admin'],
+            name: 'VPN Keys & Nodes',
+            icon: 'ShieldCheckIcon'
+          },
           storage: {
             path: '/admin/infra/storage',
             component: 'StorageBackup',
