@@ -235,6 +235,7 @@ from provider_keys_api import router as provider_keys_router
 # UC API Keys & Platform Keys Management (November 2025)
 from uc_api_keys import router as uc_api_keys_router
 from platform_keys_api import router as platform_keys_router
+from llm_keys import router as llm_keys_router
 
 # Service API Keys Management (January 2026) - GUI-configurable service-to-service auth
 from service_keys_api import router as service_keys_router
@@ -1235,6 +1236,8 @@ logger.info("Testing Lab API endpoints registered at /api/v1/llm/test (interacti
 # UC API Keys & Platform Keys Management (November 2025)
 app.include_router(uc_api_keys_router)
 logger.info("UC API Keys endpoints registered at /api/v1/account/uc-api-keys")
+app.include_router(llm_keys_router)
+logger.info("LLM Keys endpoints registered at /api/v1/llm/keys")
 app.include_router(platform_keys_router)
 logger.info("Platform Keys Management endpoints registered at /api/v1/admin/platform-keys (Admin only)")
 

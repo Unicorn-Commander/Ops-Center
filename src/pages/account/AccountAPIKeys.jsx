@@ -12,6 +12,7 @@
  * Storage: Encrypted in Keycloak user attributes (no database)
  */
 
+import LLMApiKeys from "../../components/LLMApiKeys";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -56,6 +57,7 @@ export default function AccountAPIKeys() {
   const [ucApiKeys, setUcApiKeys] = useState([]);
   const [loadingUcKeys, setLoadingUcKeys] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState(false);
+  const [newlyGeneratedKey, setNewlyGeneratedKey] = useState(null);
 
   // Platform keys state (admin only)
   const [platformKeys, setPlatformKeys] = useState(null);
@@ -370,8 +372,10 @@ export default function AccountAPIKeys() {
         const data = await response.json();
         showToast('success', 'API key generated successfully!');
         // Show the full key in an alert since it won't be shown again
-        if (data.key) {
-          alert(`Your new API key (copy it now!):\n\n${data.key}\n\nThis is the only time you'll see the full key.`);
+        if (data.api_key) {
+          setNewlyGeneratedKey(data.api_key);
+          // Store the key for display in the UI
+        setNewlyGeneratedKey(data.api_key);
         }
         await loadUcApiKeys();
       } else {
@@ -547,8 +551,8 @@ export default function AccountAPIKeys() {
       });
       if (response.ok) {
         const data = await response.json();
-        if (data.key) {
-          alert(`Your regenerated API key (copy it now!):\n\n${data.key}\n\nThis is the only time you'll see the full key.`);
+        if (data.api_key) {
+          setNewlyGeneratedKey(data.api_key);
         }
         showToast('success', 'API key regenerated successfully');
         await loadUcApiKeys();
@@ -681,6 +685,9 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
         )}
       </AnimatePresence>
 
+
+
+      {/* LLM API Keys Section */}      <LLMApiKeys />
       {/* UC API Keys Section */}
       <div className={`rounded-xl border p-6 ${themeClasses.card}`}>
         <div className="flex items-center justify-between mb-6">
@@ -717,6 +724,32 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
               </div>
             </div>
 
+
+            {/* Newly Generated Key Display */}
+            {newlyGeneratedKey && (
+              <div className="mb-6 p-4 rounded-lg border-2 border-green-500 bg-green-500/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircleIcon className="h-5 w-5 text-green-400" />
+                  <span className="font-semibold text-green-400">API Key Generated Successfully</span>
+                </div>
+                <p className="text-sm text-yellow-300 mb-3">Copy this key now. You will not be able to see it again.</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 rounded bg-black/50 text-green-300 font-mono text-sm break-all select-all">{newlyGeneratedKey}</code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(newlyGeneratedKey); showToast("success", "API key copied to clipboard!"); }}
+                    className="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm flex items-center gap-1"
+                  >
+                    <ClipboardDocumentIcon className="h-4 w-4" /> Copy
+                  </button>
+                  <button
+                    onClick={() => setNewlyGeneratedKey(null)}
+                    className="px-3 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 text-white text-sm"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
             {ucApiKeys.length === 0 ? (
               <div className={`rounded-lg border-2 border-dashed p-8 text-center ${themeClasses.card}`}>
                 <KeyIcon className={`h-12 w-12 mx-auto mb-3 ${themeClasses.subtext}`} />

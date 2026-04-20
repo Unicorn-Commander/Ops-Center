@@ -28,6 +28,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 import asyncpg
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +287,7 @@ async def list_uc_api_keys(
                 key_id=str(k['id']),
                 key_name=k['key_name'],
                 key_preview=f"{k['key_prefix']}...****",  # Mask based on prefix
-                permissions=k['permissions'],
+                permissions=k["permissions"] if isinstance(k["permissions"], list) else json.loads(k["permissions"]) if isinstance(k["permissions"], str) else list(k["permissions"] or []),
                 created_at=k['created_at'].isoformat(),
                 last_used=k['last_used'].isoformat() if k['last_used'] else None,
                 expires_at=k['expires_at'].isoformat() if k['expires_at'] else None,
