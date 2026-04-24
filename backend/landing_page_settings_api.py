@@ -122,9 +122,13 @@ async def get_public_landing_settings(request: Request):
             if settings_row:
                 settings_dict = dict(settings_row)
 
-                # Parse branding JSON
-                if isinstance(settings_dict.get('branding'), dict):
-                    settings_dict['branding'] = BrandingSettings(**settings_dict['branding'])
+                # Parse branding JSON (asyncpg returns JSONB columns as str)
+                branding_raw = settings_dict.get('branding')
+                if isinstance(branding_raw, str):
+                    import json as _json
+                    branding_raw = _json.loads(branding_raw)
+                if isinstance(branding_raw, dict):
+                    settings_dict['branding'] = BrandingSettings(**branding_raw)
                 else:
                     settings_dict['branding'] = BrandingSettings()
 
@@ -185,9 +189,13 @@ async def get_admin_landing_settings(request: Request):
             if settings_row:
                 settings_dict = dict(settings_row)
 
-                # Parse branding JSON
-                if isinstance(settings_dict.get('branding'), dict):
-                    settings_dict['branding'] = BrandingSettings(**settings_dict['branding'])
+                # Parse branding JSON (asyncpg returns JSONB columns as str)
+                branding_raw = settings_dict.get('branding')
+                if isinstance(branding_raw, str):
+                    import json as _json
+                    branding_raw = _json.loads(branding_raw)
+                if isinstance(branding_raw, dict):
+                    settings_dict['branding'] = BrandingSettings(**branding_raw)
                 else:
                     settings_dict['branding'] = BrandingSettings()
 
