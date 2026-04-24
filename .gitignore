@@ -63,3 +63,13 @@ public/workbox-*.js
 # OS
 .DS_Store
 Thumbs.db
+
+# Per-deployment / per-component env files containing secrets
+.env.centerdeep
+.env.development
+backend/.env.byok
+backend/.env.ratelimit
+backend/.env.stripe
+backend/.env.webhooks
+tests/.env.test
+keycloak-theme/.env.keycloak
