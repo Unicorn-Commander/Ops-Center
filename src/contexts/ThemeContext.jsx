@@ -58,7 +58,7 @@ const themes = {
     }
   },
   unicorn: {
-    name: 'Magic Unicorn',
+    name: 'Unicorn Commander',
     id: 'unicorn',
     primary: 'purple-500',
     accent: 'violet-400',
@@ -121,6 +121,28 @@ const themes = {
       secondary: 'text-purple-300',
       accent: 'text-fuchsia-400',
       logo: 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-400 to-pink-400'
+    },
+    status: {
+      success: 'text-emerald-400',
+      warning: 'text-amber-400',
+      error: 'text-red-500',
+      info: 'text-cyan-400'
+    }
+  },
+  gfl: {
+    name: 'Genesis Flow',
+    id: 'gfl',
+    primary: 'teal-600',
+    accent: 'teal-400',
+    background: 'bg-gradient-to-br from-slate-950 via-slate-900 to-teal-950',
+    sidebar: 'bg-slate-950/95 backdrop-blur-xl border-r border-teal-900/40',
+    card: 'bg-slate-900/80 backdrop-blur-md border border-teal-800/30 shadow-xl shadow-teal-900/20',
+    button: 'bg-gradient-to-r from-teal-700 to-teal-600 hover:from-teal-800 hover:to-teal-700 text-white shadow-lg shadow-teal-900/40',
+    text: {
+      primary: 'text-white',
+      secondary: 'text-teal-200',
+      accent: 'text-teal-300',
+      logo: 'text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-teal-400 to-cyan-300'
     },
     status: {
       success: 'text-emerald-400',

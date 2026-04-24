@@ -26,6 +26,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from '../components/Logos';
 import { useTheme } from '../contexts/ThemeContext';
+import { useDeployment } from '../contexts/DeploymentContext';
 
 export default function PublicLanding() {
   const navigate = useNavigate();
@@ -44,6 +45,10 @@ export default function PublicLanding() {
   const [myApps, setMyApps] = useState([]);
   const [isLoadingApps, setIsLoadingApps] = useState(true);
   const { theme, currentTheme, switchTheme, availableThemes } = useTheme();
+  const { deployment } = useDeployment();
+  const brandName = deployment.branding?.name || 'Unicorn Commander';
+  const brandLogo = deployment.branding?.logo || '/logos/colonel-logo.png';
+  const brandCompany = deployment.branding?.name || 'Magic Unicorn Unconventional Technology & Stuff Inc';
   
   // Theme display configurations
   const themeDisplayNames = {
@@ -737,19 +742,24 @@ export default function PublicLanding() {
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
               {/* Custom logo for this server - transparent background */}
               <img
-                src="/logos/colonel-logo.png"
-                alt="Unicorn Commander"
-                className="w-24 h-24 md:w-28 md:h-28 drop-shadow-2xl"
+                src={brandLogo}
+                alt={brandName}
+                className="w-24 h-24 md:w-28 md:h-28 drop-shadow-2xl object-contain"
               />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
                   <h1 className={`text-3xl md:text-4xl lg:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' || currentTheme === 'underground' ? 'animate-gradient' : ''}`}>
-                    Unicorn Commander
+                    {brandName}
                   </h1>
                 </div>
                 <p className={`text-base md:text-lg ${styles.subText} mt-2`}>
-                  Your services. Your infrastructure. One dashboard.
+                  {deployment.branding?.subtitle || 'Your services. Your infrastructure. One dashboard.'}
                 </p>
+                {deployment.branding?.tagline && (
+                  <p className={`text-sm ${styles.subText} mt-1 opacity-70 tracking-wider uppercase`}>
+                    {deployment.branding.tagline}
+                  </p>
+                )}
               </div>
             </div>
           </motion.div>
@@ -1096,7 +1106,7 @@ export default function PublicLanding() {
           </div>
 
           <p className={`${styles.subText} mb-4`}>
-            Access the admin dashboard to manage your Magic Unicorn services
+            Access the admin dashboard to manage your services
           </p>
 
           <button
@@ -1116,25 +1126,23 @@ export default function PublicLanding() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <img
-                src="/logos/colonel-logo.png"
-                alt="Unicorn Commander"
-                className="w-10 h-10"
+                src={brandLogo}
+                alt={brandName}
+                className="w-10 h-10 object-contain"
               />
               <div className={styles.logoText}>
-                <div className="font-semibold">Unicorn Commander</div>
-                <div className={`text-sm ${styles.footerText}`}>Magic Unicorn Unconventional Technology &amp; Stuff Inc</div>
+                <div className="font-semibold">{brandName}</div>
+                <div className={`text-sm ${styles.footerText}`}>{brandCompany}</div>
               </div>
             </div>
 
             <div className={`text-center md:text-right text-sm ${styles.footerText}`}>
               <div className="flex items-center gap-2 justify-center md:justify-end mb-1">
-                <span>Experiments • Deployments • Breakthroughs</span>
+                <span>{deployment.branding?.tagline || 'Experiments • Deployments • Breakthroughs'}</span>
               </div>
               <div className="flex items-center gap-2 justify-center md:justify-end">
-                <img src="/logos/colonel-logo.png" alt="" className="w-5 h-5" />
-                <a href="https://magicunicorn.tech" target="_blank" rel="noopener noreferrer" className="hover:text-fuchsia-400 underline">
-                  Magic Unicorn Unconventional Technology & Stuff Inc
-                </a>
+                <img src={brandLogo} alt="" className="w-5 h-5 object-contain" />
+                <span>{brandCompany}</span>
               </div>
             </div>
           </div>

@@ -129,6 +129,7 @@ class DeploymentService:
             return {
                 "name": os.environ.get("BRANDING_COMPANY_NAME", "Ops Center"),
                 "subtitle": os.environ.get("BRANDING_SUBTITLE", "Operations Center"),
+                "tagline": os.environ.get("BRANDING_TAGLINE", ""),
                 "logo": os.environ.get("BRANDING_LOGO_URL", "/assets/ops-center-logo.png"),
                 "theme": os.environ.get("BRANDING_THEME", "gray"),
                 "primary_color": os.environ.get("BRANDING_PRIMARY_COLOR", "#7c3aed"),

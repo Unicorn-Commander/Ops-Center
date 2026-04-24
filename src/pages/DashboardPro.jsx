@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSystem } from '../contexts/SystemContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useDeployment } from '../contexts/DeploymentContext';
 import { EnhancedServiceLogos, EnhancedServiceCard, getEnhancedServiceInfo } from '../components/EnhancedServiceLogos';
 import UpdateModal from '../components/UpdateModal';
 import DynamicServiceCards from '../components/DynamicServiceCards';
@@ -223,6 +224,7 @@ const ServiceStatusGrid = ({ services, theme, onServiceClick }) => {
 export default function DashboardPro() {
   const { systemData, services, fetchSystemStatus, fetchServices } = useSystem();
   const { theme, currentTheme } = useTheme();
+  const { deployment } = useDeployment();
   const [alerts, setAlerts] = useState([]);
   const [selectedService, setSelectedService] = useState(null);
   const [hardwareInfo, setHardwareInfo] = useState(null);
@@ -291,10 +293,10 @@ export default function DashboardPro() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className={`text-4xl font-bold ${theme.text.primary} tracking-tight`}>
-              Operations Center
+              {deployment.branding?.name || 'Operations Center'}
             </h1>
             <p className={`${theme.text.secondary} mt-2`}>
-              System Intelligence Dashboard • UC-1 Pro
+              System Intelligence Dashboard
             </p>
           </div>
           

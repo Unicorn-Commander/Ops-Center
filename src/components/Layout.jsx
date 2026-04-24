@@ -63,6 +63,7 @@ import {
   ChartBarSquareIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
+import { useDeployment } from '../contexts/DeploymentContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
 import NavigationSection from './NavigationSection';
 import NavigationItem from './NavigationItem';
@@ -116,6 +117,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, currentTheme, switchTheme, availableThemes, isDarkMode, toggleDarkMode } = useTheme();
+  const { deployment } = useDeployment();
 
   // Theme configurations for display names
   const themes = {
@@ -343,17 +345,21 @@ export default function Layout({ children }) {
                     ? 'hover:bg-gray-100'
                     : 'hover:bg-slate-700/50'
                 }`}
-                title={sidebarCollapsed ? "Ops-Center - Operations Console" : ""}
+                title={sidebarCollapsed ? `${deployment.branding?.name || 'Ops-Center'} - Operations Console` : ""}
               >
-                {/* Magic Unicorn Logo */}
-                <MagicUnicornLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                {/* Logo - uses branding if available */}
+                {deployment.branding?.logo ? (
+                  <img src={deployment.branding.logo} alt={deployment.branding.name || 'Logo'} className={`drop-shadow-xl object-contain ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                ) : (
+                  <MagicUnicornLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                )}
                 {!sidebarCollapsed && (
                   <div className="text-center">
                     <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
-                      Ops-Center
+                      {deployment.branding?.name || 'Ops-Center'}
                     </h1>
-                    <div className={`text-lg ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
-                      Operations Console
+                    <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
+                      {deployment.branding?.tagline || 'Operations Console'}
                     </div>
                   </div>
                 )}
@@ -362,9 +368,11 @@ export default function Layout({ children }) {
               {/* Powered By - subtitle (hidden when collapsed) */}
               {!sidebarCollapsed && (
                 <>
+                  {!deployment.branding && (
                   <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200/70' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-400'} mb-2 font-medium`}>
                     Powered by <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-300">Unicorn Commander</a>
                   </div>
+                  )}
 
                   {/* Version */}
                   <div className={`text-xs ${currentTheme === 'unicorn' ? 'text-purple-300/60' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-500'} font-mono`}>
