@@ -15,8 +15,7 @@ export const DeploymentProvider = ({ children }) => {
     type: 'standalone', // standalone | hardware-appliance | enterprise
     primaryAppUrl: null,
     adminOnly: false,
-    features: [],
-    branding: null
+    features: []
   });
   const [loading, setLoading] = useState(true);
 
@@ -34,8 +33,7 @@ export const DeploymentProvider = ({ children }) => {
           primaryAppUrl: config.primary_app_url || null,
           adminOnly: config.admin_only_mode || false,
           features: config.enabled_features || [],
-          applications: config.registered_applications || [],
-          branding: config.branding || null
+          applications: config.registered_applications || []
         });
       }
     } catch (error) {

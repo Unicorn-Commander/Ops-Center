@@ -8,12 +8,8 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { ColonelLogo, MagicUnicornLogo } from '../components/Logos';
-import { useDeployment } from '../contexts/DeploymentContext';
 
 export default function Login() {
-  const { deployment } = useDeployment();
-  const brandName = deployment.branding?.name || 'Unicorn Commander Pro';
-  const brandLogo = deployment.branding?.logo;
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -71,16 +67,12 @@ export default function Login() {
         {/* Logo and Title */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            {brandLogo ? (
-              <img src={brandLogo} alt={brandName} className="w-16 h-16 object-contain" />
-            ) : (
-              <ColonelLogo className="w-16 h-16" />
-            )}
+            <ColonelLogo className="w-16 h-16" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">
-            {brandName}
+            Unicorn Commander Pro
           </h1>
-          <p className="text-purple-200">Operations Login</p>
+          <p className="text-purple-200">Ops Center Login</p>
         </div>
 
         {/* Error Message */}
@@ -155,13 +147,11 @@ export default function Login() {
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          {!deployment.branding && (
-            <div className="flex items-center justify-center gap-2 text-purple-300 text-sm">
-              <span>Powered by</span>
-              <MagicUnicornLogo className="w-6 h-6" />
-              <span>Magic Unicorn</span>
-            </div>
-          )}
+          <div className="flex items-center justify-center gap-2 text-purple-300 text-sm">
+            <span>Powered by</span>
+            <MagicUnicornLogo className="w-6 h-6" />
+            <span>Magic Unicorn</span>
+          </div>
         </div>
       </motion.div>
     </div>
