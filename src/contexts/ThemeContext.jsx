@@ -162,7 +162,7 @@ const themes = {
  */
 
 export function ThemeProvider({ children }) {
-  const [currentTheme, setCurrentTheme] = useState('unicorn'); // Default to Unicorn Commander theme
+  const [currentTheme, setCurrentTheme] = useState('underground'); // Default to Unicorn Commander theme
   const [isDarkMode, setIsDarkMode] = useState(true);
 
   useEffect(() => {

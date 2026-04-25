@@ -343,17 +343,17 @@ export default function Layout({ children }) {
                     ? 'hover:bg-gray-100'
                     : 'hover:bg-slate-700/50'
                 }`}
-                title={sidebarCollapsed ? "Ops-Center - Operations Console" : ""}
+                title={sidebarCollapsed ? "Special Projects — Magic Unicorn" : ""}
               >
                 {/* Magic Unicorn Logo */}
-                <MagicUnicornLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                <img src="/logos/magicunicorn-special-projects.png" alt="Special Projects" className={`drop-shadow-xl object-contain ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
                 {!sidebarCollapsed && (
                   <div className="text-center">
                     <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
-                      Ops-Center
+                      Special Projects
                     </h1>
                     <div className={`text-lg ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
-                      Operations Console
+                      by Magic Unicorn
                     </div>
                   </div>
                 )}

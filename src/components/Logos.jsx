@@ -10,7 +10,7 @@ export const ColonelLogo = ({ className = "w-8 h-8" }) => (
 
 export const MagicUnicornLogo = ({ className = "w-6 h-6" }) => (
   <img
-    src="/logos/magic_unicorn_logo.png"
+    src="/logos/magicunicorn-special-projects.png"
     alt="Magic Unicorn"
     className={`${className} object-contain`}
   />

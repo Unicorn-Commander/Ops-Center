@@ -70,7 +70,7 @@ export default function Login() {
             <ColonelLogo className="w-16 h-16" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">
-            Unicorn Commander Pro
+            Special Projects
           </h1>
           <p className="text-purple-200">Ops Center Login</p>
         </div>

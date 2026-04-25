@@ -737,18 +737,18 @@ export default function PublicLanding() {
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
               {/* Custom logo for this server - transparent background */}
               <img
-                src="/logos/colonel-logo.png"
-                alt="Unicorn Commander"
+                src="/logos/magicunicorn-special-projects.png"
+                alt="Special Projects"
                 className="w-24 h-24 md:w-28 md:h-28 drop-shadow-2xl"
               />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
                   <h1 className={`text-3xl md:text-4xl lg:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' || currentTheme === 'underground' ? 'animate-gradient' : ''}`}>
-                    Unicorn Commander
+                    Special Projects
                   </h1>
                 </div>
                 <p className={`text-base md:text-lg ${styles.subText} mt-2`}>
-                  Your services. Your infrastructure. One dashboard.
+                  Magic Unicorn — Unconventional Technology & Stuff
                 </p>
               </div>
             </div>
@@ -1121,7 +1121,7 @@ export default function PublicLanding() {
                 className="w-10 h-10"
               />
               <div className={styles.logoText}>
-                <div className="font-semibold">Unicorn Commander</div>
+                <div className="font-semibold">Special Projects</div>
                 <div className={`text-sm ${styles.footerText}`}>Magic Unicorn Unconventional Technology &amp; Stuff Inc</div>
               </div>
             </div>
