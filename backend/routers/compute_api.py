@@ -17,6 +17,7 @@ import logging
 import os
 import sys
 import time
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -53,6 +54,48 @@ logger = logging.getLogger(__name__)
 
 # Node is considered offline if no heartbeat for this many seconds
 HEARTBEAT_TIMEOUT = 90
+
+DEFAULT_PIPELINE_SEED_VERSION = 2
+
+DEFAULT_COMPUTE_PIPELINES = (
+    {
+        "name": "chat-default",
+        "workload_type": "llm",
+        "description": "General chat routing with a preference for warm, flash-attention capable GPUs.",
+        "min_vram_mb": 12288,
+        "min_free_vram_mb": 8192,
+        "preferred_gpu_features": ["flash_attention"],
+        "preferred_gpu_architectures": ["ampere", "turing"],
+    },
+    {
+        "name": "music-production",
+        "workload_type": "music",
+        "description": "Music generation routing that prefers the dedicated dual-P40 host first.",
+        "min_vram_mb": 16384,
+        "min_free_vram_mb": 12288,
+    },
+    {
+        "name": "artwork-hq",
+        "workload_type": "image",
+        "description": "High-quality image generation on tensor-core GPUs with at least 20 GB VRAM.",
+        "min_vram_mb": 20000,
+        "min_free_vram_mb": 16384,
+        "required_compute_capability": 7.5,
+        "preferred_gpu_features": ["tensor_cores"],
+        "preferred_gpu_architectures": ["ampere", "turing"],
+    },
+    {
+        "name": "reasoning",
+        "workload_type": "llm",
+        "description": "Long-form reasoning and larger-context inference on higher-compute GPUs.",
+        "min_vram_mb": 20000,
+        "min_free_vram_mb": 16384,
+        "required_compute_capability": 7.5,
+        "preferred_gpu_features": ["flash_attention", "tensor_cores"],
+        "preferred_gpu_architectures": ["ampere", "turing"],
+        "quant_method": "fp8",
+    },
+)
 
 # Shared secret for node agent registration/heartbeat
 GPU_AGENT_KEY = os.environ.get("GPU_AGENT_KEY", "")
@@ -156,6 +199,290 @@ class NodeResponse(BaseModel):
 # Helper Functions
 # =============================================================================
 
+def _json_list(value: Any) -> List[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _json_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _node_aliases(row: Dict[str, Any]) -> set[str]:
+    aliases = set()
+    node_id = str(row.get("node_id") or "").strip().lower()
+    hostname = str(row.get("hostname") or "").strip().lower()
+
+    if node_id:
+        aliases.add(node_id)
+    if hostname:
+        aliases.add(hostname)
+        aliases.add(hostname.split(".")[0])
+
+    return aliases
+
+
+def _preferred_ref(row: Dict[str, Any], gpu_id: Optional[int] = None) -> str:
+    base = str(row.get("hostname") or row.get("node_id") or "").strip()
+    if gpu_id is None:
+        return base
+    return f"{base}:gpu{gpu_id}"
+
+
+def _parse_preferred_node(pref: str) -> tuple[str, Optional[int]]:
+    if ":" not in pref:
+        return pref.strip().lower(), None
+
+    node_ref, gpu_ref = pref.split(":", 1)
+    gpu_ref = gpu_ref.strip().lower().replace("gpu", "")
+    try:
+        return node_ref.strip().lower(), int(gpu_ref)
+    except ValueError:
+        return node_ref.strip().lower(), None
+
+
+def _build_gpu_records(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    gpu_info = _json_list(row.get("gpu_info"))
+    gpu_status = _json_list(row.get("gpu_status"))
+    status_by_id = {}
+
+    for index, gpu in enumerate(gpu_status):
+        if not isinstance(gpu, dict):
+            continue
+        gpu_id = gpu.get("id", index)
+        status_by_id[gpu_id] = gpu
+
+    records = []
+    source = gpu_info or gpu_status
+    for index, gpu in enumerate(source):
+        if not isinstance(gpu, dict):
+            continue
+
+        gpu_id = gpu.get("id", index)
+        status = status_by_id.get(gpu_id, {})
+        features = gpu.get("features") or []
+        total_vram = gpu.get("vram_mb") or gpu.get("memory_total_mb") or status.get("vram_total_mb") or 0
+        free_vram = (
+            status.get("vram_free_mb")
+            or gpu.get("vram_free_mb")
+            or gpu.get("memory_free_mb")
+            or total_vram
+        )
+        records.append(
+            {
+                "id": gpu_id,
+                "name": gpu.get("name"),
+                "architecture": str(gpu.get("architecture") or "").lower(),
+                "compute_capability": float(gpu.get("compute_capability", "0") or "0"),
+                "features": {str(feature).lower() for feature in features},
+                "total_vram_mb": int(total_vram or 0),
+                "free_vram_mb": int(free_vram or 0),
+            }
+        )
+
+    return records
+
+
+def _node_priority(row: Dict[str, Any], workload_type: str) -> float:
+    gpus = _build_gpu_records(row)
+    if not gpus:
+        return 0.0
+
+    best = max(gpus, key=lambda gpu: gpu.get("free_vram_mb", 0))
+    score = float(best.get("free_vram_mb", 0))
+    score += best.get("compute_capability", 0.0) * 500.0
+
+    if workload_type == "llm" and "flash_attention" in best.get("features", set()):
+        score += 5000.0
+    if workload_type in {"image", "music", "llm"} and "tensor_cores" in best.get("features", set()):
+        score += 2000.0
+
+    return score
+
+
+def _preferred_nodes_for_workload(
+    rows: List[Dict[str, Any]],
+    workload_type: str,
+    *,
+    require_compute_capability: Optional[float] = None,
+    prefer_mid_tier: bool = False,
+) -> List[str]:
+    candidates = []
+
+    for row in rows:
+        caps = _json_list(row.get("capabilities"))
+        if workload_type not in caps:
+            continue
+
+        gpu_records = _build_gpu_records(row)
+        if require_compute_capability is not None:
+            gpu_records = [
+                gpu for gpu in gpu_records
+                if gpu.get("compute_capability", 0.0) >= require_compute_capability
+            ]
+            if not gpu_records:
+                continue
+
+        if not gpu_records:
+            candidates.append((row, None, 0.0))
+            continue
+
+        gpu_records.sort(key=lambda gpu: gpu.get("free_vram_mb", 0), reverse=True)
+        for gpu in gpu_records:
+            if prefer_mid_tier:
+                aliases = _node_aliases(row)
+                gpu_name = str(gpu.get("name") or "").lower()
+                score = float(gpu.get("free_vram_mb", 0))
+                score -= gpu.get("compute_capability", 0.0) * 1500.0
+                if any(alias.startswith("midboy") for alias in aliases):
+                    score += 6000.0
+                if "p40" in gpu_name:
+                    score += 3000.0
+                if "flash_attention" in gpu.get("features", set()):
+                    score -= 4000.0
+            else:
+                score = _node_priority(row, workload_type)
+                score += gpu.get("compute_capability", 0.0) * 400.0
+                if "flash_attention" in gpu.get("features", set()):
+                    score += 2500.0
+            candidates.append((row, gpu.get("id"), score))
+
+    candidates.sort(key=lambda item: item[2], reverse=True)
+
+    preferred = []
+    seen = set()
+    for row, gpu_id, _score in candidates:
+        ref = _preferred_ref(row, gpu_id)
+        if ref in seen:
+            continue
+        preferred.append(ref)
+        seen.add(ref)
+
+    return preferred
+
+
+def _build_default_pipeline_definitions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    chat_preferred = _preferred_nodes_for_workload(rows, "llm")
+    reasoning_preferred = _preferred_nodes_for_workload(
+        rows,
+        "llm",
+        require_compute_capability=7.5,
+    )
+    artwork_preferred = _preferred_nodes_for_workload(
+        rows,
+        "image",
+        require_compute_capability=7.5,
+    )
+    music_preferred = _preferred_nodes_for_workload(
+        rows,
+        "music",
+        prefer_mid_tier=True,
+    )
+
+    preferred_by_name = {
+        "chat-default": chat_preferred,
+        "music-production": music_preferred,
+        "artwork-hq": artwork_preferred,
+        "reasoning": reasoning_preferred,
+    }
+
+    pipelines = []
+    for spec in DEFAULT_COMPUTE_PIPELINES:
+        pipelines.append(
+            {
+                "name": spec["name"],
+                "workload_type": spec["workload_type"],
+                "config": {
+                    **spec,
+                    "required_capabilities": [spec["workload_type"]],
+                    "preferred_nodes": preferred_by_name.get(spec["name"], []),
+                    "seed_version": DEFAULT_PIPELINE_SEED_VERSION,
+                },
+            }
+        )
+    return pipelines
+
+
+async def _seed_default_pipelines(pool) -> None:
+    """Insert the built-in compute pipelines if they do not exist yet."""
+    async with pool.acquire() as conn:
+        existing_rows = await conn.fetch(
+            """
+            SELECT id, name, created_by, config
+            FROM compute_pipelines
+            """
+        )
+        existing_by_name = {row["name"]: row for row in existing_rows}
+
+        node_rows = await conn.fetch(
+            """
+            SELECT node_id, hostname, capabilities, gpu_info, gpu_status
+            FROM compute_nodes
+            ORDER BY created_at
+            """
+        )
+        default_pipelines = _build_default_pipeline_definitions([dict(row) for row in node_rows])
+
+        for pipeline in default_pipelines:
+            existing = existing_by_name.get(pipeline["name"])
+            if existing is None:
+                await conn.execute(
+                    """
+                    INSERT INTO compute_pipelines (name, workload_type, config, created_by)
+                    VALUES ($1, $2, $3::jsonb, $4)
+                    ON CONFLICT (name) DO NOTHING
+                    """,
+                    pipeline["name"],
+                    pipeline["workload_type"],
+                    json.dumps(pipeline["config"]),
+                    "system-seed",
+                )
+                logger.info("Seeded default compute pipeline: %s", pipeline["name"])
+                continue
+
+            existing_config = _json_dict(existing.get("config"))
+            existing_seed_version = int(existing_config.get("seed_version") or 0)
+            if (
+                existing.get("created_by") == "system-seed"
+                and existing_seed_version < DEFAULT_PIPELINE_SEED_VERSION
+            ):
+                await conn.execute(
+                    """
+                    UPDATE compute_pipelines
+                    SET workload_type = $2,
+                        config = $3::jsonb,
+                        updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    existing["id"],
+                    pipeline["workload_type"],
+                    json.dumps(pipeline["config"]),
+                )
+                logger.info(
+                    "Refreshed default compute pipeline: %s (seed_version=%s)",
+                    pipeline["name"],
+                    DEFAULT_PIPELINE_SEED_VERSION,
+                )
+
 async def _ensure_tables(pool):
     """Create tables if they don't exist (idempotent)."""
     async with pool.acquire() as conn:
@@ -205,6 +532,7 @@ async def _ensure_tables(pool):
                 completed_at TIMESTAMPTZ
             )
         """)
+    await _seed_default_pipelines(pool)
 
 
 def _node_row_to_response(row) -> NodeResponse:
@@ -693,8 +1021,6 @@ async def _auto_route(
     Returns:
         (target_node, target_gpu, reason_str) or (None, None, reason_str)
     """
-    import json
-
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT * FROM compute_nodes
@@ -706,127 +1032,129 @@ async def _auto_route(
         return None, None, "No active nodes with recent heartbeat"
 
     preferred_nodes = pipeline_config.get("preferred_nodes", [])
+    required_capabilities = {
+        str(capability).lower()
+        for capability in pipeline_config.get("required_capabilities", [])
+    }
+    min_vram_mb = int(pipeline_config.get("min_vram_mb", 0) or 0)
+    min_free_vram_mb = int(pipeline_config.get("min_free_vram_mb", 0) or 0)
+    required_compute_capability = float(
+        pipeline_config.get("required_compute_capability", 0) or 0
+    )
+    required_gpu_features = {
+        str(feature).lower()
+        for feature in pipeline_config.get("required_gpu_features", [])
+    }
+    preferred_gpu_features = {
+        str(feature).lower()
+        for feature in pipeline_config.get("preferred_gpu_features", [])
+    }
+    preferred_gpu_architectures = {
+        str(arch).lower()
+        for arch in pipeline_config.get("preferred_gpu_architectures", [])
+    }
     candidates = []
 
     for row in rows:
-        caps = row.get("capabilities") or []
-        if isinstance(caps, str):
-            try:
-                caps = json.loads(caps)
-            except (json.JSONDecodeError, TypeError):
-                caps = []
-
+        row_dict = dict(row)
+        caps = {str(capability).lower() for capability in _json_list(row_dict.get("capabilities"))}
         if workload_type not in caps:
+            continue
+        if required_capabilities and not required_capabilities.issubset(caps):
             continue
 
         # Calculate score
         score = 0
         best_gpu = None
+        reason_bits = []
 
-        # Parse GPU status to find free VRAM
-        gpu_status = row.get("gpu_status") or []
-        if isinstance(gpu_status, str):
-            try:
-                gpu_status = json.loads(gpu_status)
-            except (json.JSONDecodeError, TypeError):
-                gpu_status = []
+        gpu_records = _build_gpu_records(row_dict)
+        eligible_gpus = []
+        for gpu in gpu_records:
+            if min_vram_mb and gpu.get("total_vram_mb", 0) < min_vram_mb:
+                continue
+            if min_free_vram_mb and gpu.get("free_vram_mb", 0) < min_free_vram_mb:
+                continue
+            if required_compute_capability and gpu.get("compute_capability", 0.0) < required_compute_capability:
+                continue
+            if required_gpu_features and not required_gpu_features.issubset(gpu.get("features", set())):
+                continue
 
-        max_free_vram = 0
-        for gpu in gpu_status:
-            free = gpu.get("vram_free_mb", 0)
-            if free > max_free_vram:
-                max_free_vram = free
-                best_gpu = gpu.get("id")
+            gpu_score = gpu.get("free_vram_mb", 0)
+            gpu_score += gpu.get("total_vram_mb", 0) // 4
+            gpu_score += int(gpu.get("compute_capability", 0.0) * 100)
+            gpu_score += len(preferred_gpu_features.intersection(gpu.get("features", set()))) * 1500
+            if preferred_gpu_architectures and gpu.get("architecture") in preferred_gpu_architectures:
+                gpu_score += 1500
+            if "flash_attention" in gpu.get("features", set()):
+                gpu_score += 2000
+            if "tensor_cores" in gpu.get("features", set()) and workload_type in ("llm", "image", "music"):
+                gpu_score += 1000
 
-        score += max_free_vram  # More free VRAM = higher score
+            eligible_gpus.append((gpu_score, gpu))
+
+        if gpu_records and not eligible_gpus:
+            continue
+
+        if eligible_gpus:
+            eligible_gpus.sort(key=lambda item: item[0], reverse=True)
+            best_gpu_score, best_gpu_record = eligible_gpus[0]
+            best_gpu = best_gpu_record.get("id")
+            score += best_gpu_score
+            reason_bits.append(
+                "gpu="
+                f"{best_gpu} free={best_gpu_record.get('free_vram_mb', 0)}MB"
+            )
 
         # ── Cost awareness ──
         # Local nodes are "free", cloud nodes cost money.
         # Strongly prefer local unless pipeline explicitly wants cloud.
-        node_ip = str(row.get("ip_address", ""))
+        node_ip = str(row_dict.get("ip_address", ""))
         is_local = node_ip.startswith("192.168.") or node_ip.startswith("10.") or node_ip.startswith("100.")
         if is_local:
             score += 50000  # Strong local preference — cloud only as overflow
-        # Cloud nodes get no bonus (score stays at VRAM level)
-
-        # ── GPU capability matching ──
-        # Check if GPU architecture meets workload requirements
-        gpu_info = row.get("gpu_info") or []
-        if isinstance(gpu_info, str):
-            try:
-                gpu_info = json.loads(gpu_info)
-            except (json.JSONDecodeError, TypeError):
-                gpu_info = []
-
-        requested_model = pipeline_config.get("model", "")
-        for gpu in gpu_info:
-            gpu_id = gpu.get("id")
-            features = gpu.get("features", [])
-            arch = gpu.get("architecture", "")
-            compute_cap = float(gpu.get("compute_capability", "0") or "0")
-            vram_mb = gpu.get("vram_mb", 0)
-
-            # FP8 workloads need Ampere+ (compute 8.0+)
-            if pipeline_config.get("quant_method") == "fp8" and compute_cap < 8.0:
-                if gpu_id == best_gpu:
-                    score -= 20000  # Penalize — wrong architecture for FP8
-                continue
-
-            # Flash attention needs compute 7.5+
-            if "flash_attention" in features and gpu_id == best_gpu:
-                score += 2000  # Bonus for flash attention support
-
-            # Tensor cores bonus for generation workloads
-            if "tensor_cores" in features and workload_type in ("image", "music"):
-                score += 1000
+            reason_bits.append("local")
 
         # ── Model affinity ──
         # If the requested model is already loaded on a GPU, prefer that GPU
         # to avoid cold start (30-60s model loading)
-        loaded_models = row.get("loaded_models") or []
-        if isinstance(loaded_models, str):
-            try:
-                loaded_models = json.loads(loaded_models)
-            except (json.JSONDecodeError, TypeError):
-                loaded_models = []
+        loaded_models = _json_list(row_dict.get("loaded_models"))
 
         payload_model = pipeline_config.get("model", "")
         if not payload_model and isinstance(pipeline_config.get("payload"), dict):
             payload_model = pipeline_config["payload"].get("model", "")
 
+        eligible_gpu_ids = {gpu.get("id") for _gpu_score, gpu in eligible_gpus}
         for lm in loaded_models:
             lm_model = lm.get("model", "") if isinstance(lm, dict) else str(lm)
             lm_gpu = lm.get("gpu", None) if isinstance(lm, dict) else None
             if payload_model and payload_model in lm_model:
                 score += 30000  # Strong bonus — model already warm
-                if lm_gpu is not None:
+                if lm_gpu is not None and (not eligible_gpu_ids or lm_gpu in eligible_gpu_ids):
                     best_gpu = lm_gpu  # Use the GPU where it's loaded
+                reason_bits.append("warm-model")
                 break
 
         # ── Preferred nodes (pipeline config) ──
-        node_id = row["node_id"]
+        node_id = row_dict["node_id"]
+        node_aliases = _node_aliases(row_dict)
         for pref in preferred_nodes:
-            pref_node = pref.split(":")[0] if ":" in pref else pref
-            if node_id == pref_node:
+            pref_node, pref_gpu = _parse_preferred_node(pref)
+            if pref_node in node_aliases:
                 score += 10000  # Pipeline preference bonus
-                if ":" in pref:
-                    try:
-                        best_gpu = int(pref.split(":")[1].replace("gpu", ""))
-                    except ValueError:
-                        pass
+                if pref_gpu is not None and (not eligible_gpu_ids or pref_gpu in eligible_gpu_ids):
+                    best_gpu = pref_gpu
+                reason_bits.append(f"preferred={pref}")
                 break
 
         # ── Queue depth penalty ──
-        queue = row.get("queue_depth") or {}
-        if isinstance(queue, str):
-            try:
-                queue = json.loads(queue)
-            except (json.JSONDecodeError, TypeError):
-                queue = {}
+        queue = _json_dict(row_dict.get("queue_depth"))
         queue_for_type = queue.get(workload_type, 0)
         score -= queue_for_type * 1000  # Penalize busy queues
+        if queue_for_type:
+            reason_bits.append(f"queue={queue_for_type}")
 
-        candidates.append((node_id, best_gpu, score))
+        candidates.append((node_id, best_gpu, score, reason_bits))
 
     if not candidates:
         return None, None, f"No nodes support workload type '{workload_type}'"
@@ -836,6 +1164,8 @@ async def _auto_route(
     winner = candidates[0]
 
     reason = f"Selected {winner[0]} (gpu={winner[1]}, score={winner[2]})"
+    if winner[3]:
+        reason += f" [{' '.join(winner[3])}]"
     if len(candidates) > 1:
         reason += f" from {len(candidates)} candidates"
 
