@@ -93,23 +93,56 @@ class UsagePayload(BaseModel):
 async def get_current_user(request: Request):
     if "/app" not in sys.path:
         sys.path.insert(0, "/app")
+    from auth_manager import auth_manager
     from redis_session import RedisSessionManager
 
     session_token = request.cookies.get("session_token")
-    if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    if session_token:
+        sessions = RedisSessionManager(
+            host=os.getenv("REDIS_HOST", "unicorn-redis"),
+            port=int(os.getenv("REDIS_PORT", "6379")),
+        )
+        if session_token in sessions:
+            session_data = sessions[session_token]
+            user = session_data.get("user", {})
+            if user:
+                return user
 
-    sessions = RedisSessionManager(
-        host=os.getenv("REDIS_HOST", "unicorn-redis"),
-        port=int(os.getenv("REDIS_PORT", "6379")),
-    )
-    if session_token not in sessions:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-    session_data = sessions[session_token]
-    user = session_data.get("user", {})
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found in session")
-    return user
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+
+        # The SPA stores the Redis session token in localStorage and sends it as
+        # a bearer. Try Redis session lookup first; fall back to JWT verify for
+        # tokens issued by auth_manager (local users).
+        try:
+            sessions = RedisSessionManager(
+                host=os.getenv("REDIS_HOST", "unicorn-redis"),
+                port=int(os.getenv("REDIS_PORT", "6379")),
+            )
+            if token in sessions:
+                session_data = sessions[token]
+                user = session_data.get("user", {})
+                if user:
+                    return user
+        except Exception:
+            pass
+
+        try:
+            jwt_user = auth_manager.verify_token(token)
+        except Exception:
+            jwt_user = None
+        if not jwt_user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+        full_user = auth_manager.get_user(jwt_user["user_id"]) or {}
+        return {
+            **full_user,
+            **jwt_user,
+            "is_admin": jwt_user.get("role") == "admin",
+        }
+
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 async def require_admin(request: Request):
@@ -170,6 +203,24 @@ async def heartbeat(
         return await registry.heartbeat(payload.node_id, payload.model_dump(exclude={"node_id"}))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class DeregisterPayload(BaseModel):
+    node_id: str
+
+
+@router.post("/deregister")
+@rate_limit("federation_register")
+async def deregister_peer(
+    payload: DeregisterPayload,
+    request: Request,
+    registry: NodeRegistry = Depends(get_registry),
+):
+    """Peer-initiated deregistration. Authenticated via federation shared key."""
+    if not _federation_secret_ok(request):
+        raise HTTPException(status_code=401, detail="Federation authentication failed")
+    await registry.deregister_node(payload.node_id)
+    return {"deleted": True, "node_id": payload.node_id}
 
 
 @router.delete("/nodes/{node_id}")
