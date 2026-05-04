@@ -232,10 +232,15 @@ function ProtectedRoute({ children }) {
   }
   
   if (!authenticated) {
-    // Redirect to OAuth login using window.location to force full page load
-    // This allows the backend /auth/login endpoint to handle the Keycloak redirect
-    if (!window.location.pathname.startsWith('/auth/')) {
-      window.location.href = '/auth/login';
+    // Send unauthenticated users to the BRANDED /admin/login SPA page.
+    // From there they can click "Continue with SSO" to start the Keycloak
+    // flow, or use a local-account fallback. This avoids bouncing them
+    // straight to the upstream IdP and losing tenant branding context.
+    const path = window.location.pathname;
+    if (path !== '/admin/login' && !path.startsWith('/auth/')) {
+      // Preserve original destination so post-login can return user there.
+      const next = encodeURIComponent(path + window.location.search);
+      window.location.href = `/admin/login?next=${next}`;
     }
     return <div>Loading...</div>;
   }
