@@ -622,3 +622,18 @@ body.uc1-pro-login {
         border: 2px solid #000;
     }
 }
+
+/* === SOCIAL ICON SIZING (added by claude) === */
+.uc1-social-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+.uc1-social-icon {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    object-fit: contain;
+    border-radius: 4px;
+}

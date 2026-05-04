@@ -43,6 +43,7 @@ from fastapi.responses import RedirectResponse
 import secrets
 import base64
 from landing_config import landing_config
+from branding_config import get_branding_config
 from system_manager import (
     system_manager,
     NetworkConfig,
@@ -127,6 +128,7 @@ from routers.inference_proxy import router as inference_proxy_router
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
+from routers.uuda import router as uuda_router
 
 # Billing Events API - April 2026
 from routers.billing_events import router as billing_events_router
@@ -781,6 +783,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/inference/",  # Inference proxy - programmatic API, session auth not CSRF
         "/api/v1/compute/",  # GPU Compute Fabric - machine-to-machine, uses agent key auth
         "/api/v1/billing/events",  # Billing Events API - machine-to-machine, uses agent key auth
+        "/api/v1/uuda/",  # UUDA control plane
+        "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -1202,6 +1206,11 @@ logger.info("Inference Proxy endpoints registered at /api/v1/inference")
 # GPU Compute Fabric Control Plane - April 2026
 app.include_router(compute_api_router)
 logger.info("GPU Compute Fabric endpoints registered at /api/v1/compute")
+
+# UUDA control plane (Phase 1) — April 2026
+app.include_router(uuda_router)
+logger.info("UUDA control-plane endpoints registered at /api/v1/uuda")
+
 
 # Billing Events API - April 2026
 app.include_router(billing_events_router)
@@ -2612,14 +2621,15 @@ async def get_system_capabilities_endpoint(current_user: dict = Depends(get_curr
 @app.get("/api/v1/system/settings")
 async def get_system_settings():
     """Get system-wide settings (public endpoint for landing page mode)"""
+    branding = get_branding_config()
     return {
         "landing_page_mode": "direct_sso",  # direct_sso | public_marketplace | custom
         "branding": {
-            "company_name": "Unicorn Commander",
-            "logo_url": "/logos/magic_unicorn_logo.webp",
-            "primary_color": "#7c3aed"
+            "company_name": branding.get("company_name", "Ops-Center"),
+            "logo_url": branding.get("logo_url", "/logos/ops-center-logo.png"),
+            "primary_color": branding.get("primary_color", "#7c3aed")
         },
-        "sso_enabled": True,
+        "sso_enabled": branding.get("sso_enabled", True),
         "allow_registration": False
     }
 
@@ -2638,7 +2648,8 @@ async def get_deployment_config():
                 "branding": deployment_service.get_branding_config()
             }
         else:
-            # Fallback configuration for UC-1 Pro
+            # Fallback configuration — uses runtime branding
+            runtime_branding = get_branding_config()
             config = {
                 "deployment_type": "enterprise",
                 "primary_app_url": "http://localhost:8080",
@@ -2646,8 +2657,8 @@ async def get_deployment_config():
                 "registered_applications": ["open-webui", "center-deep", "vllm"],
                 "enabled_features": ["vllm", "gpu_monitoring", "enterprise_auth", "model_management"],
                 "branding": {
-                    "name": "UC-1 Pro Operations Center",
-                    "theme": "unicorn"
+                    "name": runtime_branding.get("company_name", "Ops-Center"),
+                    "theme": runtime_branding.get("theme", "default")
                 }
             }
         return config
@@ -2655,6 +2666,18 @@ async def get_deployment_config():
         raise HTTPException(status_code=500, detail=str(e))
 
 # ===========================
+@app.get("/api/v1/branding/config")
+async def get_branding_config_public():
+    """Get runtime branding configuration for the current tenant.
+    Public endpoint (no authentication required) so the login page
+    and unauthenticated visitors render with correct branding.
+    """
+    try:
+        branding = get_branding_config()
+        return branding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Landing Page Customization
 # ===========================
 
@@ -6309,35 +6332,33 @@ async def serve_dashboard(request: Request):
 @app.get("/admin")
 @app.get("/admin/{path:path}")
 async def serve_admin(request: Request, path: str = ""):
-    """Serve the React admin app for all /admin routes"""
-    # Check if user is authenticated via session cookie
-    session_token = request.cookies.get("session_token")
-
-    # If authenticated via OAuth, create a bridge to the React app
-    if session_token and session_token in sessions:
-        # User is authenticated, serve the admin page
-        # The React app will need to call /api/v1/auth/me to get user info
-        if os.path.exists("public/index.html"):
-            response = FileResponse("public/index.html")
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            return response
-        elif os.path.exists("dist/index.html"):
-            response = FileResponse("dist/index.html")
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            return response
-        elif os.path.exists("../public/index.html"):
-            response = FileResponse("../public/index.html")
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            return response
-    else:
-        # Not authenticated, redirect to OAuth login
-        return RedirectResponse(url="/auth/login", status_code=302)
+    """Serve the React admin app for all /admin routes.
+    
+    Serves the SPA unconditionally (no auth redirect).
+    React's ProtectedRoute component handles auth checks client-side.
+    The login page at /admin/login renders with runtime branding for
+    unauthenticated users, showing a branded SSO login button.
+    """
+    # Serve the SPA to ALL users (authenticated or not)
+    # React's ProtectedRoute component handles auth checks client-side
+    if os.path.exists("public/index.html"):
+        response = FileResponse("public/index.html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    elif os.path.exists("dist/index.html"):
+        response = FileResponse("dist/index.html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    elif os.path.exists("../public/index.html"):
+        response = FileResponse("../public/index.html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
     raise HTTPException(status_code=404, detail="Admin interface not found")
 

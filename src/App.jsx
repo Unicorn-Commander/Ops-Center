@@ -11,6 +11,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { DeploymentProvider } from './contexts/DeploymentContext';
 import { OrganizationProvider } from './contexts/OrganizationContext';
 import { ToastProvider } from './components/Toast';
+import { BrandingProvider } from './contexts/BrandingContext';
 
 // Create QueryClient instance for React Query
 const queryClient = new QueryClient({
@@ -668,8 +669,9 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <DeploymentProvider>
-          <ThemeProvider>
+        <BrandingProvider>
+            <DeploymentProvider>
+              <ThemeProvider>
             <ToastProvider>
               <Router>
                 <AppRoutes />
@@ -682,7 +684,8 @@ function App() {
             </ToastProvider>
           </ThemeProvider>
         </DeploymentProvider>
-      </QueryClientProvider>
+            </BrandingProvider>
+          </QueryClientProvider>
     </ErrorBoundary>
   );
 }

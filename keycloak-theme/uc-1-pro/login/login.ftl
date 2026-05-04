@@ -26,6 +26,11 @@
             <link href="${url.resourcesPath}/${style}" rel="stylesheet" />
         </#list>
     </#if>
+    <style>
+        /* Force-override social icon sizing (CF cache busts via inline style) */
+        .uc1-social-link { display: flex !important; align-items: center !important; justify-content: center !important; gap: 12px !important; }
+        .uc1-social-icon { width: 22px !important; height: 22px !important; flex-shrink: 0 !important; object-fit: contain !important; border-radius: 4px !important; }
+    </style>
     <#if properties.scripts?has_content>
         <#list properties.scripts?split(' ') as script>
             <script src="${url.resourcesPath}/${script}" type="text/javascript"></script>
