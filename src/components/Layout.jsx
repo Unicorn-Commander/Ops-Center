@@ -316,7 +316,7 @@ export default function Layout({ children }) {
     );
   };
 
-  const branding = useBranding();
+  const { branding } = useBranding();
   const currentRoute = getRouteByPath(location.pathname);
   const currentTitle = currentRoute?.name || branding?.company_name || 'Ops-Center';
 
