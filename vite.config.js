@@ -37,9 +37,9 @@ export default defineConfig({
       injectRegister: false, // Disable automatic SW registration
       includeAssets: ['favicon.ico', 'robots.txt', 'logos/**/*.png', 'logos/**/*.svg'],
       manifest: {
-        name: 'Ops-Center - UC-Cloud Management',
+        name: 'Ops-Center',
         short_name: 'Ops-Center',
-        description: 'UC-Cloud Operations and Management Dashboard',
+        description: 'Operations Center — System Administration Dashboard',
         theme_color: '#7c3aed',
         background_color: '#0f172a',
         display: 'standalone',
@@ -73,7 +73,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             // API responses - Network First (fresh data priority)
-            urlPattern: /^https?:\/\/unicorncommander\.ai\/api\/.*/i,
+            urlPattern: /^https?:\/\/[^/]+\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
@@ -89,7 +89,7 @@ export default defineConfig({
           },
           {
             // Static API data (rarely changes) - Cache First
-            urlPattern: /^https?:\/\/unicorncommander\.ai\/api\/v1\/(system\/status|service-urls|deployment\/config)/i,
+            urlPattern: /^https?:\/\/[^/]+\/api\/v1\/(system\/status|branding\/config|deployment\/config)/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'static-api-cache',

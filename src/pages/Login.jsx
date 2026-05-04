@@ -5,18 +5,33 @@ import {
   LockClosedIcon,
   UserIcon,
   KeyIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline';
-import { ColonelLogo, MagicUnicornLogo } from '../components/Logos';
+import { useBranding } from '../contexts/BrandingContext';
 
 export default function Login() {
   const navigate = useNavigate();
+  const { branding, loading: brandingLoading } = useBranding();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showLocalLogin, setShowLocalLogin] = useState(false);
   const [credentials, setCredentials] = useState({
     username: '',
     password: ''
   });
+
+  const primaryColor = branding?.primary_color || '#7c3aed';
+  const companyName = branding?.company_name || 'Ops-Center';
+  const tagline = branding?.tagline || 'Operations Center';
+  const subtitle = branding?.subtitle || '';
+  const logoUrl = branding?.logo_url || '/logos/ops-center-logo.png';
+  const ssoEnabled = branding?.sso_enabled !== false;
+  const ssoProviderName = branding?.sso_provider_name || 'SSO';
+
+  const handleSSOLogin = () => {
+    window.location.href = '/auth/login';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,15 +50,12 @@ export default function Login() {
 
       if (response.ok) {
         const data = await response.json();
-        // Store the token
         localStorage.setItem('authToken', data.access_token);
-        // Store user info
         localStorage.setItem('userInfo', JSON.stringify({
           username: credentials.username,
           tokenType: data.token_type,
           expiresIn: data.expires_in
         }));
-        // Redirect to admin dashboard
         navigate('/admin/');
       } else {
         const errorData = await response.json();
@@ -57,7 +69,12 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{
+        background: `linear-gradient(135deg, ${primaryColor}15 0%, ${primaryColor}08 100%), linear-gradient(to bottom right, #0f172a 0%, #1e293b 50%, #0f172a 100%)`
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -66,13 +83,21 @@ export default function Login() {
       >
         {/* Logo and Title */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <ColonelLogo className="w-16 h-16" />
-          </div>
+          {logoUrl && (
+            <img
+              src={logoUrl}
+              alt={companyName}
+              className="h-16 mx-auto mb-4 object-contain"
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          )}
           <h1 className="text-3xl font-bold text-white mb-2">
-            Special Projects
+            {companyName}
           </h1>
-          <p className="text-purple-200">Ops Center Login</p>
+          {subtitle && (
+            <p className="text-purple-200/80 text-sm font-medium mb-1">{subtitle}</p>
+          )}
+          <p className="text-purple-200/60">{tagline}</p>
         </div>
 
         {/* Error Message */}
@@ -89,69 +114,114 @@ export default function Login() {
           </motion.div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-purple-200 mb-2">
-              Username
-            </label>
-            <div className="relative">
-              <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-purple-300" />
-              <input
-                type="text"
-                value={credentials.username}
-                onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                placeholder="Enter your username"
-                required
-                autoFocus
-              />
+        {/* SSO Button */}
+        {ssoEnabled && !showLocalLogin && (
+          <div className="space-y-4">
+            <button
+              onClick={handleSSOLogin}
+              className="w-full py-3 px-4 text-white font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+              style={{
+                background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColor}dd 100%)`
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = `0 8px 25px ${primaryColor}40`;
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '';
+              }}
+            >
+              <ArrowRightOnRectangleIcon className="h-5 w-5" />
+              Continue with {ssoProviderName}
+            </button>
+
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-transparent text-purple-200/50">or</span>
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-purple-200 mb-2">
-              Password
-            </label>
-            <div className="relative">
-              <KeyIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-purple-300" />
-              <input
-                type="password"
-                value={credentials.password}
-                onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                placeholder="Enter your password"
-                required
-              />
+            <button
+              onClick={() => setShowLocalLogin(true)}
+              className="w-full py-3 px-4 bg-white/5 border border-white/10 text-purple-200 font-medium rounded-lg hover:bg-white/10 transition-all duration-200 flex items-center justify-center gap-2"
+            >
+              <LockClosedIcon className="h-5 w-5" />
+              Sign in with local account
+            </button>
+          </div>
+        )}
+
+        {/* Local Login Form */}
+        {(!ssoEnabled || showLocalLogin) && (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {showLocalLogin && (
+              <button
+                type="button"
+                onClick={() => setShowLocalLogin(false)}
+                className="text-sm text-purple-300 hover:text-purple-200 transition-colors"
+              >
+                &larr; Back to SSO login
+              </button>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-purple-200 mb-2">
+                Username
+              </label>
+              <div className="relative">
+                <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-purple-300" />
+                <input
+                  type="text"
+                  value={credentials.username}
+                  onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
+                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Enter your username"
+                  required
+                  autoFocus
+                />
+              </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            <LockClosedIcon className="h-5 w-5" />
-            {loading ? 'Logging in...' : 'Login'}
-          </button>
-        </form>
+            <div>
+              <label className="block text-sm font-medium text-purple-200 mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <KeyIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-purple-300" />
+                <input
+                  type="password"
+                  value={credentials.password}
+                  onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+            </div>
 
-        {/* Default Credentials Info */}
-        <div className="mt-8 p-4 bg-blue-500/20 border border-blue-500/30 rounded-lg">
-          <p className="text-sm text-blue-200 text-center">
-            Default credentials:<br />
-            Username: <span className="font-mono">ucadmin</span><br />
-            Password: <span className="font-mono">MagicUnicorn!8-)</span>
-          </p>
-        </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 px-4 text-white font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
+              style={{
+                background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColor}dd 100%)`
+              }}
+            >
+              <LockClosedIcon className="h-5 w-5" />
+              {loading ? 'Logging in...' : 'Login'}
+            </button>
+          </form>
+        )}
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          <div className="flex items-center justify-center gap-2 text-purple-300 text-sm">
-            <span>Powered by</span>
-            <MagicUnicornLogo className="w-6 h-6" />
-            <span>Magic Unicorn</span>
-          </div>
+          <p className="text-purple-300/50 text-xs">
+            {companyName} &mdash; {tagline}
+          </p>
         </div>
       </motion.div>
     </div>
