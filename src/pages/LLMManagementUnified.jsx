@@ -1,44 +1,30 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTheme } from '../contexts/ThemeContext';
-import { useToast } from '../components/Toast';
+import React, { useState, useCallback, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTheme } from "../contexts/ThemeContext";
+import { useToast } from "../components/Toast";
 import {
-  Brain,
-  Search,
-  Filter,
-  DollarSign,
-  Eye,
-  EyeOff,
-  RefreshCw,
-  CheckCircle,
-  XCircle,
-  Zap,
-  MessageSquare,
-  Image as ImageIcon,
-  Code2,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  LayoutGrid,
-  List as ListIcon,
-  Download
-} from 'lucide-react';
+  Brain, Search, Filter, DollarSign, RefreshCw,
+  CheckCircle, XCircle, Zap, MessageSquare,
+  Image as ImageIcon, Code2, Sparkles,
+  ChevronDown, ChevronUp, LayoutGrid, List as ListIcon,
+  Download, HardDrive, Globe, Server,
+} from "lucide-react";
+import { fetchFederationJson } from "../utils/federationApi";
 
-// Utility to format pricing
 const formatPrice = (price) => {
-  if (price === 0) return 'Free';
+  if (price === 0) return "Free";
   if (price < 0.01) return `$${price.toFixed(6)}`;
   if (price < 1) return `$${price.toFixed(4)}`;
   return `$${price.toFixed(2)}`;
 };
 
-// Model Row Component (simple version without animations)
 const ModelRow = ({ model, theme, onToggle }) => {
   if (!model) return null;
+  const isLocal = model.source === "federation";
+  const peerCount = model.peer_count || 1;
 
   return (
-    <div className={`border-b ${theme?.border || 'border-gray-700'} hover:bg-gray-800/50 transition-all`}
-    >
+    <div className={`border-b ${theme?.border || "border-gray-700"} hover:bg-gray-800/50 transition-all`}>
       <div className="flex items-center gap-4 p-4">
         {/* Toggle Switch */}
         <div className="flex-shrink-0">
@@ -46,13 +32,13 @@ const ModelRow = ({ model, theme, onToggle }) => {
             onClick={() => onToggle(model.id)}
             className={`relative w-12 h-6 rounded-full transition-all ${
               model.is_active
-                ? 'bg-green-500 hover:bg-green-600'
-                : 'bg-gray-600 hover:bg-gray-500'
+                ? "bg-green-500 hover:bg-green-600"
+                : "bg-gray-600 hover:bg-gray-500"
             }`}
           >
             <div
               className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg transition-all ${
-                model.is_active ? 'left-7' : 'left-1'
+                model.is_active ? "left-7" : "left-1"
               }`}
             />
           </button>
@@ -60,12 +46,39 @@ const ModelRow = ({ model, theme, onToggle }) => {
 
         {/* Model Name & Provider */}
         <div className="flex-1 min-w-0">
-          <div className={`font-medium ${theme?.text?.primary || 'text-white'} truncate`}>
+          <div className={`font-medium ${theme?.text?.primary || "text-white"} truncate flex items-center gap-2`}>
             {model.name}
+            {isLocal && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300">
+                <HardDrive className="h-3 w-3" />
+                LOCAL
+              </span>
+            )}
+            {peerCount > 1 && (
+              <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">
+                {peerCount} peers
+              </span>
+            )}
           </div>
-          <div className={`text-xs ${theme?.text?.secondary || 'text-gray-400'} truncate mt-0.5`}>
+          <div className={`text-xs ${theme?.text?.secondary || "text-gray-400"} truncate mt-0.5`}>
             {model.id}
+            {model.node_display && (
+              <span className="ml-2 text-purple-400">@{model.node_display}</span>
+            )}
           </div>
+        </div>
+
+        {/* Source badge */}
+        <div className="flex-shrink-0">
+          {isLocal ? (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400">
+              <Server className="h-3 w-3" /> Federation
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-400">
+              <Globe className="h-3 w-3" /> Cloud
+            </span>
+          )}
         </div>
 
         {/* Capabilities */}
@@ -89,27 +102,27 @@ const ModelRow = ({ model, theme, onToggle }) => {
 
         {/* Context Length */}
         <div className="text-right flex-shrink-0 min-w-[80px]">
-          <div className={`text-sm ${theme?.text?.primary || 'text-white'}`}>
+          <div className={`text-sm ${theme?.text?.primary || "text-white"}`}>
             {((model.context_length || 0) / 1000).toFixed(0)}K
           </div>
-          <div className={`text-xs ${theme?.text?.secondary || 'text-gray-400'}`}>tokens</div>
+          <div className={`text-xs ${theme?.text?.secondary || "text-gray-400"}`}>tokens</div>
         </div>
 
         {/* Pricing */}
         <div className="text-right flex-shrink-0 min-w-[100px]">
-          <div className={`text-sm font-medium ${theme?.text?.primary || 'text-white'}`}>
+          <div className={`text-sm font-medium ${theme?.text?.primary || "text-white"}`}>
             {formatPrice(model.pricing?.prompt_per_1m || 0)}
           </div>
-          <div className={`text-xs ${theme?.text?.secondary || 'text-gray-400'}`}>per 1M in</div>
+          <div className={`text-xs ${theme?.text?.secondary || "text-gray-400"}`}>per 1M in</div>
         </div>
         <div className="text-right flex-shrink-0 min-w-[100px]">
-          <div className={`text-sm font-medium ${theme?.text?.primary || 'text-white'}`}>
+          <div className={`text-sm font-medium ${theme?.text?.primary || "text-white"}`}>
             {formatPrice(model.pricing?.completion_per_1m || 0)}
           </div>
-          <div className={`text-xs ${theme?.text?.secondary || 'text-gray-400'}`}>per 1M out</div>
+          <div className={`text-xs ${theme?.text?.secondary || "text-gray-400"}`}>per 1M out</div>
         </div>
 
-        {/* Status Indicator */}
+        {/* Status */}
         <div className="flex-shrink-0">
           {model.is_active ? (
             <CheckCircle className="h-5 w-5 text-green-500" />
@@ -122,241 +135,287 @@ const ModelRow = ({ model, theme, onToggle }) => {
   );
 };
 
-// Main Component
+const buildFederationModels = (services) => {
+  if (!services || services.length === 0) return [];
+  const modelMap = new Map();
+
+  for (const svc of services) {
+    if (svc.node_status === "offline") continue;
+    const models = svc.models || [];
+    for (const m of models) {
+      const key = m.toLowerCase();
+      if (modelMap.has(key)) {
+        const existing = modelMap.get(key);
+        existing.peer_count = (existing.peer_count || 1) + 1;
+        existing.node_ids = [...(existing.node_ids || []), svc.node_id];
+        continue;
+      }
+      modelMap.set(key, {
+        id: `federation:${key}`,
+        name: m,
+        source: "federation",
+        is_active: true,
+        node_id: svc.node_id,
+        node_display: svc.display_name || svc.node_id,
+        node_ids: [svc.node_id],
+        peer_count: 1,
+        context_length: svc.capabilities?.max_context || 8192,
+        supports_streaming: true,
+        supports_function_calling: svc.capabilities?.function_calling || false,
+        supports_vision: false,
+        pricing: {
+          prompt_per_1m: svc.cost_usd || 0,
+          completion_per_1m: svc.cost_usd || 0,
+        },
+      });
+    }
+  }
+  return Array.from(modelMap.values());
+};
+
 export default function LLMManagementUnified() {
   const { theme } = useTheme();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  // State
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterActive, setFilterActive] = useState('all'); // all, enabled, disabled
-  const [sortBy, setSortBy] = useState('name'); // name, price_asc, price_desc, context
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterActive, setFilterActive] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
   const [showFilters, setShowFilters] = useState(false);
+  const [filterSource, setFilterSource] = useState("all");
 
-  // Fetch models from API
-  const { data: modelsData, isLoading, error, refetch } = useQuery({
-    queryKey: ['openrouter-models'],
+  const { data: openrouterData, isLoading: isORLoading, error: orError } = useQuery({
+    queryKey: ["openrouter-models"],
     queryFn: async () => {
-      const response = await fetch('/api/v1/llm/admin/models/openrouter', {
-        credentials: 'include'
+      const response = await fetch("/api/v1/llm/admin/models/openrouter", {
+        credentials: "include",
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch models');
-      }
-
-      const data = await response.json();
-      console.log('API Response:', data);
-      console.log('Models array:', data?.models);
-      console.log('First model:', data?.models?.[0]);
-      return data;
+      if (!response.ok) throw new Error("Failed to fetch OpenRouter models");
+      return response.json();
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000 // 10 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Toggle model status mutation
+  const { data: federationData, isLoading: isFedLoading } = useQuery({
+    queryKey: ["federation-llm-services"],
+    queryFn: async () => {
+      const data = await fetchFederationJson(
+        "/api/v1/federation/services?service_type=llm"
+      );
+      return data.services || [];
+    },
+    staleTime: 30 * 1000,
+  });
+
   const toggleMutation = useMutation({
     mutationFn: async (modelId) => {
-      const response = await fetch(`/api/v1/llm/admin/models/${encodeURIComponent(modelId)}/toggle`, {
-        method: 'PUT',
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to toggle model');
-      }
-
+      const response = await fetch(
+        `/api/v1/llm/admin/models/${encodeURIComponent(modelId)}/toggle`,
+        { method: "PUT", credentials: "include" }
+      );
+      if (!response.ok) throw new Error("Failed to toggle model");
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries(['openrouter-models']);
-      showToast('success', data.message || 'Model status updated');
+      queryClient.invalidateQueries(["openrouter-models"]);
+      showToast("success", data.message || "Model status updated");
     },
     onError: (error) => {
-      showToast('error', error.message || 'Failed to update model');
-    }
+      showToast("error", error.message || "Failed to update model");
+    },
   });
 
-  // Handle toggle
-  const handleToggle = useCallback((modelId) => {
-    toggleMutation.mutate(modelId);
-  }, [toggleMutation]);
+  const handleToggle = useCallback(
+    (modelId) => {
+      if (modelId.startsWith("federation:")) {
+        showToast("info", "Federation models are always active while the peer is online");
+        return;
+      }
+      toggleMutation.mutate(modelId);
+    },
+    [toggleMutation, showToast]
+  );
 
-  // Filter and sort models
+  const allModels = useMemo(() => {
+    const models = [];
+
+    // Federation models first
+    if (federationData && federationData.length > 0) {
+      models.push(...buildFederationModels(federationData));
+    }
+
+    // OpenRouter + external models
+    if (openrouterData?.models) {
+      for (const m of openrouterData.models) {
+        models.push({
+          ...m,
+          source: "cloud",
+          node_display: m.provider || "OpenRouter",
+        });
+      }
+    }
+
+    return models;
+  }, [federationData, openrouterData]);
+
   const filteredAndSortedModels = useMemo(() => {
     try {
-      if (!modelsData?.models) return [];
+      let filtered = [...allModels];
 
-      console.log('Processing models, count:', modelsData.models.length);
-
-      let filtered = [...modelsData.models];
-
-    // Apply search filter
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(m =>
-        m.name?.toLowerCase().includes(search) ||
-        m.id?.toLowerCase().includes(search) ||
-        m.description?.toLowerCase().includes(search)
-      );
-    }
-
-    // Apply active/disabled filter
-    if (filterActive === 'enabled') {
-      filtered = filtered.filter(m => m.is_active);
-    } else if (filterActive === 'disabled') {
-      filtered = filtered.filter(m => !m.is_active);
-    }
-
-    // Apply sorting
-    console.log('Sorting models...');
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return (a.name || '').localeCompare(b.name || '');
-        case 'price_asc':
-          return (a.pricing?.prompt_per_1m || 0) - (b.pricing?.prompt_per_1m || 0);
-        case 'price_desc':
-          return (b.pricing?.prompt_per_1m || 0) - (a.pricing?.prompt_per_1m || 0);
-        case 'context':
-          return (b.context_length || 0) - (a.context_length || 0);
-        default:
-          return 0;
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        filtered = filtered.filter(
+          (m) =>
+            m.name?.toLowerCase().includes(search) ||
+            m.id?.toLowerCase().includes(search) ||
+            m.description?.toLowerCase().includes(search)
+        );
       }
-    });
 
-    console.log('Filtered and sorted:', filtered.length, 'models');
-    return filtered;
-    } catch (error) {
-      console.error('Error in filteredAndSortedModels:', error);
-      console.error('Error stack:', error.stack);
+      if (filterActive === "enabled") {
+        filtered = filtered.filter((m) => m.is_active);
+      } else if (filterActive === "disabled") {
+        filtered = filtered.filter((m) => !m.is_active);
+      }
+
+      if (filterSource === "federation") {
+        filtered = filtered.filter((m) => m.source === "federation");
+      } else if (filterSource === "cloud") {
+        filtered = filtered.filter((m) => m.source !== "federation");
+      }
+
+      filtered.sort((a, b) => {
+        switch (sortBy) {
+          case "name":
+            return (a.name || "").localeCompare(b.name || "");
+          case "price_asc":
+            return (a.pricing?.prompt_per_1m || 0) - (b.pricing?.prompt_per_1m || 0);
+          case "price_desc":
+            return (b.pricing?.prompt_per_1m || 0) - (a.pricing?.prompt_per_1m || 0);
+          case "context":
+            return (b.context_length || 0) - (a.context_length || 0);
+          default:
+            return 0;
+        }
+      });
+
+      return filtered;
+    } catch (err) {
+      console.error("Error filtering models:", err);
       return [];
     }
-  }, [modelsData, searchTerm, filterActive, sortBy]);
+  }, [allModels, searchTerm, filterActive, sortBy, filterSource]);
 
-  // Statistics
   const stats = useMemo(() => {
-    try {
-      if (!modelsData?.models || modelsData.models.length === 0) {
-        return { total: 0, enabled: 0, disabled: 0, avgPrice: 0 };
-      }
+    const fedCount = allModels.filter((m) => m.source === "federation").length;
+    const cloudCount = allModels.filter((m) => m.source !== "federation").length;
+    const enabled = allModels.filter((m) => m.is_active).length;
+    return {
+      total: allModels.length,
+      federation: fedCount,
+      cloud: cloudCount,
+      enabled,
+      disabled: allModels.length - enabled,
+    };
+  }, [allModels]);
 
-      console.log('Calculating stats...');
-      const total = modelsData.models.length;
-      const enabled = modelsData.models.filter(m => m.is_active).length;
-      const disabled = total - enabled;
-      const avgPrice = modelsData.models.reduce((sum, m) => sum + (m.pricing?.prompt_per_1m || 0), 0) / total;
-
-      console.log('Stats:', { total, enabled, disabled, avgPrice });
-      return { total, enabled, disabled, avgPrice };
-    } catch (error) {
-      console.error('Error in stats calculation:', error);
-      return { total: 0, enabled: 0, disabled: 0, avgPrice: 0 };
-    }
-  }, [modelsData]);
+  const isLoading = isORLoading || isFedLoading;
+  const error = orError;
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className={`text-3xl font-bold ${theme.text.primary} flex items-center gap-3`}>
+          <h1 className={`text-3xl font-bold ${theme?.text?.primary || "text-white"} flex items-center gap-3`}>
             <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
               <Brain className="h-8 w-8 text-white" />
             </div>
             LLM Model Catalog
           </h1>
-          <p className={`mt-2 ${theme.text.secondary}`}>
-            Manage and configure LLM models from OpenRouter
+          <p className={`mt-2 ${theme?.text?.secondary || "text-gray-400"}`}>
+            Federation models + OpenRouter & external providers
           </p>
         </div>
         <button
-          onClick={() => refetch()}
+          onClick={() => {
+            queryClient.invalidateQueries(["openrouter-models"]);
+            queryClient.invalidateQueries(["federation-llm-services"]);
+          }}
           disabled={isLoading}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg ${theme.button.secondary} transition-all ${
-            isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80'
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg ${theme?.button?.secondary || "bg-gray-700"} transition-all ${
+            isLoading ? "opacity-50 cursor-not-allowed" : "hover:opacity-80"
           }`}
         >
-          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           <span>Refresh</span>
         </button>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className={`${theme.card} rounded-xl p-6 border border-purple-500/20`}>
+        <div className={`${theme?.card || "bg-gray-800"} rounded-xl p-6 border border-purple-500/20`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Total Models</p>
-              <p className={`text-3xl font-bold ${theme.text.primary} mt-1`}>{stats.total}</p>
+              <p className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Total Models</p>
+              <p className={`text-3xl font-bold ${theme?.text?.primary || "text-white"} mt-1`}>{stats.total}</p>
             </div>
             <div className="p-3 rounded-lg bg-purple-500/20">
               <Brain className="h-6 w-6 text-purple-400" />
             </div>
           </div>
         </div>
-
-        <div className={`${theme.card} rounded-xl p-6 border border-green-500/20`}>
+        <div className={`${theme?.card || "bg-gray-800"} rounded-xl p-6 border border-green-500/20`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Enabled</p>
-              <p className={`text-3xl font-bold text-green-400 mt-1`}>{stats.enabled}</p>
+              <p className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Federation (Local)</p>
+              <p className={`text-3xl font-bold text-green-400 mt-1`}>{stats.federation}</p>
             </div>
             <div className="p-3 rounded-lg bg-green-500/20">
-              <CheckCircle className="h-6 w-6 text-green-400" />
+              <Server className="h-6 w-6 text-green-400" />
             </div>
           </div>
         </div>
-
-        <div className={`${theme.card} rounded-xl p-6 border border-gray-500/20`}>
+        <div className={`${theme?.card || "bg-gray-800"} rounded-xl p-6 border border-blue-500/20`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Disabled</p>
-              <p className={`text-3xl font-bold ${theme.text.primary} mt-1`}>{stats.disabled}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-gray-500/20">
-              <XCircle className="h-6 w-6 text-gray-400" />
-            </div>
-          </div>
-        </div>
-
-        <div className={`${theme.card} rounded-xl p-6 border border-blue-500/20`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Avg Price</p>
-              <p className={`text-3xl font-bold ${theme.text.primary} mt-1`}>
-                {formatPrice(stats.avgPrice)}
-              </p>
-              <p className={`text-xs ${theme.text.secondary} mt-1`}>per 1M tokens</p>
+              <p className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Cloud Providers</p>
+              <p className={`text-3xl font-bold text-blue-400 mt-1`}>{stats.cloud}</p>
             </div>
             <div className="p-3 rounded-lg bg-blue-500/20">
-              <DollarSign className="h-6 w-6 text-blue-400" />
+              <Globe className="h-6 w-6 text-blue-400" />
+            </div>
+          </div>
+        </div>
+        <div className={`${theme?.card || "bg-gray-800"} rounded-xl p-6 border border-gray-500/20`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Enabled</p>
+              <p className={`text-3xl font-bold ${theme?.text?.primary || "text-white"} mt-1`}>{stats.enabled}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-gray-500/20">
+              <CheckCircle className="h-6 w-6 text-gray-400" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <div className={`${theme.card} rounded-xl p-4 space-y-4`}>
+      {/* Search & Filters */}
+      <div className={`${theme?.card || "bg-gray-800"} rounded-xl p-4 space-y-4`}>
         <div className="flex items-center gap-4">
-          {/* Search */}
           <div className="flex-1 relative">
-            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${theme.text.secondary}`} />
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${theme?.text?.secondary || "text-gray-400"}`} />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search models by name, ID, or description..."
-              className={`w-full pl-10 pr-4 py-2 rounded-lg ${theme.input} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-purple-500`}
+              className={`w-full pl-10 pr-4 py-2 rounded-lg bg-gray-700/50 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-purple-500`}
             />
           </div>
-
-          {/* Filter Toggle */}
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg ${theme.button.secondary} transition-all`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition-all`}
           >
             <Filter className="h-4 w-4" />
             <span>Filters</span>
@@ -364,31 +423,39 @@ export default function LLMManagementUnified() {
           </button>
         </div>
 
-        {/* Filter Options */}
         {showFilters && (
           <div className="overflow-hidden">
-            <div className="flex items-center gap-4 pt-4 border-t ${theme.border}">
-              {/* Status Filter */}
+            <div className="flex items-center gap-4 pt-4 border-t border-gray-700">
               <div className="flex items-center gap-2">
-                <span className={`text-sm ${theme.text.secondary}`}>Status:</span>
+                <span className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Status:</span>
                 <select
                   value={filterActive}
                   onChange={(e) => setFilterActive(e.target.value)}
-                  className={`px-3 py-1.5 rounded-lg ${theme.input} border ${theme.border} text-sm`}
+                  className="px-3 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm"
                 >
                   <option value="all">All Models</option>
                   <option value="enabled">Enabled Only</option>
                   <option value="disabled">Disabled Only</option>
                 </select>
               </div>
-
-              {/* Sort */}
               <div className="flex items-center gap-2">
-                <span className={`text-sm ${theme.text.secondary}`}>Sort by:</span>
+                <span className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Source:</span>
+                <select
+                  value={filterSource}
+                  onChange={(e) => setFilterSource(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm"
+                >
+                  <option value="all">All Sources</option>
+                  <option value="federation">Federation (Local)</option>
+                  <option value="cloud">Cloud Providers</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className={`px-3 py-1.5 rounded-lg ${theme.input} border ${theme.border} text-sm`}
+                  className="px-3 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm"
                 >
                   <option value="name">Name (A-Z)</option>
                   <option value="price_asc">Price (Low to High)</option>
@@ -396,10 +463,8 @@ export default function LLMManagementUnified() {
                   <option value="context">Context Length</option>
                 </select>
               </div>
-
-              {/* Results Count */}
               <div className="ml-auto">
-                <span className={`text-sm ${theme.text.secondary}`}>
+                <span className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>
                   Showing {filteredAndSortedModels.length} of {stats.total} models
                 </span>
               </div>
@@ -409,55 +474,57 @@ export default function LLMManagementUnified() {
       </div>
 
       {/* Models Table */}
-      <div className={`${theme.card} rounded-xl overflow-hidden`}>
-        {/* Table Header */}
-        <div className={`${theme.card} border-b ${theme.border} p-4 font-medium`}>
+      <div className={`${theme?.card || "bg-gray-800"} rounded-xl overflow-hidden`}>
+        <div className="border-b border-gray-700 p-4 font-medium">
           <div className="flex items-center gap-4">
             <div className="w-12 flex-shrink-0">
-              <span className={`text-xs ${theme.text.secondary}`}>Status</span>
+              <span className="text-xs text-gray-400">Status</span>
             </div>
             <div className="flex-1 min-w-0">
-              <span className={`text-xs ${theme.text.secondary}`}>Model Name</span>
+              <span className="text-xs text-gray-400">Model Name / Provider</span>
+            </div>
+            <div className="flex-shrink-0 min-w-[80px]">
+              <span className="text-xs text-gray-400">Source</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className={`text-xs ${theme.text.secondary}`}>Features</span>
+              <span className="text-xs text-gray-400">Features</span>
             </div>
             <div className="text-right flex-shrink-0 min-w-[80px]">
-              <span className={`text-xs ${theme.text.secondary}`}>Context</span>
+              <span className="text-xs text-gray-400">Context</span>
             </div>
             <div className="text-right flex-shrink-0 min-w-[100px]">
-              <span className={`text-xs ${theme.text.secondary}`}>Input Cost</span>
+              <span className="text-xs text-gray-400">Input Cost</span>
             </div>
             <div className="text-right flex-shrink-0 min-w-[100px]">
-              <span className={`text-xs ${theme.text.secondary}`}>Output Cost</span>
+              <span className="text-xs text-gray-400">Output Cost</span>
             </div>
             <div className="flex-shrink-0 w-5"></div>
           </div>
         </div>
 
-        {/* Loading State */}
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <RefreshCw className={`h-8 w-8 ${theme.text.secondary} animate-spin`} />
+            <RefreshCw className="h-8 w-8 text-gray-400 animate-spin" />
           </div>
         )}
 
-        {/* Error State */}
         {error && (
           <div className="flex flex-col items-center justify-center py-12">
             <XCircle className="h-12 w-12 text-red-500 mb-4" />
-            <p className={`text-lg ${theme.text.primary} mb-2`}>Failed to load models</p>
-            <p className={`text-sm ${theme.text.secondary} mb-4`}>{error.message}</p>
+            <p className={`text-lg ${theme?.text?.primary || "text-white"} mb-2`}>Failed to load models</p>
+            <p className={`text-sm ${theme?.text?.secondary || "text-gray-400"} mb-4`}>{error.message}</p>
             <button
-              onClick={() => refetch()}
-              className={`px-4 py-2 rounded-lg ${theme.button.primary}`}
+              onClick={() => {
+                queryClient.invalidateQueries(["openrouter-models"]);
+                queryClient.invalidateQueries(["federation-llm-services"]);
+              }}
+              className="px-4 py-2 rounded-lg bg-purple-600 text-white"
             >
               Try Again
             </button>
           </div>
         )}
 
-        {/* Models List (Simple Scrolling) */}
         {!isLoading && !error && filteredAndSortedModels.length > 0 && (
           <div className="max-h-[600px] overflow-y-auto">
             {filteredAndSortedModels.map((model) => (
@@ -471,12 +538,11 @@ export default function LLMManagementUnified() {
           </div>
         )}
 
-        {/* Empty State */}
         {!isLoading && !error && filteredAndSortedModels.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12">
-            <Search className={`h-12 w-12 ${theme.text.secondary} mb-4`} />
-            <p className={`text-lg ${theme.text.primary} mb-2`}>No models found</p>
-            <p className={`text-sm ${theme.text.secondary}`}>
+            <Search className="h-12 w-12 text-gray-400 mb-4" />
+            <p className={`text-lg ${theme?.text?.primary || "text-white"} mb-2`}>No models found</p>
+            <p className={`text-sm ${theme?.text?.secondary || "text-gray-400"}`}>
               Try adjusting your search or filters
             </p>
           </div>
