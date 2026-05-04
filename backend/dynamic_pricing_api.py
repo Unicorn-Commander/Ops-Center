@@ -135,7 +135,11 @@ async def list_byok_rules(
 
         query += " ORDER BY priority DESC, provider"
 
-        rows = await conn.fetch(query, *params)
+        try:
+            rows = await conn.fetch(query, *params)
+        except asyncpg.UndefinedTableError:
+            logger.warning("pricing_rules table missing; returning empty BYOK rules")
+            rows = []
 
         return {
             "rules": [dict(row) for row in rows],
@@ -272,7 +276,11 @@ async def list_platform_rules(
 
         query += " ORDER BY tier_code"
 
-        rows = await conn.fetch(query, *params)
+        try:
+            rows = await conn.fetch(query, *params)
+        except asyncpg.UndefinedTableError:
+            logger.warning("pricing_rules table missing; returning empty platform rules")
+            rows = []
 
         return {
             "rules": [dict(row) for row in rows],
@@ -550,27 +558,35 @@ async def get_pricing_overview(
 ):
     """Get pricing dashboard overview."""
     async with db_pool.acquire() as conn:
+        async def fetch_number(query: str):
+            try:
+                value = await conn.fetchval(query)
+                return value or 0
+            except asyncpg.UndefinedTableError:
+                logger.warning("Pricing analytics table missing for query: %s", query.split("FROM", 1)[-1].strip())
+                return 0
+
         # Count active rules
-        byok_rules = await conn.fetchval(
+        byok_rules = await fetch_number(
             "SELECT COUNT(*) FROM pricing_rules WHERE rule_type = 'byok' AND is_active = TRUE"
         )
-        platform_rules = await conn.fetchval(
+        platform_rules = await fetch_number(
             "SELECT COUNT(*) FROM pricing_rules WHERE rule_type = 'platform' AND is_active = TRUE"
         )
-        active_packages = await conn.fetchval(
+        active_packages = await fetch_number(
             "SELECT COUNT(*) FROM credit_packages WHERE is_active = TRUE"
         )
 
         # Count users with BYOK
-        users_with_byok = await conn.fetchval(
+        users_with_byok = await fetch_number(
             "SELECT COUNT(DISTINCT user_id) FROM user_byok_credits"
         )
 
         # Sum total BYOK credits
-        total_allocated = await conn.fetchval(
+        total_allocated = await fetch_number(
             "SELECT COALESCE(SUM(monthly_allowance), 0) FROM user_byok_credits"
         )
-        total_used = await conn.fetchval(
+        total_used = await fetch_number(
             "SELECT COALESCE(SUM(credits_used), 0) FROM user_byok_credits"
         )
 

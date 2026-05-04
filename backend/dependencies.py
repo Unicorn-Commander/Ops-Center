@@ -70,9 +70,11 @@ async def require_admin(request: Request) -> bool:
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid session")
 
-    # Check if user has admin role
-    user_roles = user_data.get("roles", [])
-    if "admin" not in user_roles:
+    user = user_data.get("user", user_data)
+    user_role = user.get("role", "")
+    user_roles = user.get("roles", [])
+    groups = user.get("groups", [])
+    if user_role not in ("admin", "system_admin") and "admin" not in user_roles and "system_admin" not in user_roles and "admin" not in groups and not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     return True
