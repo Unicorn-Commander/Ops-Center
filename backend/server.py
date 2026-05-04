@@ -128,7 +128,10 @@ from routers.inference_proxy import router as inference_proxy_router
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
-from routers.uuda import router as uuda_router
+try:
+    from routers.uuda import router as uuda_router
+except ImportError:
+    uuda_router = None
 
 # Billing Events API - April 2026
 from routers.billing_events import router as billing_events_router
@@ -1208,8 +1211,9 @@ app.include_router(compute_api_router)
 logger.info("GPU Compute Fabric endpoints registered at /api/v1/compute")
 
 # UUDA control plane (Phase 1) — April 2026
-app.include_router(uuda_router)
-logger.info("UUDA control-plane endpoints registered at /api/v1/uuda")
+if uuda_router is not None:
+    app.include_router(uuda_router)
+    logger.info("UUDA control-plane endpoints registered at /api/v1/uuda")
 
 
 # Billing Events API - April 2026
