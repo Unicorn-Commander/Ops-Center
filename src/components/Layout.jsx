@@ -63,6 +63,7 @@ import {
   ChartBarSquareIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
+import { useBranding } from '../contexts/BrandingContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
 import NavigationSection from './NavigationSection';
 import NavigationItem from './NavigationItem';
@@ -315,8 +316,9 @@ export default function Layout({ children }) {
     );
   };
 
+  const branding = useBranding();
   const currentRoute = getRouteByPath(location.pathname);
-  const currentTitle = currentRoute?.name || 'Ops-Center';
+  const currentTitle = currentRoute?.name || branding?.company_name || 'Ops-Center';
 
   return (
     <div className={themeClasses.background}>
@@ -343,27 +345,37 @@ export default function Layout({ children }) {
                     ? 'hover:bg-gray-100'
                     : 'hover:bg-slate-700/50'
                 }`}
-                title={sidebarCollapsed ? "Ops-Center - Operations Console" : ""}
+                title={sidebarCollapsed ? `${branding?.company_name || 'Ops-Center'} - ${branding?.subtitle || 'Operations Console'}` : ""}
               >
-                {/* Magic Unicorn Logo */}
-                <MagicUnicornLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                {/* Tenant logo from BrandingContext, with MagicUnicornLogo fallback */}
+                {branding?.logo_url ? (
+                  <img
+                    src={branding.logo_url}
+                    alt={branding.company_name || 'Ops-Center'}
+                    className={`drop-shadow-xl object-contain ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`}
+                  />
+                ) : (
+                  <MagicUnicornLogo className={`drop-shadow-xl ${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'}`} />
+                )}
                 {!sidebarCollapsed && (
                   <div className="text-center">
                     <h1 className={`text-2xl font-bold ${themeClasses.logo} leading-tight`}>
-                      Ops-Center
+                      {branding?.company_name || 'Ops-Center'}
                     </h1>
                     <div className={`text-lg ${currentTheme === 'unicorn' ? 'text-purple-200/80' : currentTheme === 'light' ? 'text-gray-600' : 'text-gray-400'} font-medium`}>
-                      Operations Console
+                      {branding?.subtitle || 'Operations Console'}
                     </div>
                   </div>
                 )}
               </Link>
 
-              {/* Powered By - subtitle (hidden when collapsed) */}
+              {/* Powered By - tagline + federation upstream attribution (hidden when collapsed) */}
               {!sidebarCollapsed && (
                 <>
                   <div className={`text-sm ${currentTheme === 'unicorn' ? 'text-purple-200/70' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-400'} mb-2 font-medium`}>
-                    Powered by <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-300">Unicorn Commander</a>
+                    {branding?.tagline || (
+                      <>Powered by <a href="https://unicorncommander.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-purple-300">Unicorn Commander</a></>
+                    )}
                   </div>
 
                   {/* Version */}
