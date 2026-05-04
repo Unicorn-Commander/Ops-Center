@@ -86,6 +86,25 @@ const DATE_RANGES = [
   { value: 'custom', label: 'Custom range' }
 ];
 
+const normalizeAuditEntry = (entry) => ({
+  ...entry,
+  timestamp: entry.timestamp || entry.created_at,
+  user: entry.user || entry.user_email || entry.user_id || 'System',
+  resource: entry.resource || entry.resource_id || entry.resource_type
+});
+
+const buildStatsFromEntries = (entries, total) => ({
+  total,
+  byType: entries.reduce((acc, entry) => {
+    acc[entry.event_type] = (acc[entry.event_type] || 0) + 1;
+    return acc;
+  }, {}),
+  bySeverity: entries.reduce((acc, entry) => {
+    acc[entry.severity] = (acc[entry.severity] || 0) + 1;
+    return acc;
+  }, {})
+});
+
 const SystemAuditLog = () => {
   // State management
   const [loading, setLoading] = useState(true);
@@ -121,7 +140,7 @@ const SystemAuditLog = () => {
 
     try {
       const params = new URLSearchParams();
-      params.append('page', page);
+      params.append('offset', (page - 1) * entriesPerPage);
       params.append('limit', entriesPerPage);
 
       // Date range
@@ -135,7 +154,7 @@ const SystemAuditLog = () => {
       // Filters
       if (eventType !== 'all') params.append('event_type', eventType);
       if (severity !== 'all') params.append('severity', severity);
-      if (userSearch.trim()) params.append('user', userSearch.trim());
+      if (userSearch.trim()) params.append('user_search', userSearch.trim());
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
       const response = await fetch(`/api/v1/admin/audit-log?${params.toString()}`, {
@@ -150,15 +169,18 @@ const SystemAuditLog = () => {
       }
 
       const data = await response.json();
-      setEntries(data.entries || []);
+      const normalizedEntries = (data.entries || []).map(normalizeAuditEntry);
+      setEntries(normalizedEntries);
       setTotalEntries(data.total || 0);
       setTotalPages(Math.ceil((data.total || 0) / entriesPerPage));
-      setStats(data.stats || { total: 0, byType: {}, bySeverity: {} });
+      setStats(data.stats || buildStatsFromEntries(normalizedEntries, data.total || 0));
     } catch (err) {
       console.error('Error fetching audit log:', err);
       setError(err.message);
-      // Generate mock data for development
-      generateMockData();
+      setEntries([]);
+      setTotalEntries(0);
+      setTotalPages(1);
+      setStats({ total: 0, byType: {}, bySeverity: {} });
     } finally {
       setLoading(false);
     }
@@ -246,7 +268,7 @@ const SystemAuditLog = () => {
       }
       if (eventType !== 'all') params.append('event_type', eventType);
       if (severity !== 'all') params.append('severity', severity);
-      if (userSearch.trim()) params.append('user', userSearch.trim());
+      if (userSearch.trim()) params.append('user_search', userSearch.trim());
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
       const response = await fetch(`/api/v1/admin/audit-log/export?${params.toString()}`, {
@@ -627,8 +649,8 @@ const SystemAuditLog = () => {
       />
 
       {error && (
-        <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error} - Showing demo data
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
         </Alert>
       )}
 

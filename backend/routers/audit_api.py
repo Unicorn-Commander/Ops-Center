@@ -230,6 +230,7 @@ async def log_audit_event(
 def build_filter_query(
     event_type: str = None,
     user_id: str = None,
+    user_search: str = None,
     severity: str = None,
     date_from: datetime = None,
     date_to: datetime = None,
@@ -251,6 +252,13 @@ def build_filter_query(
         param_count += 1
         conditions.append(f"user_id = ${param_count}")
         params.append(user_id)
+
+    if user_search:
+        param_count += 1
+        conditions.append(
+            f"(user_id ILIKE ${param_count} OR user_email ILIKE ${param_count})"
+        )
+        params.append(f"%{user_search}%")
 
     if severity:
         param_count += 1
@@ -286,6 +294,41 @@ def build_filter_query(
     return where_clause, params, param_count
 
 
+async def audit_table_name(conn) -> str:
+    table = await conn.fetchval("SELECT to_regclass('audit_log')")
+    if table:
+        return "audit_log"
+    table = await conn.fetchval("SELECT to_regclass('audit_logs')")
+    if table:
+        return "audit_logs"
+    raise HTTPException(status_code=500, detail="No audit log table exists")
+
+
+def audit_select_sql(table: str) -> str:
+    if table == "audit_logs":
+        return """
+            SELECT id,
+                   COALESCE(service, 'system') AS event_type,
+                   CASE WHEN success THEN 'info' ELSE 'error' END AS severity,
+                   user_id,
+                   user_id AS user_email,
+                   action,
+                   error_message AS description,
+                   service AS resource_type,
+                   credential_type AS resource_id,
+                   ip_address,
+                   user_agent,
+                   metadata,
+                   timestamp AS created_at
+            FROM audit_logs
+        """
+    return """
+        SELECT id, event_type, severity, user_id, user_email, action, description,
+               resource_type, resource_id, ip_address, user_agent, metadata, created_at
+        FROM audit_log
+    """
+
+
 # =============================================================================
 # Admin Endpoints
 # =============================================================================
@@ -295,9 +338,13 @@ async def get_audit_log(
     admin: dict = Depends(require_admin),
     event_type: Optional[str] = Query(None, description="Filter by event type"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
+    user_search: Optional[str] = Query(None, description="Search user ID or email"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
+    date_range: Optional[str] = Query(None, description="Preset date range: 24h, 7d, 30d"),
     date_from: Optional[datetime] = Query(None, description="Filter from date (ISO 8601)"),
+    from_date: Optional[datetime] = Query(None, description="Alias for date_from"),
     date_to: Optional[datetime] = Query(None, description="Filter to date (ISO 8601)"),
+    to_date: Optional[datetime] = Query(None, description="Alias for date_to"),
     search: Optional[str] = Query(None, min_length=2, description="Full-text search"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
     resource_id: Optional[str] = Query(None, description="Filter by resource ID"),
@@ -306,20 +353,38 @@ async def get_audit_log(
 ):
     """Get audit log entries with filtering and pagination. Requires admin role."""
     try:
+        date_from = date_from or from_date
+        date_to = date_to or to_date
+        if date_range and not date_from:
+            now = datetime.now()
+            if date_range == "24h":
+                date_from = now - timedelta(hours=24)
+            elif date_range == "7d":
+                date_from = now - timedelta(days=7)
+            elif date_range == "30d":
+                date_from = now - timedelta(days=30)
+
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            table = await audit_table_name(conn)
             where_clause, params, param_count = build_filter_query(
-                event_type, user_id, severity, date_from, date_to, search, resource_type, resource_id
+                event_type, user_id, user_search, severity, date_from, date_to, search, resource_type, resource_id
             )
+            if table == "audit_logs":
+                where_clause = where_clause.replace("event_type", "COALESCE(service, 'system')")
+                where_clause = where_clause.replace("severity", "CASE WHEN success THEN 'info' ELSE 'error' END")
+                where_clause = where_clause.replace("created_at", "timestamp")
+                where_clause = where_clause.replace("user_email", "user_id")
+                where_clause = where_clause.replace("resource_type", "service")
+                where_clause = where_clause.replace("resource_id", "credential_type")
+                where_clause = where_clause.replace("description", "COALESCE(error_message, '')")
 
             # Count total
-            total = await conn.fetchval(f"SELECT COUNT(*) FROM audit_log WHERE {where_clause}", *params)
+            total = await conn.fetchval(f"SELECT COUNT(*) FROM {table} WHERE {where_clause}", *params)
 
             # Get entries
             query = f"""
-                SELECT id, event_type, severity, user_id, user_email, action, description,
-                       resource_type, resource_id, ip_address, user_agent, metadata, created_at
-                FROM audit_log WHERE {where_clause}
+                {audit_select_sql(table)} WHERE {where_clause}
                 ORDER BY created_at DESC
                 LIMIT ${param_count + 1} OFFSET ${param_count + 2}
             """
@@ -347,23 +412,43 @@ async def export_audit_log(
     admin: dict = Depends(require_admin),
     event_type: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
+    user_search: Optional[str] = Query(None),
     severity: Optional[str] = Query(None),
+    date_range: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None),
+    from_date: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
+    to_date: Optional[datetime] = Query(None),
     search: Optional[str] = Query(None)
 ):
     """Export audit log to CSV. Requires admin role."""
     try:
+        date_from = date_from or from_date
+        date_to = date_to or to_date
+        if date_range and not date_from:
+            now = datetime.now()
+            if date_range == "24h":
+                date_from = now - timedelta(hours=24)
+            elif date_range == "7d":
+                date_from = now - timedelta(days=7)
+            elif date_range == "30d":
+                date_from = now - timedelta(days=30)
+
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            table = await audit_table_name(conn)
             where_clause, params, _ = build_filter_query(
-                event_type, user_id, severity, date_from, date_to, search
+                event_type, user_id, user_search, severity, date_from, date_to, search
             )
+            if table == "audit_logs":
+                where_clause = where_clause.replace("event_type", "COALESCE(service, 'system')")
+                where_clause = where_clause.replace("severity", "CASE WHEN success THEN 'info' ELSE 'error' END")
+                where_clause = where_clause.replace("created_at", "timestamp")
+                where_clause = where_clause.replace("user_email", "user_id")
+                where_clause = where_clause.replace("description", "COALESCE(error_message, '')")
 
             rows = await conn.fetch(f"""
-                SELECT id, event_type, severity, user_id, user_email, action, description,
-                       resource_type, resource_id, ip_address, user_agent, metadata, created_at
-                FROM audit_log WHERE {where_clause}
+                {audit_select_sql(table)} WHERE {where_clause}
                 ORDER BY created_at DESC LIMIT 10000
             """, *params)
 
@@ -403,47 +488,52 @@ async def get_audit_stats(admin: dict = Depends(require_admin)):
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            table = await audit_table_name(conn)
+            event_type_expr = "COALESCE(service, 'system')" if table == "audit_logs" else "event_type"
+            severity_expr = "CASE WHEN success THEN 'info' ELSE 'error' END" if table == "audit_logs" else "severity"
+            created_expr = "timestamp" if table == "audit_logs" else "created_at"
+            user_email_expr = "user_id" if table == "audit_logs" else "user_email"
             now = datetime.now()
 
             # Total and breakdown queries
-            total = await conn.fetchval("SELECT COUNT(*) FROM audit_log")
+            total = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")
 
             type_rows = await conn.fetch(
-                "SELECT event_type, COUNT(*) as count FROM audit_log GROUP BY event_type"
+                f"SELECT {event_type_expr} AS event_type, COUNT(*) as count FROM {table} GROUP BY {event_type_expr}"
             )
             entries_by_type = {r['event_type']: r['count'] for r in type_rows}
 
             severity_rows = await conn.fetch(
-                "SELECT severity, COUNT(*) as count FROM audit_log GROUP BY severity"
+                f"SELECT {severity_expr} AS severity, COUNT(*) as count FROM {table} GROUP BY {severity_expr}"
             )
             entries_by_severity = {r['severity']: r['count'] for r in severity_rows}
 
             # Time-based counts
             entries_24h = await conn.fetchval(
-                "SELECT COUNT(*) FROM audit_log WHERE created_at >= $1",
+                f"SELECT COUNT(*) FROM {table} WHERE {created_expr} >= $1",
                 now - timedelta(hours=24)
             )
             entries_7d = await conn.fetchval(
-                "SELECT COUNT(*) FROM audit_log WHERE created_at >= $1",
+                f"SELECT COUNT(*) FROM {table} WHERE {created_expr} >= $1",
                 now - timedelta(days=7)
             )
             entries_30d = await conn.fetchval(
-                "SELECT COUNT(*) FROM audit_log WHERE created_at >= $1",
+                f"SELECT COUNT(*) FROM {table} WHERE {created_expr} >= $1",
                 now - timedelta(days=30)
             )
 
             # Top actions (last 7 days)
-            action_rows = await conn.fetch("""
-                SELECT action, COUNT(*) as count FROM audit_log
-                WHERE created_at >= $1 GROUP BY action ORDER BY count DESC LIMIT 10
+            action_rows = await conn.fetch(f"""
+                SELECT action, COUNT(*) as count FROM {table}
+                WHERE {created_expr} >= $1 GROUP BY action ORDER BY count DESC LIMIT 10
             """, now - timedelta(days=7))
             top_actions = [{"action": r['action'], "count": r['count']} for r in action_rows]
 
             # Top users (last 7 days)
-            user_rows = await conn.fetch("""
-                SELECT user_id, user_email, COUNT(*) as count FROM audit_log
-                WHERE user_id IS NOT NULL AND created_at >= $1
-                GROUP BY user_id, user_email ORDER BY count DESC LIMIT 10
+            user_rows = await conn.fetch(f"""
+                SELECT user_id, {user_email_expr} AS user_email, COUNT(*) as count FROM {table}
+                WHERE user_id IS NOT NULL AND {created_expr} >= $1
+                GROUP BY user_id, {user_email_expr} ORDER BY count DESC LIMIT 10
             """, now - timedelta(days=7))
             top_users = [
                 {"user_id": r['user_id'], "user_email": r['user_email'], "count": r['count']}
@@ -452,13 +542,13 @@ async def get_audit_stats(admin: dict = Depends(require_admin)):
 
             # Error metrics
             error_count_24h = await conn.fetchval(
-                "SELECT COUNT(*) FROM audit_log WHERE severity IN ('error', 'critical') AND created_at >= $1",
+                f"SELECT COUNT(*) FROM {table} WHERE {severity_expr} IN ('error', 'critical') AND {created_expr} >= $1",
                 now - timedelta(hours=24)
             )
             error_rate_24h = (error_count_24h / entries_24h * 100) if entries_24h > 0 else 0
 
             critical_24h = await conn.fetchval(
-                "SELECT COUNT(*) FROM audit_log WHERE severity = 'critical' AND created_at >= $1",
+                f"SELECT COUNT(*) FROM {table} WHERE {severity_expr} = 'critical' AND {created_expr} >= $1",
                 now - timedelta(hours=24)
             )
 

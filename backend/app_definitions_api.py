@@ -4,7 +4,8 @@ Management endpoints for app definitions and toggles.
 """
 
 import os
-from typing import List, Optional
+import sys
+from typing import List, Optional, Union
 from datetime import datetime
 
 import asyncpg
@@ -27,6 +28,17 @@ async def get_current_admin(request: Request) -> str:
 
     sessions = getattr(request.app.state, "sessions", {})
     session_data = sessions.get(session_token)
+    if not session_data:
+        if '/app' not in sys.path:
+            sys.path.insert(0, '/app')
+        from redis_session import RedisSessionManager
+
+        redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_sessions = RedisSessionManager(host=redis_host, port=redis_port)
+        if session_token in redis_sessions:
+            session_data = redis_sessions[session_token]
+
     if not session_data:
         raise HTTPException(status_code=401, detail="Invalid session")
 
@@ -88,7 +100,7 @@ class AppDefinitionUpdate(BaseModel):
 
 class AppDefinitionResponse(BaseModel):
     """Schema for app definition responses."""
-    id: int
+    id: Union[int, str]
     app_key: str
     app_name: str
     category: str
@@ -151,6 +163,21 @@ async def get_db_connection():
     )
 
 
+def normalize_app_row(row) -> dict:
+    data = dict(row)
+    return {
+        "id": str(data.get("id")),
+        "app_key": data.get("app_key") or data.get("slug") or "",
+        "app_name": data.get("app_name") or data.get("name") or "",
+        "category": data.get("category") or "services",
+        "description": data.get("description"),
+        "is_active": data.get("is_active", True),
+        "sort_order": data.get("sort_order") or 0,
+        "created_at": data.get("created_at"),
+        "updated_at": data.get("updated_at") or data.get("created_at"),
+    }
+
+
 # =============================================================================
 # API Endpoints
 # =============================================================================
@@ -181,14 +208,14 @@ async def list_apps(
             params.append(category)
             param_count += 1
 
-        query += " ORDER BY sort_order ASC, app_name ASC"
+        query += " ORDER BY category ASC NULLS LAST, id ASC"
 
         if params:
             rows = await conn.fetch(query, *params)
         else:
             rows = await conn.fetch(query)
 
-        return [dict(row) for row in rows]
+        return [normalize_app_row(row) for row in rows]
 
     finally:
         await conn.close()

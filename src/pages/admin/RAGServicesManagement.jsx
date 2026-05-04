@@ -494,6 +494,13 @@ const RAGServicesManagement = () => {
           {success}
         </Alert>
       )}
+      {status && !status.proxy_healthy && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {status.embeddings?.federation_services?.length || status.reranker?.federation_services?.length
+            ? 'Local Infinity Proxy is not running; showing RAG services advertised by federation peers.'
+            : 'No RAG services advertised by federation peers. Add an embeddings or reranker service to the federation catalog.'}
+        </Alert>
+      )}
 
       {/* Service Cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
@@ -585,7 +592,7 @@ const RAGServicesManagement = () => {
         {/* Proxy Info */}
         <Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            <strong>Proxy URL:</strong> {status?.proxy_url || 'http://localhost:8086'}
+            <strong>RAG source:</strong> {status?.proxy_url || 'Federation service catalog'}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             <strong>Current Idle Timeout:</strong> {idleTimeout} seconds ({Math.floor(idleTimeout / 60)} minutes)
