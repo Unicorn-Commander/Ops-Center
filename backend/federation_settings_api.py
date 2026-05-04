@@ -31,6 +31,7 @@ Date: March 2026
 
 import logging
 import os
+import sys
 import secrets
 import time
 import json as json_lib
@@ -44,15 +45,42 @@ import asyncpg
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
-# Import admin authentication dependency (same as service_keys_api.py)
-from admin_subscriptions_api import require_admin
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/v1/admin/federation",
     tags=["Federation Settings"]
 )
+
+
+async def require_admin(request: Request):
+    """Verify admin access using the same Redis/browser session used by admin pages."""
+    if '/app' not in sys.path:
+        sys.path.insert(0, '/app')
+
+    from redis_session import RedisSessionManager
+
+    user = getattr(request, "session", {}).get("user", {}) if hasattr(request, "session") else {}
+    session_token = request.cookies.get("session_token")
+
+    if not user and session_token:
+        redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        sessions = RedisSessionManager(host=redis_host, port=redis_port)
+        if session_token in sessions:
+            user = sessions[session_token].get("user", {})
+
+    is_admin = (
+        user.get("role") == "admin"
+        or user.get("is_admin") is True
+        or user.get("is_superuser") is True
+        or "admin" in user.get("groups", [])
+    )
+
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    return user
 
 
 # ============================================================================

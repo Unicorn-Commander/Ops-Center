@@ -69,7 +69,25 @@ function statusBorderColor(status) {
   return 'divider';
 }
 
+function parseJsonField(value, fallback) {
+  if (typeof value !== 'string') return value ?? fallback;
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function normalizeService(service) {
+  return {
+    ...service,
+    capabilities: parseJsonField(service.capabilities, {}),
+    models: parseJsonField(service.models, []),
+  };
+}
+
 function capabilityChips(capabilities) {
+  capabilities = parseJsonField(capabilities, {});
   if (!capabilities) return [];
   if (Array.isArray(capabilities)) return capabilities.map(String);
 
@@ -84,10 +102,12 @@ function capabilityChips(capabilities) {
 }
 
 function ServiceRow({ service, fallbackEndpoint, fallbackStatus, fallbackLastSeen }) {
+  service = normalizeService(service);
   const endpoint = endpointWithPath(fallbackEndpoint, service.endpoint_path);
   const health = service.node_status || service.status || fallbackStatus || 'unknown';
   const capabilities = capabilityChips(service.capabilities);
   const lastSeen = service.last_heartbeat || fallbackLastSeen;
+  const models = Array.isArray(service.models) ? service.models : [];
 
   return (
     <Box sx={{ py: 1.5 }}>
@@ -134,13 +154,13 @@ function ServiceRow({ service, fallbackEndpoint, fallbackStatus, fallbackLastSee
         </Stack>
       )}
 
-      {service.models?.length > 0 && (
+      {models.length > 0 && (
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-          {service.models.slice(0, 6).map((model) => (
+          {models.slice(0, 6).map((model) => (
             <Chip key={model} label={model} size="small" variant="outlined" sx={{ fontSize: '0.72rem' }} />
           ))}
-          {service.models.length > 6 && (
-            <Chip label={`+${service.models.length - 6} more`} size="small" variant="outlined" sx={{ fontSize: '0.72rem' }} />
+          {models.length > 6 && (
+            <Chip label={`+${models.length - 6} more`} size="small" variant="outlined" sx={{ fontSize: '0.72rem' }} />
           )}
         </Stack>
       )}
@@ -164,7 +184,7 @@ export default function FederationServiceCatalog() {
         fetchFederationJson('/api/v1/federation/self/advertisement'),
       ]);
 
-      setServices(servicesData.services || []);
+      setServices((servicesData.services || []).map(normalizeService));
       setTopology({ nodes: topologyData.nodes || [] });
       setAdvertisement({
         services: advertisementData.services || [],
