@@ -337,7 +337,7 @@ async def route_inference(
 
 @router.get("/topology")
 async def topology(
-    _admin=Depends(require_admin),
+    _auth=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
     return await registry.get_topology()
