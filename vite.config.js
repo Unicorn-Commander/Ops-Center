@@ -30,7 +30,7 @@ export default defineConfig({
       open: false,
       gzipSize: true,
       brotliSize: true,
-      filename: 'dist/stats.html',
+      filename: `${process.env.BUILD_OUT_DIR || 'dist'}/stats.html`,
     }),
     VitePWA({
       registerType: 'prompt', // Changed from autoUpdate to prompt for manual control
