@@ -25,12 +25,14 @@ import {
   ArchiveBoxIcon
 } from '@heroicons/react/24/outline';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from '../components/Logos';
+import { useBranding } from '../contexts/BrandingContext';
 import { useTheme } from '../contexts/ThemeContext';
 
 export default function PublicLanding() {
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
   const dropdownRef = useRef(null);
+  const { branding } = useBranding();
   const [searchQuery, setSearchQuery] = useState('');
   const [currentHost, setCurrentHost] = useState('localhost');
   const [userTier, setUserTier] = useState('trial');
@@ -735,20 +737,21 @@ export default function PublicLanding() {
           >
             {/* Logo and Title - Compact on Desktop */}
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-4">
-              {/* Custom logo for this server - transparent background */}
+              {/* Tenant logo from BrandingContext */}
               <img
-                src="/logos/colonel-logo.png"
-                alt="Unicorn Commander"
-                className="w-24 h-24 md:w-28 md:h-28 drop-shadow-2xl"
+                src={branding?.logo_url || "/logos/colonel-logo.png"}
+                alt={branding?.company_name || "Unicorn Commander"}
+                className="w-24 h-24 md:w-28 md:h-28 drop-shadow-2xl object-contain"
+                onError={(e) => { e.currentTarget.src = "/logos/colonel-logo.png"; }}
               />
               <div className="text-center md:text-left">
                 <div className="flex flex-col md:flex-row md:items-baseline md:gap-3">
                   <h1 className={`text-3xl md:text-4xl lg:text-5xl font-bold ${styles.headerText} ${currentTheme === 'unicorn' || currentTheme === 'underground' ? 'animate-gradient' : ''}`}>
-                    Unicorn Commander
+                    {branding?.company_name || "Unicorn Commander"}
                   </h1>
                 </div>
                 <p className={`text-base md:text-lg ${styles.subText} mt-2`}>
-                  Your services. Your infrastructure. One dashboard.
+                  {branding?.tagline || "Your services. Your infrastructure. One dashboard."}
                 </p>
               </div>
             </div>
@@ -1116,12 +1119,13 @@ export default function PublicLanding() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <img
-                src="/logos/colonel-logo.png"
-                alt="Unicorn Commander"
-                className="w-10 h-10"
+                src={branding?.logo_url || "/logos/colonel-logo.png"}
+                alt={branding?.company_name || "Unicorn Commander"}
+                className="w-10 h-10 object-contain"
+                onError={(e) => { e.currentTarget.src = "/logos/colonel-logo.png"; }}
               />
               <div className={styles.logoText}>
-                <div className="font-semibold">Unicorn Commander</div>
+                <div className="font-semibold">{branding?.company_name || "Unicorn Commander"}</div>
                 <div className={`text-sm ${styles.footerText}`}>Magic Unicorn Unconventional Technology &amp; Stuff Inc</div>
               </div>
             </div>

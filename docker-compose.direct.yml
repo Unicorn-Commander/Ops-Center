@@ -51,6 +51,14 @@ services:
       - POSTGRES_DB=unicorn_db
       # Credential Encryption Key (Fernet)
       - EREMOVED
+      # Branding (override) — point at The Colonel for unicorncommander.ai
+      - BRANDING_LOGO_URL=/logos/The_Colonel.webp
+      - BRANDING_COMPANY_NAME=Unicorn Commander
+      - BRANDING_PAGE_TITLE=Unicorn Commander - Admin Dashboard
+      - BRANDING_TAGLINE=Your services. Your infrastructure. One dashboard.
+      - BRANDING_SUBTITLE=Operations Console
+      - BRANDING_PRIMARY_COLOR=#7c3aed
+      - BRANDING_THEME=unicorn
       # BYOK Encryption Key (for user API keys)
       - BREMOVED
       # Federation Node Agent
