@@ -19,7 +19,9 @@ from pydantic import BaseModel, Field
 import logging
 import sys
 import os
+import json
 import httpx
+import redis.asyncio as aioredis
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,7 @@ router = APIRouter(
 )
 
 # Infinity Proxy configuration
-INFINITY_PROXY_URL = os.getenv("INFINITY_PROXY_URL", "http://localhost:8086")
+INFINITY_PROXY_URL = os.getenv("INFINITY_PROXY_URL")
 
 
 # =============================================================================
@@ -144,6 +146,8 @@ class IdleTimeoutUpdateResponse(BaseModel):
 
 async def fetch_proxy_status() -> Dict[str, Any]:
     """Fetch status from the infinity proxy"""
+    if not INFINITY_PROXY_URL:
+        raise HTTPException(status_code=503, detail="Infinity Proxy URL is not configured")
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(f"{INFINITY_PROXY_URL}/status")
@@ -165,6 +169,8 @@ async def fetch_proxy_status() -> Dict[str, Any]:
 
 async def fetch_proxy_health() -> Dict[str, Any]:
     """Fetch health information from the infinity proxy"""
+    if not INFINITY_PROXY_URL:
+        raise HTTPException(status_code=503, detail="Infinity Proxy URL is not configured")
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(f"{INFINITY_PROXY_URL}/health")
@@ -190,6 +196,8 @@ async def control_service(service: str, operation: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid service name")
     if operation not in ["start", "stop"]:
         raise HTTPException(status_code=400, detail="Invalid operation")
+    if not INFINITY_PROXY_URL:
+        raise HTTPException(status_code=503, detail="No local Infinity Proxy is configured; use a federated RAG service instead.")
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -254,6 +262,48 @@ async def get_gpu_memory_info() -> Optional[Dict[str, Any]]:
         return None
 
 
+async def get_federated_rag_services(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+    """Return RAG-capable services advertised by federation peers."""
+    try:
+        from database.connection import get_db_pool
+        from federation.node_registry import NodeRegistry
+
+        redis_client = getattr(request.app.state, "redis_client", None)
+        if redis_client is None:
+            redis_client = aioredis.from_url(
+                os.getenv("REDIS_URL", "redis://unicorn-redis:6379/0"),
+                decode_responses=True,
+            )
+            request.app.state.redis_client = redis_client
+
+        registry = NodeRegistry(redis_client=redis_client, db_pool=await get_db_pool())
+        embeddings = await registry.get_service_catalog(service_type="embeddings")
+        rerankers = await registry.get_service_catalog(service_type="reranker")
+        extraction = await registry.get_service_catalog(service_type="extraction")
+        return {
+            "embeddings": embeddings,
+            "reranker": rerankers,
+            "extraction": extraction,
+        }
+    except Exception as e:
+        logger.warning(f"Failed to read federated RAG services: {e}")
+        return {"embeddings": [], "reranker": [], "extraction": []}
+
+
+def service_models(services: List[Dict[str, Any]]) -> List[str]:
+    models = []
+    for service in services:
+        raw_models = service.get("models", [])
+        if isinstance(raw_models, str):
+            try:
+                raw_models = json.loads(raw_models)
+            except json.JSONDecodeError:
+                raw_models = [raw_models] if raw_models else []
+        if isinstance(raw_models, list):
+            models.extend(str(model) for model in raw_models if model)
+    return sorted(set(models))
+
+
 # =============================================================================
 # API Endpoints
 # =============================================================================
@@ -264,7 +314,7 @@ async def get_gpu_memory_info() -> Optional[Dict[str, Any]]:
     summary="Get RAG services status",
     description="Get complete status of the Infinity Proxy and its managed services (embeddings and reranker).",
 )
-async def get_rag_services_status(current_user: dict = Depends(get_current_user)):
+async def get_rag_services_status(request: Request, current_user: dict = Depends(get_current_user)):
     """
     Get the current status of all RAG services.
 
@@ -272,9 +322,40 @@ async def get_rag_services_status(current_user: dict = Depends(get_current_user)
         RAGServicesStatusResponse with complete service status
     """
     try:
-        # Fetch status and health in parallel
-        status = await fetch_proxy_status()
-        health = await fetch_proxy_health()
+        federated_services = await get_federated_rag_services(request)
+        try:
+            status = await fetch_proxy_status()
+            health = await fetch_proxy_health()
+        except HTTPException as exc:
+            if exc.status_code not in (502, 503):
+                raise
+            return RAGServicesStatusResponse(
+                proxy_healthy=False,
+                proxy_url="Federation service catalog",
+                idle_timeout_seconds=1800,
+                embeddings={
+                    "container": "federation",
+                    "running": bool(federated_services["embeddings"]),
+                    "last_activity_seconds_ago": None,
+                    "upstream": "federation",
+                    "service_status": "healthy" if federated_services["embeddings"] else "not_advertised",
+                    "last_activity": None,
+                    "model": ", ".join(service_models(federated_services["embeddings"])) or "No RAG services advertised by federation peers",
+                    "federation_services": federated_services["embeddings"],
+                },
+                reranker={
+                    "container": "federation",
+                    "running": bool(federated_services["reranker"]),
+                    "last_activity_seconds_ago": None,
+                    "upstream": "federation",
+                    "service_status": "healthy" if federated_services["reranker"] else "not_advertised",
+                    "last_activity": None,
+                    "model": ", ".join(service_models(federated_services["reranker"])) or "No reranker services advertised by federation peers",
+                    "federation_services": federated_services["reranker"],
+                },
+                gpu_info=None,
+                last_updated=datetime.utcnow().isoformat() + "Z"
+            )
 
         # Get GPU info
         gpu_info = await get_gpu_memory_info()
@@ -294,7 +375,8 @@ async def get_rag_services_status(current_user: dict = Depends(get_current_user)
                 "upstream": embeddings_status.get("upstream", "http://unicorn-embeddings:7997"),
                 "service_status": health.get("services", {}).get("embeddings", "unknown"),
                 "last_activity": health.get("last_activity", {}).get("embeddings"),
-                "model": os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
+                "model": os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5"),
+                "federation_services": federated_services["embeddings"],
             },
             reranker={
                 "container": reranker_status.get("container", "unicorn-reranker"),
@@ -303,7 +385,8 @@ async def get_rag_services_status(current_user: dict = Depends(get_current_user)
                 "upstream": reranker_status.get("upstream", "http://unicorn-reranker:7997"),
                 "service_status": health.get("services", {}).get("reranker", "unknown"),
                 "last_activity": health.get("last_activity", {}).get("reranker"),
-                "model": os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+                "model": os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
+                "federation_services": federated_services["reranker"],
             },
             gpu_info=gpu_info,
             last_updated=datetime.utcnow().isoformat() + "Z"
