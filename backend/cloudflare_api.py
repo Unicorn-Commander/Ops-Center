@@ -32,7 +32,7 @@ from cloudflare_manager import (
 ZoneNotFoundError = CloudflareAPIError
 
 # Import authentication
-from admin_subscriptions_api import require_admin
+from auth_dependencies import require_admin_user as require_admin
 
 # Import rate limiting
 from rate_limiter import check_rate_limit_manual
@@ -328,11 +328,12 @@ async def list_zones(
         manager = get_cloudflare_manager()
 
         # Get zones from Cloudflare
-        zones_data = await manager.list_zones(
+        page = (offset // limit) + 1
+        zones_data = manager.zones.list_zones(
             status=status,
             search=search,
-            limit=limit,
-            offset=offset
+            page=page,
+            per_page=limit
         )
 
         log_cloudflare_action(
@@ -344,33 +345,11 @@ async def list_zones(
         return zones_data
 
     except CloudflareAuthError as e:
-        # Return mock data if Cloudflare credentials not configured
-        logger.warning(f"Cloudflare authentication failed, returning mock data: {e}")
-        return {
-            "zones": [
-                {
-                    "id": "mock-zone-1",
-                    "name": "unicorncommander.ai",
-                    "status": "active",
-                    "type": "full",
-                    "name_servers": ["ns1.example.com", "ns2.example.com"],
-                    "created_on": "2025-01-01T00:00:00Z",
-                    "development_mode": False
-                },
-                {
-                    "id": "mock-zone-2",
-                    "name": "centerdeep.online",
-                    "status": "active",
-                    "type": "full",
-                    "name_servers": ["ns1.example.com", "ns2.example.com"],
-                    "created_on": "2025-01-01T00:00:00Z",
-                    "development_mode": False
-                }
-            ],
-            "total": 2,
-            "source": "mock_data",
-            "message": "Cloudflare credentials not configured. Showing mock data. Configure API token in Platform Settings."
-        }
+        logger.warning(f"Cloudflare authentication failed: {e}")
+        raise HTTPException(
+            status_code=403,
+            detail="Cloudflare API token is invalid or lacks Zone:Read permission. Update CLOUDFLARE_API_TOKEN with Zone:Read and DNS:Edit scope."
+        )
     except CloudflareError as e:
         logger.error(f"Error listing zones: {e}")
         raise HTTPException(status_code=500, detail=str(e))

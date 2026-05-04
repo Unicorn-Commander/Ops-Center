@@ -151,7 +151,8 @@ const CloudflareDNS = () => {
       });
       setZones(response.data.zones || []);
     } catch (err) {
-      showToast('Failed to load zones: ' + err.message, 'error');
+      const message = err.response?.data?.detail || err.message;
+      showToast('Failed to load zones: ' + message, 'error');
     } finally {
       setLoading(false);
     }
