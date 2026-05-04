@@ -152,6 +152,13 @@ async def require_admin(request: Request):
     return user
 
 
+
+
+async def require_federation_or_admin(request: Request):
+    """Accept either federation key auth OR admin user auth."""
+    if _federation_secret_ok(request):
+        return {"authenticated": True, "method": "federation_key"}
+    return await require_admin(request)
 def _federation_secret_ok(request: Request) -> bool:
     """Verify federation request auth — JWT (preferred) or legacy shared key.
 
@@ -244,7 +251,7 @@ async def list_nodes(
 
 @router.get("/services")
 async def list_services(
-    _admin=Depends(require_admin),
+    _admin=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
     return {"services": await registry.get_service_catalog()}
@@ -253,7 +260,7 @@ async def list_services(
 @router.get("/services/{service_type}")
 async def list_services_by_type(
     service_type: str,
-    _admin=Depends(require_admin),
+    _admin=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
     return {"services": await registry.get_service_catalog(service_type=service_type)}
@@ -330,7 +337,7 @@ async def route_inference(
 
 @router.get("/topology")
 async def topology(
-    _admin=Depends(require_admin),
+    _auth=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
     return await registry.get_topology()

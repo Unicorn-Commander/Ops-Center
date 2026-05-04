@@ -1,370 +1,63 @@
-/**
- * Local Models Management Page
- * Admin interface for managing local inference providers (llama.cpp, Ollama, vLLM)
- * Part of the Local Inference Module for Ops-Center.
- *
- * Features:
- * - Module enable/disable toggle
- * - GPU status monitoring with auto-refresh
- * - Provider tabs with health status
- * - Model management (load/unload)
- * - Settings configuration
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Box,
-  Paper,
-  Typography,
-  Button,
-  Switch,
-  FormControlLabel,
-  Grid,
-  Card,
-  CardContent,
-  Alert,
-  CircularProgress,
-  Tabs,
-  Tab,
-  Tooltip,
-  IconButton,
-  TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Divider,
-  Chip
-} from '@mui/material';
+  Box, Paper, Typography, Button, Grid, Card, CardContent,
+  Alert, CircularProgress, Chip, Divider, Switch, FormControlLabel,
+  LinearProgress,
+} from "@mui/material";
 import {
-  Refresh as RefreshIcon,
-  Memory as GpuIcon,
-  Settings as SettingsIcon,
-  CheckCircle as EnabledIcon,
-  Cancel as DisabledIcon,
-  Speed as SpeedIcon,
-  Computer as LocalIcon,
-  CloudQueue as CloudIcon
-} from '@mui/icons-material';
-import GPUStatusCard from '../../components/local-inference/GPUStatusCard';
-import ProviderPanel from '../../components/local-inference/ProviderPanel';
-import PageHeader from '../../components/admin/PageHeader';
+  Refresh as RefreshIcon, Hub as HubIcon,
+  CheckCircle as OnlineIcon, Cancel as OfflineIcon,
+  Storage as ModelIcon, Dns as NodeIcon,
+  Schedule as ScheduleIcon,
+} from "@mui/icons-material";
+import PageHeader from "../../components/admin/PageHeader";
+import { fetchFederationJson, federationTimeAgo } from "../../utils/federationApi";
 
-// API base URL
-const API_BASE = '/api/v1/local-inference';
-
-/**
- * Custom hook for API calls with error handling
- */
-const useApi = () => {
-  const getAuthHeaders = () => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-  });
-
-  const apiCall = async (endpoint, options = {}) => {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers: {
-        ...getAuthHeaders(),
-        ...options.headers
-      },
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(error.detail || `API error: ${response.status}`);
-    }
-
-    return response.json();
-  };
-
-  return { apiCall };
-};
+const API_BASE = "/api/v1/federation";
 
 const LocalModelsManagement = () => {
-  // State management
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  const [services, setServices] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [includeOffline, setIncludeOffline] = useState(false);
 
-  // Module state
-  const [moduleEnabled, setModuleEnabled] = useState(false);
-  const [moduleConfig, setModuleConfig] = useState({});
-
-  // GPU state
-  const [gpuInfo, setGpuInfo] = useState([]);
-  const [gpuMonitoringEnabled, setGpuMonitoringEnabled] = useState(true);
-
-  // Provider state
-  const [providers, setProviders] = useState({});
-  const [enabledProviders, setEnabledProviders] = useState([]);
-  const [activeProvider, setActiveProvider] = useState(0);
-  const [providerHealth, setProviderHealth] = useState({});
-  const [providerModels, setProviderModels] = useState({});
-
-  // Settings state
-  const [settings, setSettings] = useState({
-    auto_detect_on_startup: true,
-    health_check_interval: 30,
-    default_provider: 'llama.cpp',
-    gpu_monitoring_enabled: true
-  });
-
-  const { apiCall } = useApi();
-
-  // ============================================
-  // Data Fetching Functions
-  // ============================================
-
-  const fetchModuleStatus = useCallback(async () => {
+  const fetchServices = useCallback(async () => {
     try {
-      const data = await apiCall('/status');
-      setModuleEnabled(data.enabled);
-      setModuleConfig(data.config || {});
-      setSettings(prev => ({
-        ...prev,
-        ...data.settings
-      }));
-    } catch (err) {
-      console.error('Failed to fetch module status:', err);
-      // Module might not be enabled, use defaults
-      setModuleEnabled(false);
-    }
-  }, []);
-
-  const fetchGpuStatus = useCallback(async () => {
-    if (!gpuMonitoringEnabled) return;
-
-    try {
-      const data = await apiCall('/gpu/status');
-      setGpuInfo(data.gpus || []);
-    } catch (err) {
-      console.error('Failed to fetch GPU status:', err);
-      // Fallback: try system GPU endpoint
-      try {
-        const systemResponse = await fetch('/api/v1/hardware/gpu', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-          },
-          credentials: 'include'
-        });
-        if (systemResponse.ok) {
-          const systemData = await systemResponse.json();
-          setGpuInfo(systemData.gpus || []);
-        }
-      } catch (fallbackErr) {
-        console.error('Fallback GPU fetch failed:', fallbackErr);
-      }
-    }
-  }, [gpuMonitoringEnabled]);
-
-  const fetchProviders = useCallback(async () => {
-    try {
-      const data = await apiCall('/providers');
-      setProviders(data.providers || {});
-      setEnabledProviders(
-        Object.entries(data.providers || {})
-          .filter(([, config]) => config.enabled)
-          .map(([name]) => name)
+      const data = await fetchFederationJson(
+        `${API_BASE}/services?service_type=llm`
       );
+      setServices(data.services || []);
+      setError(null);
     } catch (err) {
-      console.error('Failed to fetch providers:', err);
-      // Use default provider list
-      setProviders({
-        'llama.cpp': { enabled: true, name: 'llama.cpp', base_url: 'http://localhost:8080' },
-        'ollama': { enabled: true, name: 'Ollama', base_url: 'http://localhost:11434' },
-        'vllm': { enabled: false, name: 'vLLM', base_url: 'http://localhost:8000' }
-      });
-      setEnabledProviders(['llama.cpp', 'ollama']);
+      console.error("Failed to fetch federation LLM services:", err);
+      setError(err.message);
     }
   }, []);
 
-  const fetchProviderHealth = useCallback(async (providerName) => {
-    try {
-      const data = await apiCall(`/providers/${providerName}/health`);
-      setProviderHealth(prev => ({
-        ...prev,
-        [providerName]: {
-          ...data,
-          last_check: new Date().toISOString()
-        }
-      }));
-    } catch (err) {
-      console.error(`Failed to fetch health for ${providerName}:`, err);
-      setProviderHealth(prev => ({
-        ...prev,
-        [providerName]: {
-          healthy: false,
-          message: err.message,
-          last_check: new Date().toISOString()
-        }
-      }));
-    }
-  }, []);
+  useEffect(() => {
+    fetchServices().finally(() => setLoading(false));
+  }, [fetchServices]);
 
-  const fetchProviderModels = useCallback(async (providerName) => {
-    try {
-      const data = await apiCall(`/providers/${providerName}/models`);
-      setProviderModels(prev => ({
-        ...prev,
-        [providerName]: data.models || []
-      }));
-    } catch (err) {
-      console.error(`Failed to fetch models for ${providerName}:`, err);
-      setProviderModels(prev => ({
-        ...prev,
-        [providerName]: []
-      }));
-    }
-  }, []);
-
-  const fetchAllData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await Promise.all([
-        fetchModuleStatus(),
-        fetchProviders(),
-        fetchGpuStatus()
-      ]);
-
-      // Fetch health and models for each enabled provider
-      for (const provider of enabledProviders) {
-        await fetchProviderHealth(provider);
-        await fetchProviderModels(provider);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchModuleStatus, fetchProviders, fetchGpuStatus, enabledProviders, fetchProviderHealth, fetchProviderModels]);
-
-  // ============================================
-  // Action Handlers
-  // ============================================
-
-  const handleModuleToggle = async () => {
-    try {
-      await apiCall('/toggle', {
-        method: 'POST',
-        body: JSON.stringify({ enabled: !moduleEnabled })
-      });
-      setModuleEnabled(!moduleEnabled);
-      setSuccess(`Local inference module ${!moduleEnabled ? 'enabled' : 'disabled'}`);
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleProviderSettingsSave = async (providerName, config) => {
-    try {
-      await apiCall(`/providers/${providerName}/config`, {
-        method: 'PUT',
-        body: JSON.stringify(config)
-      });
-      setSuccess(`${providerName} settings saved successfully`);
-      setTimeout(() => setSuccess(null), 3000);
-      await fetchProviderHealth(providerName);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleModelLoad = async (model) => {
-    const providerName = enabledProviders[activeProvider];
-    try {
-      await apiCall(`/providers/${providerName}/models/${encodeURIComponent(model.id || model.name)}/load`, {
-        method: 'POST'
-      });
-      setSuccess(`Model "${model.name}" loading...`);
-      setTimeout(() => setSuccess(null), 3000);
-      await fetchProviderModels(providerName);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleModelUnload = async (model) => {
-    const providerName = enabledProviders[activeProvider];
-    try {
-      await apiCall(`/providers/${providerName}/models/${encodeURIComponent(model.id || model.name)}/unload`, {
-        method: 'POST'
-      });
-      setSuccess(`Model "${model.name}" unloaded`);
-      setTimeout(() => setSuccess(null), 3000);
-      await fetchProviderModels(providerName);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleAutoLoadChange = async (model, autoLoad) => {
-    const providerName = enabledProviders[activeProvider];
-    try {
-      await apiCall(`/providers/${providerName}/models/${encodeURIComponent(model.id || model.name)}/auto-load`, {
-        method: 'PUT',
-        body: JSON.stringify({ auto_load: autoLoad })
-      });
-      await fetchProviderModels(providerName);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleSettingsSave = async () => {
-    try {
-      await apiCall('/settings', {
-        method: 'PUT',
-        body: JSON.stringify(settings)
-      });
-      setSuccess('Settings saved successfully');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  useEffect(() => {
+    const interval = setInterval(fetchServices, 30000);
+    return () => clearInterval(interval);
+  }, [fetchServices]);
 
   const handleRefresh = async () => {
-    await fetchAllData();
-    setSuccess('Data refreshed');
-    setTimeout(() => setSuccess(null), 2000);
+    setRefreshing(true);
+    await fetchServices();
+    setRefreshing(false);
   };
 
-  // ============================================
-  // Effects
-  // ============================================
+  const filteredServices = useMemo(() => {
+    if (includeOffline) return services;
+    return services.filter((s) => s.node_status !== "offline");
+  }, [services, includeOffline]);
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
+  const onlineCount = services.filter((s) => s.node_status !== "offline").length;
 
-  // Auto-refresh GPU status
-  useEffect(() => {
-    if (!gpuMonitoringEnabled || !moduleEnabled) return;
-
-    const interval = setInterval(fetchGpuStatus, 10000); // 10 seconds
-    return () => clearInterval(interval);
-  }, [gpuMonitoringEnabled, moduleEnabled, fetchGpuStatus]);
-
-  // Fetch provider data when enabled providers change
-  useEffect(() => {
-    if (enabledProviders.length > 0) {
-      enabledProviders.forEach(provider => {
-        fetchProviderHealth(provider);
-        fetchProviderModels(provider);
-      });
-    }
-  }, [enabledProviders]);
-
-  // ============================================
-  // Render
-  // ============================================
-
-  if (loading && !gpuInfo.length) {
+  if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <CircularProgress />
@@ -375,266 +68,138 @@ const LocalModelsManagement = () => {
   return (
     <Box sx={{ p: 3 }}>
       <PageHeader
-        title="Local Inference"
-        subtitle="Manage local LLM providers and GPU resources"
-        actions={(
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        title="Federated LLM Services"
+        subtitle="Live language model endpoints discovered across the Unicorn federation mesh"
+        actions={
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             <FormControlLabel
               control={
                 <Switch
-                  checked={moduleEnabled}
-                  onChange={handleModuleToggle}
-                  color="primary"
+                  checked={includeOffline}
+                  onChange={(e) => setIncludeOffline(e.target.checked)}
+                  size="small"
                 />
               }
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {moduleEnabled ? (
-                    <EnabledIcon sx={{ fontSize: 18, color: 'success.main' }} />
-                  ) : (
-                    <DisabledIcon sx={{ fontSize: 18, color: 'error.main' }} />
-                  )}
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {moduleEnabled ? 'Enabled' : 'Disabled'}
-                  </Typography>
-                </Box>
-              }
+              label="Show offline"
+            />
+            <Chip
+              icon={<OnlineIcon />}
+              label={`${onlineCount}/${services.length} online`}
+              color={onlineCount === services.length ? "success" : onlineCount > 0 ? "warning" : "error"}
+              variant="outlined"
             />
             <Button
               variant="outlined"
               startIcon={<RefreshIcon />}
               onClick={handleRefresh}
-              disabled={loading}
+              disabled={refreshing}
             >
               Refresh
             </Button>
           </Box>
-        )}
+        }
       />
 
-      {/* Alerts */}
       {error && (
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
-      {success && (
-        <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>
-          {success}
+
+      {filteredServices.length === 0 && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {services.length === 0
+            ? "No federation peers found advertising LLM services. Check that federation agents are running on GPU nodes."
+            : "All federation LLM services are offline. Try toggling Show offline to see disconnected peers."}
         </Alert>
       )}
 
-      {/* GPU Status Section */}
-      <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <GpuIcon sx={{ color: 'primary.main' }} />
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              GPU Status
-            </Typography>
-            <Chip
-              label={`${gpuInfo.length} GPU${gpuInfo.length !== 1 ? 's' : ''}`}
-              size="small"
-              color="primary"
-              variant="outlined"
-            />
-          </Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={gpuMonitoringEnabled}
-                onChange={(e) => setGpuMonitoringEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label={<Typography variant="caption">Auto-refresh</Typography>}
-          />
-        </Box>
-        <Grid container spacing={2}>
-          {gpuInfo.length > 0 ? (
-            gpuInfo.map((gpu, index) => (
-              <Grid item xs={12} md={6} lg={4} key={gpu.id || index}>
-                <GPUStatusCard gpu={gpu} index={index} />
-              </Grid>
-            ))
-          ) : (
-            <Grid item xs={12}>
-              <Box
-                sx={{
-                  p: 4,
-                  textAlign: 'center',
-                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                  borderRadius: 2
-                }}
-              >
-                <Typography color="text.secondary">
-                  No GPUs detected. Make sure GPU monitoring is enabled and drivers are installed.
+      {filteredServices.map((svc, idx) => {
+        const isOnline = svc.node_status !== "offline";
+        const models = svc.models || [];
+        const caps = svc.capabilities || {};
+
+        return (
+          <Paper key={`${svc.node_id}-${svc.service_type}-${idx}`} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <HubIcon sx={{ color: isOnline ? "success.main" : "text.disabled" }} />
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  {svc.display_name || svc.node_id}
+                </Typography>
+                <Chip
+                  label={isOnline ? "Online" : "Offline"}
+                  size="small"
+                  color={isOnline ? "success" : "error"}
+                />
+                <Chip label={`Node: ${svc.node_id}`} size="small" variant="outlined" />
+              </Box>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <ScheduleIcon sx={{ fontSize: 16, color: "text.secondary" }} />
+                <Typography variant="caption" color="text.secondary">
+                  {svc.last_heartbeat
+                    ? `Last heartbeat: ${federationTimeAgo(svc.last_heartbeat)}`
+                    : "No heartbeat"}
                 </Typography>
               </Box>
-            </Grid>
-          )}
-        </Grid>
-      </Paper>
+            </Box>
 
-      {/* Provider Tabs */}
-      {enabledProviders.length > 0 && (
-        <Paper sx={{ mb: 3, borderRadius: 2, overflow: 'hidden' }}>
-          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs
-              value={activeProvider}
-              onChange={(e, newValue) => setActiveProvider(newValue)}
-              variant="scrollable"
-              scrollButtons="auto"
-              sx={{
-                '& .MuiTab-root': {
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  minHeight: 56
-                }
-              }}
-            >
-              {enabledProviders.map((provider, index) => (
-                <Tab
-                  key={provider}
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {provider}
-                      {providerHealth[provider]?.healthy && (
-                        <Chip
-                          label="Connected"
-                          size="small"
-                          color="success"
-                          sx={{ height: 20, fontSize: '0.65rem' }}
-                        />
-                      )}
-                    </Box>
-                  }
+            {svc.endpoint_url && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontFamily: "monospace" }}>
+                Endpoint: {svc.endpoint_url}{svc.endpoint_path || ""}
+              </Typography>
+            )}
+
+            {caps.vram_mb && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary">VRAM: {caps.vram_mb} MB</Typography>
+                <LinearProgress
+                  variant="determinate"
+                  value={caps.vram_usage_pct || 0}
+                  sx={{ height: 4, borderRadius: 2, mt: 0.5 }}
                 />
-              ))}
-            </Tabs>
-          </Box>
-          <Box sx={{ p: 2 }}>
-            {enabledProviders.map((provider, index) => (
-              <Box
-                key={provider}
-                role="tabpanel"
-                hidden={activeProvider !== index}
-              >
-                {activeProvider === index && (
-                  <ProviderPanel
-                    provider={provider}
-                    providerConfig={providers[provider] || {}}
-                    health={providerHealth[provider]}
-                    models={providerModels[provider] || []}
-                    onSettingsSave={handleProviderSettingsSave}
-                    onHealthRefresh={fetchProviderHealth}
-                    onModelLoad={handleModelLoad}
-                    onModelUnload={handleModelUnload}
-                    onAutoLoadChange={handleAutoLoadChange}
-                    loading={loading}
-                  />
-                )}
               </Box>
-            ))}
-          </Box>
-        </Paper>
-      )}
+            )}
 
-      {/* Global Settings */}
-      <Paper sx={{ p: 3, borderRadius: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-          <SettingsIcon sx={{ color: 'text.secondary' }} />
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Module Settings
-          </Typography>
-        </Box>
+            {models.length === 0 ? (
+              <Alert severity="info">
+                No models currently loaded on this node.
+              </Alert>
+            ) : (
+              <Grid container spacing={1}>
+                {models.map((model) => (
+                  <Grid item key={model}>
+                    <Chip
+                      icon={<ModelIcon />}
+                      label={model}
+                      color="primary"
+                      variant="outlined"
+                      size="small"
+                    />
+                  </Grid>
+                ))}
+              </Grid>
+            )}
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.auto_detect_on_startup}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    auto_detect_on_startup: e.target.checked
-                  }))}
-                />
-              }
-              label="Auto-detect providers on startup"
-            />
-          </Grid>
-
-          <Grid item xs={12} md={4}>
-            <TextField
-              fullWidth
-              size="small"
-              label="Health Check Interval (seconds)"
-              type="number"
-              value={settings.health_check_interval}
-              onChange={(e) => setSettings(prev => ({
-                ...prev,
-                health_check_interval: parseInt(e.target.value) || 30
-              }))}
-              inputProps={{ min: 10, max: 300 }}
-            />
-          </Grid>
-
-          <Grid item xs={12} md={4}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Default Provider</InputLabel>
-              <Select
-                value={settings.default_provider}
-                onChange={(e) => setSettings(prev => ({
-                  ...prev,
-                  default_provider: e.target.value
-                }))}
-                label="Default Provider"
-              >
-                <MenuItem value="llama.cpp">llama.cpp</MenuItem>
-                <MenuItem value="ollama">Ollama</MenuItem>
-                <MenuItem value="vllm">vLLM</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.gpu_monitoring_enabled}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    gpu_monitoring_enabled: e.target.checked
-                  }))}
-                />
-              }
-              label="Enable GPU monitoring"
-            />
-          </Grid>
-        </Grid>
-
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-          <Button
-            variant="contained"
-            onClick={handleSettingsSave}
-            sx={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 4,
-              '&:hover': {
-                background: 'linear-gradient(135deg, #7e8fef 0%, #8a5bb2 100%)',
-                transform: 'translateY(-2px)',
-                boxShadow: 4
-              }
-            }}
-          >
-            Save Settings
-          </Button>
-        </Box>
-      </Paper>
+            <Divider sx={{ my: 2 }} />
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+              {Number.isFinite(svc.cold_start_seconds) && (
+                <Typography variant="caption" color="text.secondary">
+                  Cold start: {svc.cold_start_seconds}s
+                </Typography>
+              )}
+              {Number.isFinite(svc.avg_latency_ms) && (
+                <Typography variant="caption" color="text.secondary">
+                  Avg latency: {svc.avg_latency_ms}ms
+                </Typography>
+              )}
+              <Typography variant="caption" color="text.secondary">
+                Service type: {svc.service_type}
+              </Typography>
+            </Box>
+          </Paper>
+        );
+      })}
     </Box>
   );
 };
