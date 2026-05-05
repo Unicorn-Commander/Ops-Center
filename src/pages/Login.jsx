@@ -28,6 +28,8 @@ export default function Login() {
   const logoUrl = branding?.logo_url || '/logos/ops-center-logo.png';
   const ssoEnabled = branding?.sso_enabled !== false;
   const ssoProviderName = branding?.sso_provider_name || 'SSO';
+  const upstreamName = branding?.federation_upstream_name || 'Unicorn Commander';
+  const upstreamLogo = branding?.federation_upstream_logo || '/logos/The_Colonel.webp';
 
   const handleSSOLogin = () => {
     window.location.href = '/auth/login';
@@ -132,8 +134,13 @@ export default function Login() {
                 e.currentTarget.style.boxShadow = '';
               }}
             >
-              <ArrowRightOnRectangleIcon className="h-5 w-5" />
-              Continue with {ssoProviderName}
+              <img
+                src={upstreamLogo}
+                alt={upstreamName}
+                className="h-6 w-6 object-contain"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+              Continue with {upstreamName} SSO
             </button>
 
             <div className="relative my-6">
