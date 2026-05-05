@@ -34,6 +34,10 @@ FALLBACK_BRANDING = {
     "subtitle": "System Administration",
     "sso_provider_name": "SSO",
     "sso_enabled": True,
+    # Federation upstream IdP — the parent SSO that subordinate tenants
+    # delegate auth to (each local Keycloak federates to this one).
+    "federation_upstream_name": "Unicorn Commander",
+    "federation_upstream_logo": "/logos/The_Colonel.webp",
     "favicon_url": "/favicon.png",
     "og_title": "Ops-Center — Operations Dashboard",
     "og_description": "Centralized operations and management dashboard.",
@@ -107,6 +111,15 @@ def get_branding_config() -> Dict[str, str]:
     sso_name = os.environ.get("BRANDING_SSO_PROVIDER_NAME")
     if sso_name:
         branding["sso_provider_name"] = sso_name
+
+    # Federation upstream IdP overrides (constant by default; tenants
+    # can override if they federate to a different parent).
+    upstream_name = os.environ.get("BRANDING_FEDERATION_UPSTREAM_NAME")
+    if upstream_name:
+        branding["federation_upstream_name"] = upstream_name
+    upstream_logo = os.environ.get("BRANDING_FEDERATION_UPSTREAM_LOGO")
+    if upstream_logo:
+        branding["federation_upstream_logo"] = upstream_logo
 
     # Derive og_title and og_description from company_name if not explicitly set
     if not os.environ.get("BRANDING_OG_TITLE"):
