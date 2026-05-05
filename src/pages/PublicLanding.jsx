@@ -96,9 +96,12 @@ export default function PublicLanding() {
 
     // Fetch user session to determine subscription tier and roles
     const fetchUserSession = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       try {
         const response = await fetch('/api/v1/auth/session', {
-          credentials: 'include'
+          credentials: 'include',
+          signal: controller.signal
         });
 
         if (response.ok) {
@@ -131,6 +134,7 @@ export default function PublicLanding() {
           }
         }
       } finally {
+        clearTimeout(timeoutId);
         setIsLoadingSession(false);
       }
     };
@@ -139,23 +143,30 @@ export default function PublicLanding() {
 
     // Fetch user's authorized apps
     const fetchMyApps = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       try {
         const response = await fetch('/api/v1/my-apps/authorized', {
-          credentials: 'include'
+          credentials: 'include',
+          signal: controller.signal
         });
 
         if (response.ok) {
           const data = await response.json();
-          setMyApps(data);
+          setMyApps(Array.isArray(data) ? data : []);
         } else {
-          // Fallback to empty array on error
-          console.debug('Failed to load apps, using empty array');
+          console.debug('my-apps returned', response.status, '— using fallback');
           setMyApps([]);
         }
       } catch (error) {
-        console.debug('Error loading apps:', error);
+        if (error.name === 'AbortError') {
+          console.debug('my-apps fetch timed out — using fallback');
+        } else {
+          console.debug('Error loading apps:', error);
+        }
         setMyApps([]);
       } finally {
+        clearTimeout(timeoutId);
         setIsLoadingApps(false);
       }
     };
@@ -260,8 +271,10 @@ export default function PublicLanding() {
     return categoryColors[category] || { color: 'from-gray-500 to-gray-700', textColor: 'text-gray-100' };
   };
 
-  // Convert API apps to service card format
-  const services = myApps.map(app => {
+  // Convert API apps to service card format. If the API gave us nothing
+  // (anonymous visitor, or the call timed out), use fallbackServices so the
+  // page is never blank — restores pre-federation fast-fail behavior.
+  const apiServices = myApps.map(app => {
     const colorScheme = getServiceColorForCategory(app.category);
     return {
       title: app.name,
@@ -368,6 +381,9 @@ export default function PublicLanding() {
       textColor: 'text-purple-100'
     }
   ];
+
+  // Use API result when present, otherwise fall back to the static list
+  const services = (apiServices.length > 0 ? apiServices : fallbackServices);
 
   // Admin-only services (infrastructure & monitoring)
   const adminServices = [
