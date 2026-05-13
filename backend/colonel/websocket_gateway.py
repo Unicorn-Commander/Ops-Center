@@ -227,8 +227,10 @@ class ColonelGateway:
         user_email = user.get("email", "unknown")
         is_admin = user.get("role") == "admin" or "admin" in user.get("realm_access", {}).get("roles", [])
 
-        # Load config
-        config = await get_colonel_config()
+        # Load config — honor optional ?colonel=<id> for multi-Colonel deployments
+        # (defaults to "default" so single-Colonel deployments behave unchanged).
+        requested_colonel = ws.query_params.get("colonel", "default")
+        config = await get_colonel_config(requested_colonel)
         if config.admin_only and not is_admin:
             await ws.send_json(WSErrorFrame(detail="Admin access required", code="forbidden").model_dump())
             await ws.close(code=4003, reason="Forbidden")
