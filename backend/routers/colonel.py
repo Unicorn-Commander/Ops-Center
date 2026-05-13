@@ -5,11 +5,11 @@ Colonel REST API Router - Configuration, status, and session management.
 import logging
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from colonel.models import ColonelConfig, ColonelConfigUpdate, ColonelStatusResponse
-from colonel.config import get_colonel_config, save_colonel_config
+from colonel.config import get_colonel_config, list_colonels, save_colonel_config
 from colonel.websocket_gateway import colonel_gateway
 
 logger = logging.getLogger("colonel.router")
@@ -22,6 +22,15 @@ router = APIRouter(
         403: {"description": "Forbidden - admin only"},
     },
 )
+
+
+# ─── Multi-Colonel Helper ───────────────────────────────────────────────
+
+# Reusable Query dependency: every endpoint that previously hardcoded
+# colonel_id="default" now optionally accepts ?colonel=<id>. Existing
+# callers omit the param and continue to hit the 'default' Colonel.
+def _colonel_id(colonel: str = Query("default", description="Colonel id to scope this request to")) -> str:
+    return colonel
 
 
 # ─── Auth Dependencies ──────────────────────────────────────────────────
@@ -62,12 +71,29 @@ async def _require_admin(request: Request) -> dict:
     return user
 
 
+# ─── List ───────────────────────────────────────────────────────────────
+
+@router.get("/list")
+async def list_all_colonels(admin: dict = Depends(_require_admin)):
+    """
+    List every Colonel registered on this server.
+
+    Used by multi-Colonel UIs (and Aaron's white-label dashboards) to
+    enumerate all Colonels — Col. Corelli (platform default) plus per-server
+    Colonels like Carmine, Calderon, etc.
+    """
+    return {"colonels": await list_colonels()}
+
+
 # ─── Status ─────────────────────────────────────────────────────────────
 
 @router.get("/status", response_model=ColonelStatusResponse)
-async def get_status(admin: dict = Depends(_require_admin)):
+async def get_status(
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """Get Colonel status and configuration."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
 
     skills_loaded = 0
     if colonel_gateway.skill_router:
@@ -100,16 +126,23 @@ async def get_status(admin: dict = Depends(_require_admin)):
 # ─── Configuration ──────────────────────────────────────────────────────
 
 @router.get("/config")
-async def get_config(admin: dict = Depends(_require_admin)):
+async def get_config(
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """Get Colonel configuration."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
     return config.model_dump()
 
 
 @router.put("/config")
-async def update_config(update: ColonelConfigUpdate, admin: dict = Depends(_require_admin)):
+async def update_config(
+    update: ColonelConfigUpdate,
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """Update Colonel configuration."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
 
     # Apply updates
     update_data = update.model_dump(exclude_unset=True)
@@ -158,16 +191,23 @@ async def delete_session(session_id: str, admin: dict = Depends(_require_admin))
 # ─── Onboarding ─────────────────────────────────────────────────────────
 
 @router.get("/onboarded")
-async def check_onboarded(admin: dict = Depends(_require_admin)):
+async def check_onboarded(
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """Check if The Colonel has been set up."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
     return {"onboarded": config.onboarded}
 
 
 @router.post("/onboard")
-async def complete_onboarding(config_data: dict, admin: dict = Depends(_require_admin)):
+async def complete_onboarding(
+    config_data: dict,
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """Complete The Colonel onboarding with provided configuration."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
 
     # Apply onboarding data
     if "name" in config_data:
@@ -294,9 +334,12 @@ async def detect_environment(admin: dict = Depends(_require_admin)):
 # ─── Skills ─────────────────────────────────────────────────────────────
 
 @router.get("/skills")
-async def list_skills(admin: dict = Depends(_require_admin)):
+async def list_skills(
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """List all available skills and their status."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
 
     if colonel_gateway.skill_router:
         all_skills = colonel_gateway.skill_router.list_skills()
@@ -308,9 +351,13 @@ async def list_skills(admin: dict = Depends(_require_admin)):
 
 
 @router.put("/skills/{skill_id}/toggle")
-async def toggle_skill(skill_id: str, admin: dict = Depends(_require_admin)):
+async def toggle_skill(
+    skill_id: str,
+    admin: dict = Depends(_require_admin),
+    colonel_id: str = Depends(_colonel_id),
+):
     """Enable or disable a skill."""
-    config = await get_colonel_config()
+    config = await get_colonel_config(colonel_id)
 
     if skill_id in config.enabled_skills:
         config.enabled_skills.remove(skill_id)

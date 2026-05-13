@@ -39,6 +39,25 @@ router = APIRouter(
     },
 )
 
+# Feature flag: when explicitly disabled, the router still mounts (so URL
+# routes return 503 cleanly) but does not attempt to contact the upstream
+# Infinity/Granite proxies. Useful for tenant deployments that do not run a
+# `unicorn-infinity-proxy` / `unicorn-granite-proxy` container in their stack
+# (set `GPU_SERVICES_ENABLED=false` in env). On UC-Pro the default `true`
+# preserves prior behavior. Without this flag the GPU dashboard polls every
+# few seconds and spams logs with name-resolution failures on tenant hosts.
+GPU_SERVICES_ENABLED = os.getenv("GPU_SERVICES_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def _require_gpu_services_enabled() -> None:
+    """Short-circuit endpoints when the GPU services stack is not present."""
+    if not GPU_SERVICES_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="GPU services management disabled on this instance (GPU_SERVICES_ENABLED=false)",
+        )
+
+
 # Proxy configuration
 INFINITY_PROXY_URL = os.getenv("INFINITY_PROXY_URL", "http://unicorn-infinity-proxy:8080")
 GRANITE_PROXY_URL = os.getenv("GRANITE_PROXY_URL", "http://unicorn-granite-proxy:8080")
@@ -322,6 +341,7 @@ async def get_gpu_services_status(current_user: dict = Depends(get_current_user)
     Returns:
         GPUServicesStatusResponse with complete service and GPU status
     """
+    _require_gpu_services_enabled()
     try:
         # Fetch status and health from both proxies in parallel
         infinity_status = await fetch_proxy_status(INFINITY_PROXY_URL, "Infinity Proxy")
@@ -371,6 +391,7 @@ async def start_service(service: GPUService, admin: dict = Depends(require_admin
     Returns:
         ServiceOperationResponse with operation result
     """
+    _require_gpu_services_enabled()
     try:
         result = await control_service(service.value, "start")
         return ServiceOperationResponse(
@@ -402,6 +423,7 @@ async def stop_service(service: GPUService, admin: dict = Depends(require_admin)
     Returns:
         ServiceOperationResponse with operation result
     """
+    _require_gpu_services_enabled()
     try:
         result = await control_service(service.value, "stop")
         return ServiceOperationResponse(
@@ -430,6 +452,7 @@ async def get_gpu_status(current_user: dict = Depends(get_current_user)):
     Returns:
         GPUMemoryInfo including per-GPU and aggregate memory usage
     """
+    _require_gpu_services_enabled()
     try:
         gpu_info = await get_gpu_memory_info()
         if gpu_info is None:
@@ -458,6 +481,7 @@ async def get_infinity_status(current_user: dict = Depends(get_current_user)):
     Returns:
         ProxyStatus with embeddings and reranker service details
     """
+    _require_gpu_services_enabled()
     try:
         status = await fetch_proxy_status(INFINITY_PROXY_URL, "Infinity Proxy")
         health = await fetch_proxy_health(INFINITY_PROXY_URL, "Infinity Proxy")
@@ -483,6 +507,7 @@ async def get_granite_status(current_user: dict = Depends(get_current_user)):
     Returns:
         ProxyStatus with granite1 and granite2 service details
     """
+    _require_gpu_services_enabled()
     try:
         status = await fetch_proxy_status(GRANITE_PROXY_URL, "Granite Proxy")
         health = await fetch_proxy_health(GRANITE_PROXY_URL, "Granite Proxy")
