@@ -47,6 +47,28 @@ COPY backend/services ./services
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./alembic.ini
 
+# Copy backend submodules — these are imported by server.py and must
+# ship inside the image so the container runs without a host bind-mount.
+# (Bind-mounts are still used in dev for hot-reload; this list mirrors
+# the imports in server.py so a fresh build is self-contained.)
+COPY backend/colonel ./colonel
+COPY backend/routers ./routers
+COPY backend/middleware ./middleware
+COPY backend/observability ./observability
+COPY backend/cache ./cache
+COPY backend/billing ./billing
+COPY backend/federation ./federation
+COPY backend/local_inference ./local_inference
+COPY backend/migrations ./migrations
+COPY backend/model_adapters ./model_adapters
+COPY backend/templates ./templates
+COPY backend/email_templates ./email_templates
+COPY backend/utils ./utils
+COPY backend/config ./config
+COPY backend/static ./static
+COPY backend/sql ./sql
+COPY backend/scripts ./scripts
+
 # Copy built React app from frontend stage
 COPY --from=frontend-build /app/dist ./dist
 
