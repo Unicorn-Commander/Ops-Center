@@ -93,3 +93,53 @@ async def save_colonel_config(config: ColonelConfig) -> ColonelConfig:
 
     logger.info(f"Saved colonel config: {config.name} ({config.id})")
     return await get_colonel_config(config.id)
+
+
+async def list_colonels() -> list:
+    """
+    List every Colonel registered in the database.
+
+    Returns a list of dicts: [{"id": ..., "name": ..., "server_name": ..., "mission": ...}, ...]
+    Always includes the "default" Colonel synthetically if no row exists,
+    so single-Colonel deployments behave as they did pre-multi-Colonel.
+    """
+    colonels = []
+    seen_default = False
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, config_json FROM colonels ORDER BY id"
+            )
+            for row in rows:
+                try:
+                    data = json.loads(row["config_json"])
+                except Exception:
+                    data = {}
+                cid = row["id"]
+                if cid == "default":
+                    seen_default = True
+                colonels.append({
+                    "id": cid,
+                    "name": data.get("name") or "The Colonel",
+                    "server_name": data.get("server_name"),
+                    "mission": data.get("mission"),
+                })
+    except Exception as e:
+        logger.warning(f"Could not list colonels from DB: {e}")
+
+    if not seen_default:
+        # Synthesize a default entry so /.well-known/agent.json keeps working
+        # for fresh installs that haven't run colonel onboarding yet.
+        try:
+            default_cfg = await get_colonel_config("default")
+            colonels.insert(0, {
+                "id": "default",
+                "name": default_cfg.name or "The Colonel",
+                "server_name": default_cfg.server_name,
+                "mission": default_cfg.mission,
+            })
+        except Exception as e:
+            logger.warning(f"Could not synthesize default colonel entry: {e}")
+
+    return colonels

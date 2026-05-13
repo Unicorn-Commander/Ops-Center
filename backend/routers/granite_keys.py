@@ -17,8 +17,37 @@ import asyncpg
 
 router = APIRouter(prefix="/api/v1/granite-keys", tags=["Granite API Keys"])
 
+# Feature flag: when explicitly disabled, the router still mounts (so URL
+# routes return 503 cleanly) but database calls raise immediately. Useful for
+# tenant deployments without a Granite extraction service in the stack
+# (set GRANITE_KEYS_ENABLED=false in env).
+GRANITE_KEYS_ENABLED = os.getenv("GRANITE_KEYS_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def _build_database_url() -> str:
+    """Resolve the database URL from DATABASE_URL or POSTGRES_* env vars.
+
+    UC-Pro shipped with a hardcoded default pointing at unicorn-postgresql,
+    which spammed name-resolution errors on tenant deployments. Multi-tenant
+    instances (e.g. majiks-vps) already define POSTGRES_HOST/USER/PASSWORD/DB
+    in their env file, so we synthesize from those when DATABASE_URL is unset.
+    """
+    explicit = os.getenv("DATABASE_URL")
+    if explicit:
+        return explicit
+    host = os.getenv("POSTGRES_HOST")
+    if host:
+        port = os.getenv("POSTGRES_PORT", "5432")
+        user = os.getenv("POSTGRES_USER", "unicorn")
+        pwd = os.getenv("POSTGRES_PASSWORD", "")
+        db = os.getenv("POSTGRES_DB", "unicorn_db")
+        return f"postgresql://{user}:{pwd}@{host}:{port}/{db}"
+    # Fallback to legacy hardcoded value (preserves prior behavior on UC-Pro)
+    return "postgresql://unicorn:REMOVED@unicorn-postgresql:5432/unicorn_db"
+
+
 # Database connection
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://unicorn:REMOVED@unicorn-postgresql:5432/unicorn_db")
+DATABASE_URL = _build_database_url()
 
 # Granite extraction service paths
 EXTRACTION_ENV_PATH = "/home/muut/models/extraction/.env"
@@ -59,6 +88,11 @@ class APIKeyUpdate(BaseModel):
 
 async def get_db_pool():
     """Get database connection pool."""
+    if not GRANITE_KEYS_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Granite keys management disabled on this instance (GRANITE_KEYS_ENABLED=false)",
+        )
     return await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
 
 
