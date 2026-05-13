@@ -38,8 +38,36 @@ _scheduler_running: bool = False
 _last_scheduler_run: Optional[datetime] = None
 _scheduler_run_count: int = 0
 
+# Feature flag: when explicitly disabled, the router skips its background
+# scheduler + database init. Useful for tenant deployments that do not need
+# uptime monitoring (set WEBSITE_MONITOR_ENABLED=false in env).
+WEBSITE_MONITOR_ENABLED = os.getenv("WEBSITE_MONITOR_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def _build_database_url() -> str:
+    """Resolve the database URL from DATABASE_URL or POSTGRES_* env vars.
+
+    UC-Pro shipped with a hardcoded default pointing at unicorn-postgresql,
+    which spammed name-resolution errors on tenant deployments. Multi-tenant
+    instances (e.g. majiks-vps) already define POSTGRES_HOST/USER/PASSWORD/DB
+    in their env file, so we synthesize from those when DATABASE_URL is unset.
+    """
+    explicit = os.getenv("DATABASE_URL")
+    if explicit:
+        return explicit
+    host = os.getenv("POSTGRES_HOST")
+    if host:
+        port = os.getenv("POSTGRES_PORT", "5432")
+        user = os.getenv("POSTGRES_USER", "unicorn")
+        pwd = os.getenv("POSTGRES_PASSWORD", "")
+        db = os.getenv("POSTGRES_DB", "unicorn_db")
+        return f"postgresql://{user}:{pwd}@{host}:{port}/{db}"
+    # Fallback to legacy hardcoded value (preserves prior behavior on UC-Pro)
+    return "postgresql://unicorn:REMOVED@unicorn-postgresql:5432/unicorn_db"
+
+
 # Database connection
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://unicorn:REMOVED@unicorn-postgresql:5432/unicorn_db")
+DATABASE_URL = _build_database_url()
 
 # In-memory cache for quick access (refreshed periodically)
 _websites_cache: Dict[str, dict] = {}
@@ -542,7 +570,13 @@ async def process_website_alert(conn, website: dict, check_result: dict) -> None
 
 @router.on_event("startup")
 async def startup():
-    """Initialize on startup"""
+    """Initialize on startup (skipped when WEBSITE_MONITOR_ENABLED=false)."""
+    if not WEBSITE_MONITOR_ENABLED:
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            "WEBSITE_MONITOR_ENABLED=false - skipping database init + scheduler"
+        )
+        return
     await init_database()
 
 
