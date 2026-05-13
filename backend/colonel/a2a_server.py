@@ -27,7 +27,7 @@ import httpx
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
-from colonel.config import get_colonel_config
+from colonel.config import get_colonel_config, list_colonels
 from colonel.skill_router import SkillRouter
 from colonel.skill_executor import EXECUTOR_MAP
 from colonel.memory.audit import log_action
@@ -39,19 +39,68 @@ BRIGADE_API_URL = os.getenv("BRIGADE_API_URL", "http://unicorn-brigade:8100")
 BRIGADE_SERVICE_KEY = os.getenv("BRIGADE_SERVICE_KEY", "")
 A2A_SHARED_SECRET = os.getenv("A2A_SHARED_SECRET", "")
 
+# Provider info — env-overridable so each white-label deployment can identify
+# its own brand (Magic Unicorn / Majik's Studio / Brightwater Labs / etc.)
+# rather than hardcoding the platform vendor on every Colonel everywhere.
+COLONEL_PROVIDER_ORG = os.getenv(
+    "COLONEL_PROVIDER_ORG",
+    "Magic Unicorn Unconventional Technology & Stuff Inc",
+)
+COLONEL_PROVIDER_URL = os.getenv(
+    "COLONEL_PROVIDER_URL",
+    "https://unicorncommander.com",
+)
+
+# Public-facing base URL override. When set (e.g.
+# COLONEL_PUBLIC_URL=https://ops.majiks.studio) it forces every agent
+# card / api-catalog url to use this scheme+host instead of whatever
+# Starlette derived from the inbound request. Useful behind reverse
+# proxies that don't forward X-Forwarded-Proto correctly.
+COLONEL_PUBLIC_URL = os.getenv("COLONEL_PUBLIC_URL", "").rstrip("/")
+
+
+def _public_base_url(request) -> str:
+    """Derive the canonical public base URL for this request.
+
+    Resolution order:
+      1. COLONEL_PUBLIC_URL env (explicit override, wins always).
+      2. X-Forwarded-Proto + X-Forwarded-Host headers (Traefik / nginx /
+         any RFC 7239-aware reverse proxy).
+      3. Starlette's request.base_url (fallback for direct hits).
+
+    The result never has a trailing slash so callers can safely append
+    paths like "/a2a" or "/.well-known/agent.json".
+    """
+    if COLONEL_PUBLIC_URL:
+        return COLONEL_PUBLIC_URL
+
+    # Honour reverse-proxy hints. We only trust X-Forwarded-Proto here
+    # because production deploys live behind Traefik/nginx that strip
+    # client-supplied versions of these headers.
+    fwd_proto = request.headers.get("x-forwarded-proto")
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if fwd_proto and fwd_host:
+        # Strip any port-from-host duplication and trailing slashes.
+        return f"{fwd_proto}://{fwd_host}".rstrip("/")
+
+    return str(request.base_url).rstrip("/")
+
 
 # ─── Agent Card ──────────────────────────────────────────────────────────
 
 def build_agent_card(config, skills: List[Dict], base_url: str) -> Dict[str, Any]:
     """Build an A2A-compliant Agent Card."""
+    name = config.name or "The Colonel"
+    server = config.server_name or "this server"
+    mission = config.mission or "general"
     return {
-        "name": config.name or "The Colonel",
-        "description": f"{config.name or 'The Colonel'} — AI command agent for {config.server_name or 'this server'}. Mission: {config.mission or 'general'}.",
+        "name": name,
+        "description": f"{name}, AI command agent for {server}. Mission: {mission}.",
         "url": f"{base_url}/a2a",
         "version": "1.0.0",
         "provider": {
-            "organization": "Magic Unicorn Unconventional Technology & Stuff Inc",
-            "url": "https://unicorncommander.com",
+            "organization": COLONEL_PROVIDER_ORG,
+            "url": COLONEL_PROVIDER_URL,
         },
         "capabilities": {
             "streaming": False,
@@ -123,21 +172,109 @@ def _validate_a2a_auth(request: Request) -> bool:
 router = APIRouter(tags=["a2a"])
 
 
-@router.get("/.well-known/agent.json")
-async def agent_card(request: Request):
-    """Publish the Agent Card for discovery."""
-    config = await get_colonel_config()
+def _resolve_colonel_id(params: Dict[str, Any], default: str = "default") -> str:
+    """
+    Resolve a colonel_id from JSON-RPC params.
+
+    Accepts either top-level 'colonel' or nested 'colonel_id' for clarity.
+    Falls back to 'default' so existing single-Colonel callers keep working.
+    """
+    if not isinstance(params, dict):
+        return default
+    return params.get("colonel") or params.get("colonel_id") or default
+
+
+async def _build_card_for(colonel_id: str, base_url: str) -> Dict[str, Any]:
+    """Build the agent card for a given colonel_id."""
+    config = await get_colonel_config(colonel_id)
 
     skills = []
     try:
         sr = SkillRouter()
         skills = sr.list_skills()
     except Exception as e:
-        logger.warning(f"Could not load skills for agent card: {e}")
+        logger.warning(f"Could not load skills for agent card ({colonel_id}): {e}")
 
-    base_url = str(request.base_url).rstrip("/")
-    card = build_agent_card(config, skills, base_url)
-    return card
+    return build_agent_card(config, skills, base_url)
+
+
+@router.get("/.well-known/agent.json")
+async def agent_card(request: Request):
+    """
+    Publish the default Agent Card for discovery (backwards-compatible).
+
+    This always serves the colonel with id='default'. For per-Colonel
+    discovery on multi-Colonel servers, use /.well-known/agent-{colonel_id}.json
+    or query the /.well-known/api-catalog index.
+    """
+    base_url = _public_base_url(request)
+    return await _build_card_for("default", base_url)
+
+
+@router.get("/.well-known/agent-{colonel_id}.json")
+async def agent_card_named(colonel_id: str, request: Request):
+    """
+    Publish the Agent Card for a specific Colonel by id.
+
+    Enables multi-Colonel-per-server deployments (e.g. platform 'corelli'
+    plus per-server scoped colonels like 'carmine', 'calderon', ...).
+    """
+    # Reject the special 'default' alias here so callers use the canonical
+    # path /.well-known/agent.json — keeps responses cache-coherent.
+    if colonel_id == "default":
+        raise HTTPException(
+            status_code=404,
+            detail="Use /.well-known/agent.json for the default Colonel.",
+        )
+
+    # Verify the colonel exists before building the card so callers get a
+    # clean 404 instead of a synthetic empty card.
+    known = {c["id"] for c in await list_colonels()}
+    if colonel_id not in known:
+        raise HTTPException(status_code=404, detail=f"Unknown colonel_id: {colonel_id}")
+
+    base_url = _public_base_url(request)
+    return await _build_card_for(colonel_id, base_url)
+
+
+@router.get("/.well-known/api-catalog")
+async def api_catalog(request: Request):
+    """
+    RFC 9264-style catalog of every Colonel hosted on this server.
+
+    This is the forward-compatible discovery endpoint for multi-Colonel
+    deployments — clients walk this list to find every accessible agent
+    card without having to guess colonel ids.
+
+    Cf. https://github.com/a2aproject/A2A/issues/641 for the emerging
+    A2A multi-agent-per-origin proposal.
+    """
+    base_url = _public_base_url(request)
+    colonels = await list_colonels()
+
+    links = []
+    for c in colonels:
+        cid = c["id"]
+        href = f"{base_url}/.well-known/agent.json" if cid == "default" \
+            else f"{base_url}/.well-known/agent-{cid}.json"
+        links.append({
+            "href": href,
+            "rel": "agent-card",
+            "title": c.get("name") or cid,
+            "colonel_id": cid,
+            "server_name": c.get("server_name"),
+            "mission": c.get("mission"),
+        })
+
+    return {
+        "linkset": [
+            {
+                "anchor": base_url,
+                "links": links,
+            }
+        ],
+        "colonels": colonels,
+    }
 
 
 @router.post("/a2a")
@@ -151,6 +288,10 @@ async def a2a_endpoint(request: Request):
       - agent/status:  Return Colonel status information
       - tasks/send:    Legacy A2A task execution (keyword-based routing)
       - tasks/get:     Get task status (not implemented yet)
+
+    All methods accept an optional 'colonel' param to scope the call to
+    a specific Colonel; absent it, the 'default' Colonel is used so single-
+    Colonel deployments continue to work unchanged.
     """
     # Authenticate
     if not _validate_a2a_auth(request):
@@ -179,6 +320,8 @@ async def a2a_endpoint(request: Request):
         return await _handle_tasks_send(req_id, params)
     elif method == "tasks/get":
         return _jsonrpc_error(req_id, -32601, "tasks/get not yet implemented")
+    elif method == "colonels/list":
+        return await _handle_colonels_list(req_id, params)
     else:
         return _jsonrpc_error(req_id, -32601, f"Method not found: {method}")
 
@@ -270,10 +413,10 @@ async def _handle_skills_invoke(req_id: Optional[str], params: Dict[str, Any]) -
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
 
-    # Audit log (best effort)
+    # Audit log (best effort) — scope by selected colonel for multi-Colonel deployments
     try:
         await log_action(
-            colonel_id="default",
+            colonel_id=_resolve_colonel_id(params),
             action_type="a2a_skill_invoke",
             skill_name=skill_name,
             action_name=action_name,
@@ -307,10 +450,11 @@ async def _handle_agent_status(req_id: Optional[str], params: Dict[str, Any]) ->
     Handle agent/status: return Colonel status information.
 
     Returns the Colonel configuration, loaded skill count, and whether
-    Brigade registration has been attempted.
+    Brigade registration has been attempted. Honors an optional 'colonel'
+    param to scope the response to a specific Colonel.
     """
     try:
-        config = await get_colonel_config()
+        config = await get_colonel_config(_resolve_colonel_id(params))
 
         skill_count = 0
         executor_count = len(EXECUTOR_MAP)
@@ -387,10 +531,10 @@ async def _handle_tasks_send(req_id: Optional[str], params: Dict[str, Any]) -> D
         logger.error(f"A2A task execution error: {e}", exc_info=True)
         result_text = f"Error: {str(e)}"
 
-    # Log to audit
+    # Log to audit — scope by selected colonel for multi-Colonel deployments
     try:
         await log_action(
-            colonel_id="default",
+            colonel_id=_resolve_colonel_id(params),
             action_type="a2a_task",
             action_name="tasks/send",
             parameters={"text": text_content[:200]},
@@ -413,6 +557,34 @@ async def _handle_tasks_send(req_id: Optional[str], params: Dict[str, Any]) -> D
             ],
         },
     }
+
+
+# ─── colonels/list handler ─────────────────────────────────────────────
+
+async def _handle_colonels_list(req_id: Optional[str], params: Dict[str, Any]) -> Dict:
+    """
+    Handle colonels/list: enumerate every Colonel registered on this server.
+
+    Lets A2A clients discover all available Colonels in a multi-Colonel
+    deployment via JSON-RPC, mirroring the HTTP /.well-known/api-catalog
+    endpoint for callers that prefer to stay on the JSON-RPC channel.
+    """
+    try:
+        colonels = await list_colonels()
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "status": "success",
+                "data": {
+                    "colonels": colonels,
+                    "count": len(colonels),
+                },
+            },
+        }
+    except Exception as e:
+        logger.error(f"colonels/list error: {e}", exc_info=True)
+        return _jsonrpc_error(req_id, -32603, f"Internal error listing colonels: {e}")
 
 
 def _extract_skill_call(text: str) -> tuple:
