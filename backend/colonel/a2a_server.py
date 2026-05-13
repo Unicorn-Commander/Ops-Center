@@ -51,6 +51,40 @@ COLONEL_PROVIDER_URL = os.getenv(
     "https://unicorncommander.com",
 )
 
+# Public-facing base URL override. When set (e.g.
+# COLONEL_PUBLIC_URL=https://ops.majiks.studio) it forces every agent
+# card / api-catalog url to use this scheme+host instead of whatever
+# Starlette derived from the inbound request. Useful behind reverse
+# proxies that don't forward X-Forwarded-Proto correctly.
+COLONEL_PUBLIC_URL = os.getenv("COLONEL_PUBLIC_URL", "").rstrip("/")
+
+
+def _public_base_url(request) -> str:
+    """Derive the canonical public base URL for this request.
+
+    Resolution order:
+      1. COLONEL_PUBLIC_URL env (explicit override, wins always).
+      2. X-Forwarded-Proto + X-Forwarded-Host headers (Traefik / nginx /
+         any RFC 7239-aware reverse proxy).
+      3. Starlette's request.base_url (fallback for direct hits).
+
+    The result never has a trailing slash so callers can safely append
+    paths like "/a2a" or "/.well-known/agent.json".
+    """
+    if COLONEL_PUBLIC_URL:
+        return COLONEL_PUBLIC_URL
+
+    # Honour reverse-proxy hints. We only trust X-Forwarded-Proto here
+    # because production deploys live behind Traefik/nginx that strip
+    # client-supplied versions of these headers.
+    fwd_proto = request.headers.get("x-forwarded-proto")
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if fwd_proto and fwd_host:
+        # Strip any port-from-host duplication and trailing slashes.
+        return f"{fwd_proto}://{fwd_host}".rstrip("/")
+
+    return str(request.base_url).rstrip("/")
+
 
 # ─── Agent Card ──────────────────────────────────────────────────────────
 
@@ -173,7 +207,7 @@ async def agent_card(request: Request):
     discovery on multi-Colonel servers, use /.well-known/agent-{colonel_id}.json
     or query the /.well-known/api-catalog index.
     """
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _public_base_url(request)
     return await _build_card_for("default", base_url)
 
 
@@ -199,7 +233,7 @@ async def agent_card_named(colonel_id: str, request: Request):
     if colonel_id not in known:
         raise HTTPException(status_code=404, detail=f"Unknown colonel_id: {colonel_id}")
 
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _public_base_url(request)
     return await _build_card_for(colonel_id, base_url)
 
 
@@ -215,7 +249,7 @@ async def api_catalog(request: Request):
     Cf. https://github.com/a2aproject/A2A/issues/641 for the emerging
     A2A multi-agent-per-origin proposal.
     """
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _public_base_url(request)
     colonels = await list_colonels()
 
     links = []
