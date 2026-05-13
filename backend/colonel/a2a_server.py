@@ -39,19 +39,34 @@ BRIGADE_API_URL = os.getenv("BRIGADE_API_URL", "http://unicorn-brigade:8100")
 BRIGADE_SERVICE_KEY = os.getenv("BRIGADE_SERVICE_KEY", "")
 A2A_SHARED_SECRET = os.getenv("A2A_SHARED_SECRET", "")
 
+# Provider info — env-overridable so each white-label deployment can identify
+# its own brand (Magic Unicorn / Majik's Studio / Brightwater Labs / etc.)
+# rather than hardcoding the platform vendor on every Colonel everywhere.
+COLONEL_PROVIDER_ORG = os.getenv(
+    "COLONEL_PROVIDER_ORG",
+    "Magic Unicorn Unconventional Technology & Stuff Inc",
+)
+COLONEL_PROVIDER_URL = os.getenv(
+    "COLONEL_PROVIDER_URL",
+    "https://unicorncommander.com",
+)
+
 
 # ─── Agent Card ──────────────────────────────────────────────────────────
 
 def build_agent_card(config, skills: List[Dict], base_url: str) -> Dict[str, Any]:
     """Build an A2A-compliant Agent Card."""
+    name = config.name or "The Colonel"
+    server = config.server_name or "this server"
+    mission = config.mission or "general"
     return {
-        "name": config.name or "The Colonel",
-        "description": f"{config.name or 'The Colonel'} — AI command agent for {config.server_name or 'this server'}. Mission: {config.mission or 'general'}.",
+        "name": name,
+        "description": f"{name}, AI command agent for {server}. Mission: {mission}.",
         "url": f"{base_url}/a2a",
         "version": "1.0.0",
         "provider": {
-            "organization": "Magic Unicorn Unconventional Technology & Stuff Inc",
-            "url": "https://unicorncommander.com",
+            "organization": COLONEL_PROVIDER_ORG,
+            "url": COLONEL_PROVIDER_URL,
         },
         "capabilities": {
             "streaming": False,
