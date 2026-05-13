@@ -140,6 +140,20 @@ class AuditLogger:
         finally:
             conn.close()
 
+    async def initialize(self):
+        """Async initialize hook for symmetry with other security services.
+
+        ``__init__`` already provisions the SQLite tables and file handler
+        synchronously, so this is effectively a no-op. It exists so the
+        FastAPI startup path (`await audit_logger.initialize()`) succeeds
+        and matches the contract used by ``rate_limiter.initialize()``.
+        Re-runs ``_init_database`` defensively so the call is also safe to
+        invoke after a hot-reload.
+        """
+        if self.enable_db_logging:
+            self._init_database()
+        return self
+
     async def log(
         self,
         action: str,
