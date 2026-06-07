@@ -46,7 +46,7 @@ async def _get_user(request: Request) -> dict:
 
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
     session_data = sessions.get(session_token)
 
     if not session_data:

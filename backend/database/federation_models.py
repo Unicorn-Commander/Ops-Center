@@ -147,3 +147,30 @@ class FederationPeer(Base):
     last_verified = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # --- Phase 1: per-peer trust mode + service ACL fields ---
+    # See Unicorn-Ecosystem/FEDERATION_TRUST_MODES.md for the full design.
+    # Defaults preserve current full-mesh behavior.
+    trust_mode = Column(String(50), nullable=False, default="full")
+    publish = Column(JSON, nullable=False, default=list)
+    consume = Column(JSON, nullable=False, default=list)
+    capability_token = Column(Text, nullable=True)
+    authority_for = Column(JSON, nullable=False, default=list)
+    consumer_of = Column(JSON, nullable=False, default=list)
+
+
+class FederationAuthority(Base):
+    __tablename__ = "federation_authorities"
+
+    id = Column(Integer, primary_key=True)
+    resource_type = Column(String(100), nullable=False, index=True)
+    node_id = Column(
+        String(36),
+        ForeignKey("federation_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    is_primary = Column(Boolean, nullable=False, default=True)
+    since = Column(DateTime, default=datetime.utcnow, nullable=False)
+    extra_metadata = Column("metadata", JSON, nullable=False, default=dict)
+
+

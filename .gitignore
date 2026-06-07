@@ -1,75 +1,12 @@
-# Dependencies
 node_modules/
-venv/
-
-# Build outputs
 dist/
-*.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Secrets
-.secrets/
-*.secrets
-.env.secrets
-
-# Environment variables (deployment-specific, not shared)
-.env
-.env.auth
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Data files (may contain sensitive info)
-data/
-# But allow source code data files (service configs are not sensitive)
-!src/data/
-!src/data/*.js
-backend.log
-dev.log
-vite.logNVIDIA-Linux-x86_64-*.run
-
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Build artifacts
-dist/
-build/
 public/assets/
-public/sw.js
-public/workbox-*.js
-
-# Environment
-.env.local
-.env.*.local
-
-# IDE
-.vscode/
-.idea/
-
-# OS
+public/avatars/
+*.tar.gz
+__pycache__/
+*.pyc
+*.bak*
+*.backup
+*.NEW
+*.BACKUP
 .DS_Store
-Thumbs.db
-
-# Per-deployment / per-component env files containing secrets
-.env.centerdeep
-.env.development
-backend/.env.byok
-backend/.env.ratelimit
-backend/.env.stripe
-backend/.env.webhooks
-tests/.env.test
-keycloak-theme/.env.keycloak

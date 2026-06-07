@@ -56,18 +56,18 @@ export default function PublicLanding() {
     underground: { name: 'Underground', icon: CpuChipIcon }
   };
 
-  // Card gradient colors - deep, dark gradients for Underground theme
+  // Card gradient colors - balanced dark operations palette for the launcher
   const CARD_COLORS = [
-    { gradient: 'linear-gradient(135deg, #1e1b4b 0%, #581c87 100%)', iconBg: '#ffffff' },  // Deep Indigo → Purple
-    { gradient: 'linear-gradient(135deg, #4c1d95 0%, #be185d 100%)', iconBg: '#ffffff' },  // Violet → Pink
-    { gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)', iconBg: '#ffffff' },  // Slate → Blue
-    { gradient: 'linear-gradient(135deg, #701a75 0%, #c026d3 100%)', iconBg: '#ffffff' },  // Fuchsia Dark
-    { gradient: 'linear-gradient(135deg, #312e81 0%, #7c3aed 100%)', iconBg: '#ffffff' },  // Indigo → Violet
-    { gradient: 'linear-gradient(135deg, #0c4a6e 0%, #0891b2 100%)', iconBg: '#ffffff' },  // Sky Dark → Cyan
-    { gradient: 'linear-gradient(135deg, #3730a3 0%, #a855f7 100%)', iconBg: '#ffffff' },  // Indigo → Purple
-    { gradient: 'linear-gradient(135deg, #6b21a8 0%, #ec4899 100%)', iconBg: '#ffffff' },  // Purple → Pink
-    { gradient: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)', iconBg: '#1a1a2e' },  // Cyan Dark
-    { gradient: 'linear-gradient(135deg, #86198f 0%, #d946ef 100%)', iconBg: '#ffffff' },  // Fuchsia
+    { gradient: 'linear-gradient(135deg, #0f172a 0%, #155e75 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #1e1b4b 0%, #6d28d9 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #111827 0%, #047857 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #312e81 0%, #be123c 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #0c4a6e 0%, #1d4ed8 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #27272a 0%, #a16207 100%)', iconBg: '#0f172a' },
+    { gradient: 'linear-gradient(135deg, #164e63 0%, #7c2d12 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #172554 0%, #7e22ce 100%)', iconBg: '#f8fafc' },
+    { gradient: 'linear-gradient(135deg, #064e3b 0%, #0e7490 100%)', iconBg: '#0f172a' },
+    { gradient: 'linear-gradient(135deg, #3f3f46 0%, #881337 100%)', iconBg: '#f8fafc' },
   ];
 
   const getCardColor = (index) => CARD_COLORS[index % CARD_COLORS.length];
@@ -222,8 +222,8 @@ export default function PublicLanding() {
         localStorage.removeItem('userInfo');
 
         // Redirect to Keycloak logout (clears SSO session, then shows our confirmation page)
-        if (data.logout_url) {
-          window.location.href = data.logout_url;
+        if (data.logout_url || data.sso_logout_url) {
+          window.location.href = data.logout_url || data.sso_logout_url;
           return;
         }
       }
@@ -236,7 +236,7 @@ export default function PublicLanding() {
     localStorage.removeItem('token');
     localStorage.removeItem('authToken');
     localStorage.removeItem('userInfo');
-    window.location.href = '/';
+    window.location.href = '/auth/logout';
   };
 
   // Check if user has access to a service based on tier
@@ -462,17 +462,17 @@ export default function PublicLanding() {
   const getThemeStyles = () => {
     if (currentTheme === 'underground') {
       return {
-        background: 'min-h-screen bg-gradient-to-br from-black via-purple-950 to-slate-950',
-        headerText: 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-400 to-pink-400',
-        subText: 'text-purple-300/80',
-        searchBg: 'bg-purple-950/50 backdrop-blur-xl rounded-2xl shadow-2xl border border-purple-800/30',
-        searchInput: 'bg-black/30 border border-purple-800/30 text-white placeholder-purple-400 focus:ring-fuchsia-500',
-        searchIcon: 'text-fuchsia-400',
-        searchButton: 'bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:from-purple-800 hover:to-fuchsia-800',
-        cardOverlay: 'bg-purple-950/50 backdrop-blur-xl border border-purple-800/30',
-        footerBg: 'bg-black/40 backdrop-blur-sm border-t border-purple-800/30',
-        logoText: 'text-purple-200',
-        footerText: 'text-purple-400/70'
+        background: 'min-h-screen ops-command-bg text-slate-100',
+        headerText: 'text-transparent bg-clip-text bg-gradient-to-r from-white via-violet-200 to-cyan-200',
+        subText: 'text-slate-300/85',
+        searchBg: 'bg-slate-950/70 backdrop-blur-xl rounded-lg shadow-2xl border border-slate-700/60',
+        searchInput: 'bg-slate-950/70 border border-slate-700 text-white placeholder-slate-500 focus:ring-cyan-400',
+        searchIcon: 'text-cyan-300',
+        searchButton: 'bg-gradient-to-r from-violet-700 to-cyan-700 hover:from-violet-600 hover:to-cyan-600',
+        cardOverlay: 'bg-slate-950/72 backdrop-blur-xl border border-slate-700/60',
+        footerBg: 'bg-slate-950/82 backdrop-blur-sm border-t border-slate-800',
+        logoText: 'text-slate-100',
+        footerText: 'text-slate-400'
       };
     } else if (currentTheme === 'unicorn') {
       return {
@@ -782,7 +782,7 @@ export default function PublicLanding() {
         transition={{ duration: 0.6, delay: 0.4 }}
         className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12"
       >
-        <h2 className={`text-3xl font-bold text-center mb-8 ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
+        <h2 className={`text-2xl font-bold text-center mb-6 ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
           My Apps
         </h2>
 
@@ -806,7 +806,7 @@ export default function PublicLanding() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {services.map((service, index) => {
             const isLocked = !hasAccess(service.title);
             const requiredTier = serviceTiers[service.title];
@@ -827,12 +827,12 @@ export default function PublicLanding() {
                   onClick={(e) => handleServiceClick(e, service)}
                 >
                   <div
-                    className={`relative rounded-2xl overflow-hidden transition-all duration-300 ${
+                    className={`relative rounded-lg overflow-hidden transition-all duration-300 ops-app-card ${
                       isLocked
                         ? 'opacity-40'
-                        : 'hover:-translate-y-1.5 hover:shadow-[0_8px_40px_rgba(139,92,246,0.25)]'
+                        : 'hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(8,47,73,0.28)]'
                     }`}
-                    style={{ minHeight: '280px' }}
+                    style={{ minHeight: '250px' }}
                   >
                     {/* Gradient background */}
                     <div className="absolute inset-0" style={{ background: cardColor.gradient }} />
@@ -841,7 +841,7 @@ export default function PublicLanding() {
                     <div className="absolute inset-0 bg-white/[0.02]" />
 
                     {/* Gradient border — visible by default, brighter on hover */}
-                    <div className="absolute inset-0 rounded-2xl border border-white/[0.08] group-hover:border-white/20 transition-colors duration-300" />
+                    <div className="absolute inset-0 rounded-lg border border-white/[0.10] group-hover:border-cyan-200/30 transition-colors duration-300" />
 
                     {/* Top glow accent on hover */}
                     <div
@@ -860,7 +860,7 @@ export default function PublicLanding() {
                     )}
 
                     {/* Card content */}
-                    <div className="relative z-[1] h-full flex flex-col p-6">
+                    <div className="relative z-[1] h-full flex flex-col p-5">
                       {/* Tags — top right */}
                       {service.featureKey && (() => {
                         const tagMap = {
@@ -894,12 +894,12 @@ export default function PublicLanding() {
                       })()}
 
                       {/* Icon — large, prominent */}
-                      <div className="mb-5 transition-transform duration-300 group-hover:scale-105">
+                      <div className="mb-4 transition-transform duration-300 group-hover:scale-105">
                         {service.iconImage ? (
                           <img
                             src={service.iconImage}
                             alt={service.title}
-                            className="w-14 h-14 object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.35)] rounded-xl"
+                            className="w-[52px] h-[52px] object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.35)] rounded-lg"
                           />
                         ) : service.icon ? (
                           <service.icon className="h-12 w-12 text-white/80 drop-shadow-lg" />
@@ -909,21 +909,21 @@ export default function PublicLanding() {
                       </div>
 
                       {/* App name */}
-                      <h3 className="text-white font-bold text-lg leading-snug mb-2 tracking-tight">
+                      <h3 className="text-white font-bold text-base leading-snug mb-2 tracking-tight">
                         {service.title}
                       </h3>
 
                       {/* Description — readable, multi-line */}
-                      <p className="text-white/60 text-sm leading-relaxed flex-1 line-clamp-3">
+                      <p className="text-white/66 text-sm leading-relaxed flex-1 line-clamp-3">
                         {service.description}
                       </p>
 
                       {/* Bottom row — launch hint */}
-                      <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
-                        <span className="text-white/30 text-xs font-medium group-hover:text-white/60 transition-colors duration-300">
+                      <div className="mt-4 pt-3 border-t border-white/[0.08] flex items-center justify-between">
+                        <span className="text-white/38 text-xs font-medium group-hover:text-white/70 transition-colors duration-300">
                           Launch app
                         </span>
-                        <div className="w-7 h-7 rounded-full bg-white/[0.06] group-hover:bg-white/[0.15] flex items-center justify-center transition-all duration-300">
+                        <div className="w-7 h-7 rounded-lg bg-white/[0.07] group-hover:bg-white/[0.16] flex items-center justify-center transition-all duration-300">
                           <ArrowRightIcon className="h-3.5 w-3.5 text-white/40 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all duration-300" />
                         </div>
                       </div>
@@ -946,7 +946,7 @@ export default function PublicLanding() {
           className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12"
         >
           {/* Toggle Header */}
-          <div className={`${styles.cardOverlay} rounded-xl p-6 mb-6 border-2 ${
+          <div className={`${styles.cardOverlay} rounded-lg p-6 mb-6 border ${
             currentTheme === 'unicorn'
               ? 'border-purple-500/30'
               : currentTheme === 'light'
@@ -1027,10 +1027,10 @@ export default function PublicLanding() {
                       className="block group"
                     >
                       <div
-                        className="rounded-3xl shadow-lg transition-all duration-300 border border-white/20 overflow-hidden hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]"
+                        className="rounded-lg shadow-lg transition-all duration-300 border border-white/15 overflow-hidden hover:shadow-2xl hover:-translate-y-1"
                         style={{
                           background: cardColor.gradient,
-                          height: '320px',
+                          height: '300px',
                           display: 'flex',
                           flexDirection: 'column'
                         }}
@@ -1038,7 +1038,7 @@ export default function PublicLanding() {
                         {/* Icon Section - Top */}
                         <div className="p-6 pt-8 flex justify-center">
                           <div
-                            className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg p-3"
+                            className="w-16 h-16 rounded-lg flex items-center justify-center shadow-lg p-3"
                             style={{ backgroundColor: cardColor.iconBg }}
                           >
                             {service.iconImage ? (
@@ -1066,8 +1066,8 @@ export default function PublicLanding() {
                           className="flex-1 flex flex-col px-6 pb-6 pt-4 mt-auto"
                           style={{
                             background: 'rgba(255,255,255,0.95)',
-                            borderTopLeftRadius: '24px',
-                            borderTopRightRadius: '24px'
+                            borderTopLeftRadius: '8px',
+                            borderTopRightRadius: '8px'
                           }}
                         >
                           <h3 className="text-xl font-bold text-gray-900 leading-tight text-center mb-2">
@@ -1082,7 +1082,7 @@ export default function PublicLanding() {
 
                           {/* Launch Button */}
                           <button
-                            className="mt-3 w-full py-2 px-4 rounded-xl font-semibold text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
+                            className="mt-3 w-full py-2 px-4 rounded-lg font-semibold text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
                             style={{ background: cardColor.gradient }}
                           >
                             <span>Launch</span>
@@ -1106,7 +1106,7 @@ export default function PublicLanding() {
         transition={{ duration: 0.6, delay: 0.6 }}
         className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-8"
       >
-        <div className={`${styles.cardOverlay} rounded-xl p-6 text-center`}>
+        <div className={`${styles.cardOverlay} rounded-lg p-6 text-center`}>
           <div className="flex items-center justify-center gap-2 mb-4">
             <CogIcon className={`h-6 w-6 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`} />
             <h3 className={`text-xl font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>

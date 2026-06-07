@@ -32,7 +32,8 @@ class RedisCacheManager:
         Args:
             redis_url: Redis connection URL
         """
-        self.redis_client = redis.from_url(redis_url, decode_responses=False)
+        import os
+        self.redis_client = redis.from_url(redis_url, password=os.getenv("REDIS_PASSWORD"), decode_responses=False)
         self.metrics = {
             'hits': 0,
             'misses': 0,

@@ -101,6 +101,7 @@ async def get_current_user(request: Request):
         sessions = RedisSessionManager(
             host=os.getenv("REDIS_HOST", "unicorn-redis"),
             port=int(os.getenv("REDIS_PORT", "6379")),
+            password=os.getenv("REDIS_PASSWORD"),
         )
         if session_token in sessions:
             session_data = sessions[session_token]
@@ -119,6 +120,7 @@ async def get_current_user(request: Request):
             sessions = RedisSessionManager(
                 host=os.getenv("REDIS_HOST", "unicorn-redis"),
                 port=int(os.getenv("REDIS_PORT", "6379")),
+            password=os.getenv("REDIS_PASSWORD"),
             )
             if token in sessions:
                 session_data = sessions[token]

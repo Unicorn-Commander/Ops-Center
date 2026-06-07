@@ -1,6 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider as MuiThemeProvider, createTheme, CssBaseline } from '@mui/material';
 
 // Eagerly load critical components (needed on first render)
 import Layout from './components/Layout';
@@ -22,6 +23,121 @@ const queryClient = new QueryClient({
       staleTime: 5 * 60 * 1000 // 5 minutes
     }
   }
+});
+
+const muiTheme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#8b5cf6',
+      dark: '#6d28d9',
+      contrastText: '#f8fbff',
+    },
+    secondary: {
+      main: '#22d3ee',
+    },
+    background: {
+      default: '#070912',
+      paper: 'rgba(15, 23, 42, 0.92)',
+    },
+    text: {
+      primary: '#f8fbff',
+      secondary: '#a7b7cb',
+    },
+    divider: 'rgba(148, 163, 184, 0.22)',
+    error: {
+      main: '#fb7185',
+    },
+    warning: {
+      main: '#fbbf24',
+    },
+    success: {
+      main: '#34d399',
+    },
+    info: {
+      main: '#38bdf8',
+    },
+  },
+  shape: {
+    borderRadius: 8,
+  },
+  typography: {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    button: {
+      textTransform: 'none',
+      fontWeight: 700,
+    },
+  },
+  components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          backgroundColor: '#070912',
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+          border: '1px solid rgba(148, 163, 184, 0.18)',
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          backgroundColor: 'rgba(15, 23, 42, 0.92)',
+          border: '1px solid rgba(148, 163, 184, 0.18)',
+          boxShadow: '0 18px 48px rgba(0, 0, 0, 0.28)',
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+          minHeight: 38,
+        },
+        containedPrimary: {
+          background: 'linear-gradient(135deg, #7c3aed 0%, #0891b2 100%)',
+          color: '#f8fbff',
+          boxShadow: '0 12px 28px rgba(124, 58, 237, 0.2)',
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          backgroundColor: 'rgba(2, 6, 23, 0.46)',
+          '& fieldset': {
+            borderColor: 'rgba(148, 163, 184, 0.3)',
+          },
+          '&:hover fieldset': {
+            borderColor: 'rgba(34, 211, 238, 0.52)',
+          },
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          borderColor: 'rgba(148, 163, 184, 0.16)',
+        },
+        head: {
+          color: '#d8e8fb',
+          fontWeight: 700,
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+        },
+      },
+    },
+  },
 });
 
 // Import touch optimization utilities
@@ -304,18 +420,19 @@ function AdminContent({ children }) {
 function AppRoutes() {
   const location = useLocation();
   const [showHelp, setShowHelp] = useState(false);
+  const isAdminShellRoute = location.pathname.startsWith('/admin') && location.pathname !== '/admin/login';
   
   // Keyboard shortcut for help (only on admin pages)
   useEffect(() => {
     const handleKeyPress = (e) => {
-      if (e.key === '?' && !e.target.matches('input, textarea, select') && location.pathname.startsWith('/admin')) {
+      if (e.key === '?' && !e.target.matches('input, textarea, select') && isAdminShellRoute) {
         setShowHelp(!showHelp);
       }
     };
     
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showHelp, location.pathname]);
+  }, [showHelp, location.pathname, isAdminShellRoute]);
   
   const getCurrentPage = () => {
     const path = location.pathname.slice(1);
@@ -639,7 +756,7 @@ function AppRoutes() {
       </Suspense>
 
       {/* Help Panel - only show on admin pages */}
-      {location.pathname.startsWith('/admin') && (
+      {isAdminShellRoute && (
         <Suspense fallback={null}>
           <HelpPanel
             isOpen={showHelp}
@@ -666,15 +783,19 @@ function App() {
 
     // Check if user needs onboarding (only on admin pages)
     const hasCompletedTour = localStorage.getItem('uc1-tour-completed');
-    if (!hasCompletedTour && window.location.pathname.startsWith('/admin')) {
+    const pathname = window.location.pathname;
+    const isAdminShellRoute = pathname.startsWith('/admin') && pathname !== '/admin/login';
+    if (!hasCompletedTour && isAdminShellRoute) {
       setTimeout(() => setShowOnboarding(true), 1000);
     }
   }, []);
 
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <BrandingProvider>
+      <MuiThemeProvider theme={muiTheme}>
+        <CssBaseline />
+        <QueryClientProvider client={queryClient}>
+          <BrandingProvider>
             <DeploymentProvider>
               <ThemeProvider>
             <ToastProvider>
@@ -691,6 +812,7 @@ function App() {
         </DeploymentProvider>
             </BrandingProvider>
           </QueryClientProvider>
+      </MuiThemeProvider>
     </ErrorBoundary>
   );
 }

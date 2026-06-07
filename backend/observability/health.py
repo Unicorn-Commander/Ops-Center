@@ -253,6 +253,7 @@ class HealthChecker:
 
                 client = aioredis.from_url(
                     f"redis://{redis_host}:{redis_port}",
+                    password=os.getenv("REDIS_PASSWORD"),
                     socket_connect_timeout=5
                 )
                 await client.ping()

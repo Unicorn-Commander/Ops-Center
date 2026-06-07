@@ -14,6 +14,7 @@ Created: 2025-11-12
 """
 
 import redis.asyncio as aioredis
+import os
 import json
 import logging
 import hashlib
@@ -79,6 +80,7 @@ class RedisCache:
         try:
             self.redis = await aioredis.from_url(
                 self.redis_url,
+                password=os.getenv("REDIS_PASSWORD"),
                 encoding="utf-8",
                 decode_responses=True,
                 max_connections=100,  # Connection pooling

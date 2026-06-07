@@ -13,6 +13,7 @@ import docker
 import asyncio
 import logging
 import redis
+import os
 import json
 from enum import Enum
 
@@ -46,6 +47,7 @@ class MetricsCache:
                 host='unicorn-redis',
                 port=6379,
                 db=1,
+                password=os.getenv("REDIS_PASSWORD"),
                 decode_responses=True,
                 socket_timeout=5
             )

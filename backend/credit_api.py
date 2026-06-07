@@ -53,7 +53,7 @@ async def get_current_user_from_request(request: Request):
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     # Get session token from cookie
     session_token = request.cookies.get("session_token")

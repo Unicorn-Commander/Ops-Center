@@ -109,14 +109,14 @@ export default function BottomNavBar({ currentPath, userRole }) {
           visible: true
         },
         {
-          label: 'Billing',
-          value: '/admin/billing/system',
+          label: 'Revenue',
+          value: '/admin/billing/revenue',
           icon: <PaymentIcon />,
           visible: true
         },
         {
-          label: 'Analytics',
-          value: '/admin/monitoring/analytics',
+          label: 'AI',
+          value: '/admin/ai',
           icon: <AnalyticsIcon />,
           visible: true
         },

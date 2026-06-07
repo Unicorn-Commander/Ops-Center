@@ -35,7 +35,7 @@ async def get_current_admin(request: Request) -> str:
 
         redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        redis_sessions = RedisSessionManager(host=redis_host, port=redis_port)
+        redis_sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
         if session_token in redis_sessions:
             session_data = redis_sessions[session_token]
 

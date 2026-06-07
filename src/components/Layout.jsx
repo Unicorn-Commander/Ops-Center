@@ -203,8 +203,8 @@ export default function Layout({ children }) {
         localStorage.removeItem('token');
 
         // Redirect to Keycloak logout (clears SSO session, then shows our confirmation page)
-        if (data.logout_url) {
-          window.location.href = data.logout_url;
+        if (data.logout_url || data.sso_logout_url) {
+          window.location.href = data.logout_url || data.sso_logout_url;
           return;
         }
       }
@@ -217,7 +217,7 @@ export default function Layout({ children }) {
     localStorage.removeItem('userInfo');
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-    window.location.href = '/';
+    window.location.href = '/auth/logout';
   };
 
   const themeClasses = {
@@ -418,47 +418,35 @@ export default function Layout({ children }) {
 
             <div className="mt-4 flex flex-col flex-1">
               <nav className="flex-1 px-2 space-y-1">
-                {/* ============================ */}
-                {/* DASHBOARD - Top Level */}
-                {/* ============================ */}
+                {renderSectionHeader('Personal')}
+
                 {renderNavItem(navStructure.personal.dashboard)}
                 {renderNavItem(navStructure.personal.myDashboard)}
                 {renderNavItem(navStructure.personal.marketplace)}
 
-                {renderSectionHeader('Account')}
                 {renderNavSection('account', navStructure.personal.account)}
-
-                {renderSectionHeader('Subscription & Credits')}
                 {renderNavSection('subscription', navStructure.personal.subscription)}
 
                 {(userOrgRole === 'admin' || userOrgRole === 'owner') && (
-                  <>
-                    {renderSectionHeader('My Organization')}
-                    {renderNavSection('organization', navStructure.organization)}
-                  </>
+                  renderNavSection('organization', navStructure.organization)
                 )}
 
                 {userRole === 'admin' && (
                   <>
-                    {renderSectionHeader('People & Access', true)}
+                    {renderSectionHeader('Administration', true)}
+
                     {renderNavSection('peopleAccess', navStructure.system.children.peopleAccess)}
 
-                    {renderSectionHeader('Billing & Plans', true)}
                     {renderNavSection('billingPlans', navStructure.system.children.billingPlans)}
 
-                    {renderSectionHeader('AI & Models', true)}
                     {renderNavSection('aiModels', navStructure.system.children.aiModels)}
 
-                    {renderSectionHeader('Infrastructure', true)}
                     {renderNavSection('infrastructure', navStructure.system.children.infrastructure)}
 
-                    {renderSectionHeader('Monitoring', true)}
                     {renderNavSection('monitoring', navStructure.system.children.monitoring)}
 
-                    {renderSectionHeader('Integrations', true)}
                     {renderNavSection('integrations', navStructure.system.children.integrations)}
 
-                    {renderSectionHeader('Platform', true)}
                     {renderNavSection('platform', navStructure.system.children.platform)}
                   </>
                 )}

@@ -4230,6 +4230,37 @@ async def login(credentials: LoginCredentials, request: Request):
             )
         raise HTTPException(status_code=500, detail=str(e))
 
+def build_keycloak_logout_url(logout_confirmation_url: str, id_token: Optional[str] = None) -> str:
+    """Build a host-aware Keycloak end-session URL for this branded deployment."""
+    from urllib.parse import urlencode
+
+    external_host = os.getenv("EXTERNAL_HOST", EXTERNAL_HOST)
+    external_protocol = os.getenv("EXTERNAL_PROTOCOL", EXTERNAL_PROTOCOL)
+    keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"{external_protocol}://auth.{external_host}")
+    keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
+    client_id = os.getenv("KEYCLOAK_CLIENT_ID") or os.getenv("OAUTH_CLIENT_ID", "ops-center")
+
+    params = {
+        "client_id": client_id,
+        "post_logout_redirect_uri": logout_confirmation_url,
+    }
+    if id_token:
+        params["id_token_hint"] = id_token
+
+    return (
+        f"{keycloak_external_url.rstrip('/')}/realms/{keycloak_realm}"
+        f"/protocol/openid-connect/logout?{urlencode(params)}"
+    )
+
+
+def delete_session_cookie(response: Response) -> None:
+    """Clear both host-only and shared-domain session cookies."""
+    response.delete_cookie("session_token", path="/")
+    external_host = os.getenv("EXTERNAL_HOST", EXTERNAL_HOST)
+    if "." in external_host and not external_host.startswith("localhost"):
+        response.delete_cookie("session_token", path="/", domain=f".{external_host}")
+
+
 @app.post("/api/v1/auth/logout")
 async def logout(request: Request, current_user: dict = Depends(get_current_user)):
     """Logout and invalidate session"""
@@ -4264,29 +4295,22 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
         if session_token and session_token in sessions:
             del sessions[session_token]
 
-        # Build Keycloak logout URL with id_token_hint (required for auto-logout)
-        keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", "https://auth.unicorncommander.ai")
-        keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
         external_host = os.getenv("EXTERNAL_HOST", "unicorncommander.ai")
         external_protocol = os.getenv("EXTERNAL_PROTOCOL", "https")
 
         # Our logout confirmation page URL (where Keycloak will redirect after clearing session)
         logout_confirmation_url = f"{external_protocol}://{external_host}/auth/logged-out"
-
-        # Keycloak logout URL - using simple redirect_uri (not post_logout_redirect_uri)
-        # This avoids the strict validation that comes with id_token_hint
-        keycloak_logout_url = (
-            f"{keycloak_external_url}/realms/{keycloak_realm}/protocol/openid-connect/logout"
-            f"?client_id={os.getenv('KEYCLOAK_CLIENT_ID', 'ops-center')}"
-            f"&redirect_uri={logout_confirmation_url}"
-        )
+        keycloak_logout_url = build_keycloak_logout_url(logout_confirmation_url, id_token)
 
         print(f"Logout URL: {keycloak_logout_url}")
 
-        return {
+        response = JSONResponse(content={
             "message": "Logged out successfully",
-            "logout_url": keycloak_logout_url
-        }
+            "logout_url": keycloak_logout_url,
+            "sso_logout_url": keycloak_logout_url
+        })
+        delete_session_cookie(response)
+        return response
     except Exception as e:
         # Log the full exception details
         import traceback
@@ -5871,6 +5895,27 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     org_context = await get_user_org_context(user_id, email)
                     auto_provisioned = False  # Initialize for subscription check logic
 
+                    # Auto-provision org for first-time SSO users with no org context
+                    # (mirrors direct_login flow at line ~5615 — federated SSO users
+                    # arriving via auth.<domain>/realms/uchub need a local org row)
+                    user_role_for_provision = user_info.get("role", "viewer")
+                    if not org_context.get("org_id") and user_role_for_provision != "admin":
+                        display_name_for_provision = (
+                            user_info.get("name")
+                            or user_info.get("preferred_username")
+                            or username
+                        )
+                        try:
+                            org_context = await auto_provision_user_org(
+                                user_id=user_id,
+                                email=email,
+                                display_name=display_name_for_provision
+                            )
+                            auto_provisioned = True
+                            logger.info(f"SSO auto-provisioned org for user {email}")
+                        except Exception as provision_error:
+                            logger.error(f"SSO auto-provisioning failed for {email}: {provision_error}")
+
                     # Create session with org data (store id_token for logout!)
                     session_token = secrets.token_urlsafe(32)
                     sessions[session_token] = {
@@ -6009,12 +6054,15 @@ async def oauth_callback(request: Request, code: str, state: str = None):
 
 @app.get("/auth/logout")
 async def logout(request: Request):
-    """Logout and clear session"""
+    """Logout, clear local session, and continue through Keycloak SSO logout."""
     session_token = request.cookies.get("session_token")
+    id_token = None
 
     if session_token and session_token in sessions:
         # Get user info before deleting session
         session = sessions[session_token]
+        if isinstance(session, dict):
+            id_token = session.get("id_token")
         user_info = session.get("user", {})
         username = user_info.get('preferred_username') or user_info.get('username', 'unknown')
         user_id = user_info.get('sub') or user_info.get('id', 'unknown')
@@ -6031,104 +6079,128 @@ async def logout(request: Request):
         # Delete session
         del sessions[session_token]
 
-    # Redirect to root, which will trigger auth flow again
-    response = RedirectResponse(url="/")
-    response.delete_cookie("session_token")
+    external_host = os.getenv("EXTERNAL_HOST", EXTERNAL_HOST)
+    external_protocol = os.getenv("EXTERNAL_PROTOCOL", EXTERNAL_PROTOCOL)
+    logout_confirmation_url = f"{external_protocol}://{external_host}/auth/logged-out"
+    response = RedirectResponse(url=build_keycloak_logout_url(logout_confirmation_url, id_token))
+    delete_session_cookie(response)
     return response
 
 @app.get("/auth/logged-out")
 async def logged_out(request: Request):
-    """Logout confirmation page that auto-redirects to login"""
+    """Logout confirmation page."""
     # Delete any remaining session from Redis
     session_token = request.cookies.get("session_token")
     if session_token and session_token in sessions:
         del sessions[session_token]
 
+    from html import escape
+    brand_name = escape(os.getenv("BRANDING_PAGE_TITLE") or os.getenv("BRANDING_COMPANY_NAME") or "Ops-Center")
     html_content = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Logged Out - Unicorn Commander</title>
+        <title>Signed Out - """ + brand_name + """</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background:
+                    radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 32rem),
+                    radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.18), transparent 28rem),
+                    #07111f;
+                color: #e5f3ff;
                 min-height: 100vh;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                padding: 24px;
             }
             .card {
-                background: rgba(255, 255, 255, 0.95);
+                background: rgba(10, 20, 34, 0.88);
                 backdrop-filter: blur(10px);
-                border-radius: 20px;
-                padding: 60px 80px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(148, 163, 184, 0.24);
+                border-radius: 8px;
+                padding: 42px;
+                box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
                 text-align: center;
-                max-width: 500px;
+                max-width: 520px;
+                width: 100%;
             }
-            .icon {
-                font-size: 64px;
-                margin-bottom: 20px;
+            .mark {
+                width: 56px;
+                height: 56px;
+                border-radius: 16px;
+                margin: 0 auto 22px;
+                display: grid;
+                place-items: center;
+                background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+                color: #06101e;
+                font-size: 30px;
+                font-weight: 800;
             }
             h1 {
-                color: #667eea;
-                font-size: 32px;
-                margin-bottom: 10px;
+                color: #f8fbff;
+                font-size: clamp(28px, 5vw, 40px);
+                line-height: 1.1;
+                margin-bottom: 12px;
+                letter-spacing: 0;
             }
             p {
-                color: #666;
-                font-size: 18px;
-                margin-bottom: 30px;
+                color: #a9bed5;
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 28px;
             }
-            .spinner {
+            .actions {
+                display: flex;
+                justify-content: center;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .button {
                 display: inline-block;
-                width: 40px;
-                height: 40px;
-                border: 4px solid rgba(102, 126, 234, 0.2);
-                border-top-color: #667eea;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-            }
-            @keyframes spin {
-                to { transform: rotate(360deg); }
-            }
-            .redirect-info {
-                color: #999;
+                min-width: 136px;
+                padding: 12px 18px;
+                border-radius: 8px;
+                background: #22d3ee;
+                color: #06101e;
                 font-size: 14px;
-                margin-top: 20px;
+                font-weight: 700;
+                text-decoration: none;
+            }
+            .secondary {
+                background: rgba(148, 163, 184, 0.12);
+                color: #dcecff;
+                border: 1px solid rgba(148, 163, 184, 0.24);
+            }
+            .note {
+                color: #6f88a3;
+                font-size: 14px;
+                margin-top: 22px;
+                margin-bottom: 0;
             }
         </style>
     </head>
     <body>
         <div class="card">
-            <div class="icon">👋</div>
-            <h1>Logged Out Successfully</h1>
-            <p>You have been signed out of your account.</p>
-            <div class="spinner"></div>
-            <div class="redirect-info">Redirecting to home page...</div>
+            <div class="mark">U</div>
+            <h1>Signed Out</h1>
+            <p>Your Ops-Center session has ended. This page will stay here so the browser does not immediately start a new SSO login.</p>
+            <div class="actions">
+                <a class="button" href="/auth/login">Sign In Again</a>
+                <a class="button secondary" href="/">Return Home</a>
+            </div>
+            <p class="note">If another tab is still open, refresh it before continuing.</p>
         </div>
-        <script>
-            // Clear Keycloak session via hidden iframe
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = 'https://auth.unicorncommander.ai/realms/uchub/protocol/openid-connect/logout';
-            document.body.appendChild(iframe);
-
-            // Redirect to home page after 2 seconds (not /auth/login to avoid auto-login)
-            setTimeout(() => {
-                window.location.href = '/';
-            }, 2000);
-        </script>
     </body>
     </html>
     """
     # Create response and delete the session cookie
     response = HTMLResponse(content=html_content)
-    response.delete_cookie("session_token")
+    delete_session_cookie(response)
     return response
 
 @app.get("/auth/user")

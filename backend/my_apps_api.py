@@ -87,7 +87,7 @@ async def get_current_user_tier(request: Request) -> str:
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
         # Initialize session manager
-        sessions = RedisSessionManager(host=redis_host, port=redis_port)
+        sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
         # Get session data
         if session_token not in sessions:
@@ -227,7 +227,7 @@ async def get_user_org_from_session(request: Request) -> Optional[str]:
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
         # Initialize session manager
-        sessions = RedisSessionManager(host=redis_host, port=redis_port)
+        sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
         # Get session data
         if session_token not in sessions:

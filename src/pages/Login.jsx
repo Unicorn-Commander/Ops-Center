@@ -72,16 +72,14 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background: `linear-gradient(135deg, ${primaryColor}15 0%, ${primaryColor}08 100%), linear-gradient(to bottom right, #0f172a 0%, #1e293b 50%, #0f172a 100%)`
-      }}
+      className="min-h-screen flex items-center justify-center p-4 ops-command-bg"
+      style={{ '--login-primary': primaryColor }}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5 }}
-        className="bg-white/10 backdrop-blur-xl rounded-2xl shadow-2xl p-8 max-w-md w-full border border-white/20"
+        className="bg-slate-950/80 backdrop-blur-xl rounded-lg shadow-2xl p-8 max-w-md w-full border border-slate-700/70"
       >
         {/* Logo and Title */}
         <div className="text-center mb-8">
@@ -97,9 +95,9 @@ export default function Login() {
             {companyName}
           </h1>
           {subtitle && (
-            <p className="text-purple-200/80 text-sm font-medium mb-1">{subtitle}</p>
+            <p className="text-cyan-100/80 text-sm font-medium mb-1">{subtitle}</p>
           )}
-          <p className="text-purple-200/60">{tagline}</p>
+          <p className="text-slate-300/70">{tagline}</p>
         </div>
 
         {/* Error Message */}
@@ -123,11 +121,11 @@ export default function Login() {
               onClick={handleSSOLogin}
               className="w-full py-3 px-4 text-white font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
               style={{
-                background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColor}dd 100%)`
+                background: `linear-gradient(135deg, ${primaryColor} 0%, #0891b2 100%)`
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = `0 8px 25px ${primaryColor}40`;
+                e.currentTarget.style.boxShadow = `0 10px 28px rgba(8,145,178,0.28)`;
               }}
               onMouseOut={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)';
@@ -148,13 +146,13 @@ export default function Login() {
                 <div className="w-full border-t border-white/10"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-transparent text-purple-200/50">or</span>
+                <span className="px-4 bg-transparent text-slate-300/50">or</span>
               </div>
             </div>
 
             <button
               onClick={() => setShowLocalLogin(true)}
-              className="w-full py-3 px-4 bg-white/5 border border-white/10 text-purple-200 font-medium rounded-lg hover:bg-white/10 transition-all duration-200 flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 bg-slate-900/70 border border-slate-700 text-slate-200 font-medium rounded-lg hover:bg-slate-800 transition-all duration-200 flex items-center justify-center gap-2"
             >
               <LockClosedIcon className="h-5 w-5" />
               Sign in with local account
@@ -169,23 +167,23 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setShowLocalLogin(false)}
-                className="text-sm text-purple-300 hover:text-purple-200 transition-colors"
+                className="text-sm text-violet-300 hover:text-cyan-200 transition-colors"
               >
                 &larr; Back to SSO login
               </button>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-purple-200 mb-2">
+              <label className="block text-sm font-medium text-slate-200 mb-2">
                 Username
               </label>
               <div className="relative">
-                <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-purple-300" />
+                <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-cyan-300" />
                 <input
                   type="text"
                   value={credentials.username}
                   onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-950/70 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                   placeholder="Enter your username"
                   required
                   autoFocus
@@ -194,16 +192,16 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-purple-200 mb-2">
+              <label className="block text-sm font-medium text-slate-200 mb-2">
                 Password
               </label>
               <div className="relative">
-                <KeyIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-purple-300" />
+                <KeyIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-cyan-300" />
                 <input
                   type="password"
                   value={credentials.password}
                   onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-3 bg-slate-950/70 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                   placeholder="Enter your password"
                   required
                 />
@@ -213,9 +211,9 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 text-white font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 text-white font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2"
               style={{
-                background: `linear-gradient(135deg, ${primaryColor} 0%, ${primaryColor}dd 100%)`
+                background: `linear-gradient(135deg, ${primaryColor} 0%, #0891b2 100%)`
               }}
             >
               <LockClosedIcon className="h-5 w-5" />
@@ -226,7 +224,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-purple-300/50 text-xs">
+          <p className="text-slate-400 text-xs">
             {companyName} &mdash; {tagline}
           </p>
         </div>
