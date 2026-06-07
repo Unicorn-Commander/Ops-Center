@@ -86,7 +86,7 @@ export default function OrganizationBilling() {
 
   const fetchCurrentUser = async () => {
     try {
-      const response = await fetch('/api/v1/user', { credentials: 'include' });
+      const response = await fetch('/api/v1/auth/me', { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch user');
 
       const data = await response.json();

@@ -27,7 +27,7 @@ const LocalModelsManagement = () => {
       const data = await fetchFederationJson(
         `${API_BASE}/services?service_type=llm`
       );
-      setServices(data.services || []);
+      setServices(Array.isArray(data?.services) ? data.services : []);
       setError(null);
     } catch (err) {
       console.error("Failed to fetch federation LLM services:", err);
@@ -114,9 +114,9 @@ const LocalModelsManagement = () => {
         </Alert>
       )}
 
-      {filteredServices.map((svc, idx) => {
+      {(Array.isArray(filteredServices) ? filteredServices : []).map((svc, idx) => {
         const isOnline = svc.node_status !== "offline";
-        const models = svc.models || [];
+        const models = Array.isArray(svc.models) ? svc.models : [];
         const caps = svc.capabilities || {};
 
         return (

@@ -25,10 +25,13 @@ export const StripeProvider = ({ children }) => {
     return loadStripe(STRIPE_PUBLISHABLE_KEY);
   }, []);
 
-  // Don't render if Stripe key is missing
+  // ALWAYS provide an Elements context. When Stripe is unconfigured, stripePromise
+  // is null — <Elements stripe={null}> is valid (Stripe's documented "loading"
+  // state) and useStripe() returns null instead of throwing "Could not find
+  // Elements context". Children guard on a null stripe (the add-card button stays
+  // disabled). This keeps the Payment Methods screen rendering, never crashing.
   if (!stripePromise) {
-    console.error('Stripe is not configured. Please set VITE_STRIPE_PUBLISHABLE_KEY in .env');
-    return children;
+    console.warn('Stripe not configured (VITE_STRIPE_PUBLISHABLE_KEY missing) — card entry disabled, screen still renders.');
   }
 
   return (
