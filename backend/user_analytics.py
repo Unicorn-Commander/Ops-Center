@@ -187,7 +187,17 @@ async def query_keycloak_users(db: Session) -> List[Dict]:
         """
     )
 
-    result = await db.execute(query)
+    try:
+        result = await db.execute(query)
+    except Exception as exc:
+        # The Keycloak analytics DB is a commander-only dependency (default host
+        # uchub-postgres). When it is not reachable on this node, degrade to an
+        # empty user set so analytics panels render an empty state, not a 500.
+        try:
+            logger.warning("query_keycloak_users: keycloak analytics DB unavailable (%s); returning empty set", exc.__class__.__name__)
+        except Exception:
+            pass
+        return []
     users = []
 
     for row in result:

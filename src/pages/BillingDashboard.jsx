@@ -599,7 +599,10 @@ const AdminView = ({ theme }) => {
         // Backend returns: { distribution: [{ tier, user_count, percentage, mrr_contribution }] }
         // Transform to chart format
         const tierMap = {};
-        data.distribution.forEach(item => {
+        // Guard: this endpoint can legitimately return an empty/alternate shape
+        // (no subscriptions yet, or a segments-shaped payload). Treat missing
+        // data as "no data", never as a hard failure.
+        (data.distribution || []).forEach(item => {
           tierMap[item.tier] = item.user_count;
         });
 
@@ -656,18 +659,18 @@ const AdminView = ({ theme }) => {
 
       if (revenueRes.ok) {
         const data = await revenueRes.json();
-        setRevenueChartData(data.data.map((item, index) => ({
-          name: data.labels[index],
+        setRevenueChartData((data.data || []).map((item, index) => ({
+          name: data.labels?.[index],
           revenue: item
         })));
       }
 
       if (growthRes.ok) {
         const data = await growthRes.json();
-        setUserGrowthData(data.labels.map((label, index) => ({
+        setUserGrowthData((data.labels || []).map((label, index) => ({
           name: label,
-          signups: data.signups[index],
-          cancellations: data.cancellations[index]
+          signups: data.signups?.[index],
+          cancellations: data.cancellations?.[index]
         })));
       }
     } catch (error) {
