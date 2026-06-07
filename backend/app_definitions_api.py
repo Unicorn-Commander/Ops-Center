@@ -5,12 +5,15 @@ Management endpoints for app definitions and toggles.
 
 import os
 import sys
+import logging
 from typing import List, Optional, Union
 from datetime import datetime
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 # Router configuration
 router = APIRouter(prefix="/api/v1/admin/apps", tags=["admin", "apps"])
@@ -210,10 +213,15 @@ async def list_apps(
 
         query += " ORDER BY category ASC NULLS LAST, id ASC"
 
-        if params:
-            rows = await conn.fetch(query, *params)
-        else:
-            rows = await conn.fetch(query)
+        try:
+            if params:
+                rows = await conn.fetch(query, *params)
+            else:
+                rows = await conn.fetch(query)
+        except asyncpg.UndefinedTableError:
+            # app_definitions table is not provisioned on this deployment.
+            logger.warning("app_definitions table missing; returning empty app list")
+            return []
 
         return [normalize_app_row(row) for row in rows]
 

@@ -177,6 +177,7 @@ async def delete_session(session_id: str, admin: dict = Depends(_require_admin))
     r = aioredis.Redis(
         host=os.getenv("REDIS_HOST", "unicorn-redis"),
         port=int(os.getenv("REDIS_PORT", "6379")),
+        password=os.getenv("REDIS_PASSWORD"),
         decode_responses=True,
     )
     try:

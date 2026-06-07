@@ -49,7 +49,7 @@ class InviteCodeUpdate(BaseModel):
 
 class InviteCodeResponse(BaseModel):
     """Invite code response"""
-    id: int
+    id: str
     code: str
     tier_code: str
     tier_name: Optional[str] = None
@@ -189,22 +189,24 @@ async def check_code_validity(code: str, conn: asyncpg.Connection) -> Dict[str, 
     Returns:
         Dict with validity status and details
     """
+    # NOTE: invite_codes has no tier_code/current_uses columns on this deployment.
+    # Tier (if any) is stored in metadata; usage is tracked via uses_remaining.
     query = """
         SELECT
-            ic.id,
+            ic.id::text AS id,
             ic.code,
-            ic.tier_code,
+            COALESCE(ic.metadata->>'tier_code', '') AS tier_code,
             st.tier_name,
             ic.max_uses,
-            ic.current_uses,
+            (COALESCE(ic.max_uses, 0) - COALESCE(ic.uses_remaining, 0)) AS current_uses,
             ic.expires_at,
             ic.is_active,
             CASE
                 WHEN ic.max_uses IS NULL THEN NULL
-                ELSE (ic.max_uses - ic.current_uses)
+                ELSE ic.uses_remaining
             END as remaining_uses
         FROM invite_codes ic
-        LEFT JOIN subscription_tiers st ON ic.tier_code = st.tier_code
+        LEFT JOIN subscription_tiers st ON (ic.metadata->>'tier_code') = st.tier_code
         WHERE ic.code = $1
     """
 
@@ -372,23 +374,26 @@ async def list_codes(
         List of invite codes
     """
     try:
+        # NOTE: invite_codes has no tier_code/current_uses/updated_at/notes columns
+        # on this deployment. Tier (if any) lives in metadata->>'tier_code';
+        # usage is tracked via uses_remaining; notes (if any) in metadata->>'notes'.
         query = """
             SELECT
-                ic.id,
+                ic.id::text AS id,
                 ic.code,
-                ic.tier_code,
+                COALESCE(ic.metadata->>'tier_code', '') AS tier_code,
                 st.tier_name,
                 ic.max_uses,
-                ic.current_uses,
+                (COALESCE(ic.max_uses, 0) - COALESCE(ic.uses_remaining, 0)) AS current_uses,
                 ic.expires_at,
                 ic.is_active,
-                ic.created_by,
+                ic.created_by::text AS created_by,
                 ic.created_at,
-                ic.updated_at,
-                ic.notes,
+                ic.created_at AS updated_at,
+                ic.metadata->>'notes' AS notes,
                 COUNT(icr.id) as redemption_count
             FROM invite_codes ic
-            LEFT JOIN subscription_tiers st ON ic.tier_code = st.tier_code
+            LEFT JOIN subscription_tiers st ON (ic.metadata->>'tier_code') = st.tier_code
             LEFT JOIN invite_code_redemptions icr ON ic.id = icr.invite_code_id
             WHERE 1=1
         """
@@ -397,7 +402,7 @@ async def list_codes(
         param_num = 1
 
         if tier_code:
-            query += f" AND ic.tier_code = ${param_num}"
+            query += f" AND (ic.metadata->>'tier_code') = ${param_num}"
             params.append(tier_code)
             param_num += 1
 

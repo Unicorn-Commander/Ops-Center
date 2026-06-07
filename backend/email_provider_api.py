@@ -130,14 +130,19 @@ async def list_providers():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        cursor.execute("""
-            SELECT * FROM email_providers
-            ORDER BY created_at DESC
-        """)
-        providers = cursor.fetchall()
-
-        cursor.close()
-        conn.close()
+        try:
+            cursor.execute("""
+                SELECT * FROM email_providers
+                ORDER BY created_at DESC
+            """)
+            providers = cursor.fetchall()
+        except psycopg2.errors.UndefinedTable:
+            # email_providers table is not provisioned on this deployment.
+            logger.warning("email_providers table missing; returning empty provider list")
+            providers = []
+        finally:
+            cursor.close()
+            conn.close()
 
         # Mask secrets before returning
         masked_providers = [mask_secrets(dict(p)) for p in providers]
@@ -164,15 +169,20 @@ async def get_active_provider():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        cursor.execute("""
-            SELECT * FROM email_providers
-            WHERE enabled = true
-            LIMIT 1
-        """)
-        provider = cursor.fetchone()
-
-        cursor.close()
-        conn.close()
+        try:
+            cursor.execute("""
+                SELECT * FROM email_providers
+                WHERE enabled = true
+                LIMIT 1
+            """)
+            provider = cursor.fetchone()
+        except psycopg2.errors.UndefinedTable:
+            # email_providers table is not provisioned on this deployment.
+            logger.warning("email_providers table missing; no active provider")
+            provider = None
+        finally:
+            cursor.close()
+            conn.close()
 
         if not provider:
             return {

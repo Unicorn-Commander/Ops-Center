@@ -54,16 +54,17 @@ const muiTheme = createTheme({
     info: { main: '#38bdf8' },
   },
   shape: {
-    borderRadius: 12,
+    borderRadius: 16,
   },
   typography: {
     fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    h1: { fontWeight: 700, letterSpacing: '-0.02em' },
-    h2: { fontWeight: 700, letterSpacing: '-0.02em' },
-    h3: { fontWeight: 600, letterSpacing: '-0.015em' },
-    h4: { fontWeight: 600, letterSpacing: '-0.01em' },
-    h5: { fontWeight: 600 },
-    h6: { fontWeight: 600 },
+    // Display type = Space Grotesk (confident, tight), matching homegrow's craft.
+    h1: { fontFamily: '"Space Grotesk", "Inter", sans-serif', fontWeight: 700, letterSpacing: '-0.025em' },
+    h2: { fontFamily: '"Space Grotesk", "Inter", sans-serif', fontWeight: 700, letterSpacing: '-0.022em' },
+    h3: { fontFamily: '"Space Grotesk", "Inter", sans-serif', fontWeight: 600, letterSpacing: '-0.018em' },
+    h4: { fontFamily: '"Space Grotesk", "Inter", sans-serif', fontWeight: 600, letterSpacing: '-0.012em' },
+    h5: { fontFamily: '"Space Grotesk", "Inter", sans-serif', fontWeight: 600, letterSpacing: '-0.008em' },
+    h6: { fontWeight: 600, letterSpacing: '-0.005em' },
     button: {
       textTransform: 'none',
       fontWeight: 600,
@@ -90,11 +91,14 @@ const muiTheme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          backgroundColor: '#12141f',
-          border: '1px solid rgba(148, 163, 184, 0.12)',
-          // elevation = luminance + a whisper of shadow, not a heavy drop
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(2,6,23,0.35)',
-          borderRadius: 14,
+          // Subtle glass: translucent surface + backdrop blur (readable, not gimmicky)
+          backgroundColor: 'rgba(18, 21, 33, 0.72)',
+          backdropFilter: 'blur(14px) saturate(125%)',
+          WebkitBackdropFilter: 'blur(14px) saturate(125%)',
+          border: '1px solid rgba(160, 170, 210, 0.12)',
+          // depth: luminance + a soft deep shadow + faint inner highlight
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 18px 48px -24px rgba(0,0,0,0.7)',
+          borderRadius: 16,
         },
       },
     },
@@ -833,13 +837,11 @@ function App() {
       enableRipple: false
     });
 
-    // Check if user needs onboarding (only on admin pages)
-    const hasCompletedTour = localStorage.getItem('uc1-tour-completed');
-    const pathname = window.location.pathname;
-    const isAdminShellRoute = pathname.startsWith('/admin') && pathname !== '/admin/login';
-    if (!hasCompletedTour && isAdminShellRoute) {
-      setTimeout(() => setShowOnboarding(true), 1000);
-    }
+    // Onboarding tour DISABLED 2026-06-07. The 8-step feature walkthrough
+    // ("Welcome to UC-1 Pro Admin Dashboard! 🦄") is parked until it is replaced
+    // by a real first-run SETUP CHECKLIST (LLM provider keys, email/SMTP, Stripe,
+    // Cloudflare token, federation). It no longer auto-shows on admin pages.
+    // (showOnboarding stays false → <OnboardingTour/> never mounts.)
   }, []);
 
   return (

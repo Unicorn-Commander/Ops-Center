@@ -393,13 +393,13 @@ export default function AdminDashboard() {
     >
       {/* Page Header */}
       <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-6 shadow-xl`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-14 h-14 shrink-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl">
               <ComputerDesktopIcon className="h-7 w-7 text-white" />
             </div>
-            <div>
-              <h1 className={`text-2xl font-bold ${currentTheme === 'unicorn' ? 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400' : 'text-white'}`}>
+            <div className="min-w-0">
+              <h1 className={`text-xl sm:text-2xl font-bold truncate ${currentTheme === 'unicorn' ? 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400' : 'text-white'}`}>
                 {currentUser ? `Welcome back, ${currentUser.firstName || currentUser.username || 'Admin'}` : 'Admin Dashboard'}
               </h1>
               <p className={`${currentTheme === 'unicorn' ? 'text-purple-200/80' : 'text-gray-400'} text-sm`}>

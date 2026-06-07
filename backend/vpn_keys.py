@@ -28,6 +28,11 @@ HEADSCALE_USER_ID = "1"  # "unicorn"
 CMD_TIMEOUT = 15
 
 
+class HeadscaleUnavailable(Exception):
+    """Raised when the Headscale (VPN) container is not deployed on this node."""
+    pass
+
+
 # ============================================================================
 # Auth (session + admin)
 # ============================================================================
@@ -112,6 +117,11 @@ def _headscale(args: List[str]) -> str:
         stdout = (result.stdout or "").strip()
         msg = stderr or stdout or "headscale command failed"
         logger.error("headscale %s failed (rc=%s): %s", " ".join(args), result.returncode, msg)
+        # Distinguish "VPN not deployed on this node" from a genuine headscale error
+        # so read endpoints can degrade gracefully instead of returning 500.
+        low = msg.lower()
+        if "no such container" in low or "cannot connect to the docker daemon" in low:
+            raise HeadscaleUnavailable(msg)
         raise HTTPException(status_code=500, detail="Headscale: " + msg[:200])
 
     return result.stdout
@@ -216,7 +226,11 @@ def _serialize_node(n: dict) -> dict:
 async def list_vpn_keys(_: Dict = Depends(require_admin)):
     # Note: `preauthkeys list` does not take a user filter; it returns all
     # keys across users, each stamped with its owning user object.
-    data = _headscale_json(["preauthkeys", "list"])
+    try:
+        data = _headscale_json(["preauthkeys", "list"])
+    except HeadscaleUnavailable:
+        logger.warning("Headscale not deployed on this node; returning empty VPN key list")
+        return []
     keys = data if isinstance(data, list) else []
     # Filter to our configured user id so the UI only shows the mesh we manage.
     keys = [k for k in keys if str((k.get("user") or {}).get("id", "")) == HEADSCALE_USER_ID]
@@ -240,7 +254,10 @@ async def create_vpn_key(req: CreateVPNKeyRequest, _: Dict = Depends(require_adm
     # Note: headscale preauthkeys create -o json returns just the key string on some
     # versions and a full object on others. Fetch the new key via list afterward
     # to normalise the response shape.
-    raw = _headscale(args + ["-o", "json"]).strip()
+    try:
+        raw = _headscale(args + ["-o", "json"]).strip()
+    except HeadscaleUnavailable:
+        raise HTTPException(status_code=503, detail="Headscale (VPN) is not deployed on this node")
     created_key_str: Optional[str] = None
     parsed = None
     if raw:
@@ -281,7 +298,10 @@ async def create_vpn_key(req: CreateVPNKeyRequest, _: Dict = Depends(require_adm
 
 @router.delete("/vpn-keys/{key_id}")
 async def expire_vpn_key(key_id: int, _: Dict = Depends(require_admin)):
-    _headscale(["preauthkeys", "expire", "-i", str(key_id), "--force"])
+    try:
+        _headscale(["preauthkeys", "expire", "-i", str(key_id), "--force"])
+    except HeadscaleUnavailable:
+        raise HTTPException(status_code=503, detail="Headscale (VPN) is not deployed on this node")
     logger.info("Expired VPN pre-auth key id=%s", key_id)
     return {"success": True, "message": "VPN key expired"}
 
@@ -292,20 +312,30 @@ async def expire_vpn_key(key_id: int, _: Dict = Depends(require_admin)):
 
 @router.get("/nodes")
 async def list_nodes(_: Dict = Depends(require_admin)):
-    data = _headscale_json(["nodes", "list"])
+    try:
+        data = _headscale_json(["nodes", "list"])
+    except HeadscaleUnavailable:
+        logger.warning("Headscale not deployed on this node; returning empty node list")
+        return []
     nodes = data if isinstance(data, list) else []
     return [_serialize_node(n) for n in nodes]
 
 
 @router.delete("/nodes/{node_id}")
 async def delete_node(node_id: int, _: Dict = Depends(require_admin)):
-    _headscale(["nodes", "delete", "-i", str(node_id), "--force"])
+    try:
+        _headscale(["nodes", "delete", "-i", str(node_id), "--force"])
+    except HeadscaleUnavailable:
+        raise HTTPException(status_code=503, detail="Headscale (VPN) is not deployed on this node")
     logger.info("Deleted VPN node id=%s", node_id)
     return {"success": True, "message": "Node removed"}
 
 
 @router.post("/nodes/{node_id}/expire")
 async def expire_node(node_id: int, _: Dict = Depends(require_admin)):
-    _headscale(["nodes", "expire", "-i", str(node_id), "--force"])
+    try:
+        _headscale(["nodes", "expire", "-i", str(node_id), "--force"])
+    except HeadscaleUnavailable:
+        raise HTTPException(status_code=503, detail="Headscale (VPN) is not deployed on this node")
     logger.info("Expired VPN node id=%s", node_id)
     return {"success": True, "message": "Node expired"}

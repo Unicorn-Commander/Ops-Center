@@ -12,11 +12,13 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 # Keycloak Configuration
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "https://auth.unicorncommander.ai")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "master")
-KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "admin-cli")
+# NOTE: use `(os.getenv(...) or default)` so an env var that is SET-but-EMPTY
+# still falls back to the sane default (a bare getenv default does not).
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL") or "https://auth.unicorncommander.ai"
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM") or "master"
+KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID") or "admin-cli"
 KEYCLOAK_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
-KEYCLOAK_ADMIN_USERNAME = os.getenv("KEYCLOAK_ADMIN_USER", os.getenv("KEYCLOAK_ADMIN_USERNAME", "admin"))
+KEYCLOAK_ADMIN_USERNAME = os.getenv("KEYCLOAK_ADMIN_USER") or os.getenv("KEYCLOAK_ADMIN_USERNAME") or "admin"
 KEYCLOAK_ADMIN_PASSWORD = os.getenv("KEYCLOAK_ADMIN_PASSWORD", "")
 
 # Token cache
@@ -71,9 +73,105 @@ async def get_admin_token() -> str:
         raise
 
 
+# Keycloak's own PostgreSQL database (read-only fallback). Used to list users
+# when the admin REST API is unavailable on this node (e.g. the admin-cli
+# password is not provisioned here). The Keycloak admin REST API remains the
+# primary path; this fallback is read-only and never used for writes.
+KEYCLOAK_DB_HOST = os.getenv("KEYCLOAK_DB_HOST") or "keycloak-db"
+KEYCLOAK_DB_PORT = int(os.getenv("KEYCLOAK_DB_PORT") or "5432")
+KEYCLOAK_DB_NAME = os.getenv("KEYCLOAK_DB_NAME") or "keycloak"
+KEYCLOAK_DB_USER = os.getenv("KEYCLOAK_DB_USER") or "keycloak"
+KEYCLOAK_DB_PASSWORD = os.getenv("KEYCLOAK_DB_PASSWORD") or "keycloak_secure_password_2025"
+
+
+async def get_all_users_from_db() -> List[Dict[str, Any]]:
+    """
+    Read users for the configured realm directly from Keycloak's PostgreSQL DB.
+
+    Returns dicts shaped like the Keycloak admin REST API (id, username, email,
+    firstName, lastName, enabled, emailVerified, createdTimestamp, attributes,
+    realmRoles) so existing callers work unchanged. Read-only fallback only.
+    """
+    import asyncpg
+
+    conn = await asyncpg.connect(
+        host=KEYCLOAK_DB_HOST,
+        port=KEYCLOAK_DB_PORT,
+        user=KEYCLOAK_DB_USER,
+        password=KEYCLOAK_DB_PASSWORD,
+        database=KEYCLOAK_DB_NAME,
+    )
+    try:
+        user_rows = await conn.fetch(
+            """
+            SELECT u.id, u.username, u.email, u.first_name, u.last_name,
+                   u.enabled, u.email_verified, u.created_timestamp
+            FROM user_entity u
+            JOIN realm r ON u.realm_id = r.id
+            WHERE r.name = $1
+            ORDER BY u.created_timestamp DESC
+            """,
+            KEYCLOAK_REALM,
+        )
+
+        user_ids = [row["id"] for row in user_rows]
+        attrs_by_user: Dict[str, Dict[str, List[str]]] = {}
+        roles_by_user: Dict[str, List[str]] = {}
+
+        if user_ids:
+            attr_rows = await conn.fetch(
+                """
+                SELECT user_id, name, value
+                FROM user_attribute
+                WHERE user_id = ANY($1::varchar[])
+                """,
+                user_ids,
+            )
+            for ar in attr_rows:
+                attrs_by_user.setdefault(ar["user_id"], {}).setdefault(ar["name"], []).append(ar["value"])
+
+            role_rows = await conn.fetch(
+                """
+                SELECT urm.user_id, kr.name AS role_name
+                FROM user_role_mapping urm
+                JOIN keycloak_role kr ON urm.role_id = kr.id
+                WHERE urm.user_id = ANY($1::varchar[])
+                """,
+                user_ids,
+            )
+            for rr in role_rows:
+                roles_by_user.setdefault(rr["user_id"], []).append(rr["role_name"])
+
+        users: List[Dict[str, Any]] = []
+        for row in user_rows:
+            uid = row["id"]
+            users.append({
+                "id": uid,
+                "username": row["username"],
+                "email": row["email"],
+                "firstName": row["first_name"] or "",
+                "lastName": row["last_name"] or "",
+                "enabled": bool(row["enabled"]),
+                "emailVerified": bool(row["email_verified"]),
+                "createdTimestamp": row["created_timestamp"],
+                "attributes": attrs_by_user.get(uid, {}),
+                "realmRoles": roles_by_user.get(uid, []),
+            })
+
+        logger.info(f"Fetched {len(users)} users from Keycloak DB (realm={KEYCLOAK_REALM})")
+        return users
+    finally:
+        await conn.close()
+
+
 async def get_all_users() -> List[Dict[str, Any]]:
     """
-    Fetch all users from Keycloak
+    Fetch all users from Keycloak.
+
+    Primary path: the Keycloak admin REST API. If that is unavailable on this
+    node (e.g. admin credentials not provisioned) it falls back to a read-only
+    query against Keycloak's PostgreSQL database so the admin UI still shows
+    real users.
     """
     try:
         token = await get_admin_token()
@@ -92,11 +190,84 @@ async def get_all_users() -> List[Dict[str, Any]]:
                 return users
             else:
                 logger.error(f"Failed to fetch users: {response.status_code} - {response.text}")
-                return []
 
     except Exception as e:
-        logger.error(f"Error fetching users from Keycloak: {e}")
+        logger.error(f"Error fetching users from Keycloak REST API: {e}")
+
+    # Fallback: read users directly from Keycloak's database (read-only).
+    try:
+        return await get_all_users_from_db()
+    except Exception as db_err:
+        logger.error(f"Keycloak DB fallback for user list failed: {db_err}")
         return []
+
+
+async def _get_user_from_db(field: str, value: str) -> Optional[Dict[str, Any]]:
+    """
+    Read a single user from Keycloak's database by 'email', 'username', or 'id'.
+    Read-only fallback for when the admin REST API is unavailable on this node.
+    """
+    if field not in ("email", "username", "id"):
+        return None
+
+    try:
+        all_users = await get_all_users_from_db()
+    except Exception as db_err:
+        logger.error(f"Keycloak DB fallback lookup ({field}) failed: {db_err}")
+        return None
+
+    needle = (value or "").lower() if field != "id" else value
+    for user in all_users:
+        candidate = user.get(field)
+        if candidate is None:
+            continue
+        if field == "id":
+            if candidate == value:
+                return user
+        elif candidate.lower() == needle:
+            return user
+    return None
+
+
+async def get_realm_session_config_from_db() -> Optional[Dict[str, Any]]:
+    """
+    Read the realm's session/token settings directly from Keycloak's database.
+
+    Read-only fallback for when the admin REST API is unavailable on this node.
+    Returns a dict using the Keycloak admin-API camelCase keys so callers that
+    expect the REST shape work unchanged.
+    """
+    import asyncpg
+
+    conn = await asyncpg.connect(
+        host=KEYCLOAK_DB_HOST,
+        port=KEYCLOAK_DB_PORT,
+        user=KEYCLOAK_DB_USER,
+        password=KEYCLOAK_DB_PASSWORD,
+        database=KEYCLOAK_DB_NAME,
+    )
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT sso_idle_timeout, sso_max_lifespan, offline_session_idle_timeout,
+                   access_token_lifespan, access_code_lifespan, remember_me, login_lifespan
+            FROM realm
+            WHERE name = $1
+            """,
+            KEYCLOAK_REALM,
+        )
+        if not row:
+            return None
+        return {
+            "ssoSessionIdleTimeout": row["sso_idle_timeout"],
+            "ssoSessionMaxLifespan": row["sso_max_lifespan"],
+            "offlineSessionIdleTimeout": row["offline_session_idle_timeout"],
+            "accessTokenLifespan": row["access_token_lifespan"],
+            "rememberMe": bool(row["remember_me"]),
+            "accessCodeLifespan": row["access_code_lifespan"],
+        }
+    finally:
+        await conn.close()
 
 
 async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
@@ -124,11 +295,12 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
                     return None
             else:
                 logger.error(f"Failed to fetch user {email}: {response.status_code}")
-                return None
 
     except Exception as e:
-        logger.error(f"Error fetching user by email: {e}")
-        return None
+        logger.error(f"Error fetching user by email (REST): {e}")
+
+    # Read-only DB fallback when the admin REST API is unavailable.
+    return await _get_user_from_db("email", email)
 
 
 async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
@@ -156,11 +328,12 @@ async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
                     return None
             else:
                 logger.error(f"Failed to fetch user {username}: {response.status_code}")
-                return None
 
     except Exception as e:
-        logger.error(f"Error fetching user by username: {e}")
-        return None
+        logger.error(f"Error fetching user by username (REST): {e}")
+
+    # Read-only DB fallback when the admin REST API is unavailable.
+    return await _get_user_from_db("username", username)
 
 
 async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
@@ -186,11 +359,12 @@ async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
                 return None
             else:
                 logger.error(f"Failed to fetch user {user_id}: {response.status_code}")
-                return None
 
     except Exception as e:
-        logger.error(f"Error fetching user by ID: {e}")
-        return None
+        logger.error(f"Error fetching user by ID (REST): {e}")
+
+    # Read-only DB fallback when the admin REST API is unavailable.
+    return await _get_user_from_db("id", user_id)
 
 
 async def update_user_attributes(email: str, attributes: Dict[str, List[str]]) -> bool:

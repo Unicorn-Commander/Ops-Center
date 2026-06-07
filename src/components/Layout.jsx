@@ -556,7 +556,7 @@ export default function Layout({ children }) {
               </div>
 
               {/* Right: Upgrade Button, Organization Selector, Notification Bell and User Info */}
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                 {/* Upgrade Button (if not Enterprise tier) */}
                 {userInfo.subscription_tier && userInfo.subscription_tier !== 'enterprise' && (
                   <Link
@@ -604,7 +604,7 @@ export default function Layout({ children }) {
                   }`}>
                     {userInfo.username?.charAt(0).toUpperCase() || 'U'}
                   </div>
-                  <div className="flex flex-col">
+                  <div className="hidden sm:flex flex-col min-w-0">
                     <span className={`text-sm font-medium ${
                       currentTheme === 'unicorn'
                         ? 'text-white'
