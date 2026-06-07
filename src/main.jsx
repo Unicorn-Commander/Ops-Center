@@ -4,6 +4,7 @@ import App from './App.jsx'
 import './index.css'
 import './styles/landing.css'
 import './styles/mobile-responsive.css'
+import './styles/design-system.css'  // world-class design layer (loaded last)
 
 // Import Web Vitals tracking
 import { reportWebVitals } from './utils/webVitals'

@@ -123,7 +123,7 @@ class CreditManager:
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT user_id, balance, tier, lifetime_credits, monthly_cap,
+                SELECT user_id, credits_remaining AS balance, tier, lifetime_credits, monthly_cap,
                         monthly_usage, monthly_reset_at, last_updated, created_at
                 FROM user_credits
                 WHERE user_id::text = $1

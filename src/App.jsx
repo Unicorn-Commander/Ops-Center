@@ -31,42 +31,45 @@ const muiTheme = createTheme({
     primary: {
       main: '#8b5cf6',
       dark: '#6d28d9',
+      light: '#a855f7',
       contrastText: '#f8fbff',
     },
     secondary: {
       main: '#22d3ee',
+      contrastText: '#04121a',
     },
     background: {
       default: '#070912',
-      paper: 'rgba(15, 23, 42, 0.92)',
+      paper: '#12141f',
     },
     text: {
-      primary: '#f8fbff',
-      secondary: '#a7b7cb',
+      primary: '#f3f5fb',
+      secondary: '#aebbcf',
+      disabled: '#64708a',
     },
-    divider: 'rgba(148, 163, 184, 0.22)',
-    error: {
-      main: '#fb7185',
-    },
-    warning: {
-      main: '#fbbf24',
-    },
-    success: {
-      main: '#34d399',
-    },
-    info: {
-      main: '#38bdf8',
-    },
+    divider: 'rgba(148, 163, 184, 0.14)',
+    error: { main: '#fb7185' },
+    warning: { main: '#fbbf24' },
+    success: { main: '#34d399' },
+    info: { main: '#38bdf8' },
   },
   shape: {
-    borderRadius: 8,
+    borderRadius: 12,
   },
   typography: {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    h1: { fontWeight: 700, letterSpacing: '-0.02em' },
+    h2: { fontWeight: 700, letterSpacing: '-0.02em' },
+    h3: { fontWeight: 600, letterSpacing: '-0.015em' },
+    h4: { fontWeight: 600, letterSpacing: '-0.01em' },
+    h5: { fontWeight: 600 },
+    h6: { fontWeight: 600 },
     button: {
       textTransform: 'none',
-      fontWeight: 700,
+      fontWeight: 600,
+      letterSpacing: 0,
     },
+    overline: { letterSpacing: '0.06em', fontWeight: 600 },
   },
   components: {
     MuiCssBaseline: {
@@ -80,41 +83,55 @@ const muiTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          border: '1px solid rgba(148, 163, 184, 0.18)',
+          border: '1px solid rgba(148, 163, 184, 0.12)',
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          backgroundColor: 'rgba(15, 23, 42, 0.92)',
-          border: '1px solid rgba(148, 163, 184, 0.18)',
-          boxShadow: '0 18px 48px rgba(0, 0, 0, 0.28)',
+          backgroundColor: '#12141f',
+          border: '1px solid rgba(148, 163, 184, 0.12)',
+          // elevation = luminance + a whisper of shadow, not a heavy drop
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(2,6,23,0.35)',
+          borderRadius: 14,
         },
       },
     },
     MuiButton: {
+      defaultProps: { disableElevation: true },
       styleOverrides: {
         root: {
-          borderRadius: 8,
+          borderRadius: 10,
           minHeight: 38,
+          fontWeight: 600,
         },
         containedPrimary: {
-          background: 'linear-gradient(135deg, #7c3aed 0%, #0891b2 100%)',
+          background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
           color: '#f8fbff',
-          boxShadow: '0 12px 28px rgba(124, 58, 237, 0.2)',
+          boxShadow: '0 6px 18px rgba(124, 58, 237, 0.28)',
+          '&:hover': {
+            background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+            boxShadow: '0 8px 22px rgba(124, 58, 237, 0.40)',
+          },
         },
+        outlined: { borderColor: 'rgba(148, 163, 184, 0.28)' },
       },
     },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          backgroundColor: 'rgba(2, 6, 23, 0.46)',
+          backgroundColor: 'rgba(2, 6, 23, 0.40)',
+          borderRadius: 10,
           '& fieldset': {
-            borderColor: 'rgba(148, 163, 184, 0.3)',
+            borderColor: 'rgba(148, 163, 184, 0.22)',
           },
           '&:hover fieldset': {
-            borderColor: 'rgba(34, 211, 238, 0.52)',
+            borderColor: 'rgba(168, 85, 247, 0.45)',
+          },
+          '&.Mui-focused fieldset': {
+            borderColor: '#a855f7',
+            borderWidth: 2,
           },
         },
       },
@@ -122,19 +139,54 @@ const muiTheme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         root: {
-          borderColor: 'rgba(148, 163, 184, 0.16)',
+          borderColor: 'rgba(148, 163, 184, 0.12)',
         },
         head: {
-          color: '#d8e8fb',
-          fontWeight: 700,
+          color: '#c4d2e6',
+          fontWeight: 600,
+          fontSize: '0.78rem',
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          backgroundColor: 'rgba(255,255,255,0.015)',
         },
       },
     },
     MuiChip: {
       styleOverrides: {
-        root: {
+        root: { borderRadius: 8, fontWeight: 500 },
+        outlined: { borderColor: 'rgba(148, 163, 184, 0.24)' },
+      },
+    },
+    MuiSkeleton: {
+      styleOverrides: {
+        root: { backgroundColor: 'rgba(148, 163, 184, 0.10)', borderRadius: 8 },
+      },
+    },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: {
+          backgroundColor: '#20232f',
+          border: '1px solid rgba(148, 163, 184, 0.18)',
+          fontSize: '0.75rem',
           borderRadius: 8,
+          padding: '6px 10px',
+          boxShadow: '0 8px 24px rgba(2,6,23,0.5)',
         },
+        arrow: { color: '#20232f' },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: { borderRadius: 12, border: '1px solid', alignItems: 'center' },
+        standardError:   { backgroundColor: 'rgba(220,38,38,0.10)', borderColor: 'rgba(248,113,113,0.30)', color: '#fca5a5' },
+        standardWarning: { backgroundColor: 'rgba(217,119,6,0.10)', borderColor: 'rgba(251,191,36,0.30)', color: '#fcd34d' },
+        standardInfo:    { backgroundColor: 'rgba(37,99,235,0.10)', borderColor: 'rgba(96,165,250,0.30)', color: '#93c5fd' },
+        standardSuccess: { backgroundColor: 'rgba(22,163,74,0.10)', borderColor: 'rgba(74,222,128,0.30)', color: '#86efac' },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: { textTransform: 'none', fontWeight: 600, minHeight: 44 },
       },
     },
   },
@@ -344,7 +396,7 @@ function ProtectedRoute({ children }) {
   }, []);
   
   if (checking) {
-    return <div>Loading...</div>;
+    return <LoadingScreen />;
   }
   
   if (!authenticated) {
@@ -358,7 +410,7 @@ function ProtectedRoute({ children }) {
       const next = encodeURIComponent(path + window.location.search);
       window.location.href = `/admin/login?next=${next}`;
     }
-    return <div>Loading...</div>;
+    return <LoadingScreen />;
   }
   
   return children;

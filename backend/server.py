@@ -2345,6 +2345,23 @@ async def get_current_user(request: Request):
     if not session_token or session_token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
+    session = sessions[session_token]
+    user_data = session.get("user", {})
+
+    # Map Keycloak/Authentik roles to ops-center roles
+    if "role" not in user_data:
+        # Extract role from Keycloak groups/roles
+        mapped_role = map_keycloak_role(user_data)
+        user_data["role"] = mapped_role
+
+        # Update session with role for future requests
+        session["user"] = user_data
+        sessions[session_token] = session  # Save back to Redis
+
+        logger.info(f"Mapped role '{mapped_role}' for user '{user_data.get('preferred_username', user_data.get('username', 'unknown'))}'")
+
+    return user_data
+
 
 async def get_current_user_optional(request: Request) -> Optional[dict]:
     """Get current user if authenticated, otherwise return None (doesn't fail)"""
@@ -4320,14 +4337,32 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
 
 @app.get("/api/v1/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
-    """Get current user info"""
+    """Get current user info.
+
+    The session user dict may be a local-account shape (user_id) or a
+    Keycloak/SSO shape (sub/email/preferred_username). Resolve the id from
+    whatever the session has, look it up in the local user store, and if the
+    user is not in the local store (SSO users won't be) or the lookup fails,
+    fall back to returning the session user dict which already carries the
+    authenticated identity. This must never 500 -- the Revenue page depends on it.
+    """
+    current_user = current_user or {}
+    # Try the common id keys in priority order
+    user_id = (
+        current_user.get("user_id")
+        or current_user.get("sub")
+        or current_user.get("id")
+        or current_user.get("keycloakId")
+        or current_user.get("email")
+    )
     try:
-        user = auth_manager.get_user(current_user["user_id"])
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
+        user = auth_manager.get_user(user_id) if user_id else None
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"get_me: auth_manager.get_user failed for '{user_id}': {e}")
+        user = None
+
+    # Fall back to the session user dict (already contains the authenticated info)
+    return user or current_user
 
 @app.put("/api/v1/auth/profile")
 async def update_profile(
@@ -4799,13 +4834,37 @@ async def get_network_configuration(current_user: dict = Depends(require_admin))
         logger.info(f"Network configuration read by admin user: {current_user.get('username', 'unknown')}")
 
         return network_status
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Error reading network configuration: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to read network configuration: {str(e)}")
+        # Degrade gracefully: in a container (no netplan / restricted host
+        # network files) full discovery may fail. Return a valid NetworkStatus
+        # populated with whatever is available instead of 500ing the page.
+        logger.warning(f"Network configuration partial read (degraded): {e}")
+        import socket
+        try:
+            hostname = socket.gethostname()
+        except Exception:
+            hostname = "unknown"
+        container_ip = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                container_ip = s.getsockname()[0]
+            finally:
+                s.close()
+        except Exception:
+            container_ip = None
+        return NetworkStatus(
+            ip=container_ip,
+            netmask=None,
+            gateway=None,
+            dns_servers=[],
+            hostname=hostname or "unknown",
+            interface="unknown",
+            dhcp=False,
+        )
 
 
 @app.put("/api/v1/system/network")
