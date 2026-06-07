@@ -28,8 +28,11 @@ import {
   Star as StarIcon,
   History as HistoryIcon
 } from '@mui/icons-material';
+import { useBillingConfig } from '../hooks/useBillingConfig';
+import ProvenanceBadge from '../components/ProvenanceBadge';
 
 const CreditPurchase = () => {
+  const { config: billingConfig } = useBillingConfig();
   const [packages, setPackages] = useState([]);
   const [balance, setBalance] = useState(null);
   const [history, setHistory] = useState([]);
@@ -189,9 +192,12 @@ const CreditPurchase = () => {
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Buy Credits
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: 0.5 }}>
+          <Typography variant="h4" component="h1">
+            Buy Credits
+          </Typography>
+          <ProvenanceBadge config={billingConfig} prefix="Billing" />
+        </Box>
         <Typography variant="body1" color="text.secondary">
           Purchase credits to use AI models, tools, and services
         </Typography>

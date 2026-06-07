@@ -92,6 +92,7 @@ from migration_api import router as migration_router
 from credential_api import router as credential_router
 from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
+from billing_config_api import router as billing_config_router
 from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
 from model_catalog_api import router as model_catalog_router  # Model catalog API
 from model_access_api import router as model_access_router  # Model access control (Epic 3.3)
@@ -1055,6 +1056,7 @@ logger.info("Stripe payment API endpoints registered at /api/v1/billing")
 
 # Register Lago billing/invoice endpoints
 app.include_router(billing_router)
+app.include_router(billing_config_router)
 logger.info("Lago billing/invoice API endpoints registered at /api/v1/billing")
 
 # Register payment methods management

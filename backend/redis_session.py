@@ -45,24 +45,44 @@ class RedisSessionManager:
         self._connect()
 
     def _connect(self):
-        """Establish Redis connection"""
-        try:
-            self._client = redis.Redis(
-                host=self.host,
-                port=self.port,
-                db=self.db,
-                password=self.password,
-                decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True
-            )
-            # Test connection
-            self._client.ping()
-            logger.info(f"Redis session manager connected to {self.host}:{self.port}")
-        except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            raise
+        """Establish Redis connection.
+
+        Bounded retry so a transient startup race (Redis still booting, or its
+        DNS name not yet resolvable because the container is mid-restart) does
+        NOT hard-crash the whole app at import time. Without this, a brief Redis
+        blip cascades into a self-sustaining ops-center crash-loop. Retries for
+        ~30s, then raises (a genuine, sustained Redis outage still surfaces loud).
+        """
+        import time as _time
+        attempts = int(os.getenv("REDIS_CONNECT_ATTEMPTS", "15"))
+        delay = float(os.getenv("REDIS_CONNECT_RETRY_DELAY", "2"))
+        last_err = None
+        for attempt in range(1, attempts + 1):
+            try:
+                self._client = redis.Redis(
+                    host=self.host,
+                    port=self.port,
+                    db=self.db,
+                    password=self.password,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
+                    retry_on_timeout=True
+                )
+                # Test connection
+                self._client.ping()
+                logger.info(f"Redis session manager connected to {self.host}:{self.port}")
+                return
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    f"Redis connect attempt {attempt}/{attempts} failed "
+                    f"({self.host}:{self.port}): {e}"
+                )
+                if attempt < attempts:
+                    _time.sleep(delay)
+        logger.error(f"Failed to connect to Redis after {attempts} attempts: {last_err}")
+        raise last_err
 
     def _get_key(self, session_id: str) -> str:
         """Generate full Redis key for session"""
