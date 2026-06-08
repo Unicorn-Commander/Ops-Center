@@ -785,6 +785,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/.well-known/",  # A2A agent card discovery - public protocol endpoint
         "/api/v1/federation/",  # Federation API - machine-to-machine, uses API key auth
         "/api/v1/admin/federation/",  # Federation settings API - admin auth, not CSRF
+        "/api/v1/admin/pricing/",  # Pricing rate-book API - admin auth via require_admin_user, not CSRF
         "/api/v1/inference/",  # Inference proxy - programmatic API, session auth not CSRF
         "/api/v1/compute/",  # GPU Compute Fabric - machine-to-machine, uses agent key auth
         "/api/v1/billing/events",  # Billing Events API - machine-to-machine, uses agent key auth
