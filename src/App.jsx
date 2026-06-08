@@ -355,6 +355,7 @@ const ExternalMonitoringTools = lazy(() => import('./pages/admin/ExternalMonitor
 
 // Revenue Dashboard (consolidates BillingDashboard + UserBillingDashboard + SystemBillingOverview)
 const RevenueDashboard = lazy(() => import('./pages/admin/RevenueDashboard'));
+const PricingRates = lazy(() => import('./pages/admin/PricingRates'));
 
 // Lazy load non-critical components
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
@@ -623,6 +624,7 @@ function AppRoutes() {
                   <Route path="billing/tiers/compare" element={<TierComparison />} />
                   <Route path="billing/apps" element={<AppManagement />} />
                   <Route path="billing/pricing" element={<DynamicPricingManagement />} />
+                  <Route path="billing/rates" element={<PricingRates />} />
                   <Route path="billing/revenue" element={<RevenueDashboard />} />
                   <Route path="billing/system" element={<BillingDashboard />} />
                   <Route path="billing/user" element={<UserBillingDashboard />} />
