@@ -21,8 +21,10 @@ import os
 import json
 import copy
 from typing import Dict, Any
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
+
+from auth_dependencies import require_admin_user
 
 router = APIRouter(prefix="/api/v1/admin/pricing", tags=["pricing-rates"])
 
@@ -60,7 +62,42 @@ def _load() -> Dict[str, Any]:
         return copy.deepcopy(DEFAULT_CONFIG)
 
 
+def _nn(value: Any, default: float = 0.0) -> float:
+    """Coerce to a non-negative float; fall back to default on bad or negative input."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if f >= 0 else default
+
+
+def _clamp(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Enforce the never-lose-money invariants in code, not just in the GUI.
+
+    A negative markup/buffer or a zero credit value would silently break margin (or
+    divide-by-zero in _compute), so we floor them here at the persistence boundary —
+    every write (GUI edit or seed job) passes through this.
+    """
+    cfg["default_markup_pct"] = _nn(cfg.get("default_markup_pct"), 20.0)
+    cfg["buffer_pct"] = _nn(cfg.get("buffer_pct"), 0.0)
+    cv = _nn(cfg.get("credit_value_usd"), 0.01)
+    cfg["credit_value_usd"] = cv if cv > 0 else 0.01  # used as a divisor — must be > 0
+    loc = cfg.get("local")
+    if isinstance(loc, dict):
+        loc["rate_per_million_usd"] = _nn(loc.get("rate_per_million_usd"), 0.0)
+    for prov in cfg.get("providers", {}).values():
+        if prov.get("markup_pct") is not None:
+            prov["markup_pct"] = _nn(prov.get("markup_pct"), 0.0)
+        for m in prov.get("models", {}).values():
+            m["input_per_million_usd"] = _nn(m.get("input_per_million_usd"), 0.0)
+            m["output_per_million_usd"] = _nn(m.get("output_per_million_usd"), 0.0)
+            if m.get("override_markup_pct") is not None:
+                m["override_markup_pct"] = _nn(m.get("override_markup_pct"), 0.0)
+    return cfg
+
+
 def _save(cfg: Dict[str, Any]) -> None:
+    cfg = _clamp(cfg)
     os.makedirs(os.path.dirname(PRICING_CONFIG_PATH), exist_ok=True)
     tmp = PRICING_CONFIG_PATH + ".tmp"
     with open(tmp, "w") as f:
@@ -127,12 +164,15 @@ def _compute(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.get("/rates")
-async def get_rates():
+async def get_rates(_admin: Dict[str, Any] = Depends(require_admin_user)):
     return JSONResponse(_compute(_load()))
 
 
 @router.put("/rates")
-async def update_rates(patch: Dict[str, Any] = Body(...)):
+async def update_rates(
+    patch: Dict[str, Any] = Body(...),
+    _admin: Dict[str, Any] = Depends(require_admin_user),
+):
     cfg = _load()
     for k in ("credit_value_usd", "default_markup_pct", "buffer_pct", "local"):
         if k in patch:
@@ -150,7 +190,10 @@ async def update_rates(patch: Dict[str, Any] = Body(...)):
 
 
 @router.post("/seed")
-async def seed_costs(payload: Dict[str, Any] = Body(...)):
+async def seed_costs(
+    payload: Dict[str, Any] = Body(...),
+    _admin: Dict[str, Any] = Depends(require_admin_user),
+):
     """Replace/merge the provider COST table (rate-research job). Preserves markup overrides."""
     cfg = _load()
     for pkey, pv in (payload.get("providers") or {}).items():
