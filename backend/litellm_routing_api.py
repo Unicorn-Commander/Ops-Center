@@ -32,6 +32,8 @@ import redis
 logger = logging.getLogger(__name__)
 
 # Router
+from auth_dependencies import require_admin_user  # admin gate (router sits under the m2m-allowlisted /api/v1/llm prefix)
+
 router = APIRouter(prefix="/api/v1/llm", tags=["LLM Management"])
 
 # Environment variables
@@ -776,7 +778,7 @@ async def create_model(model: ModelCreate):
 # ============================================================================
 
 @router.get("/routing/rules")
-async def get_routing_rules():
+async def get_routing_rules(_admin: Dict[str, Any] = Depends(require_admin_user)):
     """
     Get current routing configuration
 
@@ -899,7 +901,8 @@ async def update_routing_rules(rules: RoutingRulesUpdate):
 async def get_usage_analytics(
     user_id: Optional[str] = None,
     days: int = 7,
-    provider_id: Optional[str] = None
+    provider_id: Optional[str] = None,
+    _admin: Dict[str, Any] = Depends(require_admin_user)
 ):
     """
     Get LLM usage analytics

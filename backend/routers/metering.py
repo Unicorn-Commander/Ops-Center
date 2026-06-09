@@ -6,10 +6,12 @@ All endpoints return realistic mock data for now.
 TODO: Replace with real database queries and LiteLLM usage tracking.
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from datetime import datetime, timedelta
-from typing import Optional, Literal
+from typing import Optional, Literal, Dict, Any
 import random
+
+from auth_dependencies import require_admin_user  # admin gate (these live under the m2m-allowlisted /api/v1/llm prefix)
 
 router = APIRouter(prefix="/api/v1", tags=["Metering"])
 
@@ -19,7 +21,7 @@ router = APIRouter(prefix="/api/v1", tags=["Metering"])
 # ============================================================================
 
 @router.get("/llm/usage/summary")
-async def get_llm_usage_summary(range: Literal["day", "week", "month", "year"] = "month"):
+async def get_llm_usage_summary(range: Literal["day", "week", "month", "year"] = "month", _admin: Dict[str, Any] = Depends(require_admin_user)):
     """
     Get LLM usage summary for specified time range.
 
@@ -115,7 +117,7 @@ def normalize_period(period: str) -> str:
 
 
 @router.get("/llm/costs")
-async def get_llm_costs(period: str = Query("30d", description="Time period (e.g., '30d', 'this_month', 'this_week')")):
+async def get_llm_costs(period: str = Query("30d", description="Time period (e.g., '30d', 'this_month', 'this_week')"), _admin: Dict[str, Any] = Depends(require_admin_user)):
     """
     Get LLM costs breakdown for specified period.
 
@@ -170,7 +172,7 @@ async def get_llm_costs(period: str = Query("30d", description="Time period (e.g
 
 
 @router.get("/llm/cache-stats")
-async def get_cache_stats():
+async def get_cache_stats(_admin: Dict[str, Any] = Depends(require_admin_user)):
     """
     Get LLM cache statistics and hit rates.
 

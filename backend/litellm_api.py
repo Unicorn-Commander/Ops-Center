@@ -14,7 +14,7 @@ Date: October 20, 2025
 
 import logging
 import os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 import json
 import time
@@ -23,6 +23,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from auth_dependencies import require_authenticated_user  # per-user gate for account-facing endpoints under the m2m-allowlisted /api/v1/llm prefix
 import stripe
 
 from litellm_credit_system import CreditSystem, POWER_LEVELS
@@ -3214,7 +3215,7 @@ async def get_byok_usage(
 
 
 @router.get("/byok/providers")
-async def list_supported_providers():
+async def list_supported_providers(_user: Dict[str, Any] = Depends(require_authenticated_user)):
     """
     List all supported BYOK providers
 
