@@ -27,14 +27,18 @@ if '/app' not in sys.path:
 
 from database.connection import get_db_pool
 
-# Import auth dependencies — same pattern as compute_api.py
+# Import auth dependencies — same pattern as compute_api.py.
+# NOTE: `from server import ...` ALWAYS raises ImportError here (server.py imports this
+# router -> circular), so the except branch is the LIVE path. It previously returned a
+# fake admin unconditionally, which made verify_agent_or_admin's session fallback INERT —
+# a keyless caller (no X-Agent-Key) was treated as admin, so the metering INGEST accepted
+# unauthenticated/fake billing events. Map to the standalone auth_dependencies module,
+# which enforces real session auth and has no circular-import problem.
 try:
     from server import get_current_user, require_admin, get_current_user_optional
 except ImportError:
-    async def get_current_user(request: Request):
-        return {"user_id": "system", "role": "admin"}
-    async def require_admin(request: Request):
-        return {"user_id": "system", "role": "admin"}
+    from auth_dependencies import require_authenticated_user as get_current_user
+    from auth_dependencies import require_admin_user as require_admin
     async def get_current_user_optional(request: Request):
         return None
 
@@ -55,10 +59,13 @@ async def verify_agent_or_admin(request: Request):
     if GPU_AGENT_KEY and agent_key == GPU_AGENT_KEY:
         return {"user_id": "agent", "role": "agent"}
 
-    # Fall back to session auth
+    # Fall back to admin session auth (the dashboards read org-wide billing analytics;
+    # the ingest's normal caller is the agent-key path above).
     try:
-        user = await get_current_user(request)
+        user = await require_admin(request)
         return user
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=401, detail="Authentication required")
 
