@@ -19,3 +19,8 @@ backend/data/*.wal
 backend/data/colonel_graph
 # build analysis artifact (rollup visualizer) — not needed at runtime
 public/stats.html
+
+# per-node runtime data (org membership, pricing rate book) — never sync across nodes
+backend/data/org_users.json
+backend/data/organizations.json
+backend/data/pricing_config.json
