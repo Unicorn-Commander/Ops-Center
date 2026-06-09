@@ -14,14 +14,19 @@ Endpoints:
 - GET /api/v1/llm/usage/costs - Cost analysis and projections
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 import random
 from enum import Enum
 
-router = APIRouter(prefix="/api/v1/llm/usage", tags=["LLM Usage"])
+from auth_dependencies import require_admin_user
+
+# Admin-only analytics router. The default-deny middleware allowlists the /api/v1/llm/
+# prefix (for m2m inference), so this router self-protects with a router-level dependency.
+router = APIRouter(prefix="/api/v1/llm/usage", tags=["LLM Usage"],
+                   dependencies=[Depends(require_admin_user)])
 
 
 # ============================================================================

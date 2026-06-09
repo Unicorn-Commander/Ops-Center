@@ -42,6 +42,9 @@ PUBLIC_EXACT = {
     "/api/v1/billing/provider-config",  # public Stripe publishable key + provider name
     "/api/v1/billing/plans",
     "/api/v1/subscriptions/plans",
+    "/api/v1/billing/events",         # m2m agent-key metering INGEST (POST, bare path only;
+                                      # the GET /events/summary|by-property|markup-revenue
+                                      # dashboards are NOT exact matches -> stay session-gated)
 }
 
 # Public path PREFIXES (startswith match)
@@ -63,7 +66,6 @@ PUBLIC_PREFIXES = (
     "/api/v1/compute/",
     "/api/v1/inference/",
     "/api/v1/uuda/",
-    "/api/v1/billing/events",         # agent-key metering ingest
     "/api/v1/llm/",                   # API-key (Brigade/Open-WebUI/Bolt). Admin subpaths
                                       # (usage/providers/costs/routing/...) get their own
                                       # per-endpoint require_admin_user.
