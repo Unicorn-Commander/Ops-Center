@@ -38,7 +38,9 @@ PUBLIC_EXACT = {
     "/api/v1/auth/csrf-token",
     "/api/v1/auth/password-policy",
     "/api/v1/auth/validate-key",      # m2m API-key validation
+    "/api/v1/auth/session",           # bootstrap: "am I logged in?" check (handler returns own auth state)
     "/api/v1/branding/config",
+    "/api/v1/deployment/config",      # bootstrap: deployment shell config (urls/features/branding, no secrets) — app needs it PRE-AUTH to render + redirect to login; was public before the auth middleware",
     "/api/v1/billing/provider-config",  # public Stripe publishable key + provider name
     "/api/v1/billing/plans",
     "/api/v1/subscriptions/plans",
