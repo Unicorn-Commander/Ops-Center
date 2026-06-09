@@ -389,12 +389,20 @@ async def get_zone(zone_id: str, request: Request):
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error getting zone: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error getting zone: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty zone: {e}")
+        return {
+            "zone": None,
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare zone unavailable; returning empty zone: {e}")
+        return {
+            "zone": None,
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 @router.post("/zones", status_code=201)
@@ -568,12 +576,22 @@ async def get_zone_status(zone_id: str, request: Request):
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error getting zone status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error getting zone status: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty zone status: {e}")
+        return {
+            "zone_id": zone_id,
+            "status": None,
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare zone status unavailable; returning empty status: {e}")
+        return {
+            "zone_id": zone_id,
+            "status": None,
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 # ==================== DNS Record Management Endpoints ====================
@@ -625,12 +643,20 @@ async def list_dns_records(
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error listing DNS records: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error listing DNS records: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty DNS record list: {e}")
+        return {
+            "records": [],
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare DNS records unavailable; returning empty list: {e}")
+        return {
+            "records": [],
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 @router.post("/zones/{zone_id}/dns", status_code=201)
@@ -843,12 +869,24 @@ async def get_nameservers(zone_id: str, request: Request):
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error getting nameservers: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error getting nameservers: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty nameservers: {e}")
+        return {
+            "success": False,
+            "zone_id": zone_id,
+            "nameservers": [],
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare nameservers unavailable; returning empty list: {e}")
+        return {
+            "success": False,
+            "zone_id": zone_id,
+            "nameservers": [],
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 @router.put("/zones/{zone_id}/nameservers")
@@ -943,12 +981,26 @@ async def check_propagation(zone_id: str, request: Request):
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error checking propagation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error checking propagation: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty propagation status: {e}")
+        return {
+            "zone_id": zone_id,
+            "status": None,
+            "checks": {},
+            "propagation_percent": 0,
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare propagation status unavailable; returning empty status: {e}")
+        return {
+            "zone_id": zone_id,
+            "status": None,
+            "checks": {},
+            "propagation_percent": 0,
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 @router.get("/zones/{zone_id}/ssl")
@@ -977,12 +1029,22 @@ async def get_ssl_status(zone_id: str, request: Request):
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error getting SSL status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error getting SSL status: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty SSL status: {e}")
+        return {
+            "zone_id": zone_id,
+            "ssl": None,
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare SSL status unavailable; returning empty status: {e}")
+        return {
+            "zone_id": zone_id,
+            "ssl": None,
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 @router.get("/zones/{zone_id}/analytics")
@@ -1026,12 +1088,22 @@ async def get_zone_analytics(
 
     except ZoneNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except CloudflareError as e:
-        logger.error(f"Error getting zone analytics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error getting zone analytics: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except CloudflareAuthError as e:
+        # Graceful degradation: token not configured on this node.
+        logger.warning(f"Cloudflare API not configured; returning empty analytics: {e}")
+        return {
+            "zone_id": zone_id,
+            "analytics": None,
+            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+        }
+    except (CloudflareError, Exception) as e:
+        # Invalid/expired token or any other failure: degrade to a clean empty state.
+        logger.warning(f"Cloudflare analytics unavailable; returning empty analytics: {e}")
+        return {
+            "zone_id": zone_id,
+            "analytics": None,
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
+        }
 
 
 # ==================== Health Check ====================

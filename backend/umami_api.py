@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/v1/monitoring/umami", tags=["Monitoring"])
 
 # Umami Configuration
 UMAMI_URL = "http://umami.unicorncommander.ai:3000"
-UMAMI_TIMEOUT = 30.0
+UMAMI_TIMEOUT = 8.0  # fail fast: unreachable nodes must not hang the event loop
 
 # Pre-defined websites to track
 DEFAULT_WEBSITES = [

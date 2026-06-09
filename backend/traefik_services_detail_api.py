@@ -9,6 +9,7 @@ Created: October 26, 2025
 """
 
 from fastapi import APIRouter, HTTPException, Depends
+from auth_dependencies import require_admin_user
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
@@ -96,7 +97,7 @@ class ServiceLoadBalancerStats(BaseModel):
 # Authentication & Dependencies
 # ============================================================================
 
-def require_admin(user_info: Dict = Depends(lambda: {"role": "admin", "username": "admin"})):
+def require_admin(user_info: Dict = Depends(require_admin_user)):
     """Require admin role for service management operations"""
     if user_info.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")

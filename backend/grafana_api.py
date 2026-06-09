@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1/monitoring/grafana", tags=["Monitoring"])
 # Using northbridgetax-grafana hostname on shared 'web' network
 # Alternatively, can use http://172.18.0.11:3000 (web network IP)
 GRAFANA_URL = "http://northbridgetax-grafana:3000"
-GRAFANA_TIMEOUT = 30.0
+GRAFANA_TIMEOUT = 8.0  # fail fast: unreachable nodes must not hang the event loop
 
 class GrafanaConfig(BaseModel):
     """Grafana connection configuration"""

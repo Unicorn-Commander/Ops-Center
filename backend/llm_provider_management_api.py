@@ -22,6 +22,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, Query
+from auth_dependencies import require_admin_user  # real session+admin gate (replaces fake-admin placeholder)
 from pydantic import BaseModel, Field, validator
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
@@ -163,11 +164,10 @@ def get_db():
     raise NotImplementedError("Database session dependency not implemented")
 
 
-async def require_admin(user_email: str = Depends(lambda: "admin@example.com")):
-    """Require admin role for endpoint"""
-    # TODO: Implement actual authentication check
-    # This is a placeholder - integrate with keycloak_integration.py
-    return user_email
+async def require_admin(user: dict = Depends(require_admin_user)) -> str:
+    """Require a real admin session (replaces the placeholder fake-admin lambda).
+    require_admin_user enforces auth + admin role; return the admin's email for downstream use."""
+    return user.get("email") or user.get("username") or "admin"
 
 
 # ============================================================================

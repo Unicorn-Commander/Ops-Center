@@ -6,6 +6,7 @@ Admin-only access with full audit logging.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
+from auth_dependencies import require_admin_user
 from pydantic import BaseModel, Field, validator
 from typing import Dict, List, Optional, Any
 import logging
@@ -76,7 +77,7 @@ class RouteTestResult(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 
-def require_admin(user_info: Dict = Depends(lambda: {"role": "admin", "username": "admin"})):
+def require_admin(user_info: Dict = Depends(require_admin_user)):
     """Require admin role (simplified for now, replace with actual auth)"""
     # TODO: Replace with actual Keycloak authentication
     if user_info.get("role") != "admin":

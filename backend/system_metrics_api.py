@@ -15,6 +15,7 @@ import logging
 import redis
 import os
 import json
+import re
 from enum import Enum
 
 from health_score import HealthScoreCalculator
@@ -360,11 +361,16 @@ async def get_services_status() -> Dict:
                 # Get container stats (non-blocking)
                 stats = container.stats(stream=False)
 
-                # Calculate CPU percentage
-                cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - \
-                           stats['precpu_stats']['cpu_usage']['total_usage']
-                system_delta = stats['cpu_stats']['system_cpu_usage'] - \
-                              stats['precpu_stats']['system_cpu_usage']
+                # Calculate CPU percentage.
+                # Use .get() throughout: a just-started/stopped container can omit
+                # 'system_cpu_usage' (and other keys), which otherwise raises KeyError
+                # and floods the logs once per poll cycle.
+                cpu_stats = stats.get('cpu_stats', {})
+                precpu_stats = stats.get('precpu_stats', {})
+                cpu_delta = cpu_stats.get('cpu_usage', {}).get('total_usage', 0) - \
+                           precpu_stats.get('cpu_usage', {}).get('total_usage', 0)
+                system_delta = cpu_stats.get('system_cpu_usage', 0) - \
+                              precpu_stats.get('system_cpu_usage', 0)
                 cpu_percent = (cpu_delta / system_delta) * 100.0 if system_delta > 0 else 0.0
 
                 # Calculate memory usage
@@ -373,8 +379,8 @@ async def get_services_status() -> Dict:
 
                 # Get uptime
                 started_at = container.attrs['State']['StartedAt']
-                if started_at != '0001-01-01T00:00:00Z':
-                    start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                start_time = parse_docker_timestamp(started_at)
+                if start_time is not None:
                     uptime_seconds = (datetime.now(start_time.tzinfo) - start_time).total_seconds()
                     uptime = format_uptime(uptime_seconds)
                 else:
@@ -423,6 +429,40 @@ async def get_services_status() -> Dict:
     except Exception as e:
         logger.error(f"Error getting services status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve service status: {str(e)}")
+
+
+def parse_docker_timestamp(value: str) -> Optional[datetime]:
+    """Parse a Docker RFC3339 timestamp into a timezone-aware datetime.
+
+    Docker's API returns nanosecond-precision timestamps such as
+    ``2026-06-07T20:53:40.189290726+00:00``. Python's ``datetime.fromisoformat()``
+    on versions before 3.11 cannot parse more than 6 fractional-second digits
+    (microseconds), which previously raised ``ValueError: Invalid isoformat string``
+    once per container per poll cycle and flooded the logs.
+
+    This truncates the fractional component to 6 digits before parsing and
+    returns ``None`` (rather than raising) for the zero value or anything
+    unparseable, so callers can degrade gracefully to "N/A".
+    """
+    if not value or value == '0001-01-01T00:00:00Z':
+        return None
+
+    # Normalize the trailing 'Z' to an explicit UTC offset.
+    normalized = value.replace('Z', '+00:00')
+
+    # Truncate over-long fractional seconds (e.g. nanoseconds) to microseconds.
+    # Match the '.<digits>' group that sits between the seconds and the offset.
+    normalized = re.sub(
+        r'\.(\d{6})\d+',
+        lambda m: '.' + m.group(1),
+        normalized,
+    )
+
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        logger.debug(f"Unparseable container timestamp: {value!r}")
+        return None
 
 
 def format_uptime(seconds: float) -> str:
