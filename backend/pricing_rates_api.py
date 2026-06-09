@@ -282,27 +282,43 @@ async def _fetch_openrouter_prices() -> Dict[str, Dict[str, float]]:
     return out
 
 
-@router.post("/refresh")
-async def refresh_from_openrouter(_admin: Dict[str, Any] = Depends(require_admin_user)):
-    """Pull live provider pricing from OpenRouter and update the rate book.
+def _pct_increase(old, new):
+    """% increase from old->new for a cost field; None if old is missing/zero."""
+    try:
+        o, n = float(old), float(new)
+    except (TypeError, ValueError):
+        return None
+    if o <= 0:
+        return None
+    return round((n - o) / o * 100, 1)
 
-    Updates input/output cost for every tracked model (preserving markup/overrides),
-    adds any tracked flagship not yet present, and returns a per-model change list.
+
+async def perform_refresh(reason: str = "manual") -> Dict[str, Any]:
+    """Pull live OpenRouter pricing and update the rate book (preserving markup/overrides).
+
+    Shared by the admin endpoint and the scheduled job. Detects price INCREASES and flags
+    any that exceed the safety buffer (the never-lose-money guard: those are the hikes the
+    buffer might not fully absorb between refreshes), records refresh metadata for staleness
+    detection, and returns a structured report. Never raises — returns ok:false on failure.
     """
     from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     cfg = _load()
+    buffer_pct = float(cfg.get("buffer_pct", 0) or 0)
+
     try:
         live = await _fetch_openrouter_prices()
     except Exception as e:
-        logger.error(f"pricing refresh: OpenRouter fetch failed: {e}")
-        return JSONResponse(
-            status_code=503,
-            content={"ok": False, "error": f"Could not reach OpenRouter: {e}", "changes": []},
-        )
+        logger.error(f"pricing refresh ({reason}): OpenRouter fetch failed: {e}")
+        meta = cfg.setdefault("_refresh_meta", {})
+        meta["last_attempt_at"] = now.isoformat()
+        meta["last_ok"] = False
+        meta["last_error"] = str(e)[:200]
+        _save(cfg)
+        return {"ok": False, "error": f"Could not reach OpenRouter: {e}", "reason": reason, "changes": []}
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    changes = []
-    missing = []
+    today = now.strftime("%Y-%m-%d")
+    changes, missing, hikes = [], [], []
     for pkey, tracked in DEFAULT_TRACKED.items():
         prov = cfg["providers"].setdefault(pkey, {"label": PROVIDER_LABELS.get(pkey, pkey), "models": {}})
         prov.setdefault("label", PROVIDER_LABELS.get(pkey, pkey))
@@ -317,26 +333,88 @@ async def refresh_from_openrouter(_admin: Dict[str, Any] = Depends(require_admin
             if not price:
                 missing.append(f"{pkey}/{label} ({or_id})")
                 continue
-            old_in = mm.get("input_per_million_usd")
-            old_out = mm.get("output_per_million_usd")
+            old_in, old_out = mm.get("input_per_million_usd"), mm.get("output_per_million_usd")
             if old_in != price["input"] or old_out != price["output"]:
+                inc_in, inc_out = _pct_increase(old_in, price["input"]), _pct_increase(old_out, price["output"])
                 changes.append({
                     "model": f"{pkey}/{label}", "openrouter_id": or_id,
                     "old": {"input": old_in, "output": old_out},
                     "new": {"input": price["input"], "output": price["output"]},
+                    "pct_increase": {"input": inc_in, "output": inc_out},
                 })
+                # never-lose-money flag: a cost increase that exceeds the safety buffer
+                worst = max([x for x in (inc_in, inc_out) if x is not None], default=None)
+                if worst is not None and worst > buffer_pct:
+                    hikes.append({
+                        "model": f"{pkey}/{label}", "pct": worst,
+                        "exceeds_buffer_by": round(worst - buffer_pct, 1),
+                        "old": {"input": old_in, "output": old_out},
+                        "new": {"input": price["input"], "output": price["output"]},
+                    })
             mm["input_per_million_usd"] = price["input"]
             mm["output_per_million_usd"] = price["output"]
 
+    # Refresh metadata (for staleness + hike surfacing on the GUI)
+    meta = cfg.setdefault("_refresh_meta", {})
+    meta["last_refresh_at"] = now.isoformat()
+    meta["last_attempt_at"] = now.isoformat()
+    meta["last_ok"] = True
+    meta["last_error"] = None
+    meta["last_reason"] = reason
+    meta["last_changed"] = len(changes)
+    if hikes:
+        meta["last_hikes"] = hikes  # only keep the most recent refresh's hikes
+
     _save(cfg)
     result = _compute(cfg)
-    return JSONResponse({
-        "ok": True,
-        "refreshed_at": today,
-        "source": "openrouter-live",
-        "models_tracked": result["model_count"],
-        "changed": len(changes),
-        "changes": changes,
-        "not_found_on_openrouter": missing,
+
+    if hikes:
+        logger.warning(
+            f"pricing refresh ({reason}): {len(hikes)} provider price HIKE(S) exceeding the "
+            f"{buffer_pct}% buffer — review markups: " +
+            "; ".join(f"{h['model']} +{h['pct']}%" for h in hikes)
+        )
+    logger.info(f"pricing refresh ({reason}): {len(changes)} change(s), {result['model_count']} models, {len(missing)} missing upstream")
+
+    return {
+        "ok": True, "reason": reason, "refreshed_at": today,
+        "source": "openrouter-live", "models_tracked": result["model_count"],
+        "changed": len(changes), "changes": changes,
+        "hikes_over_buffer": hikes, "not_found_on_openrouter": missing,
         "rate_book": result,
+    }
+
+
+@router.post("/refresh")
+async def refresh_from_openrouter(_admin: Dict[str, Any] = Depends(require_admin_user)):
+    """Admin trigger for the live pricing refresh (same job the scheduler runs)."""
+    report = await perform_refresh(reason="manual")
+    return JSONResponse(report, status_code=200 if report.get("ok") else 503)
+
+
+@router.get("/status")
+async def pricing_status(_admin: Dict[str, Any] = Depends(require_admin_user)):
+    """Refresh freshness + any price hikes — drives the GUI staleness/hike banner."""
+    from datetime import datetime, timezone
+    cfg = _load()
+    meta = cfg.get("_refresh_meta", {})
+    last = meta.get("last_refresh_at")
+    stale_hours = None
+    if last:
+        try:
+            dt = datetime.fromisoformat(last)
+            stale_hours = round((datetime.now(timezone.utc) - dt).total_seconds() / 3600, 1)
+        except Exception:
+            pass
+    refresh_hours = float(os.getenv("PRICING_REFRESH_HOURS", "8") or 8)
+    return JSONResponse({
+        "last_refresh_at": last,
+        "last_ok": meta.get("last_ok"),
+        "last_error": meta.get("last_error"),
+        "last_changed": meta.get("last_changed"),
+        "hours_since_refresh": stale_hours,
+        # stale if we've missed ~2 scheduled cycles
+        "is_stale": (stale_hours is not None and stale_hours > refresh_hours * 2),
+        "schedule_hours": refresh_hours,
+        "recent_hikes": meta.get("last_hikes", []),
     })

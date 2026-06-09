@@ -957,6 +957,32 @@ async def startup_event():
         logger.error(f"Failed to start alert checker: {e}")
         # Don't block startup if alert checking fails
 
+    # Scheduled pricing refresh — NEVER-LOSE-MONEY safeguard: keep the metered-inference
+    # rate book's provider COSTS current from live OpenRouter pricing, so a provider price
+    # hike can't sit unbilled between manual refreshes. Runs once ~30s after boot (every
+    # deploy picks up current prices) then every PRICING_REFRESH_HOURS (default 8 = 3x/day).
+    # Hikes exceeding the safety buffer are logged + surfaced via /admin/pricing/status.
+    try:
+        PRICING_REFRESH_ENABLED = os.getenv("PRICING_REFRESH_ENABLED", "true").lower() == "true"
+        PRICING_REFRESH_HOURS = float(os.getenv("PRICING_REFRESH_HOURS", "8") or 8)
+        if PRICING_REFRESH_ENABLED:
+            async def _pricing_refresh_loop():
+                from pricing_rates_api import perform_refresh
+                await asyncio.sleep(30)  # let the app settle before first pull
+                while True:
+                    try:
+                        await perform_refresh(reason="scheduled")
+                    except Exception as e:
+                        logger.error(f"Scheduled pricing refresh failed (non-fatal): {e}")
+                    await asyncio.sleep(PRICING_REFRESH_HOURS * 3600)
+            asyncio.create_task(_pricing_refresh_loop())
+            logger.info(f"Scheduled pricing refresh enabled (every {PRICING_REFRESH_HOURS}h)")
+        else:
+            logger.info("Scheduled pricing refresh disabled (PRICING_REFRESH_ENABLED=false)")
+    except Exception as e:
+        logger.error(f"Failed to start scheduled pricing refresh: {e}")
+        # Don't block startup if the scheduler can't start
+
     # Register Colonel with Brigade (fire-and-forget background task)
     try:
         from colonel.a2a_server import register_with_brigade
