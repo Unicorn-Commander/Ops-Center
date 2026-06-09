@@ -794,6 +794,15 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
 )
 app.add_middleware(csrf_middleware_factory)
 
+# Default-deny Authentication Middleware (2026-06-09 customer-node security hotfix).
+# Gates every /api/* request that is not on the public/m2m allowlist, requiring a valid
+# session, so endpoints missing a per-endpoint auth dependency fail CLOSED instead of
+# serving data unauthenticated. Kill switch: AUTH_MIDDLEWARE_ENABLED=false (then recreate).
+from auth_middleware import create_auth_middleware
+AUTH_MIDDLEWARE_ENABLED = os.getenv("AUTH_MIDDLEWARE_ENABLED", "true").lower() == "true"
+app.add_middleware(create_auth_middleware(enabled=AUTH_MIDDLEWARE_ENABLED))
+logger.info(f"Auth Middleware: {'Enabled' if AUTH_MIDDLEWARE_ENABLED else 'Disabled'} (default-deny on /api/*)")
+
 # Tier Enforcement Middleware (after CSRF, before routes)
 if TIER_ENFORCEMENT_ENABLED:
     app.add_middleware(TierEnforcementMiddleware)
