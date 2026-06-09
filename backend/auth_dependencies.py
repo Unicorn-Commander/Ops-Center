@@ -47,7 +47,9 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
 
     # Check for session token in cookie
     session_token = request.cookies.get("session_token")
-    logger.info(f"[AUTH-DEBUG] Session token from cookie: {session_token[:20] if session_token else 'None'}...")
+    # NB: this dependency now runs on EVERY /api/* request (default-deny AuthMiddleware),
+    # so keep per-request logging at debug and never log raw token/PII at info.
+    logger.debug(f"[AUTH] session cookie present: {bool(session_token)}")
     if not session_token:
         raise HTTPException(
             status_code=401,
@@ -58,7 +60,7 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
     session_data = sessions.get(session_token)
 
     if not session_data:
@@ -67,19 +69,13 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
             detail="Invalid or expired session. Please login again."
         )
 
-    # Debug: Log session structure
-    logger.info(f"Session data keys: {list(session_data.keys()) if isinstance(session_data, dict) else type(session_data)}")
-
     # Session structure: {"user": {user_info}, "access_token": ..., "org_id": ..., ...}
     # Extract user info from the nested "user" key
     user_data = session_data.get("user", {})
 
-    # Debug: Log user data
-    logger.info(f"User data from session: email={user_data.get('email') if user_data else 'None'}, role={user_data.get('role') if user_data else 'None'}")
-
-    logger.info(f"[AUTH-DEBUG] User data type: {type(user_data)}, empty: {not user_data}")
+    logger.debug(f"[AUTH] session resolved, user present: {bool(user_data)}")
     if not user_data:
-        logger.warning(f"[AUTH-DEBUG] Empty user_data. Session keys: {list(session_data.keys()) if session_data else 'None'}")
+        logger.warning("[AUTH] session present but missing user data")
         raise HTTPException(
             status_code=401,
             detail="Session missing user data. Please login again."

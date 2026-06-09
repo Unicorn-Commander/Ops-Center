@@ -153,6 +153,9 @@ async def list_credit_packages(
         logger.info(f"User {current_user.get('user_id')} listed {len(packages)} credit packages")
         return packages
 
+    except asyncpg.UndefinedTableError:
+        logger.warning("credit_packages table missing; returning empty package list")
+        return []
     except Exception as e:
         logger.error(f"Failed to list credit packages: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list packages: {str(e)}")

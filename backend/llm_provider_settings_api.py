@@ -12,6 +12,8 @@ License: MIT
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any, List, Literal
+
+from auth_dependencies import require_admin_user  # admin gate (router sits under the m2m-allowlisted /api/v1/llm prefix)
 import httpx
 import asyncio
 import time
@@ -494,7 +496,7 @@ async def test_vllm_provider(api_base: str, model: str) -> TestResult:
 # ============================================================================
 
 @router.get("", response_model=Dict[str, List[ProviderResponse]])
-async def list_providers():
+async def list_providers(_admin: Dict[str, Any] = Depends(require_admin_user)):
     """
     List all configured LLM providers.
 
@@ -506,7 +508,7 @@ async def list_providers():
 
 
 @router.get("/available", response_model=Dict[str, List[AvailableProvider]])
-async def list_available_provider_types():
+async def list_available_provider_types(_admin: Dict[str, Any] = Depends(require_admin_user)):
     """
     List all available LLM provider types that can be configured.
 

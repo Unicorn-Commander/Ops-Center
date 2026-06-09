@@ -31,6 +31,8 @@ import {
   TagIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
+import MuiTooltip from '@mui/material/Tooltip';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   PieChart,
   Pie,
@@ -392,7 +394,10 @@ const UserView = ({ theme }) => {
             {/* API Calls */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className={`text-sm ${theme.text.secondary}`}>API Calls</span>
+                <span className={`text-sm ${theme.text.secondary}`}>
+                  API Calls
+                  <MuiTooltip title="Requests used this billing cycle against your plan's monthly quota; hitting the limit can pause access until reset or upgrade." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+                </span>
                 <span className={`text-sm font-medium ${theme.text.primary}`}>
                   {(usage?.api_calls_used ?? 0).toLocaleString()} / {usage?.api_calls_limit === -1 ? '∞' : (usage?.api_calls_limit ?? 0).toLocaleString()}
                 </span>
@@ -413,7 +418,10 @@ const UserView = ({ theme }) => {
             {/* Credits */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className={`text-sm ${theme.text.secondary}`}>Credits</span>
+                <span className={`text-sm ${theme.text.secondary}`}>
+                  Credits
+                  <MuiTooltip title="Your prepaid usage pool (1 credit roughly equals $0.001 of API usage); metered services like LLM and image generation draw down this balance." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+                </span>
                 <span className={`text-sm font-medium ${theme.text.primary}`}>
                   {(usage?.credits_remaining ?? 0).toLocaleString()} remaining
                 </span>
@@ -599,7 +607,10 @@ const AdminView = ({ theme }) => {
         // Backend returns: { distribution: [{ tier, user_count, percentage, mrr_contribution }] }
         // Transform to chart format
         const tierMap = {};
-        data.distribution.forEach(item => {
+        // Guard: this endpoint can legitimately return an empty/alternate shape
+        // (no subscriptions yet, or a segments-shaped payload). Treat missing
+        // data as "no data", never as a hard failure.
+        (data.distribution || []).forEach(item => {
           tierMap[item.tier] = item.user_count;
         });
 
@@ -656,18 +667,18 @@ const AdminView = ({ theme }) => {
 
       if (revenueRes.ok) {
         const data = await revenueRes.json();
-        setRevenueChartData(data.data.map((item, index) => ({
-          name: data.labels[index],
+        setRevenueChartData((data.data || []).map((item, index) => ({
+          name: data.labels?.[index],
           revenue: item
         })));
       }
 
       if (growthRes.ok) {
         const data = await growthRes.json();
-        setUserGrowthData(data.labels.map((label, index) => ({
+        setUserGrowthData((data.labels || []).map((label, index) => ({
           name: label,
-          signups: data.signups[index],
-          cancellations: data.cancellations[index]
+          signups: data.signups?.[index],
+          cancellations: data.cancellations?.[index]
         })));
       }
     } catch (error) {
@@ -1075,7 +1086,10 @@ const AdminView = ({ theme }) => {
 
           {/* Tier Filter */}
           <div>
-            <label className={`block text-sm ${theme.text.secondary} mb-2`}>Subscription Tier</label>
+            <label className={`block text-sm ${theme.text.secondary} mb-2`}>
+              Subscription Tier
+              <MuiTooltip title="The plan level a customer is on (Trial, Starter, Professional, Enterprise), which sets their price and feature access." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+            </label>
             <select
               value={filterTier}
               onChange={(e) => setFilterTier(e.target.value)}
@@ -1157,13 +1171,20 @@ const AdminView = ({ theme }) => {
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Total Revenue</p>
+              <p className={`text-sm ${theme.text.secondary}`}>
+                Total Revenue
+                <MuiTooltip title="All revenue collected to date across every customer and plan; the cumulative top-line for the business." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+              </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
                 {formatCurrency(stats?.total_revenue || 0)}
               </p>
               <div className="flex items-center gap-1 mt-2 text-sm">
                 <p className={`text-xs ${theme.text.secondary}`}>
-                  MRR: {formatCurrency(stats?.mrr || 0)} | ARR: {formatCurrency(stats?.arr || 0)}
+                  MRR
+                  <MuiTooltip title="Monthly Recurring Revenue: the predictable subscription revenue normalized to a monthly amount; the core SaaS growth metric." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+                  : {formatCurrency(stats?.mrr || 0)} | ARR
+                  <MuiTooltip title="Annual Recurring Revenue: MRR projected over a year (roughly MRR x 12); shows the run-rate value of active subscriptions." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+                  : {formatCurrency(stats?.arr || 0)}
                 </p>
               </div>
             </div>
@@ -1174,7 +1195,10 @@ const AdminView = ({ theme }) => {
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Active Subscriptions</p>
+              <p className={`text-sm ${theme.text.secondary}`}>
+                Active Subscriptions
+                <MuiTooltip title="Count of paying customers with a live subscription right now; the base that generates recurring revenue." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+              </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
                 {stats?.active_subscriptions || 0}
               </p>
@@ -1199,7 +1223,10 @@ const AdminView = ({ theme }) => {
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Trial Users</p>
+              <p className={`text-sm ${theme.text.secondary}`}>
+                Trial Users
+                <MuiTooltip title="People currently on a free or trial plan who haven't paid yet; your pipeline of potential conversions to paid tiers." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+              </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
                 {stats?.trial_users || 0}
               </p>
@@ -1224,7 +1251,10 @@ const AdminView = ({ theme }) => {
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className={`text-sm ${theme.text.secondary}`}>Churn Rate</p>
+              <p className={`text-sm ${theme.text.secondary}`}>
+                Churn Rate
+                <MuiTooltip title="Share of customers who cancel in a given period; lower is better since churn directly erodes recurring revenue (under ~5% is healthy)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+              </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
                 {stats?.churn_rate?.toFixed(1) || 0}%
               </p>
@@ -1251,7 +1281,10 @@ const AdminView = ({ theme }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Subscription Breakdown Pie Chart */}
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
-          <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4`}>Subscription Tier Distribution</h3>
+          <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4`}>
+            Subscription Tier Distribution
+            <MuiTooltip title="How your customers are split across plan tiers (Trial, Starter, Professional, Enterprise); shows where revenue and upgrade potential concentrate." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+          </h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -1304,7 +1337,10 @@ const AdminView = ({ theme }) => {
 
       {/* User Growth Chart */}
       <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
-        <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4`}>User Growth & Churn</h3>
+        <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4`}>
+          User Growth & Churn
+          <MuiTooltip title="New signups versus cancellations over time; when signups outpace cancellations the customer base (and recurring revenue) grows." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+        </h3>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={userGrowthData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -1470,7 +1506,10 @@ const AdminView = ({ theme }) => {
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border-l-4 border-red-500`}>
           <div className="flex items-center gap-2 mb-4">
             <ExclamationTriangleIcon className="w-6 h-6 text-red-400" />
-            <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Failed Payments</h3>
+            <h3 className={`text-lg font-semibold ${theme.text.primary}`}>
+              Failed Payments
+              <MuiTooltip title="Charges that didn't go through (expired card, insufficient funds, etc.); unrecovered failures become involuntary churn and lost revenue." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+            </h3>
             <span className="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-medium rounded">
               {failedPayments.length} requiring attention
             </span>
@@ -1517,7 +1556,10 @@ const AdminView = ({ theme }) => {
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border-l-4 border-blue-500`}>
           <div className="flex items-center gap-2 mb-4">
             <ClockIcon className="w-6 h-6 text-blue-400" />
-            <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Upcoming Renewals</h3>
+            <h3 className={`text-lg font-semibold ${theme.text.primary}`}>
+              Upcoming Renewals
+              <MuiTooltip title="Subscriptions due to auto-renew and re-bill within the next 30 days; the recurring revenue you expect to collect soon." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+            </h3>
             <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-medium rounded">
               Next 30 days
             </span>

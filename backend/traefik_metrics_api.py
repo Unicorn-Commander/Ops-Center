@@ -6,6 +6,7 @@ Provides route performance, error rates, and traffic statistics.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
+from auth_dependencies import require_admin_user
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 import logging
@@ -50,7 +51,7 @@ class ServiceHealth(BaseModel):
     last_check: str
 
 
-def require_admin(user_info: Dict = Depends(lambda: {"role": "admin", "username": "admin"})):
+def require_admin(user_info: Dict = Depends(require_admin_user)):
     """Require admin role"""
     if user_info.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")

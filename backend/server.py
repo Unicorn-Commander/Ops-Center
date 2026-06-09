@@ -92,6 +92,8 @@ from migration_api import router as migration_router
 from credential_api import router as credential_router
 from keycloak_status_api import router as keycloak_status_router
 from litellm_routing_api import router as litellm_routing_router
+from billing_config_api import router as billing_config_router
+from pricing_rates_api import router as pricing_rates_router
 from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
 from model_catalog_api import router as model_catalog_router  # Model catalog API
 from model_access_api import router as model_access_router  # Model access control (Epic 3.3)
@@ -783,6 +785,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/.well-known/",  # A2A agent card discovery - public protocol endpoint
         "/api/v1/federation/",  # Federation API - machine-to-machine, uses API key auth
         "/api/v1/admin/federation/",  # Federation settings API - admin auth, not CSRF
+        "/api/v1/admin/pricing/",  # Pricing rate-book API - admin auth via require_admin_user, not CSRF
         "/api/v1/inference/",  # Inference proxy - programmatic API, session auth not CSRF
         "/api/v1/compute/",  # GPU Compute Fabric - machine-to-machine, uses agent key auth
         "/api/v1/billing/events",  # Billing Events API - machine-to-machine, uses agent key auth
@@ -794,10 +797,11 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
 )
 app.add_middleware(csrf_middleware_factory)
 
-# Default-deny Authentication Middleware (2026-06-09 customer-node security hotfix).
-# Gates every /api/* request that is not on the public/m2m allowlist, requiring a valid
-# session, so endpoints missing a per-endpoint auth dependency fail CLOSED instead of
-# serving data unauthenticated. Kill switch: AUTH_MIDDLEWARE_ENABLED=false (then recreate).
+# Default-deny Authentication Middleware (2026-06-08 audit remediation; customer-node
+# hotfixed 2026-06-09). Gates every /api/* request that isn't on the public/m2m allowlist,
+# requiring a valid session — so a router that forgets its per-endpoint auth dependency
+# fails CLOSED instead of silently serving data unauthenticated.
+# Kill switch: AUTH_MIDDLEWARE_ENABLED=false (then recreate).
 from auth_middleware import create_auth_middleware
 AUTH_MIDDLEWARE_ENABLED = os.getenv("AUTH_MIDDLEWARE_ENABLED", "true").lower() == "true"
 app.add_middleware(create_auth_middleware(enabled=AUTH_MIDDLEWARE_ENABLED))
@@ -856,6 +860,24 @@ async def startup_event():
             max_size=10
         )
         logger.info("PostgreSQL connection pool created")
+
+        # Ensure feature tables exist (idempotent). Many handlers query tables that
+        # ship as raw .sql and were never auto-applied, causing 500s on a fresh node
+        # (this is what broke ~22 admin endpoints on a clean deploy). Apply the
+        # consolidated idempotent migration on every boot — CREATE ... IF NOT EXISTS,
+        # so it's a no-op once present. Non-fatal: a failure here must not block startup.
+        try:
+            _eft_path = os.path.join(os.path.dirname(__file__), "migrations", "ensure_feature_tables.sql")
+            if os.path.exists(_eft_path):
+                with open(_eft_path) as _f:
+                    _eft_sql = _f.read()
+                async with db_pool.acquire() as _conn:
+                    await _conn.execute(_eft_sql)
+                logger.info("ensure_feature_tables.sql applied (feature tables ensured)")
+            else:
+                logger.warning(f"ensure_feature_tables.sql not found at {_eft_path}; skipping")
+        except Exception as e:
+            logger.error(f"ensure_feature_tables.sql failed (non-fatal, continuing startup): {e}")
 
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
@@ -935,6 +957,32 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to start alert checker: {e}")
         # Don't block startup if alert checking fails
+
+    # Scheduled pricing refresh — NEVER-LOSE-MONEY safeguard: keep the metered-inference
+    # rate book's provider COSTS current from live OpenRouter pricing, so a provider price
+    # hike can't sit unbilled between manual refreshes. Runs once ~30s after boot (every
+    # deploy picks up current prices) then every PRICING_REFRESH_HOURS (default 8 = 3x/day).
+    # Hikes exceeding the safety buffer are logged + surfaced via /admin/pricing/status.
+    try:
+        PRICING_REFRESH_ENABLED = os.getenv("PRICING_REFRESH_ENABLED", "true").lower() == "true"
+        PRICING_REFRESH_HOURS = float(os.getenv("PRICING_REFRESH_HOURS", "8") or 8)
+        if PRICING_REFRESH_ENABLED:
+            async def _pricing_refresh_loop():
+                from pricing_rates_api import perform_refresh
+                await asyncio.sleep(30)  # let the app settle before first pull
+                while True:
+                    try:
+                        await perform_refresh(reason="scheduled")
+                    except Exception as e:
+                        logger.error(f"Scheduled pricing refresh failed (non-fatal): {e}")
+                    await asyncio.sleep(PRICING_REFRESH_HOURS * 3600)
+            asyncio.create_task(_pricing_refresh_loop())
+            logger.info(f"Scheduled pricing refresh enabled (every {PRICING_REFRESH_HOURS}h)")
+        else:
+            logger.info("Scheduled pricing refresh disabled (PRICING_REFRESH_ENABLED=false)")
+    except Exception as e:
+        logger.error(f"Failed to start scheduled pricing refresh: {e}")
+        # Don't block startup if the scheduler can't start
 
     # Register Colonel with Brigade (fire-and-forget background task)
     try:
@@ -1064,6 +1112,8 @@ logger.info("Stripe payment API endpoints registered at /api/v1/billing")
 
 # Register Lago billing/invoice endpoints
 app.include_router(billing_router)
+app.include_router(billing_config_router)
+app.include_router(pricing_rates_router)
 logger.info("Lago billing/invoice API endpoints registered at /api/v1/billing")
 
 # Register payment methods management
@@ -2353,6 +2403,29 @@ async def get_current_user(request: Request):
 
     if not session_token or session_token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session = sessions[session_token]
+    user_data = session.get("user", {})
+
+    # Ensure user_id exists (Keycloak sessions carry 'sub', not 'user_id'). Many handlers
+    # index current_user["user_id"] directly, which 500'd with KeyError: 'user_id' (e.g.
+    # /api/v1/api-keys, /api/v1/sessions). Map it from sub/id here so every caller is safe.
+    if "user_id" not in user_data:
+        user_data["user_id"] = user_data.get("sub") or user_data.get("id", "unknown")
+
+    # Map Keycloak/Authentik roles to ops-center roles
+    if "role" not in user_data:
+        # Extract role from Keycloak groups/roles
+        mapped_role = map_keycloak_role(user_data)
+        user_data["role"] = mapped_role
+
+        # Update session with role for future requests
+        session["user"] = user_data
+        sessions[session_token] = session  # Save back to Redis
+
+        logger.info(f"Mapped role '{mapped_role}' for user '{user_data.get('preferred_username', user_data.get('username', 'unknown'))}'")
+
+    return user_data
 
 
 async def get_current_user_optional(request: Request) -> Optional[dict]:
@@ -4239,6 +4312,37 @@ async def login(credentials: LoginCredentials, request: Request):
             )
         raise HTTPException(status_code=500, detail=str(e))
 
+def build_keycloak_logout_url(logout_confirmation_url: str, id_token: Optional[str] = None) -> str:
+    """Build a host-aware Keycloak end-session URL for this branded deployment."""
+    from urllib.parse import urlencode
+
+    external_host = os.getenv("EXTERNAL_HOST", EXTERNAL_HOST)
+    external_protocol = os.getenv("EXTERNAL_PROTOCOL", EXTERNAL_PROTOCOL)
+    keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", f"{external_protocol}://auth.{external_host}")
+    keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
+    client_id = os.getenv("KEYCLOAK_CLIENT_ID") or os.getenv("OAUTH_CLIENT_ID", "ops-center")
+
+    params = {
+        "client_id": client_id,
+        "post_logout_redirect_uri": logout_confirmation_url,
+    }
+    if id_token:
+        params["id_token_hint"] = id_token
+
+    return (
+        f"{keycloak_external_url.rstrip('/')}/realms/{keycloak_realm}"
+        f"/protocol/openid-connect/logout?{urlencode(params)}"
+    )
+
+
+def delete_session_cookie(response: Response) -> None:
+    """Clear both host-only and shared-domain session cookies."""
+    response.delete_cookie("session_token", path="/")
+    external_host = os.getenv("EXTERNAL_HOST", EXTERNAL_HOST)
+    if "." in external_host and not external_host.startswith("localhost"):
+        response.delete_cookie("session_token", path="/", domain=f".{external_host}")
+
+
 @app.post("/api/v1/auth/logout")
 async def logout(request: Request, current_user: dict = Depends(get_current_user)):
     """Logout and invalidate session"""
@@ -4273,29 +4377,22 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
         if session_token and session_token in sessions:
             del sessions[session_token]
 
-        # Build Keycloak logout URL with id_token_hint (required for auto-logout)
-        keycloak_external_url = os.getenv("KEYCLOAK_EXTERNAL_URL", "https://auth.unicorncommander.ai")
-        keycloak_realm = os.getenv("KEYCLOAK_REALM", "uchub")
         external_host = os.getenv("EXTERNAL_HOST", "unicorncommander.ai")
         external_protocol = os.getenv("EXTERNAL_PROTOCOL", "https")
 
         # Our logout confirmation page URL (where Keycloak will redirect after clearing session)
         logout_confirmation_url = f"{external_protocol}://{external_host}/auth/logged-out"
-
-        # Keycloak logout URL - using simple redirect_uri (not post_logout_redirect_uri)
-        # This avoids the strict validation that comes with id_token_hint
-        keycloak_logout_url = (
-            f"{keycloak_external_url}/realms/{keycloak_realm}/protocol/openid-connect/logout"
-            f"?client_id={os.getenv('KEYCLOAK_CLIENT_ID', 'ops-center')}"
-            f"&redirect_uri={logout_confirmation_url}"
-        )
+        keycloak_logout_url = build_keycloak_logout_url(logout_confirmation_url, id_token)
 
         print(f"Logout URL: {keycloak_logout_url}")
 
-        return {
+        response = JSONResponse(content={
             "message": "Logged out successfully",
-            "logout_url": keycloak_logout_url
-        }
+            "logout_url": keycloak_logout_url,
+            "sso_logout_url": keycloak_logout_url
+        })
+        delete_session_cookie(response)
+        return response
     except Exception as e:
         # Log the full exception details
         import traceback
@@ -4305,14 +4402,32 @@ async def logout(request: Request, current_user: dict = Depends(get_current_user
 
 @app.get("/api/v1/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
-    """Get current user info"""
+    """Get current user info.
+
+    The session user dict may be a local-account shape (user_id) or a
+    Keycloak/SSO shape (sub/email/preferred_username). Resolve the id from
+    whatever the session has, look it up in the local user store, and if the
+    user is not in the local store (SSO users won't be) or the lookup fails,
+    fall back to returning the session user dict which already carries the
+    authenticated identity. This must never 500 -- the Revenue page depends on it.
+    """
+    current_user = current_user or {}
+    # Try the common id keys in priority order
+    user_id = (
+        current_user.get("user_id")
+        or current_user.get("sub")
+        or current_user.get("id")
+        or current_user.get("keycloakId")
+        or current_user.get("email")
+    )
     try:
-        user = auth_manager.get_user(current_user["user_id"])
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
+        user = auth_manager.get_user(user_id) if user_id else None
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"get_me: auth_manager.get_user failed for '{user_id}': {e}")
+        user = None
+
+    # Fall back to the session user dict (already contains the authenticated info)
+    return user or current_user
 
 @app.put("/api/v1/auth/profile")
 async def update_profile(
@@ -4784,13 +4899,37 @@ async def get_network_configuration(current_user: dict = Depends(require_admin))
         logger.info(f"Network configuration read by admin user: {current_user.get('username', 'unknown')}")
 
         return network_status
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        logger.error(f"Error reading network configuration: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to read network configuration: {str(e)}")
+        # Degrade gracefully: in a container (no netplan / restricted host
+        # network files) full discovery may fail. Return a valid NetworkStatus
+        # populated with whatever is available instead of 500ing the page.
+        logger.warning(f"Network configuration partial read (degraded): {e}")
+        import socket
+        try:
+            hostname = socket.gethostname()
+        except Exception:
+            hostname = "unknown"
+        container_ip = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                container_ip = s.getsockname()[0]
+            finally:
+                s.close()
+        except Exception:
+            container_ip = None
+        return NetworkStatus(
+            ip=container_ip,
+            netmask=None,
+            gateway=None,
+            dns_servers=[],
+            hostname=hostname or "unknown",
+            interface="unknown",
+            dhcp=False,
+        )
 
 
 @app.put("/api/v1/system/network")
@@ -5880,6 +6019,27 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     org_context = await get_user_org_context(user_id, email)
                     auto_provisioned = False  # Initialize for subscription check logic
 
+                    # Auto-provision org for first-time SSO users with no org context
+                    # (mirrors direct_login flow at line ~5615 — federated SSO users
+                    # arriving via auth.<domain>/realms/uchub need a local org row)
+                    user_role_for_provision = user_info.get("role", "viewer")
+                    if not org_context.get("org_id") and user_role_for_provision != "admin":
+                        display_name_for_provision = (
+                            user_info.get("name")
+                            or user_info.get("preferred_username")
+                            or username
+                        )
+                        try:
+                            org_context = await auto_provision_user_org(
+                                user_id=user_id,
+                                email=email,
+                                display_name=display_name_for_provision
+                            )
+                            auto_provisioned = True
+                            logger.info(f"SSO auto-provisioned org for user {email}")
+                        except Exception as provision_error:
+                            logger.error(f"SSO auto-provisioning failed for {email}: {provision_error}")
+
                     # Create session with org data (store id_token for logout!)
                     session_token = secrets.token_urlsafe(32)
                     sessions[session_token] = {
@@ -6018,12 +6178,15 @@ async def oauth_callback(request: Request, code: str, state: str = None):
 
 @app.get("/auth/logout")
 async def logout(request: Request):
-    """Logout and clear session"""
+    """Logout, clear local session, and continue through Keycloak SSO logout."""
     session_token = request.cookies.get("session_token")
+    id_token = None
 
     if session_token and session_token in sessions:
         # Get user info before deleting session
         session = sessions[session_token]
+        if isinstance(session, dict):
+            id_token = session.get("id_token")
         user_info = session.get("user", {})
         username = user_info.get('preferred_username') or user_info.get('username', 'unknown')
         user_id = user_info.get('sub') or user_info.get('id', 'unknown')
@@ -6040,104 +6203,128 @@ async def logout(request: Request):
         # Delete session
         del sessions[session_token]
 
-    # Redirect to root, which will trigger auth flow again
-    response = RedirectResponse(url="/")
-    response.delete_cookie("session_token")
+    external_host = os.getenv("EXTERNAL_HOST", EXTERNAL_HOST)
+    external_protocol = os.getenv("EXTERNAL_PROTOCOL", EXTERNAL_PROTOCOL)
+    logout_confirmation_url = f"{external_protocol}://{external_host}/auth/logged-out"
+    response = RedirectResponse(url=build_keycloak_logout_url(logout_confirmation_url, id_token))
+    delete_session_cookie(response)
     return response
 
 @app.get("/auth/logged-out")
 async def logged_out(request: Request):
-    """Logout confirmation page that auto-redirects to login"""
+    """Logout confirmation page."""
     # Delete any remaining session from Redis
     session_token = request.cookies.get("session_token")
     if session_token and session_token in sessions:
         del sessions[session_token]
 
+    from html import escape
+    brand_name = escape(os.getenv("BRANDING_PAGE_TITLE") or os.getenv("BRANDING_COMPANY_NAME") or "Ops-Center")
     html_content = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Logged Out - Unicorn Commander</title>
+        <title>Signed Out - """ + brand_name + """</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background:
+                    radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 32rem),
+                    radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.18), transparent 28rem),
+                    #07111f;
+                color: #e5f3ff;
                 min-height: 100vh;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                padding: 24px;
             }
             .card {
-                background: rgba(255, 255, 255, 0.95);
+                background: rgba(10, 20, 34, 0.88);
                 backdrop-filter: blur(10px);
-                border-radius: 20px;
-                padding: 60px 80px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(148, 163, 184, 0.24);
+                border-radius: 8px;
+                padding: 42px;
+                box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
                 text-align: center;
-                max-width: 500px;
+                max-width: 520px;
+                width: 100%;
             }
-            .icon {
-                font-size: 64px;
-                margin-bottom: 20px;
+            .mark {
+                width: 56px;
+                height: 56px;
+                border-radius: 16px;
+                margin: 0 auto 22px;
+                display: grid;
+                place-items: center;
+                background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+                color: #06101e;
+                font-size: 30px;
+                font-weight: 800;
             }
             h1 {
-                color: #667eea;
-                font-size: 32px;
-                margin-bottom: 10px;
+                color: #f8fbff;
+                font-size: clamp(28px, 5vw, 40px);
+                line-height: 1.1;
+                margin-bottom: 12px;
+                letter-spacing: 0;
             }
             p {
-                color: #666;
-                font-size: 18px;
-                margin-bottom: 30px;
+                color: #a9bed5;
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 28px;
             }
-            .spinner {
+            .actions {
+                display: flex;
+                justify-content: center;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .button {
                 display: inline-block;
-                width: 40px;
-                height: 40px;
-                border: 4px solid rgba(102, 126, 234, 0.2);
-                border-top-color: #667eea;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-            }
-            @keyframes spin {
-                to { transform: rotate(360deg); }
-            }
-            .redirect-info {
-                color: #999;
+                min-width: 136px;
+                padding: 12px 18px;
+                border-radius: 8px;
+                background: #22d3ee;
+                color: #06101e;
                 font-size: 14px;
-                margin-top: 20px;
+                font-weight: 700;
+                text-decoration: none;
+            }
+            .secondary {
+                background: rgba(148, 163, 184, 0.12);
+                color: #dcecff;
+                border: 1px solid rgba(148, 163, 184, 0.24);
+            }
+            .note {
+                color: #6f88a3;
+                font-size: 14px;
+                margin-top: 22px;
+                margin-bottom: 0;
             }
         </style>
     </head>
     <body>
         <div class="card">
-            <div class="icon">👋</div>
-            <h1>Logged Out Successfully</h1>
-            <p>You have been signed out of your account.</p>
-            <div class="spinner"></div>
-            <div class="redirect-info">Redirecting to home page...</div>
+            <div class="mark">U</div>
+            <h1>Signed Out</h1>
+            <p>Your Ops-Center session has ended. This page will stay here so the browser does not immediately start a new SSO login.</p>
+            <div class="actions">
+                <a class="button" href="/auth/login">Sign In Again</a>
+                <a class="button secondary" href="/">Return Home</a>
+            </div>
+            <p class="note">If another tab is still open, refresh it before continuing.</p>
         </div>
-        <script>
-            // Clear Keycloak session via hidden iframe
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = 'https://auth.unicorncommander.ai/realms/uchub/protocol/openid-connect/logout';
-            document.body.appendChild(iframe);
-
-            // Redirect to home page after 2 seconds (not /auth/login to avoid auto-login)
-            setTimeout(() => {
-                window.location.href = '/';
-            }, 2000);
-        </script>
     </body>
     </html>
     """
     # Create response and delete the session cookie
     response = HTMLResponse(content=html_content)
-    response.delete_cookie("session_token")
+    delete_session_cookie(response)
     return response
 
 @app.get("/auth/user")

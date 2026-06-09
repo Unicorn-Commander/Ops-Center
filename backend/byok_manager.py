@@ -319,6 +319,11 @@ class BYOKManager:
         Returns:
             Dict mapping provider -> decrypted API key
         """
+        # Service orgs (user_id prefixed with 'org_') and string sentinels
+        # like 'admin' don't have BYOK keys — short-circuit so we don't pass
+        # a non-UUID into the asyncpg parameter and noise the logs.
+        if not user_id or user_id.startswith('org_') or len(user_id) < 32:
+            return {}
         try:
             async with self.db_pool.acquire() as conn:
                 rows = await conn.fetch(

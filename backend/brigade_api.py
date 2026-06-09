@@ -169,25 +169,27 @@ async def get_brigade_usage(
                         detail=f"Brigade API error: {response.text}"
                     )
 
-            except httpx.TimeoutException:
-                logger.error("Brigade API request timed out")
-                raise HTTPException(
-                    status_code=504,
-                    detail="Brigade API request timed out"
-                )
-
-            except httpx.RequestError as e:
-                logger.error(f"Brigade API request failed: {e}")
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Failed to connect to Brigade API: {str(e)}"
-                )
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                logger.warning(f"Brigade API unreachable, returning empty usage: {e}")
+                return {
+                    "agent_count": 0,
+                    "task_count": 0,
+                    "api_calls": 0,
+                    "total_cost": 0,
+                    "message": "Brigade not configured on this node"
+                }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get Brigade usage: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"Failed to get Brigade usage, returning empty payload: {e}")
+        return {
+            "agent_count": 0,
+            "task_count": 0,
+            "api_calls": 0,
+            "total_cost": 0,
+            "message": "Brigade not configured on this node"
+        }
 
 
 # ==================== Task History (H23) ====================
@@ -300,25 +302,23 @@ async def get_tasks_history(
                         detail=f"Brigade API error: {response.text}"
                     )
 
-            except httpx.TimeoutException:
-                logger.error("Brigade API request timed out")
-                raise HTTPException(
-                    status_code=504,
-                    detail="Brigade API request timed out"
-                )
-
-            except httpx.RequestError as e:
-                logger.error(f"Brigade API request failed: {e}")
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Failed to connect to Brigade API: {str(e)}"
-                )
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                logger.warning(f"Brigade API unreachable, returning empty task history: {e}")
+                return {
+                    "tasks": [],
+                    "total": 0,
+                    "message": "Brigade not available"
+                }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get task history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"Failed to get task history, returning empty payload: {e}")
+        return {
+            "tasks": [],
+            "total": 0,
+            "message": "Brigade not available"
+        }
 
 
 # ==================== Additional Helper Endpoints ====================
@@ -343,27 +343,39 @@ async def list_brigade_agents(
             params["user_id"] = user_id
 
         async with httpx.AsyncClient(timeout=BRIGADE_TIMEOUT) as client:
-            response = await client.get(
-                f"{BRIGADE_API_URL}{BRIGADE_API_ENDPOINTS['agents_list']}",
-                headers=headers,
-                params=params
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 401:
-                raise HTTPException(status_code=401, detail="Unauthorized")
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Brigade API error: {response.text}"
+            try:
+                response = await client.get(
+                    f"{BRIGADE_API_URL}{BRIGADE_API_ENDPOINTS['agents_list']}",
+                    headers=headers,
+                    params=params
                 )
+
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 401:
+                    raise HTTPException(status_code=401, detail="Unauthorized")
+                else:
+                    logger.warning(f"Brigade API error, returning empty agents: {response.status_code} - {response.text}")
+                    return {
+                        "agents": [],
+                        "message": "Brigade not configured on this node"
+                    }
+
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                logger.warning(f"Brigade API unreachable, returning empty agents: {e}")
+                return {
+                    "agents": [],
+                    "message": "Brigade not configured on this node"
+                }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list agents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"Failed to list agents, returning empty payload: {e}")
+        return {
+            "agents": [],
+            "message": "Brigade not configured on this node"
+        }
 
 
 @router.get("/tasks/{task_id}")

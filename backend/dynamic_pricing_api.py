@@ -438,7 +438,11 @@ async def list_credit_packages(
 
         query += " ORDER BY display_order, credits"
 
-        rows = await conn.fetch(query, *params)
+        try:
+            rows = await conn.fetch(query, *params)
+        except asyncpg.UndefinedTableError:
+            logger.warning("credit_packages table missing; returning empty packages")
+            rows = []
 
         return {
             "packages": [dict(row) for row in rows],

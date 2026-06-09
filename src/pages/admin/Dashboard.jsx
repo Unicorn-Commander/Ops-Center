@@ -44,6 +44,10 @@ import {
   CpuChipIcon
 } from '@heroicons/react/24/outline';
 
+// Tooltips for non-obvious metrics/status
+import Tooltip from '@mui/material/Tooltip';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+
 // Animation variants
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -393,13 +397,13 @@ export default function AdminDashboard() {
     >
       {/* Page Header */}
       <motion.div variants={itemVariants} className={`${glassStyles.card} rounded-2xl p-6 shadow-xl`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-14 h-14 shrink-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl">
               <ComputerDesktopIcon className="h-7 w-7 text-white" />
             </div>
-            <div>
-              <h1 className={`text-2xl font-bold ${currentTheme === 'unicorn' ? 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400' : 'text-white'}`}>
+            <div className="min-w-0">
+              <h1 className={`text-xl sm:text-2xl font-bold truncate ${currentTheme === 'unicorn' ? 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400' : 'text-white'}`}>
                 {currentUser ? `Welcome back, ${currentUser.firstName || currentUser.username || 'Admin'}` : 'Admin Dashboard'}
               </h1>
               <p className={`${currentTheme === 'unicorn' ? 'text-purple-200/80' : 'text-gray-400'} text-sm`}>
@@ -419,6 +423,7 @@ export default function AdminDashboard() {
               <div className="flex items-center gap-3">
                 <div className={`w-3 h-3 ${systemStatus.color} rounded-full ${systemStatus.status === 'healthy' ? 'animate-pulse' : ''}`} />
                 <span className="text-sm font-medium text-white">{systemStatus.text}</span>
+                <Tooltip title="Overall platform health — green when every service is up, red if any critical service (PostgreSQL, Redis, Keycloak, vLLM, Traefik) is down, yellow if some non-critical services are degraded." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
               </div>
             </div>
           </div>
@@ -474,29 +479,48 @@ export default function AdminDashboard() {
             <CpuChipIcon className="h-5 w-5 text-white" />
           </div>
           Resource Utilization
+          <Tooltip title="Live host resource usage for the server running this dashboard — sustained high values mean the box is near capacity and may slow inference or service response." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
         </h3>
         <div className="space-y-4">
-          <ProgressBar
-            value={systemData?.cpu?.percent || 0}
-            max={100}
-            type="default"
-            label="CPU"
-            height="md"
-          />
-          <ProgressBar
-            value={systemData?.memory?.used || 0}
-            max={systemData?.memory?.total || 1}
-            type="default"
-            label={`Memory (${formatBytes(systemData?.memory?.used)} / ${formatBytes(systemData?.memory?.total)})`}
-            height="md"
-          />
-          <ProgressBar
-            value={systemData?.disk?.used || 0}
-            max={systemData?.disk?.total || 1}
-            type="storage"
-            label={`Storage (${formatBytes(systemData?.disk?.used)} / ${formatBytes(systemData?.disk?.total)})`}
-            height="md"
-          />
+          <div>
+            <div className="flex items-center text-xs font-medium text-gray-300 mb-1">
+              <span>CPU</span>
+              <Tooltip title="Percentage of total processor capacity in use across all cores right now." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
+            </div>
+            <ProgressBar
+              value={systemData?.cpu?.percent || 0}
+              max={100}
+              type="default"
+              label="CPU"
+              height="md"
+            />
+          </div>
+          <div>
+            <div className="flex items-center text-xs font-medium text-gray-300 mb-1">
+              <span>Memory</span>
+              <Tooltip title="RAM currently in use vs. total installed — when this fills, the OS swaps to disk and everything slows down." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
+            </div>
+            <ProgressBar
+              value={systemData?.memory?.used || 0}
+              max={systemData?.memory?.total || 1}
+              type="default"
+              label={`Memory (${formatBytes(systemData?.memory?.used)} / ${formatBytes(systemData?.memory?.total)})`}
+              height="md"
+            />
+          </div>
+          <div>
+            <div className="flex items-center text-xs font-medium text-gray-300 mb-1">
+              <span>Storage</span>
+              <Tooltip title="Disk space used vs. total — a full disk stops logging, model downloads, and database writes, so keep headroom here." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
+            </div>
+            <ProgressBar
+              value={systemData?.disk?.used || 0}
+              max={systemData?.disk?.total || 1}
+              type="storage"
+              label={`Storage (${formatBytes(systemData?.disk?.used)} / ${formatBytes(systemData?.disk?.total)})`}
+              height="md"
+            />
+          </div>
         </div>
       </motion.div>
 
@@ -526,6 +550,7 @@ export default function AdminDashboard() {
             <ClockIcon className="h-5 w-5 text-white" />
           </div>
           Recent Activity
+          <Tooltip title="The latest entries from the system audit log — a running record of logins, service start/stop, backups, and billing events for traceability." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
         </h3>
         {recentActivity.length === 0 ? (
           <div className="text-center py-8">
@@ -550,14 +575,16 @@ export default function AdminDashboard() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white">{activity.message}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      activity.category === 'auth' ? 'bg-purple-500/20 text-purple-400' :
-                      activity.category === 'service' ? 'bg-blue-500/20 text-blue-400' :
-                      activity.category === 'billing' ? 'bg-green-500/20 text-green-400' :
-                      'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {activity.category}
-                    </span>
+                    <Tooltip title="Type of event this log entry belongs to (auth = sign-in/security, service = container lifecycle, billing = credits/payments, system = everything else)." arrow>
+                      <span className={`text-xs px-2 py-0.5 rounded-full cursor-help ${
+                        activity.category === 'auth' ? 'bg-purple-500/20 text-purple-400' :
+                        activity.category === 'service' ? 'bg-blue-500/20 text-blue-400' :
+                        activity.category === 'billing' ? 'bg-green-500/20 text-green-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {activity.category}
+                      </span>
+                    </Tooltip>
                     <span className="text-xs text-gray-500 flex items-center gap-1">
                       <ClockIcon className="h-3 w-3" />
                       {activity.time}
@@ -596,7 +623,7 @@ export default function AdminDashboard() {
             className={`flex flex-col items-center gap-3 p-4 rounded-xl ${glassStyles.card} hover:bg-white/10 transition-colors`}
           >
             <CpuChipIcon className="h-6 w-6 text-purple-400" />
-            <span className="text-sm font-medium text-white">GPU Services</span>
+            <Tooltip title="Manage the local AI inference backends (Ollama, vLLM, llama.cpp) that run on this server's GPU." arrow><span className="text-sm font-medium text-white cursor-help">GPU Services</span></Tooltip>
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.03 }}
@@ -605,7 +632,7 @@ export default function AdminDashboard() {
             className={`flex flex-col items-center gap-3 p-4 rounded-xl ${glassStyles.card} hover:bg-white/10 transition-colors`}
           >
             <ShieldExclamationIcon className="h-6 w-6 text-teal-400" />
-            <span className="text-sm font-medium text-white">Traefik Dashboard</span>
+            <Tooltip title="Open Traefik, the reverse proxy that routes all incoming traffic to services and terminates SSL for hosted sites." arrow><span className="text-sm font-medium text-white cursor-help">Traefik Dashboard</span></Tooltip>
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.03 }}

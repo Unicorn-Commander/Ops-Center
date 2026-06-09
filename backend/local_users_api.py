@@ -183,7 +183,7 @@ async def check_admin_role(request: Request) -> str:
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     # Get session data
     if session_token not in sessions:

@@ -649,24 +649,34 @@ async def get_optimization_recommendations(
 
     # This would integrate with cost_optimizer.py
     # For now, return sample recommendations
-    from utils.cost_optimizer import CostOptimizer
+    try:
+        from utils.cost_optimizer import CostOptimizer
 
-    optimizer = CostOptimizer()
-    recommendations = await optimizer.generate_recommendations(days)
+        optimizer = CostOptimizer()
+        recommendations = await optimizer.generate_recommendations(days)
 
-    total_savings = sum(float(rec["potential_savings"].replace('$', '').replace('/month', ''))
-                       for rec in recommendations)
+        total_savings = sum(float(rec["potential_savings"].replace('$', '').replace('/month', ''))
+                           for rec in recommendations)
 
-    # Estimate implementation time
-    effort_hours = {"low": 2, "medium": 8, "high": 24}
-    total_hours = sum(effort_hours.get(rec["implementation_effort"], 8) for rec in recommendations)
-    estimated_time = f"{total_hours} hours" if total_hours < 40 else f"{total_hours // 8} days"
+        # Estimate implementation time
+        effort_hours = {"low": 2, "medium": 8, "high": 24}
+        total_hours = sum(effort_hours.get(rec["implementation_effort"], 8) for rec in recommendations)
+        estimated_time = f"{total_hours} hours" if total_hours < 40 else f"{total_hours // 8} days"
 
-    result = {
-        "recommendations": recommendations,
-        "total_potential_savings": round(total_savings, 2),
-        "estimated_implementation_time": estimated_time
-    }
+        result = {
+            "recommendations": recommendations,
+            "total_potential_savings": round(total_savings, 2),
+            "estimated_implementation_time": estimated_time
+        }
+    except Exception as e:
+        # Graceful degradation: no usage data / optimizer unavailable on this node.
+        # Return success-shaped empty payload so the UI renders a clean "no data" state.
+        logger.warning(f"Optimization recommendations unavailable, returning empty result: {e}")
+        return {
+            "recommendations": [],
+            "total_potential_savings": 0.0,
+            "estimated_implementation_time": "0 hours"
+        }
 
     await cache_set(cache_key, result, ttl=300)
     return result

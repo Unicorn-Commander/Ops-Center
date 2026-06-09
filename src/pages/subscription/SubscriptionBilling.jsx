@@ -22,10 +22,12 @@ const itemVariants = {
 
 // Format currency
 const formatCurrency = (amount) => {
+  // Guard: never render "$NaN" when an amount is missing/unparseable.
+  const value = Number(amount);
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD'
-  }).format(amount);
+  }).format(Number.isFinite(value) ? value : 0);
 };
 
 // Format date

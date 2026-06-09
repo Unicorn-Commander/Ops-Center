@@ -125,6 +125,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/org",   # Organization management API (without trailing slash)
             "/api/v1/federation/",  # Federation API (machine-to-machine, uses API key auth)
             "/api/v1/admin/federation/",  # Federation settings API (admin auth, not CSRF)
+            "/api/v1/admin/pricing/",  # Pricing rate-book API (admin auth via require_admin_user, not CSRF)
             "/api/v1/compute/",  # GPU Compute Fabric API (machine-to-machine, uses agent key auth)
             "/api/v1/inference/",  # Inference proxy API (machine-to-machine)
             "/api/v1/uuda/",  # UUDA agent API (machine-to-machine, mTLS + X-Agent-Key)
@@ -134,21 +135,18 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
     def is_exempt(self, path: str) -> bool:
         """Check if a URL path is exempt from CSRF protection"""
-        logger.info(f"CSRF exemption check for path: {path}")
-        logger.info(f"Exempt URLs: {self.exempt_urls}")
-
         # Check exact matches
         if path in self.exempt_urls:
-            logger.info(f"Path {path} matched exact exempt URL")
+            logger.debug(f"CSRF: path {path} matched exact exempt URL")
             return True
 
         # Check prefix matches for OAuth callbacks
         for exempt_url in self.exempt_urls:
             if path.startswith(exempt_url):
-                logger.info(f"Path {path} matched exempt URL prefix: {exempt_url}")
+                logger.debug(f"CSRF: path {path} matched exempt prefix {exempt_url}")
                 return True
 
-        logger.warning(f"Path {path} NOT EXEMPT. Exempt URLs: {self.exempt_urls}")
+        logger.debug(f"CSRF: path {path} not exempt; enforcing")
         return False
 
     def get_token_from_request(self, request: Request) -> Optional[str]:

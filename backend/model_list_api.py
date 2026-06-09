@@ -163,7 +163,7 @@ async def require_admin(request: Request):
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     # Get session data
     if session_token not in sessions:
@@ -199,7 +199,7 @@ async def get_current_user(request: Request):
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     # Get session data
     if session_token not in sessions:
@@ -251,6 +251,7 @@ async def list_model_lists(
     admin: dict = Depends(require_admin)
 ):
     """Get all model lists with model counts."""
+    import asyncpg
     from model_list_manager import get_model_list_manager
 
     try:
@@ -260,6 +261,10 @@ async def list_model_lists(
             is_active=is_active
         )
         return lists
+    except asyncpg.UndefinedTableError:
+        # app_model_lists table is not provisioned on this deployment.
+        logger.warning("app_model_lists table missing; returning empty model list set")
+        return []
     except Exception as e:
         logger.error(f"Error listing model lists: {e}")
         raise HTTPException(status_code=500, detail=str(e))

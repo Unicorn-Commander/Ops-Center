@@ -211,6 +211,7 @@ async def get_redis_client() -> aioredis.Redis:
         try:
             _redis_client = await aioredis.from_url(
                 f"redis://{REDIS_HOST}:{REDIS_PORT}",
+                password=os.getenv("REDIS_PASSWORD"),
                 encoding="utf-8",
                 decode_responses=True
             )

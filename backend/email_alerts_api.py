@@ -259,8 +259,10 @@ async def get_email_history(
         )
 
     except Exception as e:
-        logger.error(f"Failed to get email history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Graceful: no email_logs table yet (email never sent on this node) -> show an
+        # empty history instead of a 500. The table is created lazily when email is used.
+        logger.warning(f"Email history unavailable, returning empty: {e}")
+        return EmailHistoryResponse(success=True, history=[], total=0, page=page, per_page=per_page)
 
 
 @router.get("/health", response_model=HealthCheckResponse, summary="Email system health check")

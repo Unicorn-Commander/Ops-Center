@@ -187,7 +187,17 @@ async def query_keycloak_users(db: Session) -> List[Dict]:
         """
     )
 
-    result = await db.execute(query)
+    try:
+        result = await db.execute(query)
+    except Exception as exc:
+        # The Keycloak analytics DB is a commander-only dependency (default host
+        # uchub-postgres). When it is not reachable on this node, degrade to an
+        # empty user set so analytics panels render an empty state, not a 500.
+        try:
+            logger.warning("query_keycloak_users: keycloak analytics DB unavailable (%s); returning empty set", exc.__class__.__name__)
+        except Exception:
+            pass
+        return []
     users = []
 
     for row in result:
@@ -570,7 +580,11 @@ async def get_churn_predictions(
         enriched_users = await enrich_user_data(users, ops_db)
 
         # Predict churn
-        predictions = churn_predictor.predict(enriched_users)
+        try:
+            predictions = churn_predictor.predict(enriched_users)
+        except (NameError, Exception) as e:
+            logger.warning(f"Churn predictor not initialized, returning empty predictions: {e}")
+            return []
 
         # Filter by risk level if specified
         if risk_level:
@@ -800,7 +814,16 @@ async def get_churn_model_info():
 
     Returns model metadata, training date, and feature importance.
     """
-    return churn_predictor.get_model_info()
+    try:
+        return churn_predictor.get_model_info()
+    except (NameError, Exception) as e:
+        logger.warning(f"Churn predictor not initialized, returning not_configured: {e}")
+        return {
+            "status": "not_configured",
+            "message": "Churn predictor model not initialized",
+            "trained": False,
+            "model_path": None,
+        }
 
 
 # Background task for weekly model retraining

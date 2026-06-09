@@ -336,11 +336,21 @@ export default function Services() {
             Service Management
           </h1>
           <div className="flex items-center gap-4 mt-2 text-sm">
-            <span className="text-gray-600 dark:text-gray-400">
+            <span className="text-gray-600 dark:text-gray-400 inline-flex items-center">
               {services.length} Total Services
+              <HelpTooltip
+                title="Total Services"
+                content="Every Docker container Ops-Center has discovered on this node, whether it is currently running or stopped."
+                position="bottom"
+              />
             </span>
-            <span className="text-green-600 dark:text-green-400">
+            <span className="text-green-600 dark:text-green-400 inline-flex items-center">
               {services.filter(s => isRunning(s.status)).length} Running
+              <HelpTooltip
+                title="Running Services"
+                content="Services reporting a healthy or running state right now; the rest are stopped, paused, or starting up."
+                position="bottom"
+              />
             </span>
             <div className="flex items-center gap-1">
               <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
@@ -654,9 +664,9 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
                 <ComputerDesktopIcon className="h-3 w-3 mr-1" />
                 {serviceInfo?.gpu?.type || 'N/A'}
               </span>
-              <HelpTooltip 
-                title={getTooltip('services', 'gpuIndicator').title}
-                content={getTooltip('services', 'gpuIndicator').content}
+              <HelpTooltip
+                title="GPU Acceleration"
+                content="This service runs on a GPU for faster AI inference; the badge shows which GPU type is assigned to it."
                 position="top"
               />
             </div>
@@ -670,9 +680,9 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
           <div className="flex items-center gap-1">
             <CpuChipIcon className="h-4 w-4" />
             <span className="text-gray-500 dark:text-gray-400">CPU</span>
-            <HelpTooltip 
-              title={getTooltip('services', 'cpuMetric').title}
-              content={getTooltip('services', 'cpuMetric').content}
+            <HelpTooltip
+              title="CPU Usage"
+              content="Share of processor this container is using right now; sustained high values can slow down other services on the node."
               position="left"
             />
           </div>
@@ -685,9 +695,9 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
           <div className="flex items-center gap-1">
             <CircleStackIcon className="h-4 w-4" />
             <span className="text-gray-500 dark:text-gray-400">RAM</span>
-            <HelpTooltip 
-              title={getTooltip('services', 'ramMetric').title}
-              content={getTooltip('services', 'ramMetric').content}
+            <HelpTooltip
+              title="Memory (RAM) Usage"
+              content="How much system memory this container currently holds; if it hits its limit the service can be killed and restarted."
               position="left"
             />
           </div>
@@ -700,9 +710,9 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
             <div className="flex items-center gap-1">
               <GlobeAltIcon className="h-4 w-4" />
               <span className="text-gray-500 dark:text-gray-400">Port</span>
-              <HelpTooltip 
-                title={getTooltip('services', 'portNumber').title}
-                content={getTooltip('services', 'portNumber').content}
+              <HelpTooltip
+                title="Port"
+                content="The network port this service listens on; used to reach its web UI or API on this host."
                 position="left"
               />
             </div>
@@ -716,9 +726,9 @@ function ServiceCard({ service, index, loading, onAction, onViewLogs, onViewDeta
             <div className="flex items-center gap-1">
               <FireIcon className="h-4 w-4" />
               <span className="text-gray-500 dark:text-gray-400">VRAM</span>
-              <HelpTooltip 
-                title={getTooltip('services', 'vramIndicator').title}
-                content={getTooltip('services', 'vramIndicator').content}
+              <HelpTooltip
+                title="VRAM (GPU Memory)"
+                content="GPU video memory this service reserves for AI inference; the GPU can only run as many models as its VRAM allows."
                 position="left"
               />
             </div>
@@ -827,13 +837,34 @@ function ServiceTable({ services, loading, onAction, onViewLogs, onViewDetails, 
                 Service
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Status
+                <span className="inline-flex items-center">
+                  Status
+                  <HelpTooltip
+                    title="Service Status"
+                    content="Whether the container is Running (green), Starting, Paused, or Stopped (gray); red means it crashed or is in an error state."
+                    position="top"
+                  />
+                </span>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Resources
+                <span className="inline-flex items-center">
+                  Resources
+                  <HelpTooltip
+                    title="Resource Usage"
+                    content="Live CPU percentage and memory (RAM) this container is consuming right now, refreshed every few seconds."
+                    position="top"
+                  />
+                </span>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Port
+                <span className="inline-flex items-center">
+                  Port
+                  <HelpTooltip
+                    title="Port"
+                    content="The network port this service listens on; used to reach its web UI or API on this host."
+                    position="top"
+                  />
+                </span>
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                 Actions

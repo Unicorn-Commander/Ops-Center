@@ -46,7 +46,7 @@ async def _get_user(request: Request) -> dict:
 
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
     session_data = sessions.get(session_token)
 
     if not session_data:
@@ -177,6 +177,7 @@ async def delete_session(session_id: str, admin: dict = Depends(_require_admin))
     r = aioredis.Redis(
         host=os.getenv("REDIS_HOST", "unicorn-redis"),
         port=int(os.getenv("REDIS_PORT", "6379")),
+        password=os.getenv("REDIS_PASSWORD"),
         decode_responses=True,
     )
     try:

@@ -246,6 +246,12 @@ export const routes = {
             roles: ['admin'],
             name: 'Pricing Rules'
           },
+          rates: {
+            path: '/admin/billing/rates',
+            component: 'PricingRates',
+            roles: ['admin'],
+            name: 'Rates & Margin'
+          },
           revenue: {
             path: '/admin/billing/revenue',
             component: 'RevenueDashboard',

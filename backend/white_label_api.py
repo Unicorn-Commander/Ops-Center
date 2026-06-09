@@ -208,7 +208,7 @@ async def require_admin(request: Request):
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     # Get session data
     if session_token not in sessions:
@@ -250,9 +250,15 @@ async def get_white_label_config_from_db() -> Dict[str, Any]:
     conn = await get_db_connection()
     try:
         # Query for white-label settings
-        rows = await conn.fetch(
-            "SELECT key, value FROM platform_settings WHERE category = 'white_label' ORDER BY key"
-        )
+        try:
+            rows = await conn.fetch(
+                "SELECT key, value FROM platform_settings WHERE category = 'white_label' ORDER BY key"
+            )
+        except asyncpg.UndefinedTableError:
+            # platform_settings table is not provisioned on this deployment;
+            # fall back to landing_config defaults (handled by the caller).
+            logger.warning("platform_settings table missing; using default white-label config")
+            return None
 
         if not rows:
             return None

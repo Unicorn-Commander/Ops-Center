@@ -298,7 +298,7 @@ class UsageMeter:
                   AND created_at <= $3
                   AND model IS NOT NULL
                 GROUP BY service, model
-                ORDER BY cost DESC
+                ORDER BY total_cost DESC
                 """,
                 user_id, start_date, end_date
             )
@@ -356,7 +356,7 @@ class UsageMeter:
                   AND created_at >= $2
                   AND created_at <= $3
                 GROUP BY service
-                ORDER BY cost DESC
+                ORDER BY total_cost DESC
                 """,
                 user_id, start_date, end_date
             )

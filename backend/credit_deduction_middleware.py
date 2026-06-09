@@ -114,6 +114,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
         self.initialized = False
         self.credit_system = None
         self.org_integration = None
+        self.byok_manager = None
 
     async def _ensure_initialized(self, request: Request):
         """Lazy initialization of credit systems"""
@@ -126,6 +127,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 # Initialize credit system with required dependencies
                 self.credit_system = CreditSystem(db_pool, redis_client)
                 self.org_integration = get_org_credit_integration()
+                self.byok_manager = request.app.state.byok_manager
                 self.initialized = True
                 logger.info("CreditDeductionMiddleware initialized successfully")
             except Exception as e:
@@ -207,7 +209,19 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 }
 
                 # Internal services exempt from billing
-                internal_services = {'colonel-service'}
+                # All platform-internal service accounts run on the org's own
+                # 'internal' tier when called without an X-User-ID context;
+                # user-context calls (X-User-ID set) bill the user's tier.
+                internal_services = {
+                    'colonel-service',
+                    'brigade-service',
+                    'majiks-service',
+                    'centerdeep-service',
+                    'open-webui-service',
+                    'bolt-diy-service',
+                    'presenton-service',
+                    'partnerpulse-service',
+                }
 
                 service_name = service_keys.get(token)
                 if service_name:
@@ -248,7 +262,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
             redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
             redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-            sessions = RedisSessionManager(host=redis_host, port=redis_port)
+            sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
             user_data = sessions.get(session_token)
 
             if not user_data:
@@ -272,10 +286,11 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
             (is_byok: bool, provider: str)
         """
         try:
-            # Import here to avoid circular dependencies
-            from byok_manager import BYOKManager
-
-            byok_manager = BYOKManager()
+            # Reuse the app-state singleton initialized at startup
+            byok_manager = self.byok_manager
+            if byok_manager is None:
+                logger.debug("BYOK manager not yet initialized; skipping BYOK check")
+                return False, None
 
             # Check if user has any BYOK keys configured
             user_providers = await byok_manager.get_user_providers(user_id)

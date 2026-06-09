@@ -14,7 +14,8 @@ from keycloak_integration import (
     get_admin_token,
     KEYCLOAK_URL,
     KEYCLOAK_REALM,
-    get_all_users
+    get_all_users,
+    get_realm_session_config_from_db
 )
 
 logger = logging.getLogger(__name__)
@@ -291,8 +292,15 @@ async def get_api_credentials():
 @router.get("/session-config")
 async def get_session_config():
     """
-    Get session configuration from Keycloak realm settings
+    Get session configuration from Keycloak realm settings.
+
+    Primary path: the Keycloak admin REST API. If that is unavailable on this
+    node (e.g. admin credentials not provisioned) it falls back to a read-only
+    query against Keycloak's PostgreSQL database.
     """
+    realm_data = None
+
+    # Primary: admin REST API
     try:
         token = await get_admin_token()
 
@@ -305,22 +313,29 @@ async def get_session_config():
 
             if response.status_code == 200:
                 realm_data = response.json()
-
-                return {
-                    "sso_session_idle_timeout": realm_data.get("ssoSessionIdleTimeout", 1800),  # 30 min default
-                    "sso_session_max_lifespan": realm_data.get("ssoSessionMaxLifespan", 36000),  # 10 hours default
-                    "offline_session_idle_timeout": realm_data.get("offlineSessionIdleTimeout", 2592000),  # 30 days
-                    "access_token_lifespan": realm_data.get("accessTokenLifespan", 300),  # 5 min
-                    "remember_me": realm_data.get("rememberMe", True),
-                    "login_lifespan": realm_data.get("accessCodeLifespan", 60)  # 1 min
-                }
             else:
                 logger.error(f"Failed to fetch realm settings: {response.status_code}")
-                raise HTTPException(status_code=500, detail="Failed to fetch realm settings")
-
     except Exception as e:
-        logger.error(f"Error getting session config: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get session config: {str(e)}")
+        logger.error(f"Error getting session config (REST): {e}")
+
+    # Fallback: read realm settings directly from Keycloak's database.
+    if realm_data is None:
+        try:
+            realm_data = await get_realm_session_config_from_db()
+        except Exception as db_err:
+            logger.error(f"Keycloak DB fallback for session config failed: {db_err}")
+
+    if realm_data is None:
+        raise HTTPException(status_code=500, detail="Failed to fetch realm settings")
+
+    return {
+        "sso_session_idle_timeout": realm_data.get("ssoSessionIdleTimeout", 1800),  # 30 min default
+        "sso_session_max_lifespan": realm_data.get("ssoSessionMaxLifespan", 36000),  # 10 hours default
+        "offline_session_idle_timeout": realm_data.get("offlineSessionIdleTimeout", 2592000),  # 30 days
+        "access_token_lifespan": realm_data.get("accessTokenLifespan", 300),  # 5 min
+        "remember_me": realm_data.get("rememberMe", True),
+        "login_lifespan": realm_data.get("accessCodeLifespan", 60)  # 1 min
+    }
 
 
 @router.get("/ssl-status")

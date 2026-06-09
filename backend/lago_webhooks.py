@@ -295,11 +295,10 @@ def map_plan_to_tier(plan_code: str) -> str:
 @router.get("/lago/health")
 async def webhook_health():
     """Health check for webhook endpoint"""
-    keycloak_status = await keycloak_health_check()
-
+    # NB: previously called an undefined keycloak_health_check() -> NameError 500.
+    # A webhook receiver's health does not depend on Keycloak; report the endpoint's own state.
     return {
         "status": "healthy",
         "webhook_endpoint": "/api/v1/webhooks/lago",
-        "signature_verification": bool(LAGO_WEBHOOK_SECRET),
-        "keycloak": keycloak_status
+        "signature_verification": bool(LAGO_WEBHOOK_SECRET)
     }

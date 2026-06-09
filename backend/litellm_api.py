@@ -14,7 +14,7 @@ Date: October 20, 2025
 
 import logging
 import os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 import json
 import time
@@ -23,6 +23,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Header, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from auth_dependencies import require_authenticated_user  # per-user gate for account-facing endpoints under the m2m-allowlisted /api/v1/llm prefix
 import stripe
 
 from litellm_credit_system import CreditSystem, POWER_LEVELS
@@ -2577,7 +2578,7 @@ async def list_models_categorized(
                     user_tier
                 )
                 if tier_result:
-                    tier_markup = float(tier_result['llm_markup_percentage'])
+                    tier_markup = float(tier_result['llm_markup_percentage'] or 0)
                     logger.info(f"User {user_id} tier {user_tier} has markup {tier_markup}%")
         except Exception as e:
             logger.warning(f"Failed to fetch tier markup for {user_tier}: {e}")
@@ -2784,8 +2785,11 @@ async def list_models_categorized(
         }
 
     except Exception as e:
-        logger.error(f"Error categorizing models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to categorize models: {str(e)}")
+        # Graceful: the upstream LiteLLM proxy / OpenRouter may be unreachable on this node
+        # (DNS / not configured). Return an empty-but-valid categorized payload so the
+        # models screen renders "none available" instead of a 500.
+        logger.warning(f"Model categorization unavailable, returning empty: {e}")
+        return {"categories": {}, "providers": {}, "total": 0, "note": "Model catalog unavailable on this node"}
 
 
 @router.get("/usage", response_model=UsageStats)
@@ -3214,7 +3218,7 @@ async def get_byok_usage(
 
 
 @router.get("/byok/providers")
-async def list_supported_providers():
+async def list_supported_providers(_user: Dict[str, Any] = Depends(require_authenticated_user)):
     """
     List all supported BYOK providers
 

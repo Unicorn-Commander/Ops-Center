@@ -53,7 +53,7 @@ async def get_current_user_from_request(request: Request):
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
     # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     # Get session token from cookie
     session_token = request.cookies.get("session_token")
@@ -495,8 +495,10 @@ async def get_openrouter_account(current_user: dict = Depends(get_current_user))
             return None
         return OpenRouterAccount(**account)
     except Exception as e:
-        logger.error(f"Failed to get OpenRouter account: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # OpenRouter not configured on this node — degrade gracefully
+        # so the frontend renders a clean "not configured" state.
+        logger.warning(f"OpenRouter account unavailable (not configured?): {e}")
+        return None
 
 
 @router.post("/openrouter/sync-balance", response_model=Dict[str, Decimal])
@@ -771,8 +773,10 @@ async def list_coupons(
         )
         return [CouponCode(**coupon) for coupon in coupons]
     except Exception as e:
-        logger.error(f"Failed to list coupons: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Coupon manager uninitialized on this node — degrade gracefully
+        # so the frontend renders a clean empty list instead of a 500.
+        logger.warning(f"Coupons unavailable (manager uninitialized?): {e}")
+        return []
 
 
 @router.delete("/coupons/{code}", response_model=Dict[str, str])

@@ -650,12 +650,15 @@ class CreditSystem:
         try:
             # Check if this is a service organization ID
             if user_id and user_id.startswith('org_'):
+                # Strip org_ prefix to get UUID for DB lookup (id column is UUID type)
+                org_uuid = user_id[4:]
                 async with self.db_pool.acquire() as conn:
+                    # plan_tier is present on all org schemas; subscription_tier may not exist
                     tier = await conn.fetchval(
                         """
-                        SELECT subscription_tier FROM organizations WHERE id = $1
+                        SELECT plan_tier FROM organizations WHERE id::text = $1
                         """,
-                        user_id
+                        org_uuid
                     )
                     if tier:
                         logger.info(f"Service org {user_id} tier: {tier}")

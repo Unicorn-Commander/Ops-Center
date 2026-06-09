@@ -110,17 +110,17 @@ const themes = {
   underground: {
     name: 'Special Projects',
     id: 'underground',
-    primary: 'purple-700',
-    accent: 'fuchsia-500',
-    background: 'bg-gradient-to-br from-black via-purple-950 to-slate-950',
-    sidebar: 'bg-black/95 backdrop-blur-xl border-r border-purple-900/50',
-    card: 'bg-purple-950/80 backdrop-blur-md border border-purple-800/30 shadow-xl shadow-purple-900/20',
-    button: 'bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:from-purple-800 hover:to-fuchsia-800 text-white shadow-lg shadow-purple-900/40',
+    primary: 'violet-700',
+    accent: 'cyan-500',
+    background: 'ops-command-bg',
+    sidebar: 'bg-slate-950/95 backdrop-blur-xl border-r border-slate-800 shadow-2xl',
+    card: 'bg-slate-950/80 backdrop-blur-md border border-slate-800 shadow-xl shadow-black/20',
+    button: 'bg-gradient-to-r from-violet-700 to-cyan-700 hover:from-violet-600 hover:to-cyan-600 text-white shadow-lg shadow-cyan-950/30',
     text: {
       primary: 'text-white',
-      secondary: 'text-purple-300',
-      accent: 'text-fuchsia-400',
-      logo: 'text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-fuchsia-400 to-pink-400'
+      secondary: 'text-slate-300',
+      accent: 'text-cyan-300',
+      logo: 'text-transparent bg-clip-text bg-gradient-to-r from-white via-violet-200 to-cyan-200'
     },
     status: {
       success: 'text-emerald-400',
@@ -162,7 +162,7 @@ const themes = {
  */
 
 export function ThemeProvider({ children }) {
-  const [currentTheme, setCurrentTheme] = useState('unicorn'); // Default to Unicorn Commander theme
+  const [currentTheme, setCurrentTheme] = useState('underground'); // Default to Unicorn Commander theme
   const [isDarkMode, setIsDarkMode] = useState(true);
 
   useEffect(() => {

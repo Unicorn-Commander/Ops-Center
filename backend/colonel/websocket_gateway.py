@@ -111,7 +111,12 @@ class ColonelGateway:
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
-            self._redis = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            self._redis = aioredis.Redis(
+                host=REDIS_HOST,
+                port=REDIS_PORT,
+                password=os.getenv("REDIS_PASSWORD"),
+                decode_responses=True,
+            )
         return self._redis
 
     async def _get_http(self) -> httpx.AsyncClient:
@@ -196,7 +201,7 @@ class ColonelGateway:
 
         try:
             from redis_session import RedisSessionManager
-            sessions = RedisSessionManager(host=REDIS_HOST, port=REDIS_PORT)
+            sessions = RedisSessionManager(host=REDIS_HOST, port=REDIS_PORT, password=os.getenv("REDIS_PASSWORD"))
             session_data = sessions.get(session_token)
             if not session_data:
                 return None

@@ -24,6 +24,7 @@ import json
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
+from auth_dependencies import require_admin_user  # admin gate for the stats endpoint (router sits under the m2m-allowlisted /api/v1/llm prefix)
 from pydantic import BaseModel, Field
 from cryptography.fernet import Fernet
 
@@ -281,8 +282,8 @@ async def fetch_openrouter_models() -> List[Dict]:
                     'description': model.get('description', ''),
                     'context_length': model.get('context_length', 0),
                     'pricing': {
-                        'input': float(pricing.get('prompt', 0)) * 1_000_000,  # Convert to per 1M
-                        'output': float(pricing.get('completion', 0)) * 1_000_000
+                        'input': float(pricing.get('prompt') or 0) * 1_000_000,  # Convert to per 1M
+                        'output': float(pricing.get('completion') or 0) * 1_000_000
                     },
                     'capabilities': capabilities,
                     'top_provider': model.get('top_provider', {}),
@@ -573,7 +574,7 @@ async def require_admin(request: Request) -> Dict:
 # ============================================================================
 
 @router.get("/models/stats")
-async def get_model_stats(request: Request):
+async def get_model_stats(request: Request, _admin: dict = Depends(require_admin_user)):
     """
     Get model catalog statistics
 

@@ -22,6 +22,8 @@ import {
 import { useSystem } from '../contexts/SystemContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../components/Toast';
+import MuiTooltip from '@mui/material/Tooltip';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { isCriticalProcess, getCriticalProcessWarning } from '../utils/validation';
 
@@ -618,7 +620,12 @@ export default function System() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm ${theme.text.secondary}`}>CPU Usage</p>
+                  <p className={`text-sm ${theme.text.secondary}`}>
+                    CPU Usage
+                    <MuiTooltip title="Share of total processor capacity in use across all cores right now. Sustained high values indicate the machine is compute-bound and may slow down." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </p>
                   <p className={`text-3xl font-bold ${theme.text.primary}`}>
                     {systemStatus.cpu.percent.toFixed(1)}%
                   </p>
@@ -638,7 +645,12 @@ export default function System() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm ${theme.text.secondary}`}>Memory</p>
+                  <p className={`text-sm ${theme.text.secondary}`}>
+                    Memory
+                    <MuiTooltip title="Portion of system RAM currently allocated. When this approaches 100% the system swaps to disk, which sharply degrades performance." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </p>
                   <p className={`text-3xl font-bold ${theme.text.primary}`}>
                     {systemStatus.memory?.percent?.toFixed(1) || 0}%
                   </p>
@@ -658,7 +670,12 @@ export default function System() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm ${theme.text.secondary}`}>Disk Usage</p>
+                  <p className={`text-sm ${theme.text.secondary}`}>
+                    Disk Usage
+                    <MuiTooltip title="How full the primary storage volume is. A nearly full disk can stop services from writing logs or data and cause failures." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </p>
                   <p className={`text-3xl font-bold ${theme.text.primary}`}>
                     {systemStatus.disk?.percent?.toFixed(1) || 0}%
                   </p>
@@ -678,12 +695,20 @@ export default function System() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm ${theme.text.secondary}`}>System Uptime</p>
+                  <p className={`text-sm ${theme.text.secondary}`}>
+                    System Uptime
+                    <MuiTooltip title="How long the machine has run since its last reboot. A recent reset can explain why other metrics look unusually low." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </p>
                   <p className={`text-2xl font-bold ${theme.text.primary}`}>
                     {formatUptime(systemStatus.uptime || 0)}
                   </p>
                   <p className={`text-xs mt-1 ${theme.text.secondary}`}>
                     Load: {systemStatus.load_average?.map(l => l.toFixed(2)).join(', ') || 'N/A'}
+                    <MuiTooltip title="Average number of processes waiting to run over the last 1, 5, and 15 minutes. A value above your core count means the CPU is over-subscribed." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
                   </p>
                 </div>
                 <ClockIcon className="h-12 w-12 text-yellow-400" />
@@ -750,14 +775,24 @@ export default function System() {
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                 <div className="bg-gray-800/50 rounded-xl p-4">
-                  <div className={`text-sm ${theme.text.secondary} mb-2`}>GPU Utilization</div>
+                  <div className={`text-sm ${theme.text.secondary} mb-2`}>
+                    GPU Utilization
+                    <MuiTooltip title="Percent of the graphics processor actively doing work. For AI inference, high utilization means the GPU is busy serving model requests." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </div>
                   <div className={`text-2xl font-bold ${theme.text.primary}`}>
                     {systemStatus.gpu[0]?.utilization?.toFixed(1) || 0}%
                   </div>
                 </div>
 
                 <div className="bg-gray-800/50 rounded-xl p-4">
-                  <div className={`text-sm ${theme.text.secondary} mb-2`}>VRAM Usage</div>
+                  <div className={`text-sm ${theme.text.secondary} mb-2`}>
+                    VRAM Usage
+                    <MuiTooltip title="GPU video memory in use versus total. Models must fit in VRAM to load; running out forces them onto slower system memory or fails." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </div>
                   <div className={`text-2xl font-bold ${theme.text.primary}`}>
                     {formatBytes(systemStatus.gpu[0]?.memory_used || 0)}
                   </div>
@@ -767,12 +802,22 @@ export default function System() {
                 </div>
 
                 <div className="bg-gray-800/50 rounded-xl p-4">
-                  <div className={`text-sm ${theme.text.secondary} mb-2`}>Temperature</div>
+                  <div className={`text-sm ${theme.text.secondary} mb-2`}>
+                    Temperature
+                    <MuiTooltip title="Current GPU core temperature. Cards throttle their speed to protect the hardware once they get too hot (typically above 80–85°C)." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </div>
                   <TemperatureGauge temperature={systemStatus.gpu[0]?.temperature || 0} theme={theme} />
                 </div>
 
                 <div className="bg-gray-800/50 rounded-xl p-4">
-                  <div className={`text-sm ${theme.text.secondary} mb-2`}>Power Draw</div>
+                  <div className={`text-sm ${theme.text.secondary} mb-2`}>
+                    Power Draw
+                    <MuiTooltip title="Watts the GPU is currently pulling versus its rated limit. Sitting near the limit means the card is working at full capacity." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
+                  </div>
                   <div className={`text-2xl font-bold ${theme.text.primary}`}>
                     {systemStatus.gpu[0]?.power_draw?.toFixed(0) || 0}W
                   </div>
@@ -837,6 +882,9 @@ export default function System() {
               <h2 className={`text-lg font-semibold mb-4 flex items-center gap-2 ${theme.text.primary}`}>
                 <WifiIcon className="h-5 w-5" />
                 Network Bandwidth
+                <MuiTooltip title="Live inbound (download) and outbound (upload) network throughput. Spikes can reveal heavy transfers, syncs, or unexpected traffic." arrow>
+                  <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                </MuiTooltip>
               </h2>
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={historicalData.network}>
@@ -861,6 +909,9 @@ export default function System() {
               <h2 className={`text-lg font-semibold mb-4 flex items-center gap-2 ${theme.text.primary}`}>
                 <ServerIcon className="h-5 w-5" />
                 Disk I/O Performance
+                <MuiTooltip title="Rate of data being read from and written to disk. High sustained I/O can bottleneck databases and file-heavy workloads even when CPU is idle." arrow>
+                  <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                </MuiTooltip>
               </h2>
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={historicalData.diskIo}>
@@ -932,12 +983,21 @@ export default function System() {
                   </th>
                   <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${theme.text.secondary}`}>
                     CPU %
+                    <MuiTooltip title="Share of CPU this individual process is consuming. The biggest values here usually explain a high overall CPU reading." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
                   </th>
                   <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${theme.text.secondary}`}>
                     Memory
+                    <MuiTooltip title="RAM held by this process. A single process growing without bound here can be a memory leak." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
                   </th>
                   <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${theme.text.secondary}`}>
                     Status
+                    <MuiTooltip title="The process state: 'running' is actively using the CPU, while 'sleeping' is idle and waiting — sleeping is normal and not a problem." arrow>
+                      <InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} />
+                    </MuiTooltip>
                   </th>
                   <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${theme.text.secondary}`}>
                     Actions

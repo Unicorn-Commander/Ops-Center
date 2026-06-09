@@ -81,7 +81,7 @@ async def get_current_user(request: Request):
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     if session_token not in sessions:
         raise HTTPException(status_code=401, detail="Invalid or expired session")

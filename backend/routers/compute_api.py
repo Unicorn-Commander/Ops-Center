@@ -38,15 +38,19 @@ except ImportError:
     async def emit_billing_event(pool, event_type, origin_property, origin_org_id=None, **kwargs):
         pass  # Billing events module not available
 
-# Import auth dependencies — same patterns used by rest of Ops-Center
+# Import auth dependencies — same patterns used by rest of Ops-Center.
+# NOTE: `from server import ...` ALWAYS raises ImportError here because server.py imports
+# this router (circular), so the except branch is the LIVE path. It previously defined
+# fake-admin stubs (returned {"role":"admin"} unconditionally), which made every
+# require_admin/get_current_user gate in this file INERT — leaving the compute endpoints
+# (incl. mutations like drain/resume/pipeline CRUD) reachable with NO auth under the
+# allowlisted /api/v1/compute prefix. Map to the standalone auth_dependencies module
+# instead: it enforces real session auth and has no circular-import problem.
 try:
     from server import get_current_user, require_admin, get_current_user_optional
 except ImportError:
-    # Fallback: define stubs if server module isn't importable
-    async def get_current_user(request: Request):
-        return {"user_id": "system", "role": "admin"}
-    async def require_admin(request: Request):
-        return {"user_id": "system", "role": "admin"}
+    from auth_dependencies import require_authenticated_user as get_current_user
+    from auth_dependencies import require_admin_user as require_admin
     async def get_current_user_optional(request: Request):
         return None
 
@@ -1177,7 +1181,7 @@ async def _auto_route(
 # =============================================================================
 
 @router.get("/pipelines")
-async def list_pipelines(current_user: dict = Depends(get_current_user)):
+async def list_pipelines(current_user: dict = Depends(require_admin)):
     """List all named routing pipelines."""
     pool = await get_db_pool()
     await _ensure_tables(pool)

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/monitoring/prometheus", tags=["Monitoring"])
 
 # Prometheus Configuration
 PROMETHEUS_URL = "http://prometheus.unicorncommander.ai:9090"
-PROMETHEUS_TIMEOUT = 30.0
+PROMETHEUS_TIMEOUT = 8.0  # fail fast: unreachable nodes must not hang the event loop
 
 # Pre-defined scrape targets
 DEFAULT_TARGETS = [

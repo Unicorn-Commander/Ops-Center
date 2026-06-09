@@ -5,12 +5,15 @@ Management endpoints for app definitions and toggles.
 
 import os
 import sys
+import logging
 from typing import List, Optional, Union
 from datetime import datetime
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 # Router configuration
 router = APIRouter(prefix="/api/v1/admin/apps", tags=["admin", "apps"])
@@ -35,7 +38,7 @@ async def get_current_admin(request: Request) -> str:
 
         redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        redis_sessions = RedisSessionManager(host=redis_host, port=redis_port)
+        redis_sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
         if session_token in redis_sessions:
             session_data = redis_sessions[session_token]
 
@@ -210,10 +213,15 @@ async def list_apps(
 
         query += " ORDER BY category ASC NULLS LAST, id ASC"
 
-        if params:
-            rows = await conn.fetch(query, *params)
-        else:
-            rows = await conn.fetch(query)
+        try:
+            if params:
+                rows = await conn.fetch(query, *params)
+            else:
+                rows = await conn.fetch(query)
+        except asyncpg.UndefinedTableError:
+            # app_definitions table is not provisioned on this deployment.
+            logger.warning("app_definitions table missing; returning empty app list")
+            return []
 
         return [normalize_app_row(row) for row in rows]
 
@@ -492,7 +500,16 @@ async def list_categories(
             WHERE category IS NOT NULL AND category != ''
             ORDER BY category
         """
-        rows = await conn.fetch(query)
+        try:
+            rows = await conn.fetch(query)
+        except asyncpg.UndefinedTableError:
+            # app_definitions table is not provisioned on this deployment.
+            logger.warning("app_definitions table missing; returning empty category list")
+            return []
+        except Exception:
+            logger.warning("Failed to list app categories; returning empty list", exc_info=True)
+            return []
+
         return [row['category'] for row in rows]
 
     finally:

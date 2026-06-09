@@ -59,7 +59,7 @@ async def get_current_user(request: Request):
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    sessions = RedisSessionManager(host=redis_host, port=redis_port)
+    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
     if session_token not in sessions:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
@@ -401,7 +401,6 @@ async def get_rag_services_status(request: Request, current_user: dict = Depends
 
 @router.get(
     "/health",
-    response_model=ProxyHealthResponse,
     summary="Get proxy health",
     description="Get health status of the Infinity Proxy.",
 )
@@ -410,12 +409,22 @@ async def get_proxy_health(current_user: dict = Depends(get_current_user)):
     Get the health status of the Infinity Proxy.
 
     Returns:
-        ProxyHealthResponse with health details
+        ProxyHealthResponse with health details, or a not_configured payload
+        when no local Infinity Proxy is available on this node.
     """
     try:
         health = await fetch_proxy_health()
-        return ProxyHealthResponse(**health)
-    except HTTPException:
+        return ProxyHealthResponse(**health).model_dump()
+    except HTTPException as exc:
+        if exc.status_code in (502, 503):
+            logger.warning(
+                "Infinity Proxy not available; returning not_configured health payload"
+            )
+            return {
+                "status": "not_configured",
+                "services": {},
+                "note": "RAG proxy not available on this node; use federation services",
+            }
         raise
     except Exception as e:
         logger.error(f"Failed to get proxy health: {e}")

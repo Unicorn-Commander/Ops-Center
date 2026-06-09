@@ -115,17 +115,18 @@ class AuthManager:
     """Manages authentication and user management"""
     
     def __init__(self):
-        self.base_dir = Path("/home/ucadmin/UC-1-Pro")
-        self.data_dir = self.base_dir / "services" / "admin-dashboard" / "data"
+        self.base_dir = Path(os.getenv("AUTH_DATA_DIR", "/tmp/ops-center-auth"))
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir = self.base_dir
         self.users_file = self.data_dir / "users.json"
         self.api_keys_file = self.data_dir / "api_keys.json"
         self.sessions_file = self.data_dir / "sessions.json"
-        
+
         # JWT configuration
         self.secret_key = os.getenv("JWT_SECRET_KEY", self._generate_secret_key())
         self.algorithm = "HS256"
         self.access_token_expire_minutes = 60
-        
+
         # Ensure directories exist
         self.data_dir.mkdir(parents=True, exist_ok=True)
         

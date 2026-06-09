@@ -124,10 +124,24 @@ export default function MobileNavigation({ user, currentPath }) {
   // Handle logout
   const handleLogout = async () => {
     try {
-      await fetch('/api/v1/auth/logout', {
+      const response = await fetch('/api/v1/auth/logout', {
         method: 'POST',
         credentials: 'include'
       });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userInfo');
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+
+        if (data.logout_url || data.sso_logout_url) {
+          window.location.href = data.logout_url || data.sso_logout_url;
+          return;
+        }
+      }
     } catch (error) {
       console.error('Logout failed:', error);
     }
@@ -137,7 +151,7 @@ export default function MobileNavigation({ user, currentPath }) {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
 
-    window.location.href = '/';
+    window.location.href = '/auth/logout';
   };
 
   // Navigation click handler
@@ -215,39 +229,78 @@ export default function MobileNavigation({ user, currentPath }) {
       visible: userRole === 'admin',
       children: [
         { label: 'Services', path: '/admin/infra/services', icon: <ServerIcon /> },
+        { label: 'Resources', path: '/admin/infra/resources', icon: <ComputerIcon /> },
         { label: 'Hardware', path: '/admin/infra/hardware', icon: <BuildIcon /> },
-        { label: 'Monitoring', path: '/admin/monitoring/overview', icon: <BarChartIcon /> },
-        { label: 'LLM Management', path: '/admin/ai/management', icon: <CloudIcon /> },
-        { label: 'LLM Providers', path: '/admin/ai/providers', icon: <AutoAwesomeIcon /> },
-        { label: 'Model Catalog', path: '/admin/ai/models', icon: <ViewListIcon /> },
-        { label: 'Cloudflare DNS', path: '/admin/integrations/cloudflare', icon: <LanguageIcon /> }
+        { label: 'Network', path: '/admin/infra/network', icon: <LanguageIcon /> },
+        { label: 'Storage & Backup', path: '/admin/infra/storage', icon: <ServerIcon /> },
+        { label: 'Reverse Proxy', path: '/admin/infra/traefik', icon: <LanguageIcon /> },
+        { label: 'Federation', path: '/admin/infra/federation', icon: <CloudIcon /> }
       ]
     },
     {
       id: 'usersOrgs',
-      label: 'Users & Orgs',
+      label: 'People & Access',
       icon: <PeopleIcon />,
       visible: userRole === 'admin',
       children: [
-        { label: 'User Management', path: '/admin/people/users', icon: <PeopleIcon /> },
-        { label: 'Organizations', path: '/admin/org/settings', icon: <BusinessIcon /> },
-        { label: 'Permissions', path: '/admin/org/roles', icon: <SecurityIcon /> },
+        { label: 'Users', path: '/admin/people/users', icon: <PeopleIcon /> },
+        { label: 'Organizations', path: '/admin/people/organizations', icon: <BusinessIcon /> },
+        { label: 'Invite Codes', path: '/admin/people/invite-codes', icon: <ReceiptIcon /> },
         { label: 'Authentication', path: '/admin/people/authentication', icon: <KeyIcon /> }
       ]
     },
     {
       id: 'billingUsage',
-      label: 'Billing & Usage',
+      label: 'Billing & Plans',
       icon: <PaymentIcon />,
       visible: userRole === 'admin',
       children: [
-        { label: 'Subscription Management', path: '/admin/billing/tiers', icon: <CreditCardIcon /> },
-        { label: 'App Management', path: '/admin/billing/apps', icon: <SettingsIcon /> },
-        { label: 'Billing Dashboard', path: '/admin/billing/system', icon: <AttachMoneyIcon /> },
+        { label: 'Subscription Tiers', path: '/admin/billing/tiers', icon: <CreditCardIcon /> },
+        { label: 'App Entitlements', path: '/admin/billing/apps', icon: <SettingsIcon /> },
+        { label: 'Pricing Rules', path: '/admin/billing/pricing', icon: <AttachMoneyIcon /> },
+        { label: 'Revenue Dashboard', path: '/admin/billing/revenue', icon: <AnalyticsIcon /> },
+        { label: 'Credit Management', path: '/admin/billing/credits', icon: <PieChartIcon /> }
+      ]
+    },
+    {
+      id: 'aiModels',
+      label: 'AI & Models',
+      icon: <AutoAwesomeIcon />,
+      visible: userRole === 'admin',
+      children: [
+        { label: 'AI Hub', path: '/admin/ai', icon: <AutoAwesomeIcon /> },
+        { label: 'Model Catalog', path: '/admin/ai/models', icon: <ViewListIcon /> },
+        { label: 'Model Lists', path: '/admin/ai/model-lists', icon: <ViewListIcon /> },
+        { label: 'The Colonel', path: '/admin/ai/colonel', icon: <AutoAwesomeIcon /> },
+        { label: 'Local Models', path: '/admin/ai/local-models', icon: <ComputerIcon /> },
+        { label: 'GPU Services', path: '/admin/ai/gpu-services', icon: <BuildIcon /> },
+        { label: 'RAG Services', path: '/admin/ai/rag-services', icon: <CloudIcon /> }
+      ]
+    },
+    {
+      id: 'monitoring',
+      label: 'Monitoring',
+      icon: <AnalyticsIcon />,
+      visible: userRole === 'admin',
+      children: [
         { label: 'Analytics', path: '/admin/monitoring/analytics', icon: <AnalyticsIcon /> },
-        { label: 'Usage Metrics', path: '/admin/monitoring/usage-metrics', icon: <PieChartIcon /> },
-        { label: 'Subscriptions', path: '/admin/subscription/plan', icon: <DescriptionIcon /> },
-        { label: 'Invoices', path: '/admin/billing/overview', icon: <ReceiptIcon /> }
+        { label: 'System Logs', path: '/admin/monitoring/logs', icon: <DescriptionIcon /> },
+        { label: 'Alerts', path: '/admin/monitoring/alerts', icon: <SecurityIcon /> },
+        { label: 'Audit Log', path: '/admin/monitoring/audit', icon: <KeyIcon /> },
+        { label: 'Uptime Monitor', path: '/admin/monitoring/website-monitor', icon: <BarChartIcon /> },
+        { label: 'External Tools', path: '/admin/monitoring/tools', icon: <LanguageIcon /> }
+      ]
+    },
+    {
+      id: 'integrations',
+      label: 'Integrations',
+      icon: <SettingsIcon />,
+      visible: userRole === 'admin',
+      children: [
+        { label: 'API Credentials', path: '/admin/integrations/credentials', icon: <KeyIcon /> },
+        { label: 'Email Providers', path: '/admin/integrations/email', icon: <EmailIcon /> },
+        { label: 'Cloudflare DNS', path: '/admin/integrations/cloudflare', icon: <LanguageIcon /> },
+        { label: 'Webhooks', path: '/admin/integrations/webhooks', icon: <CloudIcon /> }
       ]
     },
     {
@@ -256,10 +309,11 @@ export default function MobileNavigation({ user, currentPath }) {
       icon: <AutoAwesomeIcon />,
       visible: userRole === 'admin',
       children: [
-        { label: 'Unicorn Brigade', path: '/admin/brigade', icon: <AutoAwesomeIcon /> },
         { label: 'Center-Deep Search', path: 'https://search.unicorncommander.ai', icon: <SearchIcon />, external: true },
-        { label: 'Email Settings', path: '/admin/integrations/email', icon: <EmailIcon /> },
-        { label: 'Platform Settings', path: '/admin/integrations/credentials', icon: <SettingsIcon /> }
+        { label: 'Landing Page', path: '/admin/platform/landing', icon: <LanguageIcon /> },
+        { label: 'White Label', path: '/admin/platform/white-label', icon: <SettingsIcon /> },
+        { label: 'System Settings', path: '/admin/system/settings', icon: <SettingsIcon /> },
+        { label: 'Extensions', path: '/admin/platform/extensions', icon: <AutoAwesomeIcon /> }
       ]
     },
     {
@@ -268,21 +322,22 @@ export default function MobileNavigation({ user, currentPath }) {
       icon: <AccountCircleIcon />,
       visible: true,
       children: [
-        { label: 'Profile', path: '/admin/account/profile', icon: <AccountCircleIcon /> },
-        { label: 'Security', path: '/admin/account/security', icon: <SecurityIcon /> },
-        { label: 'API Keys', path: '/admin/account/api-keys', icon: <KeyIcon /> }
+        { label: 'Profile & Preferences', path: '/admin/account/profile', icon: <AccountCircleIcon /> },
+        { label: 'Security & Sessions', path: '/admin/account/security', icon: <SecurityIcon /> },
+        { label: 'API Keys (BYOK)', path: '/admin/account/api-keys', icon: <KeyIcon /> }
       ]
     },
     {
       id: 'subscription',
-      label: 'My Subscription',
+      label: 'Subscription & Credits',
       icon: <CreditCardIcon />,
       visible: true,
       children: [
-        { label: 'Plan', path: '/admin/subscription/plan', icon: <DescriptionIcon /> },
-        { label: 'Usage', path: '/admin/subscription/usage', icon: <BarChartIcon /> },
-        { label: 'Billing', path: '/admin/subscription/billing', icon: <ReceiptIcon /> },
-        { label: 'Payment', path: '/admin/subscription/payment', icon: <CreditCardIcon /> }
+        { label: 'Current Plan', path: '/admin/subscription/plan', icon: <DescriptionIcon /> },
+        { label: 'Usage & Limits', path: '/admin/subscription/usage', icon: <BarChartIcon /> },
+        { label: 'Billing History', path: '/admin/subscription/billing', icon: <ReceiptIcon /> },
+        { label: 'Payment Methods', path: '/admin/subscription/payment', icon: <CreditCardIcon /> },
+        { label: 'Credits & Tiers', path: '/admin/billing/tiers/compare', icon: <PieChartIcon /> }
       ]
     }
   ];

@@ -1,18 +1,52 @@
 import React from 'react';
 
-export default function LoadingScreen() {
+/**
+ * Branded full-screen loader. Used as the Suspense fallback for lazy routes and
+ * while auth is being checked. On-brand (violet/cyan), lightweight, and
+ * respects prefers-reduced-motion via the shared design-system layer.
+ */
+export default function LoadingScreen({ label = 'Loading', sublabel = 'Preparing your console…' }) {
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 mb-4">
-          <svg className="animate-spin h-12 w-12 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background:
+          'radial-gradient(1200px 600px at 50% -10%, rgba(124,58,237,0.10), transparent 60%), linear-gradient(180deg, #070912 0%, #090b13 100%)',
+      }}
+    >
+      <div style={{ textAlign: 'center' }}>
+        <div
+          aria-hidden
+          style={{
+            width: 56,
+            height: 56,
+            margin: '0 auto 20px',
+            borderRadius: '50%',
+            background:
+              'conic-gradient(from 0deg, #22d3ee, #7c3aed, #a855f7, #22d3ee)',
+            WebkitMask:
+              'radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0)',
+            mask: 'radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0)',
+            animation: 'uc-spin 0.9s linear infinite',
+          }}
+        />
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            color: '#f3f5fb',
+            marginBottom: 6,
+          }}
+        >
+          {label}
         </div>
-        <h2 className="text-xl font-semibold text-white mb-2">Loading UC-1 Pro Dashboard</h2>
-        <p className="text-gray-400">Connecting to services...</p>
+        <div style={{ fontSize: 13, color: '#7c8aa3' }}>{sublabel}</div>
       </div>
+      <style>{`@keyframes uc-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

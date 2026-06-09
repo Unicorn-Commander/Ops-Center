@@ -21,8 +21,20 @@ from pydantic import BaseModel, Field, validator
 import logging
 import asyncpg
 
-# Database connection (shared)
-from database import get_db_connection
+# Database connection (shared).
+# NOTE: the `database` PACKAGE (database/__init__.py) shadows database.py, and its
+# get_db_connection() returns a PoolAcquireContext meant for `async with`, NOT a live
+# connection. Every handler here uses the pattern `conn = await get_db_connection(); ...;
+# await conn.close()`, which against the package yields a PoolAcquireContext and blows up
+# with "'PoolAcquireContext' object has no attribute 'close'". Wrap it so callers get a
+# real pooled connection (await the context to acquire it). conn.close() on a pooled
+# connection is acceptable here (admin dashboards, low frequency).
+from database import get_db_connection as _pkg_get_db_connection
+
+
+async def get_db_connection():
+    """Return a live pooled connection (await the package's PoolAcquireContext)."""
+    return await (await _pkg_get_db_connection())
 
 # Authentication dependencies (fix auth order issue)
 from auth_dependencies import require_authenticated_user, require_admin_user
@@ -870,40 +882,75 @@ async def get_user_billing_dashboard(request: Request):
 
     conn = await get_db_connection()
     try:
-        # Get all organizations user belongs to
-        orgs = await conn.fetch(
-            """
-            SELECT
-                o.id as org_id,
-                o.name as org_name,
-                om.role,
-                uca.allocated_credits,
-                uca.used_credits,
-                uca.remaining_credits,
-                os.subscription_plan,
-                os.monthly_price
-            FROM organization_members om
-            JOIN organizations o ON om.org_id = o.id
-            LEFT JOIN user_credit_allocations uca ON uca.org_id = o.id AND uca.user_id = om.user_id AND uca.is_active = TRUE
-            LEFT JOIN organization_subscriptions os ON os.org_id = o.id AND os.status = 'active'
-            WHERE om.user_id = $1 AND o.status = 'active'
-            ORDER BY o.name
-            """,
-            user["user_id"]
-        )
+        # Get all organizations user belongs to (with credit allocation + subscription).
+        # Wrap in try/except so a missing credit/subscription table or column still
+        # returns the user's basic org membership with zeroed usage (graceful).
+        try:
+            orgs = await conn.fetch(
+                """
+                SELECT
+                    o.id as org_id,
+                    o.name as org_name,
+                    om.role,
+                    uca.allocated_credits,
+                    uca.used_credits,
+                    uca.remaining_credits,
+                    os.subscription_plan,
+                    os.monthly_price
+                FROM organization_members om
+                JOIN organizations o ON om.org_id = o.id
+                LEFT JOIN user_credit_allocations uca ON uca.org_id = o.id AND uca.user_id = om.user_id AND uca.is_active = TRUE
+                LEFT JOIN organization_subscriptions os ON os.org_id = o.id AND os.status = 'active'
+                WHERE om.user_id = $1 AND o.status = 'active'
+                ORDER BY o.name
+                """,
+                user["user_id"]
+            )
+        except Exception as e:
+            logger.warning(
+                f"Credit allocation query failed for user {user['user_id']}, "
+                f"falling back to basic org info: {e}"
+            )
+            # Fall back to basic org membership only (no credit/subscription columns)
+            orgs = await conn.fetch(
+                """
+                SELECT
+                    o.id as org_id,
+                    o.name as org_name,
+                    om.role,
+                    NULL::text as subscription_plan,
+                    NULL::numeric as monthly_price,
+                    NULL::numeric as allocated_credits,
+                    NULL::numeric as used_credits,
+                    NULL::numeric as remaining_credits
+                FROM organization_members om
+                JOIN organizations o ON om.org_id = o.id
+                WHERE om.user_id = $1 AND o.status = 'active'
+                ORDER BY o.name
+                """,
+                user["user_id"]
+            )
 
-        # Get user's total usage across all orgs
-        total_usage = await conn.fetchrow(
-            """
-            SELECT
-                SUM(credits_used) as total_credits_used,
-                COUNT(DISTINCT org_id) as org_count,
-                COUNT(*) as request_count
-            FROM credit_usage_attribution
-            WHERE user_id = $1 AND created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'
-            """,
-            user["user_id"]
-        )
+        # Get user's total usage across all orgs.
+        # Wrap so any DB error still returns zeroed usage (graceful), HTTP 200.
+        try:
+            total_usage = await conn.fetchrow(
+                """
+                SELECT
+                    SUM(credits_used) as total_credits_used,
+                    COUNT(DISTINCT org_id) as org_count,
+                    COUNT(*) as request_count
+                FROM credit_usage_attribution
+                WHERE user_id = $1 AND created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'
+                """,
+                user["user_id"]
+            )
+        except Exception as e:
+            logger.warning(
+                f"Usage attribution query failed for user {user['user_id']}, "
+                f"returning zeroed usage: {e}"
+            )
+            total_usage = None
 
         return {
             "user_id": user["user_id"],
@@ -922,9 +969,9 @@ async def get_user_billing_dashboard(request: Request):
                 for org in orgs
             ],
             "total_usage_last_30_days": {
-                "total_credits_used": total_usage["total_credits_used"] or 0,
-                "org_count": total_usage["org_count"] or 0,
-                "request_count": total_usage["request_count"] or 0
+                "total_credits_used": (total_usage["total_credits_used"] or 0) if total_usage else 0,
+                "org_count": (total_usage["org_count"] or 0) if total_usage else 0,
+                "request_count": (total_usage["request_count"] or 0) if total_usage else 0
             }
         }
 
@@ -1116,7 +1163,7 @@ async def get_system_admin_billing_screen(request: Request):
                     "total_credits": org["total_credits"],
                     "used_credits": org["used_credits"],
                     "member_count": org["member_count"],
-                    "lifetime_spent": float(org["lifetime_spent_amount"])
+                    "lifetime_spent": float(org["lifetime_spent_amount"] or 0)
                 }
                 for org in orgs
             ],

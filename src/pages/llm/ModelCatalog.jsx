@@ -597,18 +597,28 @@ export default function ModelCatalog() {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '400px', gap: 2 }}>
         <CircularProgress />
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>Loading model catalog…</Typography>
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">
-          Failed to load models: {error}
-        </Alert>
+      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
+        <Box sx={{ maxWidth: 480, textAlign: 'center', py: 6 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+            Couldn’t load the model catalog
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+            The model provider looks unreachable from this server right now. Your other settings are unaffected — try again in a moment.
+          </Typography>
+          <Button variant="contained" onClick={fetchModels}>Try again</Button>
+          <Typography variant="caption" sx={{ display: 'block', mt: 2.5, color: 'text.disabled', wordBreak: 'break-word' }}>
+            {String(error)}
+          </Typography>
+        </Box>
       </Box>
     );
   }

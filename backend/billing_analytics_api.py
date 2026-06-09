@@ -215,7 +215,7 @@ async def get_top_customers(
                 # Top by monthly subscription value
                 query = """
                     SELECT
-                        o.org_id,
+                        o.id AS org_id,
                         o.name as org_name,
                         s.subscription_plan,
                         CASE
@@ -226,7 +226,7 @@ async def get_top_customers(
                         END as monthly_spend,
                         s.created_at as subscription_start
                     FROM organizations o
-                    JOIN organization_subscriptions s ON o.org_id = s.org_id
+                    JOIN organization_subscriptions s ON o.id = s.org_id
                     WHERE s.status = 'active'
                     ORDER BY monthly_spend DESC
                     LIMIT $1
@@ -235,13 +235,13 @@ async def get_top_customers(
                 # Top by API call usage
                 query = """
                     SELECT
-                        o.org_id,
+                        o.id AS org_id,
                         o.name as org_name,
                         cp.used_credits as usage,
                         cp.allocated_credits,
                         (cp.used_credits::float / NULLIF(cp.allocated_credits, 0) * 100) as usage_percent
                     FROM organizations o
-                    JOIN organization_credit_pools cp ON o.org_id = cp.org_id
+                    JOIN organization_credit_pools cp ON o.id = cp.org_id
                     ORDER BY cp.used_credits DESC
                     LIMIT $1
                 """
@@ -249,13 +249,13 @@ async def get_top_customers(
                 # Top by allocated credits
                 query = """
                     SELECT
-                        o.org_id,
+                        o.id AS org_id,
                         o.name as org_name,
                         cp.allocated_credits,
                         cp.used_credits,
                         (cp.used_credits::float / NULLIF(cp.allocated_credits, 0) * 100) as usage_percent
                     FROM organizations o
-                    JOIN organization_credit_pools cp ON o.org_id = cp.org_id
+                    JOIN organization_credit_pools cp ON o.id = cp.org_id
                     ORDER BY cp.allocated_credits DESC
                     LIMIT $1
                 """
@@ -293,12 +293,12 @@ async def get_usage_summary(
             usage_by_plan = await conn.fetch("""
                 SELECT
                     s.subscription_plan,
-                    COUNT(DISTINCT o.org_id) as org_count,
+                    COUNT(DISTINCT o.id) as org_count,
                     SUM(cp.allocated_credits) as allocated,
                     SUM(cp.used_credits) as used
                 FROM organizations o
-                JOIN organization_subscriptions s ON o.org_id = s.org_id
-                JOIN organization_credit_pools cp ON o.org_id = cp.org_id
+                JOIN organization_subscriptions s ON o.id = s.org_id
+                JOIN organization_credit_pools cp ON o.id = cp.org_id
                 WHERE s.status = 'active'
                 GROUP BY s.subscription_plan
             """)
@@ -349,7 +349,7 @@ async def export_revenue_report(
         async with pool.acquire() as conn:
             report_data = await conn.fetch("""
                 SELECT
-                    o.org_id,
+                    o.id AS org_id,
                     o.name as organization_name,
                     s.subscription_plan,
                     s.status,
@@ -364,8 +364,8 @@ async def export_revenue_report(
                     cp.allocated_credits,
                     cp.used_credits
                 FROM organizations o
-                JOIN organization_subscriptions s ON o.org_id = s.org_id
-                LEFT JOIN organization_credit_pools cp ON o.org_id = cp.org_id
+                JOIN organization_subscriptions s ON o.id = s.org_id
+                LEFT JOIN organization_credit_pools cp ON o.id = cp.org_id
                 WHERE s.created_at::date >= $1 AND s.created_at::date <= $2
                 ORDER BY s.created_at DESC
             """, start_date, end_date)

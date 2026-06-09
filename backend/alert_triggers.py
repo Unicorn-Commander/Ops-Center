@@ -71,6 +71,7 @@ class AlertTriggerManager:
                 host=os.getenv('REDIS_HOST', 'unicorn-redis'),
                 port=int(os.getenv('REDIS_PORT', 6379)),
                 db=0,
+                password=os.getenv('REDIS_PASSWORD'),
                 decode_responses=True
             )
 
