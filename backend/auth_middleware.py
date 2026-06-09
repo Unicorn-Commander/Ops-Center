@@ -40,7 +40,8 @@ PUBLIC_EXACT = {
     "/api/v1/auth/validate-key",      # m2m API-key validation
     "/api/v1/auth/session",           # bootstrap: "am I logged in?" check (handler returns own auth state)
     "/api/v1/branding/config",
-    "/api/v1/deployment/config",      # bootstrap: deployment shell config (urls/features/branding, no secrets) — app needs it PRE-AUTH to render + redirect to login; was public before the auth middleware",
+    "/api/v1/deployment/config",      # bootstrap: deployment shell config (urls/features/branding, no secrets) — app needs it PRE-AUTH to render + redirect to login; was public before the auth middleware
+    "/api/v1/system/status",          # bootstrap health probe — handler uses get_current_user_optional ("works with or without auth" by design); App.jsx gates the WHOLE admin render on it returning 200, so gating it shows "Connection Error" instead of the login page. Sensitive sibling /system/* paths stay gated (exact-match only).
     "/api/v1/billing/provider-config",  # public Stripe publishable key + provider name
     "/api/v1/billing/plans",
     "/api/v1/subscriptions/plans",
