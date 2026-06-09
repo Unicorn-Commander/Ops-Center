@@ -125,10 +125,11 @@ async def get_user_id_from_session(request: Request) -> Optional[str]:
 
         sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
 
-        if session_token not in sessions:
+        # Use .get() (the supported accessor) — `token in sessions` / `sessions[token]`
+        # are not reliable on RedisSessionManager and were yielding None -> 401.
+        session_data = sessions.get(session_token)
+        if not session_data:
             return None
-
-        session_data = sessions[session_token]
 
         # Get user_id from session (multiple possible locations)
         user_id = (
