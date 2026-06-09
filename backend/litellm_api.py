@@ -2785,8 +2785,11 @@ async def list_models_categorized(
         }
 
     except Exception as e:
-        logger.error(f"Error categorizing models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to categorize models: {str(e)}")
+        # Graceful: the upstream LiteLLM proxy / OpenRouter may be unreachable on this node
+        # (DNS / not configured). Return an empty-but-valid categorized payload so the
+        # models screen renders "none available" instead of a 500.
+        logger.warning(f"Model categorization unavailable, returning empty: {e}")
+        return {"categories": {}, "providers": {}, "total": 0, "note": "Model catalog unavailable on this node"}
 
 
 @router.get("/usage", response_model=UsageStats)

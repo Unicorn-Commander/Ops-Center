@@ -300,23 +300,27 @@ async def get_pricing_comparison(request: Request):
     """
     from datetime import datetime
 
-    try:
-        # get_public_pricing_tiers needs the request (it resolves the db pool from it)
-        tiers = await get_public_pricing_tiers(request, include_features=True)
-        packages = await get_credit_packages()
-        addons = await get_public_addons()
+    # Each sub-fetch needs the request (it resolves the db pool from it). Fetch each
+    # independently and degrade per-section: a schema drift in one (e.g. a missing column
+    # on a node) yields an empty section instead of a 500 on the whole public pricing page.
+    async def _safe(coro, label):
+        try:
+            return await coro
+        except Exception as e:
+            logger.warning(f"pricing/comparison: {label} unavailable, using empty: {e}")
+            return []
 
-        return PricingComparisonResponse(
-            tiers=tiers,
-            credit_packages=packages,
-            addons=addons,
-            currency="USD",
-            last_updated=datetime.utcnow().isoformat()
-        )
+    tiers = await _safe(get_public_pricing_tiers(request, include_features=True), "tiers")
+    packages = await _safe(get_credit_packages(request), "credit_packages")
+    addons = await _safe(get_public_addons(request), "addons")
 
-    except Exception as e:
-        logger.error(f"Error building pricing comparison: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve pricing information")
+    return PricingComparisonResponse(
+        tiers=tiers,
+        credit_packages=packages,
+        addons=addons,
+        currency="USD",
+        last_updated=datetime.utcnow().isoformat()
+    )
 
 
 # ============================================================================

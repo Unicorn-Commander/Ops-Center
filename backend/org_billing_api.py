@@ -1163,7 +1163,7 @@ async def get_system_admin_billing_screen(request: Request):
                     "total_credits": org["total_credits"],
                     "used_credits": org["used_credits"],
                     "member_count": org["member_count"],
-                    "lifetime_spent": float(org["lifetime_spent_amount"])
+                    "lifetime_spent": float(org["lifetime_spent_amount"] or 0)
                 }
                 for org in orgs
             ],
