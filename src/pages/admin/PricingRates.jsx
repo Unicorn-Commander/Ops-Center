@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import {
   Save as SaveIcon, Refresh as RefreshIcon, ShieldOutlined as ShieldIcon,
-  TrendingUp as MarginIcon, BoltOutlined as LocalIcon,
+  TrendingUp as MarginIcon, BoltOutlined as LocalIcon, CloudSync as CloudSyncIcon,
 } from '@mui/icons-material';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -27,8 +27,10 @@ const PricingRates = () => {
   const [overrides, setOverrides] = useState({}); // "provider::model" -> markup %
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState(null);
   const [savedAt, setSavedAt] = useState(null);
+  const [refreshMsg, setRefreshMsg] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +65,17 @@ const PricingRates = () => {
     } catch (e) { setErr(e.message); } finally { setSaving(false); }
   };
 
+  const refreshLive = async () => {
+    setRefreshing(true); setRefreshMsg(null); setErr(null);
+    try {
+      const r = await fetch('/api/v1/admin/pricing/refresh', { method: 'POST', credentials: 'include' });
+      const d = await r.json();
+      if (!r.ok || d.ok === false) throw new Error(d.error || `Refresh failed (HTTP ${r.status})`);
+      setRefreshMsg(`Pulled live pricing — ${d.models_tracked} models tracked, ${d.changed} price change(s)${d.not_found_on_openrouter?.length ? `, ${d.not_found_on_openrouter.length} not found upstream` : ''}.`);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setRefreshing(false); }
+  };
+
   const setS = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   const setLocal = (k, v) => setSettings((s) => ({ ...s, local: { ...(s.local || {}), [k]: v } }));
 
@@ -89,7 +102,10 @@ const PricingRates = () => {
         actions={
           <Stack direction="row" spacing={1.5} alignItems="center">
             {savedAt && !dirty && <Chip size="small" color="success" variant="outlined" label="Saved" />}
-            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={load} disabled={saving}>Refresh</Button>
+            <Button variant="outlined" startIcon={refreshing ? <CircularProgress size={16} /> : <CloudSyncIcon />} onClick={refreshLive} disabled={refreshing || saving} title="Pull the latest models & prices live from OpenRouter (preserves your markup)">
+              {refreshing ? 'Refreshing…' : 'Refresh from live'}
+            </Button>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={load} disabled={saving || refreshing}>Reload</Button>
             <Button variant="contained" startIcon={saving ? <CircularProgress size={16} /> : <SaveIcon />} onClick={save} disabled={!dirty || saving}>
               Save changes
             </Button>
@@ -97,6 +113,7 @@ const PricingRates = () => {
         }
       />
 
+      {refreshMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setRefreshMsg(null)}>{refreshMsg}</Alert>}
       {err && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setErr(null)}>{err}</Alert>}
 
       {/* Global settings */}
