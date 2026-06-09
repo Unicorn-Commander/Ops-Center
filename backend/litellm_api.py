@@ -2578,7 +2578,7 @@ async def list_models_categorized(
                     user_tier
                 )
                 if tier_result:
-                    tier_markup = float(tier_result['llm_markup_percentage'])
+                    tier_markup = float(tier_result['llm_markup_percentage'] or 0)
                     logger.info(f"User {user_id} tier {user_tier} has markup {tier_markup}%")
         except Exception as e:
             logger.warning(f"Failed to fetch tier markup for {user_tier}: {e}")

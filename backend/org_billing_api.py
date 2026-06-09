@@ -21,8 +21,20 @@ from pydantic import BaseModel, Field, validator
 import logging
 import asyncpg
 
-# Database connection (shared)
-from database import get_db_connection
+# Database connection (shared).
+# NOTE: the `database` PACKAGE (database/__init__.py) shadows database.py, and its
+# get_db_connection() returns a PoolAcquireContext meant for `async with`, NOT a live
+# connection. Every handler here uses the pattern `conn = await get_db_connection(); ...;
+# await conn.close()`, which against the package yields a PoolAcquireContext and blows up
+# with "'PoolAcquireContext' object has no attribute 'close'". Wrap it so callers get a
+# real pooled connection (await the context to acquire it). conn.close() on a pooled
+# connection is acceptable here (admin dashboards, low frequency).
+from database import get_db_connection as _pkg_get_db_connection
+
+
+async def get_db_connection():
+    """Return a live pooled connection (await the package's PoolAcquireContext)."""
+    return await (await _pkg_get_db_connection())
 
 # Authentication dependencies (fix auth order issue)
 from auth_dependencies import require_authenticated_user, require_admin_user

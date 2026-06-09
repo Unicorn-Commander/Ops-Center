@@ -699,8 +699,8 @@ async def list_models(
                 'provider': m['provider_name'],
                 'provider_id': str(m['provider_id']),
                 'pricing': {
-                    'input': float(m['cost_per_1m_input_tokens']),
-                    'output': float(m['cost_per_1m_output_tokens'])
+                    'input': float(m['cost_per_1m_input_tokens'] or 0),
+                    'output': float(m['cost_per_1m_output_tokens'] or 0)
                 },
                 'context_length': m['context_length'],
                 'enabled': m['enabled'],

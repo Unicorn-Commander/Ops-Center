@@ -288,7 +288,7 @@ async def get_public_addons(
 
 
 @router.get("/comparison", response_model=PricingComparisonResponse)
-async def get_pricing_comparison():
+async def get_pricing_comparison(request: Request):
     """
     Get complete pricing comparison
 
@@ -301,7 +301,8 @@ async def get_pricing_comparison():
     from datetime import datetime
 
     try:
-        tiers = await get_public_pricing_tiers(include_features=True)
+        # get_public_pricing_tiers needs the request (it resolves the db pool from it)
+        tiers = await get_public_pricing_tiers(request, include_features=True)
         packages = await get_credit_packages()
         addons = await get_public_addons()
 

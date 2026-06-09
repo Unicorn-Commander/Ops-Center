@@ -2380,6 +2380,12 @@ async def get_current_user(request: Request):
     session = sessions[session_token]
     user_data = session.get("user", {})
 
+    # Ensure user_id exists (Keycloak sessions carry 'sub', not 'user_id'). Many handlers
+    # index current_user["user_id"] directly, which 500'd with KeyError: 'user_id' (e.g.
+    # /api/v1/api-keys, /api/v1/sessions). Map it from sub/id here so every caller is safe.
+    if "user_id" not in user_data:
+        user_data["user_id"] = user_data.get("sub") or user_data.get("id", "unknown")
+
     # Map Keycloak/Authentik roles to ops-center roles
     if "role" not in user_data:
         # Extract role from Keycloak groups/roles

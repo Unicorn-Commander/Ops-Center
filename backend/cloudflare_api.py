@@ -353,14 +353,13 @@ async def list_zones(
             "zones": [],
             "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
         }
-    except CloudflareError as e:
-        logger.error(f"Error listing zones: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
+    except (CloudflareError, Exception) as e:
+        # Includes an invalid/expired token (API 403 -> CloudflareError) and any other
+        # failure: degrade to a clean empty "not configured" state rather than a 500 wall.
         logger.warning(f"Cloudflare zones unavailable; returning empty zone list: {e}")
         return {
             "zones": [],
-            "message": "Cloudflare API not configured. Set CLOUDFLARE_API_TOKEN in platform settings."
+            "message": "Cloudflare API not configured or unavailable. Check CLOUDFLARE_API_TOKEN in platform settings."
         }
 
 
