@@ -24,3 +24,6 @@ public/stats.html
 backend/data/org_users.json
 backend/data/organizations.json
 backend/data/pricing_config.json
+
+# entire per-node runtime data dir (DBs, org JSON, encryption keys) — never sync across nodes
+backend/data/
