@@ -57,7 +57,8 @@ import {
   Sync as SyncIcon,
   ExpandMore as ExpandMoreIcon,
   LocalOffer as TagIcon,
-  ContentCopy as CloneIcon
+  ContentCopy as CloneIcon,
+  InfoOutlined as InfoOutlinedIcon
 } from '@mui/icons-material';
 import PageHeader from '../../components/admin/PageHeader';
 import AdminBreadcrumbs from '../../components/admin/AdminBreadcrumbs';
@@ -635,16 +636,40 @@ const SubscriptionManagement = () => {
             <TableHead>
               <TableRow sx={{ background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)' }}>
                 <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Code</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>
+                  Code
+                  <Tooltip title="Stable machine-readable ID for this tier, used by billing and access-control to grant features. Unlike the name, it should never change." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Price (Monthly)</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Price (Yearly)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Invite Only</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>API Limit</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Seats</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Users</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>Apps</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  Status
+                  <Tooltip title="Active tiers can be subscribed to; inactive tiers are hidden from new signups but keep existing subscribers." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  Invite Only
+                  <Tooltip title="When on, users cannot self-select this tier; an admin must grant or migrate them into it." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                  API Limit
+                  <Tooltip title="Maximum API calls a subscriber on this tier may make per billing cycle before being rate-limited. Unlimited means no cap." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                  Seats
+                  <Tooltip title="How many team members can be added under a single subscription on this tier." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                  Users
+                  <Tooltip title="Number of active subscribers currently on this tier." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                  Revenue
+                  <Tooltip title="Estimated recurring monthly revenue from this tier (active subscribers times monthly price)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  Apps
+                  <Tooltip title="Number of apps/features this tier grants access to. Manage the grant list with the sync icon in Actions." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -869,6 +894,11 @@ const SubscriptionManagement = () => {
                 value={formData.lago_plan_code}
                 onChange={(e) => setFormData({ ...formData, lago_plan_code: e.target.value })}
                 helperText="For Lago integration"
+                InputProps={{
+                  endAdornment: (
+                    <Tooltip title="Links this tier to a plan in Lago, the metered-billing system that generates usage-based invoices." arrow><InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.6, cursor: 'help' }} /></Tooltip>
+                  )
+                }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -877,6 +907,11 @@ const SubscriptionManagement = () => {
                 label="Stripe Price ID (Monthly)"
                 value={formData.stripe_price_monthly}
                 onChange={(e) => setFormData({ ...formData, stripe_price_monthly: e.target.value })}
+                InputProps={{
+                  endAdornment: (
+                    <Tooltip title="The Stripe price object this tier charges against; this is what actually collects payment at checkout." arrow><InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.6, cursor: 'help' }} /></Tooltip>
+                  )
+                }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -916,7 +951,12 @@ const SubscriptionManagement = () => {
                     onChange={(e) => setFormData({ ...formData, byok_enabled: e.target.checked })}
                   />
                 }
-                label="BYOK"
+                label={
+                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                    BYOK
+                    <Tooltip title="Bring Your Own Key: subscribers use their own provider API keys, so their usage is not billed platform credits." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                  </Box>
+                }
               />
             </Grid>
             <Grid item xs={12} md={3}>
@@ -1414,7 +1454,10 @@ const SubscriptionManagement = () => {
                   <TableCell>New Tier</TableCell>
                   <TableCell>Reason</TableCell>
                   <TableCell>Changed By</TableCell>
-                  <TableCell align="right">API Limit Change</TableCell>
+                  <TableCell align="right">
+                    API Limit Change
+                    <Tooltip title="How the user's API-call quota shifted with this tier change; green means it increased, amber means it dropped." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>

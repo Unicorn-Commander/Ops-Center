@@ -64,6 +64,7 @@ import {
   ExpandLess as ExpandLessIcon,
   CalendarToday as CalendarIcon,
   Visibility as VisibilityIcon,
+  InfoOutlined as InfoOutlinedIcon,
 } from '@mui/icons-material';
 import CreateUserModal from '../components/CreateUserModal';
 import RoleManagementModal from '../components/RoleManagementModal';
@@ -541,6 +542,7 @@ const UserManagement = () => {
                   </Typography>
                   <Typography variant="body2" sx={{ opacity: 0.9 }}>
                     Total Users
+                    <Tooltip title="Every account that exists in the system, regardless of status or subscription." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                   </Typography>
                 </Box>
                 <PeopleIcon sx={{ fontSize: 48, opacity: 0.8 }} />
@@ -559,6 +561,7 @@ const UserManagement = () => {
                   </Typography>
                   <Typography variant="body2" sx={{ opacity: 0.9 }}>
                     Active Users
+                    <Tooltip title="Accounts that are enabled and in good standing (not suspended or expired)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                   </Typography>
                 </Box>
                 <PersonAddIcon sx={{ fontSize: 48, opacity: 0.8 }} />
@@ -577,6 +580,7 @@ const UserManagement = () => {
                   </Typography>
                   <Typography variant="body2" sx={{ opacity: 0.9 }}>
                     Suspended Users
+                    <Tooltip title="Accounts that have been disabled and can no longer sign in until reinstated." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                   </Typography>
                 </Box>
                 <VerifiedUserIcon sx={{ fontSize: 48, opacity: 0.8 }} />
@@ -595,6 +599,7 @@ const UserManagement = () => {
                   </Typography>
                   <Typography variant="body2" sx={{ opacity: 0.9 }}>
                     Subscribed Users
+                    <Tooltip title="Users on a paid subscription tier (Starter, Professional, Enterprise, or Founders) — your revenue base." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                   </Typography>
                 </Box>
                 <AdminIcon sx={{ fontSize: 48, opacity: 0.8 }} />
@@ -723,6 +728,10 @@ const UserManagement = () => {
             <Grid container spacing={2}>
               {/* Subscription Tier */}
               <Grid item xs={12} md={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  Subscription Tier
+                  <Tooltip title="The user's paid plan, which controls feature access, usage limits, and pricing markup. 'Trial' is unpaid; 'Founders Friend' is a special early-supporter tier." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </Typography>
                 <FormControl fullWidth>
                   <InputLabel>Subscription Tier</InputLabel>
                   <Select
@@ -751,6 +760,10 @@ const UserManagement = () => {
 
               {/* Brigade Roles */}
               <Grid item xs={12} md={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  Brigade Roles
+                  <Tooltip title="Platform permission roles (e.g. admin) that determine what a user can do across the suite. Separate from subscription tier." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </Typography>
                 <FormControl fullWidth>
                   <InputLabel>Brigade Roles</InputLabel>
                   <Select
@@ -784,6 +797,10 @@ const UserManagement = () => {
 
               {/* Account Status */}
               <Grid item xs={12} md={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  Account Status
+                  <Tooltip title="Whether the account can sign in: Active (good standing), Suspended (disabled), or Trial Expired (trial period ended without subscribing)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </Typography>
                 <FormControl fullWidth>
                   <InputLabel>Account Status</InputLabel>
                   <Select
@@ -913,6 +930,10 @@ const UserManagement = () => {
 
               {/* Organization ID */}
               <Grid item xs={12} md={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  Organization ID
+                  <Tooltip title="The tenant a user belongs to. Filtering by org isolates one customer's users; each org carries its own plan and data." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </Typography>
                 <TextField
                   fullWidth
                   label="Organization ID"
@@ -926,6 +947,10 @@ const UserManagement = () => {
 
               {/* Email Verified */}
               <Grid item xs={12} md={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  Email Verified
+                  <Tooltip title="Whether the user confirmed ownership of their email address. Unverified accounts may indicate fake signups or undelivered confirmation mail." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </Typography>
                 <FormControl fullWidth>
                   <InputLabel>Email Verified</InputLabel>
                   <Select
@@ -947,6 +972,10 @@ const UserManagement = () => {
 
               {/* BYOK Enabled */}
               <Grid item xs={12} md={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                  BYOK Enabled
+                  <Tooltip title="BYOK (Bring Your Own Key) means the user supplies their own AI provider API key, so their usage is billed to them directly and not charged platform credits." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </Typography>
                 <FormControl fullWidth>
                   <InputLabel>BYOK Enabled</InputLabel>
                   <Select
@@ -1086,8 +1115,14 @@ const UserManagement = () => {
                     <TableCell>Name</TableCell>
                     <TableCell>Email</TableCell>
                     <TableCell>Username</TableCell>
-                    <TableCell>Roles</TableCell>
-                    <TableCell>Status</TableCell>
+                    <TableCell>
+                      Roles
+                      <Tooltip title="Platform permission roles assigned to the user; roles containing 'admin' grant elevated access and are highlighted in red." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      Status
+                      <Tooltip title="Whether the account is Enabled (can sign in) or Disabled (blocked from signing in)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                    </TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>

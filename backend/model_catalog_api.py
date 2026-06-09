@@ -24,6 +24,7 @@ import json
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
+from auth_dependencies import require_admin_user  # admin gate for the stats endpoint (router sits under the m2m-allowlisted /api/v1/llm prefix)
 from pydantic import BaseModel, Field
 from cryptography.fernet import Fernet
 
@@ -573,7 +574,7 @@ async def require_admin(request: Request) -> Dict:
 # ============================================================================
 
 @router.get("/models/stats")
-async def get_model_stats(request: Request):
+async def get_model_stats(request: Request, _admin: dict = Depends(require_admin_user)):
     """
     Get model catalog statistics
 

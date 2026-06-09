@@ -7,6 +7,7 @@ import {
 import {
   Save as SaveIcon, Refresh as RefreshIcon, ShieldOutlined as ShieldIcon,
   TrendingUp as MarginIcon, BoltOutlined as LocalIcon, CloudSync as CloudSyncIcon,
+  InfoOutlined as InfoOutlinedIcon,
 } from '@mui/icons-material';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -146,27 +147,31 @@ const PricingRates = () => {
         <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Settings</Typography>
         <Grid container spacing={2.5}>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth label="Credit value" type="number" value={settings.credit_value_usd ?? ''}
+            <TextField fullWidth type="number" value={settings.credit_value_usd ?? ''}
+              label={<>Credit value<Tooltip title="What one credit is worth in dollars — the conversion rate used to price every metered call in credits." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></>}
               onChange={(e) => setS('credit_value_usd', e.target.value === '' ? '' : Number(e.target.value))}
               InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
               helperText={`1 credit = ${money(creditValue)}  ·  $1 = ${Math.round(1 / (creditValue || 0.01))} credits`} />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField fullWidth label="Default markup" type="number" value={settings.default_markup_pct ?? ''}
+            <TextField fullWidth type="number" value={settings.default_markup_pct ?? ''}
+              label={<>Default markup<Tooltip title="The default profit margin added on top of provider cost — your billed rate is cost plus this percentage, so you never sell below cost." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></>}
               onChange={(e) => setS('default_markup_pct', e.target.value === '' ? '' : Number(e.target.value))}
               InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment>, startAdornment: <MarginIcon sx={{ mr: 1, color: 'text.disabled', fontSize: 18 }} /> }}
               helperText="Margin on top of provider cost" />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <Tooltip title="Extra cushion applied on top of markup, to absorb provider price changes before the cost map catches up — your never-lose-money buffer.">
-              <TextField fullWidth label="Safety buffer" type="number" value={settings.buffer_pct ?? ''}
+              <TextField fullWidth type="number" value={settings.buffer_pct ?? ''}
+                label={<>Safety buffer<Tooltip title="A cushion on top of markup that absorbs a provider price hike happening between cost refreshes, so a sudden cost jump can't make a sale lose money." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></>}
                 onChange={(e) => setS('buffer_pct', e.target.value === '' ? '' : Number(e.target.value))}
                 InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment>, startAdornment: <ShieldIcon sx={{ mr: 1, color: '#34d399', fontSize: 18 }} /> }}
                 helperText="Cost-lag cushion" />
             </Tooltip>
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
-            <TextField select fullWidth label="Local inference" value={settings.local?.strategy ?? 'bundled'}
+            <TextField select fullWidth value={settings.local?.strategy ?? 'bundled'}
+              label={<>Local inference<Tooltip title="How to price models running on your own GPUs — bundled means free/included (there's no provider bill to recover), metered charges a flat rate per million tokens." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></>}
               onChange={(e) => setLocal('strategy', e.target.value)}
               InputProps={{ startAdornment: <LocalIcon sx={{ mr: 1, color: '#22d3ee', fontSize: 18 }} /> }}
               helperText="Your self-hosted GPU models">
@@ -222,11 +227,11 @@ const PricingRates = () => {
               <TableRow>
                 <TableCell>Provider</TableCell>
                 <TableCell>Model</TableCell>
-                <TableCell align="right">Cost in/out ($/1M)</TableCell>
-                <TableCell align="right">Your rate in/out</TableCell>
-                <TableCell align="right">Markup</TableCell>
-                <TableCell align="right">Margin (out)</TableCell>
-                <TableCell align="right">Credits / 1M (in/out)</TableCell>
+                <TableCell align="right">Cost in/out ($/1M)<Tooltip title="What the provider charges you per million input/output tokens — the raw wholesale cost before any markup." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></TableCell>
+                <TableCell align="right">Your rate in/out<Tooltip title="The price customers are billed per million tokens — provider cost plus markup. It's always above cost, so you never lose money." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></TableCell>
+                <TableCell align="right">Markup<Tooltip title="This model's profit margin over provider cost; blank means it falls back to the default markup. Edit inline to override per model." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></TableCell>
+                <TableCell align="right">Margin (out)<Tooltip title="The profit kept per million output tokens — your rate minus provider cost. Local self-hosted models show 100% since there's no provider bill." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></TableCell>
+                <TableCell align="right">Credits / 1M (in/out)<Tooltip title="How many credits a million input/output tokens costs the customer — your dollar rate converted at the credit value above." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>

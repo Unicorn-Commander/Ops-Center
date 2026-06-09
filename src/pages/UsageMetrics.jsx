@@ -48,6 +48,7 @@ import {
   Info,
   AttachMoney,
 } from '@mui/icons-material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   LineChart,
   Line,
@@ -66,36 +67,42 @@ const SERVICE_CONFIG = {
     icon: Psychology,
     unit: 'tokens',
     color: '#9333ea',
+    description: 'Language-model usage billed by tokens (the chunks of text a model reads and writes); the main driver of AI cost.',
   },
   search_queries: {
     name: 'Search Queries',
     icon: Search,
     unit: 'searches',
     color: '#3b82f6',
+    description: 'Web and deep-research searches run on your behalf, billed per query.',
   },
   agent_invocations: {
     name: 'Agent Invocations',
     icon: Cloud,
     unit: 'calls',
     color: '#10b981',
+    description: 'Number of times automated agents were run; each invocation may itself consume tokens and searches.',
   },
   tts: {
     name: 'Text-to-Speech',
     icon: RecordVoiceOver,
     unit: 'minutes',
     color: '#f59e0b',
+    description: 'Audio generated from text, billed by minutes of speech produced.',
   },
   stt: {
     name: 'Speech-to-Text',
     icon: Hearing,
     unit: 'minutes',
     color: '#ef4444',
+    description: 'Transcription of audio into text, billed by minutes of audio processed.',
   },
   storage: {
     name: 'Storage',
     icon: Storage,
     unit: 'GB',
     color: '#8b5cf6',
+    description: 'Persistent data you keep on the platform, billed by gigabytes stored.',
   },
 };
 
@@ -687,6 +694,7 @@ function UsageMetrics() {
       <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
         <Typography variant="h6" sx={{ color: 'white', mb: 1 }}>
           Total Cost This Period
+          <Tooltip title="Your combined estimated charges across all metered services for the selected billing period." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
         </Typography>
         <Typography variant="h2" sx={{ color: 'white', fontWeight: 700, mb: 2 }}>
           ${summary?.total_cost?.toFixed(2) || '0.00'}
@@ -695,9 +703,11 @@ function UsageMetrics() {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography variant="body2" sx={{ color: 'white' }}>
               Usage: {summary?.usage_percentage || 0}% of tier limit
+              <Tooltip title="How much of your subscription tier's included allowance you've consumed; nearing 100% may trigger overage charges or throttling." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
             </Typography>
             <Typography variant="body2" sx={{ color: 'white' }}>
               {summary?.tier_limit?.toLocaleString() || '0'} limit
+              <Tooltip title="The maximum included usage units your current subscription tier allows for this period before extra cost applies." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
             </Typography>
           </Box>
           <LinearProgress
@@ -803,12 +813,14 @@ function UsageMetrics() {
                   </Box>
                   <Typography variant="h6" sx={{ mb: 1, color: '#374151' }}>
                     {SERVICE_CONFIG[serviceKey].name}
+                    <Tooltip title={SERVICE_CONFIG[serviceKey].description} arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                   </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 700, color: SERVICE_CONFIG[serviceKey].color, mb: 1 }}>
                     {service.count?.toLocaleString() || 0}
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#6b7280', mb: 2 }}>
                     {service.unit} • ${service.cost}
+                    <Tooltip title={`Units used this period (in ${service.unit}) and the estimated cost they incurred.`} arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                   </Typography>
                   <LinearProgress
                     variant="determinate"
@@ -840,22 +852,26 @@ function UsageMetrics() {
             <Box>
               <Typography variant="h6" sx={{ color: 'white', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <AttachMoney /> Projected Monthly Cost
+                <Tooltip title="Estimated total cost by month-end if your recent usage trend continues; a forecast, not a guaranteed charge." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
               </Typography>
               <Typography variant="h2" sx={{ color: 'white', fontWeight: 700, mb: 2 }}>
                 ${projectedCost.total.toFixed(2)}
               </Typography>
               <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                <Chip
-                  label={`${projectedCost.confidence.toUpperCase()} Confidence`}
-                  size="small"
-                  sx={{
-                    backgroundColor: 'rgba(255,255,255,0.3)',
-                    color: 'white',
-                    fontWeight: 600,
-                  }}
-                />
+                <Tooltip title="How reliable this forecast is, based on how steady your recent usage has been; higher confidence means a more trustworthy estimate." arrow>
+                  <Chip
+                    label={`${projectedCost.confidence.toUpperCase()} Confidence`}
+                    size="small"
+                    sx={{
+                      backgroundColor: 'rgba(255,255,255,0.3)',
+                      color: 'white',
+                      fontWeight: 600,
+                    }}
+                  />
+                </Tooltip>
                 <Typography variant="body2" sx={{ color: 'white' }}>
                   {projectedCost.comparison > 0 ? '+' : ''}{projectedCost.comparison.toFixed(1)}% vs current
+                  <Tooltip title="How the projected month-end cost compares to your cost so far this period; positive means spending is expected to rise." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help', color: 'white' }} /></Tooltip>
                 </Typography>
               </Box>
             </Box>
@@ -1025,7 +1041,10 @@ function UsageMetrics() {
       {/* Service Breakdown Table */}
       <Paper sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h6">Service Breakdown</Typography>
+          <Typography variant="h6">
+            Service Breakdown
+            <Tooltip title="Per-service detail of usage and cost this period versus last, so you can see which services drive your bill." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+          </Typography>
           <Button
             variant="outlined"
             startIcon={<Download />}
@@ -1073,6 +1092,7 @@ function UsageMetrics() {
                   >
                     Change %
                   </TableSortLabel>
+                  <Tooltip title="Percent change in usage from last period to this one; a quick signal of which services are growing or shrinking." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                 </TableCell>
                 <TableCell align="right">
                   <TableSortLabel
@@ -1082,8 +1102,12 @@ function UsageMetrics() {
                   >
                     Cost
                   </TableSortLabel>
+                  <Tooltip title="Estimated cost this service incurred during the selected period." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                 </TableCell>
-                <TableCell align="center">Status</TableCell>
+                <TableCell align="center">
+                  Status
+                  <Tooltip title="Health of usage against the limit: normal (under 50%), warning (50-80%), or critical (over 80%, at risk of overage)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
