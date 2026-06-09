@@ -319,7 +319,8 @@ class ProviderTestRequest(BaseModel):
 @router.get("/providers", response_model=List[ProviderResponse])
 async def list_providers(
     enabled_only: bool = False,
-    request: Request = None
+    request: Request = None,
+    _admin: Dict[str, Any] = Depends(require_admin_user)
 ):
     """
     List all configured LLM providers
