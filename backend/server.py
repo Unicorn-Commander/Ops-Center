@@ -860,6 +860,24 @@ async def startup_event():
         )
         logger.info("PostgreSQL connection pool created")
 
+        # Ensure feature tables exist (idempotent). Many handlers query tables that
+        # ship as raw .sql and were never auto-applied, causing 500s on a fresh node
+        # (this is what broke ~22 admin endpoints on a clean deploy). Apply the
+        # consolidated idempotent migration on every boot — CREATE ... IF NOT EXISTS,
+        # so it's a no-op once present. Non-fatal: a failure here must not block startup.
+        try:
+            _eft_path = os.path.join(os.path.dirname(__file__), "migrations", "ensure_feature_tables.sql")
+            if os.path.exists(_eft_path):
+                with open(_eft_path) as _f:
+                    _eft_sql = _f.read()
+                async with db_pool.acquire() as _conn:
+                    await _conn.execute(_eft_sql)
+                logger.info("ensure_feature_tables.sql applied (feature tables ensured)")
+            else:
+                logger.warning(f"ensure_feature_tables.sql not found at {_eft_path}; skipping")
+        except Exception as e:
+            logger.error(f"ensure_feature_tables.sql failed (non-fatal, continuing startup): {e}")
+
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
         redis_client = aioredis.from_url(

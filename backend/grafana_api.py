@@ -218,11 +218,12 @@ async def list_data_sources(api_key: Optional[str] = None):
                     detail=f"Failed to fetch data sources: {response.text}"
                 )
     except httpx.ConnectError as e:
-        logger.error(f"Cannot connect to Grafana: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="Grafana service is not reachable"
-        )
+        logger.warning(f"Grafana not reachable, returning empty data sources: {e}")
+        return {
+            "success": False,
+            "datasources": [],
+            "note": "Grafana not configured on this node"
+        }
     except Exception as e:
         logger.error(f"Failed to list data sources: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -386,11 +387,12 @@ async def list_dashboards(api_key: Optional[str] = None):
                     detail=f"Failed to fetch dashboards: {response.text}"
                 )
     except httpx.ConnectError as e:
-        logger.error(f"Cannot connect to Grafana: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="Grafana service is not reachable"
-        )
+        logger.warning(f"Grafana not reachable, returning empty dashboards: {e}")
+        return {
+            "success": False,
+            "dashboards": [],
+            "note": "Grafana not configured"
+        }
     except Exception as e:
         logger.error(f"Failed to list dashboards: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -543,6 +545,13 @@ async def list_folders(api_key: Optional[str] = None):
                     status_code=response.status_code,
                     detail=f"Failed to fetch folders: {response.text}"
                 )
+    except httpx.ConnectError as e:
+        logger.warning(f"Grafana not reachable, returning empty folders: {e}")
+        return {
+            "success": False,
+            "folders": [],
+            "note": "Grafana not available"
+        }
     except Exception as e:
         logger.error(f"Failed to list folders: {e}")
         raise HTTPException(status_code=500, detail=str(e))

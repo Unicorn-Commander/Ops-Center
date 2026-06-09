@@ -710,6 +710,19 @@ END $$;
 
 
 -- ============================================================================
+-- COLUMN BACKFILL — for tables that may PRE-EXIST in an older/incomplete form.
+-- CREATE TABLE IF NOT EXISTS above is a no-op when a table already exists, so it
+-- cannot add columns a newer handler needs. These idempotent ALTERs close that gap
+-- (verified missing on magicunicorn.dev 2026-06-09):
+--   llm_usage_logs lacked metadata + total_tokens (testing-lab + model-stats handlers)
+--   add_ons lacked version (extensions get_active_addons: SELECT a.version)
+-- ============================================================================
+ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS metadata JSONB;
+ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS total_tokens INTEGER DEFAULT 0;
+ALTER TABLE add_ons ADD COLUMN IF NOT EXISTS version VARCHAR(50);
+
+
+-- ============================================================================
 -- DONE
 -- ============================================================================
 DO $$

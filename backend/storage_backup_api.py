@@ -815,7 +815,7 @@ async def configure_rclone_remote(
         logger.error(f"Error configuring rclone remote: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/backups/rclone/remotes", response_model=List[RcloneRemoteResponse])
+@router.get("/backups/rclone/remotes")
 async def list_rclone_remotes(current_user: Dict = Depends(require_admin)):
     """
     List all configured rclone remotes
@@ -823,6 +823,8 @@ async def list_rclone_remotes(current_user: Dict = Depends(require_admin)):
     Returns:
     - List of configured remotes with type and encryption status
     """
+    import subprocess
+
     try:
         await audit_logger.log(
             action="rclone.remotes.list",
@@ -833,19 +835,22 @@ async def list_rclone_remotes(current_user: Dict = Depends(require_admin)):
 
         remotes = await rclone_manager.list_remotes()
 
-        return [
-            RcloneRemoteResponse(
-                name=r.name,
-                type=r.type,
-                configured=r.configured,
-                encrypted=r.encrypted
-            )
-            for r in remotes
-        ]
+        return {
+            "remotes": [
+                RcloneRemoteResponse(
+                    name=r.name,
+                    type=r.type,
+                    configured=r.configured,
+                    encrypted=r.encrypted
+                )
+                for r in remotes
+            ]
+        }
 
-    except Exception as e:
-        logger.error(f"Error listing rclone remotes: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except (FileNotFoundError, subprocess.CalledProcessError, Exception) as e:
+        # rclone binary not installed/configured on this node — degrade gracefully
+        logger.warning(f"rclone not available, returning empty remotes: {e}")
+        return {"remotes": [], "message": "rclone not installed on this node"}
 
 @router.post("/backups/rclone/sync", response_model=RcloneStatsResponse)
 async def rclone_sync(

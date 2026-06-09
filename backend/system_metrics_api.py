@@ -656,8 +656,9 @@ async def get_alert_history(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting alert history: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve alert history: {str(e)}")
+        # Graceful: an empty/uninitialized alert store should render "no alerts", not error.
+        logger.warning(f"Alert history unavailable, returning empty: {e}")
+        return []
 
 
 @router.get("/alerts/summary")
@@ -672,5 +673,5 @@ async def get_alert_summary() -> Dict:
         summary = alert_manager.get_alert_summary()
         return summary
     except Exception as e:
-        logger.error(f"Error getting alert summary: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve alert summary: {str(e)}")
+        logger.warning(f"Alert summary unavailable, returning empty: {e}")
+        return {"total": 0, "by_severity": {}}

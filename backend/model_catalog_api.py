@@ -281,8 +281,8 @@ async def fetch_openrouter_models() -> List[Dict]:
                     'description': model.get('description', ''),
                     'context_length': model.get('context_length', 0),
                     'pricing': {
-                        'input': float(pricing.get('prompt', 0)) * 1_000_000,  # Convert to per 1M
-                        'output': float(pricing.get('completion', 0)) * 1_000_000
+                        'input': float(pricing.get('prompt') or 0) * 1_000_000,  # Convert to per 1M
+                        'output': float(pricing.get('completion') or 0) * 1_000_000
                     },
                     'capabilities': capabilities,
                     'top_provider': model.get('top_provider', {}),

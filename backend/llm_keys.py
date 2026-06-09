@@ -80,10 +80,13 @@ async def get_current_user(request: Request) -> Dict:
     return user
 
 
-def _get_master_key():
+def _get_master_key(status_code: int = 503):
     key = LITELLM_MASTER_KEY
     if not key:
-        raise HTTPException(status_code=503, detail="LiteLLM master key not configured")
+        raise HTTPException(
+            status_code=status_code,
+            detail="LiteLLM key management is not configured on this node",
+        )
     return key
 
 
@@ -124,7 +127,9 @@ async def create_llm_key(
 ):
     """Generate a new LLM API key (sk-...). The full key is shown ONLY ONCE."""
     user_id = user["user_id"]
-    master_key = _get_master_key()
+    # Key creation cannot function without the master key — return a clear
+    # "not configured" client error (400) rather than a raw 503.
+    master_key = _get_master_key(status_code=400)
 
     # Determine model access based on user privileges
     if req.models:
@@ -195,6 +200,16 @@ async def list_llm_keys(
     """List all LLM API keys for the current user."""
     user_id = user["user_id"]
     is_admin = user.get("role") == "admin"
+
+    # Graceful degradation: if LiteLLM master key isn't configured on this
+    # node, key management is unavailable. The happy path returns a bare list
+    # of keys, and the frontend maps over it directly, so return an empty list
+    # (HTTP 200) here. The API-keys screen renders a clean empty state instead
+    # of erroring on a 503.
+    if not LITELLM_MASTER_KEY:
+        logger.warning("LiteLLM master key not configured; returning empty key list")
+        return []
+
     master_key = _get_master_key()
 
     # Admin sees all keys, regular users see only their own
@@ -250,7 +265,9 @@ async def revoke_llm_key(
     """Revoke an LLM API key."""
     user_id = user["user_id"]
     is_admin = user.get("role") == "admin"
-    master_key = _get_master_key()
+    # Revocation cannot function without the master key — return a clear
+    # "not configured" client error (400) rather than a raw 503.
+    master_key = _get_master_key(status_code=400)
 
     # Verify ownership (unless admin)
     if not is_admin:
@@ -288,6 +305,13 @@ async def get_llm_key_info(
     user: Dict = Depends(get_current_user)
 ):
     """Get detailed info about a specific LLM key."""
+    # Graceful degradation: no key management configured on this node — there
+    # are no keys to describe, so return an empty object (HTTP 200) to match
+    # the happy-path dict shape instead of erroring.
+    if not LITELLM_MASTER_KEY:
+        logger.warning("LiteLLM master key not configured; returning empty key info")
+        return {}
+
     master_key = _get_master_key()
 
     async with httpx.AsyncClient(timeout=15) as client:

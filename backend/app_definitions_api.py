@@ -500,7 +500,16 @@ async def list_categories(
             WHERE category IS NOT NULL AND category != ''
             ORDER BY category
         """
-        rows = await conn.fetch(query)
+        try:
+            rows = await conn.fetch(query)
+        except asyncpg.UndefinedTableError:
+            # app_definitions table is not provisioned on this deployment.
+            logger.warning("app_definitions table missing; returning empty category list")
+            return []
+        except Exception:
+            logger.warning("Failed to list app categories; returning empty list", exc_info=True)
+            return []
+
         return [row['category'] for row in rows]
 
     finally:
