@@ -32,6 +32,8 @@ const PricingRates = () => {
   const [savedAt, setSavedAt] = useState(null);
   const [refreshMsg, setRefreshMsg] = useState(null);
 
+  const [status, setStatus] = useState(null);
+
   const load = useCallback(async () => {
     try {
       const r = await fetch(API, { credentials: 'include' });
@@ -40,7 +42,13 @@ const PricingRates = () => {
       setData(d); setSettings(d.settings || {}); setOverrides({}); setErr(null);
     } catch (e) { setErr(e.message); } finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadStatus = useCallback(async () => {
+    try {
+      const r = await fetch('/api/v1/admin/pricing/status', { credentials: 'include' });
+      if (r.ok) setStatus(await r.json());
+    } catch { /* non-critical */ }
+  }, []);
+  useEffect(() => { load(); loadStatus(); }, [load, loadStatus]);
 
   const dirty = useMemo(() => {
     if (!data) return false;
@@ -72,9 +80,11 @@ const PricingRates = () => {
       const d = await r.json();
       if (!r.ok || d.ok === false) throw new Error(d.error || `Refresh failed (HTTP ${r.status})`);
       setRefreshMsg(`Pulled live pricing — ${d.models_tracked} models tracked, ${d.changed} price change(s)${d.not_found_on_openrouter?.length ? `, ${d.not_found_on_openrouter.length} not found upstream` : ''}.`);
-      await load();
+      await load(); await loadStatus();
     } catch (e) { setErr(e.message); } finally { setRefreshing(false); }
   };
+
+  const sinceLabel = (h) => h == null ? 'never' : h < 1 ? `${Math.round(h * 60)}m ago` : h < 48 ? `${Math.round(h)}h ago` : `${Math.round(h / 24)}d ago`;
 
   const setS = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   const setLocal = (k, v) => setSettings((s) => ({ ...s, local: { ...(s.local || {}), [k]: v } }));
@@ -115,6 +125,21 @@ const PricingRates = () => {
 
       {refreshMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setRefreshMsg(null)}>{refreshMsg}</Alert>}
       {err && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setErr(null)}>{err}</Alert>}
+
+      {/* Freshness + never-lose-money safeguard status */}
+      {status && (status.is_stale || (status.recent_hikes?.length > 0)) && (
+        <Alert severity={status.is_stale ? 'error' : 'warning'} sx={{ mb: 2 }}>
+          {status.is_stale
+            ? `⚠️ Pricing may be STALE — last live refresh ${sinceLabel(status.hours_since_refresh)} (auto-refresh runs every ${status.schedule_hours}h). ${status.last_error ? 'Last error: ' + status.last_error : 'Click "Refresh from live" to update.'}`
+            : `Recent provider price hike(s) exceeding your ${settings.buffer_pct ?? '?'}% buffer — review markups: ${status.recent_hikes.map(h => `${h.model} +${h.pct}%`).join(', ')}`}
+        </Alert>
+      )}
+      {status && !status.is_stale && !(status.recent_hikes?.length) && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+          ✓ Costs auto-refresh from live pricing every {status.schedule_hours}h · last refreshed {sinceLabel(status.hours_since_refresh)}
+          {status.last_changed ? ` · ${status.last_changed} change(s) last run` : ''} — never-lose-money safeguard active.
+        </Typography>
+      )}
 
       {/* Global settings */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: '16px' }}>
