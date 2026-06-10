@@ -257,6 +257,31 @@ async def get_invoices_by_email(email: str, limit: int = 10) -> List[Dict[str, A
     return await get_invoices(customer_external_id, limit=limit)
 
 
+async def get_subscription_for(org_id: Optional[str], email: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Resolve an org's active subscription using the CANONICAL org_id key first
+    (external_id == org_id, consistent with the write path + the gateway's
+    org-keyed metering events), falling back to the legacy email-keyed lookup
+    only if no org-keyed subscription exists. Unifies the two historical
+    keying schemes onto org_id ("one billing").
+    """
+    sub = await get_subscription(org_id) if org_id else None
+    if not sub and email:
+        sub = await get_subscription_by_email(email)
+    return sub
+
+
+async def get_invoices_for(org_id: Optional[str], email: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Resolve an org's invoices by canonical org_id first, legacy email fallback.
+    See get_subscription_for() for the keying rationale.
+    """
+    invoices = await get_invoices(org_id, limit=limit) if org_id else []
+    if not invoices and email:
+        invoices = await get_invoices_by_email(email, limit=limit)
+    return invoices
+
+
 async def update_org_customer(
     org_id: str,
     org_name: Optional[str] = None,
