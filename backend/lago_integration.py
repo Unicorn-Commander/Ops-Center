@@ -269,7 +269,7 @@ async def create_subscription(
     subscription_data = {
         "subscription": {
             "external_customer_id": org_id,
-            "external_id": f"{org_id}_{plan_code}_{int(datetime.utcnow().timestamp())}",  # Unique subscription ID
+            "external_id": org_id,  # stable: external_id == org_id so the gateway's org-keyed usage events attach to this subscription (one active sub per org)
             "plan_code": plan_code,
             "billing_time": billing_time
         }

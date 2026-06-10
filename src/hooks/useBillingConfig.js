@@ -22,6 +22,11 @@ const DEFAULT_CONFIG = {
   currency: 'usd',
   capabilities: { saved_cards: true, buy_credits: true, invoices: true, subscriptions: true },
   source: { kind: 'local', label: 'This server' },
+  // Federated provenance (branding only; blank unless provider === 'federated').
+  // Defaulted here so older nodes whose endpoint predates these fields degrade safely.
+  provider_display_name: '',
+  provider_url: '',
+  provider_logo_url: '',
   stripe_publishable_key: '',
 };
 

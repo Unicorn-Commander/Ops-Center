@@ -29,7 +29,7 @@ import {
   History as HistoryIcon
 } from '@mui/icons-material';
 import { useBillingConfig } from '../hooks/useBillingConfig';
-import ProvenanceBadge from '../components/ProvenanceBadge';
+import FederatedBillingBadge from '../components/FederatedBillingBadge';
 
 const CreditPurchase = () => {
   const { config: billingConfig } = useBillingConfig();
@@ -196,7 +196,7 @@ const CreditPurchase = () => {
           <Typography variant="h4" component="h1">
             Buy Credits
           </Typography>
-          <ProvenanceBadge config={billingConfig} prefix="Billing" />
+          <FederatedBillingBadge config={billingConfig} variant="chip" prefix="Billing" />
         </Box>
         <Typography variant="body1" color="text.secondary">
           Purchase credits to use AI models, tools, and services
@@ -414,6 +414,9 @@ const CreditPurchase = () => {
             • Credits are added instantly after successful payment
           </Typography>
         </Stack>
+        {billingConfig?.provider === 'federated' && (
+          <FederatedBillingBadge config={billingConfig} variant="note" sx={{ mt: 2 }} />
+        )}
       </Paper>
     </Container>
   );

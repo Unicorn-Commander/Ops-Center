@@ -14,6 +14,8 @@ import {
   Tooltip as RTooltip, Legend, Cell,
 } from 'recharts';
 import PageHeader from '../../components/admin/PageHeader';
+import FederatedBillingBadge from '../../components/FederatedBillingBadge';
+import useBillingConfig from '../../hooks/useBillingConfig';
 
 const API = '/api/v1/admin/pricing/rates';
 const money = (v) => (v == null ? '—' : `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: v < 1 ? 4 : 2 })}`);
@@ -23,6 +25,7 @@ const PROVIDER_COLORS = {
 };
 
 const PricingRates = () => {
+  const { config: billingConfig } = useBillingConfig();
   const [data, setData] = useState(null);
   const [settings, setSettings] = useState({});
   const [overrides, setOverrides] = useState({}); // "provider::model" -> markup %
@@ -112,6 +115,7 @@ const PricingRates = () => {
         subtitle="Cost-plus rate book — provider cost vs your metered rate, margin, and credits. Metering bills measured cost × markup, so margin is protected even if providers change prices."
         actions={
           <Stack direction="row" spacing={1.5} alignItems="center">
+            <FederatedBillingBadge config={billingConfig} variant="chip" />
             {savedAt && !dirty && <Chip size="small" color="success" variant="outlined" label="Saved" />}
             <Button variant="outlined" startIcon={refreshing ? <CircularProgress size={16} /> : <CloudSyncIcon />} onClick={refreshLive} disabled={refreshing || saving} title="Pull the latest models & prices live from OpenRouter (preserves your markup)">
               {refreshing ? 'Refreshing…' : 'Refresh from live'}
@@ -268,6 +272,10 @@ const PricingRates = () => {
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
         Edit a model's markup inline, or set global defaults above, then <strong>Save changes</strong>. Provider costs are kept current by the rate-research job and flagged if a provider raises prices.
       </Typography>
+
+      {billingConfig?.provider === 'federated' && (
+        <FederatedBillingBadge config={billingConfig} variant="note" sx={{ mt: 2 }} />
+      )}
     </Box>
   );
 };
