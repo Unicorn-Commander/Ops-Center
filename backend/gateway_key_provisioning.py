@@ -120,30 +120,40 @@ def _decrypt_key_value(encrypted: Optional[str]) -> Optional[str]:
         return None
 
 
+# org_id is the OrgManager id ("org_<uuid>", a STRING) — NOT the bare-UUID
+# organizations.id (a different id space, JSON store vs Postgres). So persist into
+# a dedicated string-keyed table, created on demand, decoupled from organizations.
+_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS org_gateway_keys (
+    org_id VARCHAR(255) PRIMARY KEY,
+    litellm_key_id VARCHAR(255),
+    litellm_key_encrypted TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+
 async def _read_stored_key(conn, org_id: str) -> Optional[Dict[str, Any]]:
-    """Return the persisted org→key reference, or None. Tolerates the columns
-    not yet existing (UndefinedColumnError) so a node mid-migration degrades to
-    on-demand provisioning instead of erroring."""
+    """Return the persisted org→key reference from org_gateway_keys (keyed by the
+    string org_id, e.g. 'org_<uuid>'), or None. Self-heals the table so a fresh
+    node degrades gracefully instead of erroring."""
     try:
+        await conn.execute(_TABLE_DDL)
         row = await conn.fetchrow(
-            """
-            SELECT litellm_gateway_key_id, litellm_gateway_key_encrypted
-            FROM organizations
-            WHERE id = $1
-            """,
+            "SELECT litellm_key_id, litellm_key_encrypted FROM org_gateway_keys WHERE org_id = $1",
             org_id,
         )
     except Exception as e:
-        # UndefinedColumn (migration not yet applied) or org_id not a UUID, etc.
         logger.warning("Could not read stored gateway key for org %s: %s", org_id, e)
         return None
 
-    if not row or not row["litellm_gateway_key_id"]:
+    if not row or not row["litellm_key_id"]:
         return None
 
     return {
-        "key_id": row["litellm_gateway_key_id"],
-        "key": _decrypt_key_value(row["litellm_gateway_key_encrypted"]),
+        "key_id": row["litellm_key_id"],
+        "key": _decrypt_key_value(row["litellm_key_encrypted"]),
         "org_id": org_id,
     }
 
@@ -154,12 +164,15 @@ async def _persist_key(conn, org_id: str, key_id: str, key_value: Optional[str])
     and is discoverable by alias)."""
     encrypted = _encrypt_key_value(key_value)
     try:
+        await conn.execute(_TABLE_DDL)
         await conn.execute(
             """
-            UPDATE organizations
-            SET litellm_gateway_key_id = $2,
-                litellm_gateway_key_encrypted = COALESCE($3, litellm_gateway_key_encrypted)
-            WHERE id = $1
+            INSERT INTO org_gateway_keys (org_id, litellm_key_id, litellm_key_encrypted, updated_at)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+            ON CONFLICT (org_id) DO UPDATE SET
+                litellm_key_id = EXCLUDED.litellm_key_id,
+                litellm_key_encrypted = COALESCE(EXCLUDED.litellm_key_encrypted, org_gateway_keys.litellm_key_encrypted),
+                updated_at = CURRENT_TIMESTAMP
             """,
             org_id,
             key_id,
@@ -369,7 +382,7 @@ async def get_org_gateway_key(
         conn = await get_db_connection()
         try:
             row = await conn.fetchrow(
-                "SELECT plan_tier FROM organizations WHERE id = $1", org_id
+                "SELECT plan_tier FROM organizations WHERE id::text = $1", org_id
             )
             if row:
                 plan_code = row["plan_tier"]
