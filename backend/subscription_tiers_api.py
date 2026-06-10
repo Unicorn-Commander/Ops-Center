@@ -48,6 +48,7 @@ class SubscriptionTierBase(BaseModel):
     team_seats: int = Field(1, ge=1, description="Team seats")
     byok_enabled: bool = Field(False, description="BYOK enabled")
     priority_support: bool = Field(False, description="Priority support")
+    llm_markup_percentage: float = Field(0.0, ge=0, description="Credit markup % applied to LLM usage on this tier")
     lago_plan_code: Optional[str] = Field(None, description="Lago plan code")
     stripe_price_monthly: Optional[str] = Field(None, description="Stripe monthly price ID")
     stripe_price_yearly: Optional[str] = Field(None, description="Stripe yearly price ID")
@@ -76,6 +77,7 @@ class SubscriptionTierUpdate(BaseModel):
     team_seats: Optional[int] = None
     byok_enabled: Optional[bool] = None
     priority_support: Optional[bool] = None
+    llm_markup_percentage: Optional[float] = None
     lago_plan_code: Optional[str] = None
     stripe_price_monthly: Optional[str] = None
     stripe_price_yearly: Optional[str] = None
@@ -213,7 +215,7 @@ async def list_tiers(
                 st.id, st.tier_code, st.tier_name, st.description,
                 st.price_monthly, st.price_yearly, st.is_active, st.is_invite_only,
                 st.sort_order, st.api_calls_limit, st.team_seats,
-                st.byok_enabled, st.priority_support,
+                st.byok_enabled, st.priority_support, st.llm_markup_percentage,
                 st.lago_plan_code, st.stripe_price_monthly, st.stripe_price_yearly,
                 st.created_at, st.updated_at, st.created_by, st.updated_by,
                 COALESCE(COUNT(DISTINCT ta.id), 0) AS feature_count
@@ -266,7 +268,7 @@ async def get_tier(
                 st.id, st.tier_code, st.tier_name, st.description,
                 st.price_monthly, st.price_yearly, st.is_active, st.is_invite_only,
                 st.sort_order, st.api_calls_limit, st.team_seats,
-                st.byok_enabled, st.priority_support,
+                st.byok_enabled, st.priority_support, st.llm_markup_percentage,
                 st.lago_plan_code, st.stripe_price_monthly, st.stripe_price_yearly,
                 st.created_at, st.updated_at, st.created_by, st.updated_by,
                 COALESCE(COUNT(DISTINCT ta.id), 0) AS feature_count
@@ -328,10 +330,10 @@ async def create_tier(
             INSERT INTO subscription_tiers (
                 tier_code, tier_name, description, price_monthly, price_yearly,
                 is_active, is_invite_only, sort_order, api_calls_limit, team_seats,
-                byok_enabled, priority_support, lago_plan_code,
+                byok_enabled, priority_support, llm_markup_percentage, lago_plan_code,
                 stripe_price_monthly, stripe_price_yearly, created_by
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id, created_at, updated_at
         """
 
@@ -341,7 +343,7 @@ async def create_tier(
             tier.price_monthly, tier.price_yearly, tier.is_active,
             tier.is_invite_only, tier.sort_order, tier.api_calls_limit,
             tier.team_seats, tier.byok_enabled, tier.priority_support,
-            tier.lago_plan_code, tier.stripe_price_monthly,
+            tier.llm_markup_percentage, tier.lago_plan_code, tier.stripe_price_monthly,
             tier.stripe_price_yearly, admin
         )
 
@@ -538,10 +540,10 @@ async def clone_tier(
                 INSERT INTO subscription_tiers (
                     tier_code, tier_name, description, price_monthly, price_yearly,
                     is_active, is_invite_only, sort_order, api_calls_limit, team_seats,
-                    byok_enabled, priority_support, lago_plan_code,
+                    byok_enabled, priority_support, llm_markup_percentage, lago_plan_code,
                     stripe_price_monthly, stripe_price_yearly, created_by
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                 RETURNING id, created_at, updated_at
             """
 
@@ -559,6 +561,7 @@ async def clone_tier(
                 source_tier['team_seats'],
                 source_tier['byok_enabled'],
                 source_tier['priority_support'],
+                source_tier['llm_markup_percentage'],  # Clone the credit markup
                 None,  # Don't clone Lago plan code
                 None,  # Don't clone Stripe price ID
                 None,  # Don't clone Stripe yearly price ID
@@ -600,6 +603,7 @@ async def clone_tier(
             team_seats=source_tier['team_seats'],
             byok_enabled=source_tier['byok_enabled'],
             priority_support=source_tier['priority_support'],
+            llm_markup_percentage=source_tier['llm_markup_percentage'],
             lago_plan_code=None,
             stripe_price_monthly=None,
             stripe_price_yearly=None,

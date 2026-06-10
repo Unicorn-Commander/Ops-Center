@@ -142,6 +142,121 @@ async def get_customer(org_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def get_customer_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve customer information from Lago by EMAIL.
+
+    NOTE on Lago keying schemes (two coexist):
+      - Legacy/billing-UI customers are keyed by EMAIL as their external_id
+        (e.g. external_id == "aaron@magicunicorn.tech").
+      - Metering subscriptions created by create_subscription() use external_id == org_id
+        so the gateway's org-keyed usage events attach to one active sub per org.
+    The billing UI (current plan / invoices / billing cycle) reads the email-keyed
+    customer, so these lookups resolve by email. Do NOT change create_subscription.
+
+    Args:
+        email: Customer email (used as external_id for legacy customers)
+
+    Returns:
+        Customer data or None if not found
+    """
+    if not email:
+        return None
+
+    # Fast path: legacy customers use the email directly as external_id.
+    customer = await get_customer(email)
+    if customer:
+        return customer
+
+    # Fallback: scan the customer list and match on the email field.
+    if not LAGO_API_KEY:
+        logger.error("LAGO_API_KEY not configured")
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{LAGO_API_URL}/api/v1/customers",
+                headers={"Authorization": f"Bearer {LAGO_API_KEY}"},
+                params={"per_page": 100},
+                timeout=API_TIMEOUT
+            )
+
+            if response.status_code == 200:
+                customers = response.json().get("customers", [])
+                for cust in customers:
+                    if (cust.get("email") or "").lower() == email.lower():
+                        return cust
+                logger.info(f"No Lago customer found for email: {email}")
+                return None
+            else:
+                logger.error(f"Failed to list customers: {response.status_code} - {response.text}")
+                return None
+
+    except httpx.RequestError as e:
+        logger.error(f"Network error listing customers by email: {e}")
+        return None
+
+
+async def get_subscription_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """
+    Get active subscription for a customer resolved by EMAIL.
+
+    Used by the billing UI (current plan, billing cycle) because the customer
+    that owns the active subscription is email-keyed in Lago. See the keying
+    note on get_customer_by_email().
+
+    Args:
+        email: Customer email
+
+    Returns:
+        Subscription data or None if no active subscription
+    """
+    if not LAGO_API_KEY:
+        logger.error("LAGO_API_KEY not configured")
+        return None
+
+    customer = await get_customer_by_email(email)
+    if not customer:
+        return None
+
+    customer_external_id = customer.get("external_id")
+    if not customer_external_id:
+        return None
+
+    # Reuse get_subscription which filters by external_customer_id.
+    return await get_subscription(customer_external_id)
+
+
+async def get_invoices_by_email(email: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get invoices for a customer resolved by EMAIL.
+
+    Used by the billing UI because invoices belong to the email-keyed customer.
+    See the keying note on get_customer_by_email().
+
+    Args:
+        email: Customer email
+        limit: Maximum number of invoices to return
+
+    Returns:
+        List of invoice data (empty if customer not found)
+    """
+    if not LAGO_API_KEY:
+        logger.error("LAGO_API_KEY not configured")
+        return []
+
+    customer = await get_customer_by_email(email)
+    if not customer:
+        return []
+
+    customer_external_id = customer.get("external_id")
+    if not customer_external_id:
+        return []
+
+    return await get_invoices(customer_external_id, limit=limit)
+
+
 async def update_org_customer(
     org_id: str,
     org_name: Optional[str] = None,

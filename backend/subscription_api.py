@@ -25,6 +25,7 @@ from subscription_manager import (
 from lago_integration import (
     get_customer,
     get_subscription,
+    get_subscription_by_email,
     create_subscription,
     terminate_subscription,
     get_or_create_customer,
@@ -97,12 +98,119 @@ async def require_admin(request: Request):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
+
+async def get_authoritative_tier(user: dict) -> Optional[str]:
+    """
+    Read the authoritative subscription tier from user_credits (the source of truth).
+
+    The session's subscription_tier can be stale ('trial') even when the user is an
+    active vip_founder, so we resolve the tier from user_credits keyed on the Keycloak
+    sub / user id (stored as a UUID in user_credits.user_id).
+
+    Returns the tier_code string, or None if no row / DB unavailable.
+    """
+    user_sub = user.get("sub") or user.get("user_id") or user.get("id")
+    if not user_sub:
+        return None
+
+    try:
+        import asyncpg
+
+        conn = await asyncpg.connect(
+            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "unicorn"),
+            password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+            database=os.getenv("POSTGRES_DB", "unicorn_db")
+        )
+        try:
+            row = await conn.fetchrow(
+                "SELECT tier FROM user_credits WHERE user_id::text = $1",
+                str(user_sub)
+            )
+            return row["tier"] if row and row["tier"] else None
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning(f"Could not resolve authoritative tier from user_credits: {e}")
+        return None
+
+# Tiers that are assigned internally (not purchasable via the customer-facing
+# Compare Plans / Upgrade views). Excluded from the plans listing.
+NON_PURCHASABLE_TIERS = {"vip_founder", "founder_friend", "client"}
+
+
+async def _fetch_purchasable_tiers() -> List[Dict]:
+    """
+    Query the real subscription_tiers table for customer-purchasable plans.
+
+    Single source of truth shared by /subscriptions/plans and /billing/plans.
+    Excludes internal-assignment tiers (vip_founder, founder_friend, client);
+    returns byok, managed, trial. Features are built from tier_features.
+    """
+    import asyncpg
+
+    conn = await asyncpg.connect(
+        host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "unicorn"),
+        password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+        database=os.getenv("POSTGRES_DB", "unicorn_db")
+    )
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT id, tier_code, tier_name, description, price_monthly,
+                   price_yearly, api_calls_limit, lago_plan_code, sort_order
+            FROM subscription_tiers
+            WHERE is_active = true
+              AND tier_code != ALL($1::text[])
+            ORDER BY sort_order ASC, price_monthly ASC
+            """,
+            list(NON_PURCHASABLE_TIERS)
+        )
+
+        # Pull features per tier from tier_features (enabled only).
+        feature_rows = await conn.fetch(
+            "SELECT tier_id, feature_key FROM tier_features WHERE enabled = true"
+        )
+        features_by_tier: Dict[int, List[str]] = {}
+        for fr in feature_rows:
+            features_by_tier.setdefault(fr["tier_id"], []).append(fr["feature_key"])
+
+        plans = []
+        for row in rows:
+            features = features_by_tier.get(row["id"], [])
+            plans.append({
+                "id": row["tier_code"],
+                "tier_code": row["tier_code"],
+                "plan_code": row["lago_plan_code"] or row["tier_code"],
+                "name": row["tier_name"],
+                "display_name": row["tier_name"],
+                "description": row["description"] or "",
+                "price_monthly": float(row["price_monthly"]) if row["price_monthly"] is not None else 0.0,
+                "price_yearly": float(row["price_yearly"]) if row["price_yearly"] is not None else None,
+                "api_calls_limit": row["api_calls_limit"],
+                "features": features,
+                "is_popular": row["tier_code"] == "managed",
+            })
+        return plans
+    finally:
+        await conn.close()
+
+
 # Public endpoints (anyone can view plans)
 @router.get("/plans")
 async def get_plans():
-    """Get all active subscription plans"""
-    plans = subscription_manager.get_all_plans()
-    return {"plans": [plan.dict() for plan in plans]}
+    """Get all active, purchasable subscription plans from subscription_tiers."""
+    try:
+        plans = await _fetch_purchasable_tiers()
+        return {"plans": plans, "currency": "USD", "source": "database"}
+    except Exception as e:
+        logger.error(f"Failed to load plans from subscription_tiers: {e}", exc_info=True)
+        # Fall back to the in-memory plan manager rather than failing the UI.
+        plans = subscription_manager.get_all_plans()
+        return {"plans": [plan.dict() for plan in plans], "currency": "USD", "source": "fallback"}
 
 @router.get("/plans/{plan_id}")
 async def get_plan(plan_id: str):
@@ -225,24 +333,32 @@ async def get_current_subscription(request: Request):
     Returns subscription status, plan details, and next billing date.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    email = user.get("email")
 
-    logger.info(f"Fetching subscription for org_id: {org_id}")
+    logger.info(f"Fetching subscription for user email: {email}")
 
     try:
-        # Get subscription from Lago
-        subscription = await get_subscription(org_id)
+        # Resolve the Lago customer/subscription by EMAIL. The billing customer that
+        # owns the active subscription is email-keyed in Lago (external_id == email),
+        # not org_id. (The org_id-keyed external_id is the metering subscription.)
+        subscription = await get_subscription_by_email(email) if email else None
 
         if not subscription:
-            # No active subscription - check user's tier from Keycloak
-            user_tier = user.get("subscription_tier", "trial")
+            # No active Lago subscription found -> fall back to the AUTHORITATIVE tier
+            # from user_credits (the source of truth), NOT the stale session tier.
+            authoritative_tier = await get_authoritative_tier(user)
+            user_tier = authoritative_tier or user.get("subscription_tier", "trial")
             plan = subscription_manager.get_plan(user_tier)
 
             return {
                 "has_subscription": False,
                 "tier": user_tier,
+                "tier_code": user_tier,
+                "plan_code": user_tier,
                 "price": plan.price_monthly if plan else 0,
-                "status": "none",
+                "status": "active" if authoritative_tier else "none",
+                "next_billing_date": None,
+                "plan_name": plan.display_name if plan else user_tier.replace("_", " ").title(),
                 "message": "No active Lago subscription found"
             }
 
@@ -259,6 +375,7 @@ async def get_current_subscription(request: Request):
         return {
             "has_subscription": True,
             "tier": tier,
+            "tier_code": tier,
             "plan_code": plan_code,
             "price": plan.price_monthly if plan else 0,
             "status": status,

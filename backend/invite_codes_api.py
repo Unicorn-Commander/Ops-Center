@@ -102,7 +102,7 @@ async def get_db_connection():
     import os
     try:
         conn = await asyncpg.connect(
-            host=os.getenv("POSTGRES_HOST", "uchub-postgres"),
+            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
             port=int(os.getenv("POSTGRES_PORT", 5432)),
             user=os.getenv("POSTGRES_USER", "unicorn"),
             password=os.getenv("POSTGRES_PASSWORD", "unicorn"),

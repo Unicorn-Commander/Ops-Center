@@ -28,6 +28,7 @@ import secrets
 import string
 
 # Import Keycloak integration functions
+import httpx
 from keycloak_integration import (
     get_all_users,
     get_user_by_id,
@@ -37,7 +38,10 @@ from keycloak_integration import (
     delete_user as keycloak_delete_user,
     set_subscription_tier,
     set_user_password,
-    _get_attr_value
+    get_admin_token,
+    _get_attr_value,
+    KEYCLOAK_URL,
+    KEYCLOAK_REALM,
 )
 
 from audit_logger import audit_logger
@@ -135,6 +139,34 @@ async def require_admin(request: Request):
     return True
 
 # ============================================================================
+# ROLE HELPERS
+# ============================================================================
+
+async def _fetch_realm_roles(user_id: str) -> List[str]:
+    """
+    Fetch a user's realm role names via the Keycloak admin REST API.
+
+    The /users list endpoint does not include role mappings, so the REST path
+    must fetch them per-user from /users/{id}/role-mappings/realm. Returns an
+    empty list on any failure (best-effort enrichment, never blocks the list).
+    """
+    try:
+        token = await get_admin_token()
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.get(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/role-mappings/realm",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                return [r.get("name") for r in response.json() if r.get("name")]
+            logger.warning(f"Failed to fetch realm roles for {user_id}: {response.status_code}")
+    except Exception as e:
+        logger.warning(f"Error fetching realm roles for {user_id}: {e}")
+    return []
+
+
+# ============================================================================
 # USER LISTING & FILTERING
 # ============================================================================
 
@@ -217,6 +249,22 @@ async def list_users(
                 if user_org != org_id:
                     continue
 
+            # Realm roles. The DB-fallback path already provides these as
+            # `realmRoles`; the REST path omits them (backfilled post-pagination
+            # for the page slice below, to avoid an N+1 over every user).
+            user_roles = user.get("realmRoles")
+
+            # Role filter. When a role filter is active we must know the user's
+            # roles to decide inclusion; on the REST path (no `realmRoles`) fetch
+            # them now so filtering is correct rather than silently empty.
+            if role:
+                if user_roles is None:
+                    user_roles = await _fetch_realm_roles(user.get("id"))
+                if role not in user_roles:
+                    continue
+
+            user_roles = user_roles or []
+
             # Add to filtered list
             filtered_users.append({
                 "id": user.get("id"),
@@ -227,6 +275,7 @@ async def list_users(
                 "enabled": user.get("enabled", True),
                 "emailVerified": user.get("emailVerified", False),
                 "createdTimestamp": user.get("createdTimestamp"),
+                "roles": user_roles,
                 "subscription_tier": _get_attr_value(attrs, "subscription_tier", "trial"),
                 "subscription_status": _get_attr_value(attrs, "subscription_status", "active"),
                 "api_calls_limit": _get_attr_value(attrs, "api_calls_limit", "1000"),
@@ -240,9 +289,20 @@ async def list_users(
         total = len(filtered_users)
         paginated_users = filtered_users[offset:offset+limit]
 
+        # Backfill realm roles for the paginated slice when the REST path was
+        # used (no `realmRoles` present). Bounded to the page size, not all users.
+        for u in paginated_users:
+            if not u["roles"] and u.get("id"):
+                u["roles"] = await _fetch_realm_roles(u["id"])
+
         return {
             "users": paginated_users,
             "total": total,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            },
             "limit": limit,
             "offset": offset
         }
@@ -263,6 +323,8 @@ async def get_user_analytics_summary(admin: bool = Depends(require_admin)):
 
         total_users = len(users)
         active_users = sum(1 for u in users if u.get("enabled", True))
+        # Suspended = accounts that are disabled (cannot sign in).
+        suspended_users = sum(1 for u in users if not u.get("enabled", True))
 
         # Tier distribution
         tiers = {"trial": 0, "starter": 0, "professional": 0, "enterprise": 0}
@@ -278,6 +340,7 @@ async def get_user_analytics_summary(admin: bool = Depends(require_admin)):
         return {
             "total_users": total_users,
             "active_users": active_users,
+            "suspended_users": suspended_users,
             "email_verified": email_verified,
             "tier_distribution": tiers,
             "growth_this_month": 0,  # TODO: Calculate from creation timestamps

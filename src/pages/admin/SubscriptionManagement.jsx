@@ -103,6 +103,7 @@ const SubscriptionManagement = () => {
     team_seats: 1,
     byok_enabled: false,
     priority_support: false,
+    llm_markup_percentage: 0,
     lago_plan_code: '',
     stripe_price_monthly: '',
     stripe_price_yearly: ''
@@ -388,6 +389,7 @@ const SubscriptionManagement = () => {
       team_seats: 1,
       byok_enabled: false,
       priority_support: false,
+      llm_markup_percentage: 0,
       lago_plan_code: '',
       stripe_price_monthly: '',
       stripe_price_yearly: ''
@@ -418,6 +420,7 @@ const SubscriptionManagement = () => {
       team_seats: tier.team_seats,
       byok_enabled: tier.byok_enabled,
       priority_support: tier.priority_support,
+      llm_markup_percentage: tier.llm_markup_percentage ?? 0,
       lago_plan_code: tier.lago_plan_code || '',
       stripe_price_monthly: tier.stripe_price_monthly || '',
       stripe_price_yearly: tier.stripe_price_yearly || ''
@@ -440,6 +443,7 @@ const SubscriptionManagement = () => {
       team_seats: tier.team_seats,
       byok_enabled: tier.byok_enabled,
       priority_support: tier.priority_support,
+      llm_markup_percentage: tier.llm_markup_percentage ?? 0,
       lago_plan_code: '',
       stripe_price_monthly: '',
       stripe_price_yearly: ''
@@ -605,19 +609,19 @@ const SubscriptionManagement = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatsCard
-            title="Total Users"
-            value={tiers.reduce((sum, t) => sum + t.active_user_count, 0).toLocaleString()}
-            subtitle="Across all tiers"
-            icon={UsersIcon}
+            title="Paid Tiers"
+            value={tiers.filter(t => t.price_monthly > 0).length}
+            subtitle="Tiers with a monthly price"
+            icon={CurrencyDollarIcon}
             color="info"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatsCard
-            title="Monthly Revenue"
-            value={formatPrice(tiers.reduce((sum, t) => sum + t.monthly_revenue, 0))}
-            subtitle="Estimated total"
-            icon={CurrencyDollarIcon}
+            title="Invite-Only Tiers"
+            value={tiers.filter(t => t.is_invite_only).length}
+            subtitle="Admin-granted only"
+            icon={UsersIcon}
             color="warning"
           />
         </Grid>
@@ -659,12 +663,8 @@ const SubscriptionManagement = () => {
                   <Tooltip title="How many team members can be added under a single subscription on this tier." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                 </TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>
-                  Users
-                  <Tooltip title="Number of active subscribers currently on this tier." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
-                </TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700 }}>
-                  Revenue
-                  <Tooltip title="Estimated recurring monthly revenue from this tier (active subscribers times monthly price)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                  Markup %
+                  <Tooltip title="Credit markup added on top of raw LLM provider cost for usage on this tier (e.g. BYOK 10%, Managed 25%, Trial 50%). Drives how many credits a user is charged per call." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                 </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
                   Apps
@@ -733,9 +733,10 @@ const SubscriptionManagement = () => {
                       {formatApiLimit(tier.api_calls_limit)}
                     </TableCell>
                     <TableCell align="right">{tier.team_seats}</TableCell>
-                    <TableCell align="right">{tier.active_user_count}</TableCell>
                     <TableCell align="right">
-                      {formatPrice(tier.monthly_revenue)}
+                      {tier.llm_markup_percentage != null
+                        ? `${Number(tier.llm_markup_percentage).toFixed(0)}%`
+                        : '-'}
                     </TableCell>
                     <TableCell align="center">
                       <Chip
@@ -885,6 +886,17 @@ const SubscriptionManagement = () => {
                 type="number"
                 value={formData.sort_order}
                 onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                label="Credit Markup (%)"
+                type="number"
+                value={formData.llm_markup_percentage}
+                onChange={(e) => setFormData({ ...formData, llm_markup_percentage: parseFloat(e.target.value) || 0 })}
+                helperText="Markup added on LLM cost (e.g. 25 = +25%)"
+                inputProps={{ min: 0, step: 0.5 }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -1089,6 +1101,17 @@ const SubscriptionManagement = () => {
                 type="number"
                 value={formData.sort_order}
                 onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                label="Credit Markup (%)"
+                type="number"
+                value={formData.llm_markup_percentage}
+                onChange={(e) => setFormData({ ...formData, llm_markup_percentage: parseFloat(e.target.value) || 0 })}
+                helperText="Markup added on LLM cost (e.g. 25 = +25%)"
+                inputProps={{ min: 0, step: 0.5 }}
               />
             </Grid>
             <Grid item xs={12}>

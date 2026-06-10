@@ -4501,6 +4501,24 @@ async def update_profile(
             updates["avatar"] = avatar_url
             logger.info(f"Saved avatar to {avatar_path}")
 
+            # Persist the avatar URL durably so it survives session expiry / re-login.
+            # The session copy below is still kept for the fast path; this row is the
+            # source of truth that get_session_info + the OAuth callback rehydrate from.
+            try:
+                if hasattr(app.state, 'db_pool') and app.state.db_pool:
+                    async with app.state.db_pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE users SET avatar_url = $1 WHERE email = $2",
+                            avatar_url, user_email
+                        )
+                    logger.info(f"Persisted avatar_url for {user_email}")
+                else:
+                    logger.warning("Database pool not available; avatar_url not persisted durably")
+            except Exception as avatar_db_err:
+                # Non-fatal: the file is saved and the session is updated; durability
+                # is best-effort so a DB hiccup doesn't break the profile update.
+                logger.error(f"Failed to persist avatar_url for {user_email}: {avatar_db_err}")
+
         # Handle name update
         if name:
             updates["name"] = name
@@ -5773,6 +5791,23 @@ async def direct_login(request: Request, credentials: dict):
 
                     # Get organization context for the user
                     email = user_info.get('email')
+
+                    # Rehydrate the durable profile picture from users.avatar_url so it
+                    # survives re-login (Keycloak claims don't carry it). Stored into
+                    # the session user object below.
+                    if email and not user_info.get("avatar"):
+                        try:
+                            if hasattr(app.state, 'db_pool') and app.state.db_pool:
+                                async with app.state.db_pool.acquire() as conn:
+                                    saved_avatar = await conn.fetchval(
+                                        "SELECT avatar_url FROM users WHERE email = $1",
+                                        email
+                                    )
+                                if saved_avatar:
+                                    user_info["avatar"] = saved_avatar
+                        except Exception as avatar_hydrate_err:
+                            logger.error(f"avatar_url hydration failed for {email}: {avatar_hydrate_err}")
+
                     org_context = await get_user_org_context(user_id, email)
                     auto_provisioned = False
 
@@ -6034,6 +6069,23 @@ async def oauth_callback(request: Request, code: str, state: str = None):
 
                     # Get organization context for the user
                     email = user_info.get('email')
+
+                    # Rehydrate the durable profile picture from users.avatar_url so it
+                    # survives re-login (Keycloak claims don't carry it). Stored into
+                    # the session user object below.
+                    if email and not user_info.get("avatar"):
+                        try:
+                            if hasattr(app.state, 'db_pool') and app.state.db_pool:
+                                async with app.state.db_pool.acquire() as conn:
+                                    saved_avatar = await conn.fetchval(
+                                        "SELECT avatar_url FROM users WHERE email = $1",
+                                        email
+                                    )
+                                if saved_avatar:
+                                    user_info["avatar"] = saved_avatar
+                        except Exception as avatar_hydrate_err:
+                            logger.error(f"avatar_url hydration failed for {email}: {avatar_hydrate_err}")
+
                     org_context = await get_user_org_context(user_id, email)
                     auto_provisioned = False  # Initialize for subscription check logic
 
@@ -6389,6 +6441,24 @@ async def get_session_info(request: Request):
         # Simple token for React app (not secure, just for session bridging)
         token = base64.b64encode(json.dumps(token_data).encode()).decode()
 
+        # Resolve the profile picture: prefer the session copy (fast path, set on
+        # upload / login), otherwise fall back to the durable users.avatar_url row so
+        # the picture survives session expiry. Without this, data.user.avatar is null
+        # on reload and the frontend preview resets.
+        avatar_value = user_info.get("avatar")
+        if not avatar_value:
+            user_email = user_info.get("email")
+            if user_email:
+                try:
+                    if hasattr(app.state, 'db_pool') and app.state.db_pool:
+                        async with app.state.db_pool.acquire() as conn:
+                            avatar_value = await conn.fetchval(
+                                "SELECT avatar_url FROM users WHERE email = $1",
+                                user_email
+                            )
+                except Exception as avatar_lookup_err:
+                    logger.error(f"avatar_url lookup failed for {user_email}: {avatar_lookup_err}")
+
         return {
             "authenticated": True,
             "token": token,
@@ -6396,7 +6466,8 @@ async def get_session_info(request: Request):
                 "username": user_info.get("username", user_info.get("preferred_username", "user")),
                 "email": user_info.get("email", ""),
                 "name": user_info.get("name", ""),
-                "role": user_role
+                "role": user_role,
+                "avatar": avatar_value
             }
         }
     

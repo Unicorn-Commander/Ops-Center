@@ -15,8 +15,16 @@ from keycloak_integration import (
     KEYCLOAK_URL,
     KEYCLOAK_REALM,
     get_all_users,
-    get_realm_session_config_from_db
+    get_realm_session_config_from_db,
+    KEYCLOAK_DB_HOST,
+    KEYCLOAK_DB_PORT,
+    KEYCLOAK_DB_NAME,
+    KEYCLOAK_DB_USER,
+    KEYCLOAK_DB_PASSWORD,
 )
+
+# Admin-role dependency for sensitive endpoints (credentials, etc.)
+from auth_dependencies import require_admin_user
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +109,38 @@ async def get_identity_providers() -> List[Dict[str, Any]]:
 
 
 async def get_user_count_by_provider(provider_alias: str) -> int:
-    """Get count of users using a specific identity provider"""
+    """
+    Get count of users linked to a specific identity provider in this realm.
+
+    Reads Keycloak's federated_identity table directly (read-only), scoped to
+    the configured realm. federated_identity has one row per (provider, user)
+    link, so counting rows for an alias gives the number of users using that IdP.
+    """
+    import asyncpg
+
     try:
-        # This would require querying federated identities
-        # For now, return 0 as this requires more complex queries
-        return 0
+        conn = await asyncpg.connect(
+            host=KEYCLOAK_DB_HOST,
+            port=KEYCLOAK_DB_PORT,
+            user=KEYCLOAK_DB_USER,
+            password=KEYCLOAK_DB_PASSWORD,
+            database=KEYCLOAK_DB_NAME,
+        )
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM federated_identity fi
+                JOIN realm r ON fi.realm_id = r.id
+                WHERE fi.identity_provider = $1
+                  AND r.name = $2
+                """,
+                provider_alias,
+                KEYCLOAK_REALM,
+            )
+            return int(row["cnt"]) if row else 0
+        finally:
+            await conn.close()
     except Exception as e:
         logger.error(f"Error getting user count for provider {provider_alias}: {e}")
         return 0
@@ -152,29 +187,29 @@ async def get_oauth_clients() -> List[Dict[str, Any]]:
             if response.status_code == 200:
                 all_clients = response.json()
 
-                # Filter to only our application clients (not system clients)
+                # Return all application clients (exclude only Keycloak's built-in
+                # system/internal clients). Previously this was hardcoded to a
+                # 4-client allowlist, which hid every other registered client.
                 app_clients = []
                 for client in all_clients:
                     client_id = client.get("clientId", "")
 
-                    # Skip system/internal clients
+                    # Skip Keycloak system/internal clients
                     if client_id.startswith("account") or client_id.startswith("admin") or \
                        client_id.startswith("broker") or client_id.startswith("realm") or \
                        client_id.startswith("security"):
                         continue
 
-                    # Only include our application clients
-                    if client_id in ["ops-center", "brigade", "center-deep", "open-webui"]:
-                        app_clients.append({
-                            "client_id": client_id,
-                            "name": client.get("name", client_id),
-                            "enabled": client.get("enabled", False),
-                            "redirect_uris": client.get("redirectUris", []),
-                            "web_origins": client.get("webOrigins", []),
-                            "protocol": client.get("protocol", "openid-connect"),
-                            "public_client": client.get("publicClient", False),
-                            "service_accounts_enabled": client.get("serviceAccountsEnabled", False)
-                        })
+                    app_clients.append({
+                        "client_id": client_id,
+                        "name": client.get("name", client_id),
+                        "enabled": client.get("enabled", False),
+                        "redirect_uris": client.get("redirectUris", []),
+                        "web_origins": client.get("webOrigins", []),
+                        "protocol": client.get("protocol", "openid-connect"),
+                        "public_client": client.get("publicClient", False),
+                        "service_accounts_enabled": client.get("serviceAccountsEnabled", False)
+                    })
 
                 return app_clients
             else:
@@ -266,18 +301,24 @@ async def get_clients():
 
 
 @router.get("/api-credentials")
-async def get_api_credentials():
+async def get_api_credentials(admin: Dict[str, Any] = Depends(require_admin_user)):
     """
-    Get service account credentials for Ops-Center API
+    Get service account credentials for Ops-Center API.
 
-    NOTE: This endpoint should be admin-only!
-    Returns sensitive credential information.
+    Admin-only: returns sensitive credential information.
+
+    The client secret is read from the KEYCLOAK_API_CLIENT_SECRET environment
+    variable. There is NO hardcoded fallback — if the env var is unset, the
+    secret is reported as not configured rather than leaking a baked-in value.
     """
     try:
-        # These should match what's in .env.auth
+        client_secret = os.getenv("KEYCLOAK_API_CLIENT_SECRET")
+        secret_configured = bool(client_secret)
+
         return {
             "client_id": "ops-center-api",
-            "client_secret": os.getenv("KEYCLOAK_API_CLIENT_SECRET", "OpsCenterAPIKey2025MagicUnicorn"),
+            "client_secret": client_secret or "",
+            "client_secret_configured": secret_configured,
             "service_account": "ops-center-api",
             "permissions": ["manage-clients", "view-users", "manage-users"],
             "token_endpoint": f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token",

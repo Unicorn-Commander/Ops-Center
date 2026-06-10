@@ -59,7 +59,11 @@ const TierBadge = ({ tier, isCurrentPlan, isPopular }) => {
     trial: 'bg-blue-500/20 text-blue-400 border-blue-500/40',
     starter: 'bg-green-500/20 text-green-400 border-green-500/40',
     professional: 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+    managed: 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+    byok: 'bg-pink-500/20 text-pink-400 border-pink-500/40',
     'founders-friend': 'bg-gradient-to-r from-purple-500/20 to-amber-500/20 text-amber-400 border-amber-500/40',
+    founder_friend: 'bg-gradient-to-r from-purple-500/20 to-amber-500/20 text-amber-400 border-amber-500/40',
+    vip_founder: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
     enterprise: 'bg-amber-500/20 text-amber-400 border-amber-500/40'
   };
 
@@ -469,15 +473,16 @@ export default function SubscriptionUpgrade() {
         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
       >
         {plans.map((plan, index) => {
-          const features = getFeaturesForTier(plan.id);
-          const isCurrentPlan = currentSubscription && currentSubscription.tier === plan.id;
-          const isPopular = plan.id === 'professional' || plan.id === 'founders-friend';
+          const tierCode = plan.tier_code || plan.id;
+          const features = getFeaturesForTier(tierCode);
+          const isCurrentPlan = currentSubscription && (currentSubscription.tier_code || currentSubscription.tier) === tierCode;
+          const isPopular = plan.is_popular || tierCode === 'managed';
           const price = billingCycle === 'annual' && plan.price_yearly ? plan.price_yearly : plan.price_monthly;
           const displayPrice = billingCycle === 'annual' ? price / 12 : price;
 
           return (
             <motion.div
-              key={plan.id}
+              key={tierCode}
               variants={itemVariants}
               className={`relative ${theme.card} rounded-xl p-6 border-2 transition-all ${
                 isPopular
@@ -490,7 +495,7 @@ export default function SubscriptionUpgrade() {
               {/* Popular Badge */}
               {isPopular && (
                 <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <TierBadge tier={plan.id} isPopular={true} />
+                  <TierBadge tier={tierCode} isPopular={true} />
                 </div>
               )}
 
@@ -511,7 +516,7 @@ export default function SubscriptionUpgrade() {
                     {formatCurrency(displayPrice)}
                   </span>
                   <span className={`text-sm ${theme.text.secondary}`}>
-                    /{billingCycle === 'annual' ? 'mo' : plan.id === 'trial' ? 'week' : 'month'}
+                    /{billingCycle === 'annual' ? 'mo' : 'month'}
                   </span>
                 </div>
 

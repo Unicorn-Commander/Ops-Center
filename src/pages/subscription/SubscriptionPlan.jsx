@@ -31,13 +31,22 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
-// Format date
+// Format date (guards against null/invalid dates -> "N/A" instead of "Invalid Date")
 const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  if (!dateString) return 'N/A';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return 'N/A';
+  return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric'
   });
+};
+
+// Humanize a tier_code like "vip_founder" -> "Vip Founder"
+const formatTierLabel = (tier) => {
+  if (!tier) return 'Unknown';
+  return tier.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 // Tier badge component
@@ -46,12 +55,17 @@ const TierBadge = ({ tier }) => {
     trial: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
     starter: 'bg-green-500/20 text-green-400 border-green-500/30',
     professional: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-    enterprise: 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+    managed: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+    byok: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+    enterprise: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    vip_founder: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    founder_friend: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    client: 'bg-slate-500/20 text-slate-300 border-slate-500/30'
   };
 
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${colors[tier] || colors.trial}`}>
-      {tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Unknown'}
+      {formatTierLabel(tier)}
     </span>
   );
 };
@@ -64,7 +78,8 @@ const StatusBadge = ({ status }) => {
     active: 'bg-green-500/20 text-green-400 border-green-500/30',
     trialing: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
     canceled: 'bg-red-500/20 text-red-400 border-red-500/30',
-    past_due: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+    past_due: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+    none: 'bg-slate-500/20 text-slate-300 border-slate-500/30'
   };
 
   return (
@@ -197,15 +212,15 @@ export default function SubscriptionPlan() {
       const data = await res.json();
       const plans = data.plans || [];
 
-      // Transform backend plans to frontend format
+      // Transform backend plans (from subscription_tiers) to frontend format
       const transformedPlans = plans.map(plan => ({
-        tier: plan.id,
-        tier_code: plan.id,
-        name: plan.display_name,
+        tier: plan.tier_code || plan.id,
+        tier_code: plan.tier_code || plan.id,
+        name: plan.display_name || plan.name,
         price: plan.price_monthly,
-        period: plan.price_monthly === 1.0 ? 'week' : 'month',
-        description: plan.features[0] || '',  // Use first feature as description
-        popular: plan.id === 'professional'  // Mark Professional as popular
+        period: 'month',
+        description: plan.description || '',
+        popular: plan.is_popular || false  // Backend flags the recommended tier
       }));
 
       setAvailablePlans(transformedPlans);
@@ -538,7 +553,7 @@ export default function SubscriptionPlan() {
               <div>
                 <p className={`text-sm ${theme.text.secondary} mb-1`}>Plan</p>
                 <p className={`text-2xl font-bold ${theme.text.primary}`}>
-                  {subscription.tier ? subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1) : 'Unknown'}
+                  {subscription.plan_name || formatTierLabel(subscription.tier)}
                 </p>
               </div>
               <div>
@@ -546,7 +561,7 @@ export default function SubscriptionPlan() {
                 <p className={`text-2xl font-bold ${theme.text.primary}`}>
                   {formatCurrency(subscription.price)}
                   <span className="text-sm font-normal text-slate-400">
-                    /{subscription.tier === 'trial' ? 'week' : 'month'}
+                    /month
                   </span>
                 </p>
               </div>

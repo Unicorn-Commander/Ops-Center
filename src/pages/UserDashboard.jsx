@@ -192,9 +192,14 @@ export default function UserDashboard() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Calculate usage percentage
-  const usagePercent = balance?.allocated_monthly && usage?.this_month
-    ? Math.min((usage.this_month / balance.allocated_monthly) * 100, 100)
+  // A null/0 monthly cap means UNLIMITED (e.g. vip_founder). Treat it as such
+  // everywhere so the credits bar doesn't show "of 0" or NaN%.
+  const monthlyCap = balance?.allocated_monthly;
+  const isUnlimited = monthlyCap === null || monthlyCap === undefined || Number(monthlyCap) === 0;
+
+  // Calculate usage percentage (0 when unlimited so the bar reads as full/remaining).
+  const usagePercent = !isUnlimited && usage?.this_month
+    ? Math.min((usage.this_month / monthlyCap) * 100, 100)
     : 0;
 
   // Loading state
@@ -272,13 +277,13 @@ export default function UserDashboard() {
           <div className="h-2 bg-gray-700/50 rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: `${100 - usagePercent}%` }}
+              animate={{ width: `${isUnlimited ? 100 : 100 - usagePercent}%` }}
               transition={{ duration: 0.5 }}
-              className={`h-full rounded-full bg-gradient-to-r ${getUsageBarColor(usagePercent)}`}
+              className={`h-full rounded-full bg-gradient-to-r ${isUnlimited ? 'from-green-500 to-emerald-500' : getUsageBarColor(usagePercent)}`}
             />
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {(100 - usagePercent).toFixed(1)}% remaining
+            {isUnlimited ? 'Unlimited' : `${(100 - usagePercent).toFixed(1)}% remaining`}
           </p>
         </div>
 
@@ -294,7 +299,7 @@ export default function UserDashboard() {
             </div>
           </div>
           <p className="text-xs text-gray-500">
-            of {formatCredits(balance?.allocated_monthly)} monthly allocation
+            {isUnlimited ? 'Unlimited monthly allocation' : `of ${formatCredits(monthlyCap)} monthly allocation`}
           </p>
           {usage?.projected_month_end && (
             <p className={`text-xs mt-1 ${getUsageColor(usagePercent)}`}>
