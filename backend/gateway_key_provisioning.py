@@ -38,6 +38,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth_dependencies import require_authenticated_user
+from get_credential import get_credential
 from database import get_db_connection as _pkg_get_db_connection
 
 
@@ -55,12 +56,15 @@ logger = logging.getLogger(__name__)
 # Fall back to LITELLM_INTERNAL_URL (used by llm_keys.py) so any node that only
 # sets one of the two still resolves the gateway.
 # ---------------------------------------------------------------------------
+# Resolve gateway creds DB-first (platform_settings) then env — the same
+# get_credential helper lago_integration uses for LAGO_API_KEY, so the master key
+# is DB-managed (settable in platform_settings without a container recreate).
 LITELLM_PROXY_URL = (
-    os.getenv("LITELLM_PROXY_URL")
+    get_credential("LITELLM_PROXY_URL")
     or os.getenv("LITELLM_INTERNAL_URL")
     or "http://unicorn-litellm:4000"
 ).rstrip("/")
-LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
+LITELLM_MASTER_KEY = get_credential("LITELLM_MASTER_KEY", "")
 
 # Network timeout for gateway calls (provisioning must never hang a request).
 _GATEWAY_TIMEOUT = float(os.getenv("LITELLM_PROVISION_TIMEOUT", "15"))
