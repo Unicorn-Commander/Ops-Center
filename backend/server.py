@@ -880,9 +880,32 @@ async def startup_event():
             if os.path.exists(_eft_path):
                 with open(_eft_path) as _f:
                     _eft_sql = _f.read()
+                # Execute statement-by-statement so a single failing statement
+                # (e.g. a column-parity mismatch against a pre-existing table on
+                # one node) does NOT roll back the ENTIRE migration — asyncpg runs
+                # a multi-statement string as one implicit transaction. Respect
+                # $$-dollar-quoted bodies (functions / DO blocks) when splitting.
+                _stmts, _buf, _in_dollar = [], [], False
+                for _line in _eft_sql.splitlines():
+                    _buf.append(_line)
+                    if _line.count("$$") % 2 == 1:
+                        _in_dollar = not _in_dollar
+                    if not _in_dollar and _line.rstrip().endswith(";"):
+                        _stmts.append("\n".join(_buf)); _buf = []
+                if any(s.strip() for s in _buf):
+                    _stmts.append("\n".join(_buf))
+                _eft_ok = _eft_fail = 0
                 async with db_pool.acquire() as _conn:
-                    await _conn.execute(_eft_sql)
-                logger.info("ensure_feature_tables.sql applied (feature tables ensured)")
+                    for _stmt in _stmts:
+                        if not _stmt.strip():
+                            continue
+                        try:
+                            await _conn.execute(_stmt)
+                            _eft_ok += 1
+                        except Exception as _se:
+                            _eft_fail += 1
+                            logger.warning(f"ensure_feature_tables: statement skipped: {str(_se)[:140]}")
+                logger.info(f"ensure_feature_tables.sql applied ({_eft_ok} ok, {_eft_fail} skipped)")
             else:
                 logger.warning(f"ensure_feature_tables.sql not found at {_eft_path}; skipping")
         except Exception as e:
