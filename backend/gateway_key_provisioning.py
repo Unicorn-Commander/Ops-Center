@@ -59,12 +59,32 @@ logger = logging.getLogger(__name__)
 # Resolve gateway creds DB-first (platform_settings) then env — the same
 # get_credential helper lago_integration uses for LAGO_API_KEY, so the master key
 # is DB-managed (settable in platform_settings without a container recreate).
+# Module-level defaults are ENV-ONLY: get_credential() reads the DB, but at import
+# time inside the running server the event loop is already running, so its sync DB
+# path falls back to env and caches empty. We instead resolve DB-first LAZILY at
+# call time via _resolve_gateway_creds() (get_credential_async), using these env
+# values only as the fallback.
 LITELLM_PROXY_URL = (
-    get_credential("LITELLM_PROXY_URL")
+    os.getenv("LITELLM_PROXY_URL")
     or os.getenv("LITELLM_INTERNAL_URL")
     or "http://unicorn-litellm:4000"
 ).rstrip("/")
-LITELLM_MASTER_KEY = get_credential("LITELLM_MASTER_KEY", "")
+LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
+
+
+async def _resolve_gateway_creds():
+    """Resolve (proxy_url, master_key) DB-first (platform_settings via
+    get_credential_async) at CALL time, falling back to the env-derived module
+    defaults. Avoids the import-time 'event loop already running' fallback that
+    left the live server with an empty master key."""
+    url, key = LITELLM_PROXY_URL, LITELLM_MASTER_KEY
+    try:
+        from get_credential import get_credential_async
+        url = (await get_credential_async("LITELLM_PROXY_URL")) or url
+        key = (await get_credential_async("LITELLM_MASTER_KEY")) or key
+    except Exception as e:
+        logger.warning("Gateway cred resolve fell back to env: %s", e)
+    return (url or "").rstrip("/"), (key or "")
 
 # Network timeout for gateway calls (provisioning must never hang a request).
 _GATEWAY_TIMEOUT = float(os.getenv("LITELLM_PROVISION_TIMEOUT", "15"))
@@ -182,7 +202,7 @@ async def _persist_key(conn, org_id: str, key_id: str, key_value: Optional[str])
         logger.warning("Could not persist gateway key reference for org %s: %s", org_id, e)
 
 
-async def _find_existing_key_by_alias(org_id: str, master_key: str) -> Optional[Dict[str, Any]]:
+async def _find_existing_key_by_alias(org_id: str, master_key: str, proxy_url: str) -> Optional[Dict[str, Any]]:
     """
     Fallback idempotency: ask the gateway for keys owned by user_id == org_id and
     match our alias. Covers the case where the org row lost its stored reference
@@ -192,7 +212,7 @@ async def _find_existing_key_by_alias(org_id: str, master_key: str) -> Optional[
     try:
         async with httpx.AsyncClient(timeout=_GATEWAY_TIMEOUT) as client:
             resp = await client.get(
-                f"{LITELLM_PROXY_URL}/key/list",
+                f"{proxy_url}/key/list",
                 params={"user_id": org_id, "return_full_object": "true", "page_size": "100"},
                 headers={"Authorization": f"Bearer {master_key}"},
             )
@@ -240,7 +260,8 @@ async def provision_org_gateway_key(
         logger.warning("provision_org_gateway_key called without org_id; skipping")
         return None
 
-    if not LITELLM_MASTER_KEY:
+    proxy_url, master_key = await _resolve_gateway_creds()
+    if not master_key:
         logger.warning(
             "LITELLM_MASTER_KEY not configured; skipping gateway key provisioning for org %s",
             org_id,
@@ -260,7 +281,7 @@ async def provision_org_gateway_key(
             return stored
 
         # (2) Key may exist on the gateway without a stored reference — adopt it.
-        existing = await _find_existing_key_by_alias(org_id, LITELLM_MASTER_KEY)
+        existing = await _find_existing_key_by_alias(org_id, master_key, proxy_url)
         if existing and existing.get("key_id"):
             await _persist_key(conn, org_id, existing["key_id"], existing.get("key"))
             logger.info("Adopted existing gateway key %s for org %s", existing["key_id"][:12], org_id)
@@ -287,9 +308,9 @@ async def provision_org_gateway_key(
         try:
             async with httpx.AsyncClient(timeout=_GATEWAY_TIMEOUT) as client:
                 resp = await client.post(
-                    f"{LITELLM_PROXY_URL}/key/generate",
+                    f"{proxy_url}/key/generate",
                     json=payload,
-                    headers={"Authorization": f"Bearer {LITELLM_MASTER_KEY}"},
+                    headers={"Authorization": f"Bearer {master_key}"},
                 )
         except httpx.RequestError as e:
             logger.warning("Gateway unreachable during key/generate for org %s: %s", org_id, e)
@@ -399,6 +420,7 @@ async def get_org_gateway_key(
             detail="Gateway key is temporarily unavailable. Please retry shortly.",
         )
 
+    gateway_url, _ = await _resolve_gateway_creds()
     return {
         "org_id": org_id,
         "key_id": result.get("key_id"),
@@ -407,5 +429,5 @@ async def get_org_gateway_key(
         # on the gateway and the secret was not stored at rest).
         "key": result.get("key"),
         "plan": result.get("plan"),
-        "gateway_url": LITELLM_PROXY_URL,
+        "gateway_url": gateway_url,
     }
