@@ -16,6 +16,8 @@ from lago_integration import (
     get_invoices_by_email,
     get_subscription,
     get_subscription_by_email,
+    get_subscription_for,
+    get_invoices_for,
     get_customer
 )
 
@@ -171,12 +173,13 @@ async def get_invoices_list(request: Request, limit: int = 50):
         List of invoices with status, amount, and dates
     """
     email = await get_user_email(request)
+    org_id = await get_user_org_id(request)
 
-    logger.info(f"Fetching invoices for {email}, limit={limit}")
+    logger.info(f"Fetching invoices for org={org_id} (email={email}), limit={limit}")
 
     try:
-        # Get invoices from Lago (customer is email-keyed)
-        invoices = await get_invoices_by_email(email, limit=limit)
+        # Canonical org_id key first, legacy email fallback.
+        invoices = await get_invoices_for(org_id, email, limit=limit)
 
         # Format invoice data for frontend
         formatted_invoices = []
@@ -217,12 +220,13 @@ async def get_billing_cycle(request: Request):
         Billing cycle dates and status
     """
     email = await get_user_email(request)
+    org_id = await get_user_org_id(request)
 
-    logger.info(f"Fetching billing cycle for {email}")
+    logger.info(f"Fetching billing cycle for org={org_id} (email={email})")
 
     try:
-        # Get subscription from Lago (customer is email-keyed)
-        subscription = await get_subscription_by_email(email)
+        # Canonical org_id key first, legacy email fallback.
+        subscription = await get_subscription_for(org_id, email)
 
         if not subscription:
             return {
@@ -273,12 +277,13 @@ async def download_invoice(invoice_id: str, request: Request):
         PDF download URL
     """
     email = await get_user_email(request)
+    org_id = await get_user_org_id(request)
 
     logger.info(f"Requesting download for invoice {invoice_id}, user {email}")
 
     try:
-        # Get invoices to find the specific one (customer is email-keyed)
-        invoices = await get_invoices_by_email(email, limit=100)
+        # Canonical org_id key first, legacy email fallback.
+        invoices = await get_invoices_for(org_id, email, limit=100)
 
         target_invoice = None
         for invoice in invoices:
@@ -315,12 +320,13 @@ async def get_billing_summary(request: Request):
         Billing summary statistics
     """
     email = await get_user_email(request)
+    org_id = await get_user_org_id(request)
 
-    logger.info(f"Fetching billing summary for {email}")
+    logger.info(f"Fetching billing summary for org={org_id} (email={email})")
 
     try:
-        # Get recent invoices (customer is email-keyed)
-        invoices = await get_invoices_by_email(email, limit=12)
+        # Canonical org_id key first, legacy email fallback.
+        invoices = await get_invoices_for(org_id, email, limit=12)
 
         # Calculate statistics
         total_paid = 0

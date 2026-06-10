@@ -26,6 +26,7 @@ from lago_integration import (
     get_customer,
     get_subscription,
     get_subscription_by_email,
+    get_subscription_for,
     create_subscription,
     terminate_subscription,
     get_or_create_customer,
@@ -334,14 +335,15 @@ async def get_current_subscription(request: Request):
     """
     user = await get_current_user(request)
     email = user.get("email")
+    org_id = await get_user_org_id(request)
 
-    logger.info(f"Fetching subscription for user email: {email}")
+    logger.info(f"Fetching subscription for org={org_id} (email={email})")
 
     try:
-        # Resolve the Lago customer/subscription by EMAIL. The billing customer that
-        # owns the active subscription is email-keyed in Lago (external_id == email),
-        # not org_id. (The org_id-keyed external_id is the metering subscription.)
-        subscription = await get_subscription_by_email(email) if email else None
+        # Canonical key is org_id (external_id == org_id), consistent with the write
+        # path + the gateway's org-keyed metering events; fall back to the legacy
+        # email-keyed lookup only if no org-keyed subscription exists.
+        subscription = await get_subscription_for(org_id, email)
 
         if not subscription:
             # No active Lago subscription found -> fall back to the AUTHORITATIVE tier
