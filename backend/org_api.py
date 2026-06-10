@@ -10,19 +10,86 @@ import logging
 from datetime import datetime
 import sys
 import os
+import asyncpg
 
 # Add parent directory to path to import from server.py
 if '/app' not in sys.path:
     sys.path.insert(0, '/app')
 
-# Import organization manager
-from org_manager import org_manager, Organization, OrgUser
+# NOTE: org listing/detail/members/create now read & write the Postgres
+# organizations / organization_members tables (the real source of truth) rather
+# than the orphaned org_manager JSON store. org_manager.py is intentionally left
+# in place (other modules may import it) but is no longer used here.
 
 # Import Keycloak user lookup
 from keycloak_integration import get_user_by_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/org", tags=["organizations"])
+
+
+# ==================== Database Connection ====================
+
+async def get_db_connection():
+    """
+    Create a connection to the Postgres database that holds the real
+    organizations / organization_members tables. Mirrors org_access_api.py.
+    """
+    return await asyncpg.connect(
+        host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "unicorn"),
+        password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+        database=os.getenv("POSTGRES_DB", "unicorn_db")
+    )
+
+
+async def _get_org_row(conn, org_id: str) -> Optional[asyncpg.Record]:
+    """Fetch a single organization row by id (bare UUID) from Postgres."""
+    return await conn.fetchrow(
+        """
+        SELECT
+            o.id::text AS id,
+            o.name,
+            o.display_name,
+            o.plan_tier,
+            o.status,
+            o.created_at,
+            o.lago_customer_id,
+            o.stripe_customer_id,
+            COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' '))) AS tier_name
+        FROM organizations o
+        LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
+        WHERE o.id::text = $1
+        """,
+        org_id,
+    )
+
+
+async def _get_org_members(conn, org_id: str) -> List[asyncpg.Record]:
+    """Fetch organization_members rows for an org from Postgres."""
+    return await conn.fetch(
+        """
+        SELECT user_id, role, joined_at
+        FROM organization_members
+        WHERE org_id::text = $1
+        ORDER BY joined_at
+        """,
+        org_id,
+    )
+
+
+async def _get_user_role_in_org(conn, org_id: str, user_id: str) -> Optional[str]:
+    """Return a user's role in an org (Postgres), or None if not a member."""
+    row = await conn.fetchrow(
+        """
+        SELECT role FROM organization_members
+        WHERE org_id::text = $1 AND user_id = $2
+        """,
+        org_id,
+        user_id,
+    )
+    return row["role"] if row else None
 
 
 # ==================== Request/Response Models ====================
@@ -122,14 +189,19 @@ async def verify_org_access(request: Request, org_id: str, required_role: Option
         HTTPException: If user lacks access
     """
     user = await get_current_user(request)
-    user_id = user.get("id") or user.get("email")
+    user_id = user.get("id") or user.get("sub") or user.get("user_id") or user.get("email")
 
     # Admins have access to all organizations
     if user.get("is_admin") or user.get("role") == "admin":
         return
 
-    # Check if user is member of organization
-    user_role = org_manager.get_user_role_in_org(org_id, user_id)
+    # Check if user is member of organization (Postgres source of truth)
+    conn = await get_db_connection()
+    try:
+        user_role = await _get_user_role_in_org(conn, org_id, user_id)
+    finally:
+        await conn.close()
+
     if not user_role:
         raise HTTPException(status_code=403, detail="You are not a member of this organization")
 
@@ -177,30 +249,42 @@ async def get_my_organizations(request: Request):
     if not user_id:
         raise HTTPException(status_code=400, detail="User ID not found in session")
 
-    # Get all organizations
-    all_orgs = org_manager.list_all_organizations()
+    # Query Postgres for organizations the user is a member of, with per-org
+    # member counts and the user's role in each.
+    conn = await get_db_connection()
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT
+                o.id::text AS id,
+                o.name,
+                om.role,
+                o.plan_tier,
+                o.status,
+                om.joined_at,
+                (SELECT COUNT(*) FROM organization_members m WHERE m.org_id = o.id) AS member_count
+            FROM organization_members om
+            JOIN organizations o ON om.org_id = o.id
+            WHERE om.user_id = $1
+            ORDER BY o.name
+            """,
+            user_id,
+        )
+    finally:
+        await conn.close()
 
-    # Filter to organizations where user is a member
-    user_orgs = []
-    for org in all_orgs:
-        # Check if user is a member
-        members = org_manager.get_org_users(org.id)
-        user_member = None
-        for member in members:
-            if member.user_id == user_id:
-                user_member = member
-                break
-
-        if user_member:
-            user_orgs.append({
-                "id": org.id,
-                "name": org.name,
-                "role": user_member.role,
-                "plan_tier": org.plan_tier,
-                "status": org.status,
-                "member_count": len(members),
-                "joined_at": user_member.joined_at.isoformat() if user_member.joined_at else None
-            })
+    user_orgs = [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "role": row["role"],
+            "plan_tier": row["plan_tier"],
+            "status": row["status"],
+            "member_count": row["member_count"],
+            "joined_at": row["joined_at"].isoformat() if row["joined_at"] else None,
+        }
+        for row in rows
+    ]
 
     logger.info(f"Found {len(user_orgs)} organizations for user {user_id}")
 
@@ -255,65 +339,89 @@ async def list_all_organizations(
     # Require admin access
     await require_admin(request)
 
+    conn = await get_db_connection()
     try:
-        # Get all organizations from manager
-        all_orgs = org_manager.list_all_organizations()
+        # Build a filtered query against the real Postgres organizations table.
+        # member_count is computed per-org; the owner's user_id is resolved here
+        # and turned into an email/username via Keycloak below.
+        where_clauses = []
+        params: List[Any] = []
+        param_num = 1
 
-        # Apply filters
-        filtered_orgs = all_orgs
-
-        # Filter by status
         if status:
-            filtered_orgs = [org for org in filtered_orgs if org.status == status]
+            where_clauses.append(f"o.status = ${param_num}")
+            params.append(status)
+            param_num += 1
 
-        # Filter by tier
         if tier:
-            filtered_orgs = [org for org in filtered_orgs if org.plan_tier == tier]
+            where_clauses.append(f"o.plan_tier = ${param_num}")
+            params.append(tier)
+            param_num += 1
 
-        # Filter by search query (name)
         if search:
-            search_lower = search.lower()
-            filtered_orgs = [org for org in filtered_orgs if search_lower in org.name.lower()]
+            where_clauses.append(f"o.name ILIKE ${param_num}")
+            params.append(f"%{search}%")
+            param_num += 1
 
-        # Get total count before pagination
-        total = len(filtered_orgs)
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-        # Apply pagination
-        paginated_orgs = filtered_orgs[offset:offset + limit]
+        # Total count (pre-pagination)
+        total_row = await conn.fetchrow(
+            f"SELECT COUNT(*) AS total FROM organizations o {where_sql}",
+            *params,
+        )
+        total = total_row["total"] if total_row else 0
 
-        # Enrich with member counts and owner info
+        # Page of organizations with member count + owner user_id
+        list_params = list(params)
+        list_sql = f"""
+            SELECT
+                o.id::text AS id,
+                o.name,
+                o.plan_tier,
+                o.status,
+                o.created_at,
+                o.lago_customer_id,
+                o.stripe_customer_id,
+                (SELECT COUNT(*) FROM organization_members m WHERE m.org_id = o.id) AS member_count,
+                (SELECT m.user_id FROM organization_members m
+                   WHERE m.org_id = o.id AND m.role = 'owner'
+                   ORDER BY m.joined_at LIMIT 1) AS owner_user_id
+            FROM organizations o
+            {where_sql}
+            ORDER BY o.name
+            LIMIT ${param_num} OFFSET ${param_num + 1}
+        """
+        list_params.extend([limit, offset])
+        org_rows = await conn.fetch(list_sql, *list_params)
+
+        # Enrich owner user_id -> email/username via Keycloak
         enriched_orgs = []
-        for org in paginated_orgs:
-            # Get member count
-            members = org_manager.get_org_users(org.id)
-            member_count = len(members)
-
-            # Find owner and get their email from Keycloak
+        for row in org_rows:
             owner_display = "Unknown"
-            for member in members:
-                if member.role == "owner":
-                    # Look up user in Keycloak to get email/username
-                    try:
-                        user_data = await get_user_by_id(member.user_id)
-                        if user_data:
-                            owner_display = user_data.get('email') or user_data.get('username') or member.user_id
-                        else:
-                            owner_display = member.user_id
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch user info for owner {member.user_id}: {e}")
-                        owner_display = member.user_id  # Fallback to user_id
-                    break
+            owner_user_id = row["owner_user_id"]
+            if owner_user_id:
+                try:
+                    user_data = await get_user_by_id(owner_user_id)
+                    if user_data:
+                        owner_display = user_data.get("email") or user_data.get("username") or owner_user_id
+                    else:
+                        owner_display = owner_user_id
+                except Exception as e:
+                    logger.warning(f"Failed to fetch user info for owner {owner_user_id}: {e}")
+                    owner_display = owner_user_id  # Fallback to user_id
 
+            created_at = row["created_at"]
             enriched_orgs.append({
-                "id": org.id,
-                "name": org.name,
+                "id": row["id"],
+                "name": row["name"],
                 "owner": owner_display,
-                "member_count": member_count,
-                "created_at": org.created_at.isoformat(),
-                "subscription_tier": org.plan_tier,
-                "status": org.status,
-                "lago_customer_id": org.lago_customer_id,
-                "stripe_customer_id": org.stripe_customer_id
+                "member_count": row["member_count"],
+                "created_at": created_at.isoformat() if created_at else None,
+                "subscription_tier": row["plan_tier"],
+                "status": row["status"],
+                "lago_customer_id": row["lago_customer_id"],
+                "stripe_customer_id": row["stripe_customer_id"]
             })
 
         logger.info(f"Listed {len(enriched_orgs)} organizations (total: {total}, filters: status={status}, tier={tier}, search={search})")
@@ -325,9 +433,14 @@ async def list_all_organizations(
             "offset": offset
         }
 
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error listing organizations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list organizations: {str(e)}")
     except Exception as e:
         logger.error(f"Error listing organizations: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list organizations: {str(e)}")
+    finally:
+        await conn.close()
 
 
 @router.post("")
@@ -361,59 +474,77 @@ async def create_organization(
             }
         }
     """
-    # Get current user
+    # Get current user. Prefer the Keycloak subject UUID (matches how
+    # organization_members.user_id is stored elsewhere) and fall back to email.
     user = await get_current_user(request)
-    user_id = user.get("id") or user.get("email")
+    user_id = user.get("id") or user.get("sub") or user.get("user_id") or user.get("email")
 
     if not user_id:
         raise HTTPException(status_code=400, detail="Could not identify user")
 
+    conn = await get_db_connection()
     try:
-        # Create organization using org_manager
-        org_id = org_manager.create_organization(
-            name=org_data.name,
-            plan_tier=org_data.plan_tier
+        # Reject duplicate org name (organizations.name has a UNIQUE constraint)
+        existing = await conn.fetchrow(
+            "SELECT 1 FROM organizations WHERE LOWER(name) = LOWER($1)",
+            org_data.name.strip(),
         )
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Organization with name '{org_data.name}' already exists"
+            )
 
-        # Add current user as owner
-        org_manager.add_user_to_org(
-            org_id=org_id,
-            user_id=user_id,
-            role="owner"
-        )
+        # Insert the organization and add the creator as owner in one transaction.
+        async with conn.transaction():
+            org_row = await conn.fetchrow(
+                """
+                INSERT INTO organizations (name, plan_tier, status)
+                VALUES ($1, $2, 'active')
+                RETURNING id::text AS id, name, plan_tier, status, created_at,
+                          lago_customer_id, stripe_customer_id
+                """,
+                org_data.name.strip(),
+                org_data.plan_tier,
+            )
 
-        # Get created organization
-        org = org_manager.get_org(org_id)
-        if not org:
-            raise HTTPException(status_code=500, detail="Failed to retrieve created organization")
+            await conn.execute(
+                """
+                INSERT INTO organization_members (org_id, user_id, role, is_default)
+                VALUES ($1::uuid, $2, 'owner', TRUE)
+                """,
+                org_row["id"],
+                user_id,
+            )
 
-        # Get member count
-        members = org_manager.get_org_users(org_id)
+        logger.info(f"Created organization {org_row['id']} ({org_data.name}) with owner {user_id}")
 
-        logger.info(f"Created organization {org_id} ({org_data.name}) with owner {user_id}")
-
+        created_at = org_row["created_at"]
         return {
             "success": True,
             "organization": {
-                "id": org.id,
-                "name": org.name,
-                "plan_tier": org.plan_tier,
-                "status": org.status,
-                "created_at": org.created_at.isoformat(),
+                "id": org_row["id"],
+                "name": org_row["name"],
+                "plan_tier": org_row["plan_tier"],
+                "status": org_row["status"],
+                "created_at": created_at.isoformat() if created_at else None,
                 "owner": user_id,
-                "member_count": len(members),
-                "lago_customer_id": org.lago_customer_id,
-                "stripe_customer_id": org.stripe_customer_id
+                "member_count": 1,
+                "lago_customer_id": org_row["lago_customer_id"],
+                "stripe_customer_id": org_row["stripe_customer_id"]
             }
         }
 
-    except ValueError as e:
-        # Validation error (e.g., duplicate name)
-        logger.warning(f"Validation error creating organization: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error creating organization: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create organization: {str(e)}")
     except Exception as e:
         logger.error(f"Error creating organization: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create organization: {str(e)}")
+    finally:
+        await conn.close()
 
 
 @router.get("/roles")
@@ -519,64 +650,71 @@ async def list_organization_members(
     # Verify user has access to this organization
     await verify_org_access(request, org_id)
 
-    # Get organization to verify it exists
-    org = org_manager.get_org(org_id)
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    # Get organization + members from Postgres (real source of truth)
+    conn = await get_db_connection()
+    try:
+        org = await _get_org_row(conn, org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
 
-    # Get all members
-    members = org_manager.get_org_users(org_id)
+        members = await _get_org_members(conn, org_id)
+    finally:
+        await conn.close()
 
     # Enrich members with Keycloak user data
     enriched_members = []
     for member in members:
+        member_user_id = member["user_id"]
+        member_role = member["role"]
+        joined_at = member["joined_at"]
+        joined_iso = joined_at.isoformat() if joined_at else None
         try:
             # Fetch user details from Keycloak
-            user_data = await get_user_by_id(member.user_id)
+            user_data = await get_user_by_id(member_user_id)
 
             if user_data:
                 enriched_member = {
-                    "id": member.user_id,
-                    "user_id": member.user_id,
+                    "id": member_user_id,
+                    "user_id": member_user_id,
                     "email": user_data.get("email", ""),
                     "username": user_data.get("username", ""),
                     "firstName": user_data.get("firstName", ""),
                     "lastName": user_data.get("lastName", ""),
-                    "org_role": member.role,
+                    "org_role": member_role,
                     "enabled": user_data.get("enabled", False),
                     "emailVerified": user_data.get("emailVerified", False),
-                    "createdAt": member.joined_at.isoformat() if member.joined_at else None
+                    "createdAt": joined_iso
                 }
                 enriched_members.append(enriched_member)
             else:
                 # Fallback if Keycloak lookup fails
-                logger.warning(f"Could not fetch Keycloak data for user {member.user_id}")
+                logger.warning(f"Could not fetch Keycloak data for user {member_user_id}")
                 enriched_members.append({
-                    "id": member.user_id,
-                    "user_id": member.user_id,
-                    "email": member.user_id,  # Fallback to user_id
-                    "username": member.user_id,
+                    "id": member_user_id,
+                    "user_id": member_user_id,
+                    "email": member_user_id,  # Fallback to user_id
+                    "username": member_user_id,
                     "firstName": "",
                     "lastName": "",
-                    "org_role": member.role,
+                    "org_role": member_role,
                     "enabled": True,
                     "emailVerified": False,
-                    "createdAt": member.joined_at.isoformat() if member.joined_at else None
+                    "createdAt": joined_iso
                 })
         except Exception as e:
-            logger.error(f"Error enriching member {member.user_id}: {e}")
+            logger.error(f"Error enriching member {member_user_id}: {e}")
             # Include basic data even if enrichment fails
             enriched_members.append({
-                "id": member.user_id,
-                "user_id": member.user_id,
-                "email": member.user_id,
-                "username": member.user_id,
+                "id": member_user_id,
+                "user_id": member_user_id,
+                "email": member_user_id,
+                "username": member_user_id,
                 "firstName": "",
                 "lastName": "",
-                "org_role": member.role,
+                "org_role": member_role,
                 "enabled": True,
                 "emailVerified": False,
-                "createdAt": member.joined_at.isoformat() if member.joined_at else None
+                "createdAt": joined_iso
             })
 
     # Apply search filter if provided
@@ -635,16 +773,31 @@ async def add_organization_member(
     # Require owner role to add members
     await verify_org_access(request, org_id, required_role="owner")
 
+    conn = await get_db_connection()
     try:
-        # Add user to organization
-        success = org_manager.add_user_to_org(
-            org_id=org_id,
-            user_id=member_data.user_id,
-            role=member_data.role
-        )
-
-        if not success:
+        # Verify organization exists
+        org = await _get_org_row(conn, org_id)
+        if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
+
+        # Reject if user already a member
+        existing_role = await _get_user_role_in_org(conn, org_id, member_data.user_id)
+        if existing_role:
+            raise HTTPException(
+                status_code=400,
+                detail=f"User {member_data.user_id} already in organization {org_id}"
+            )
+
+        # Insert membership row
+        await conn.execute(
+            """
+            INSERT INTO organization_members (org_id, user_id, role)
+            VALUES ($1::uuid, $2, $3)
+            """,
+            org_id,
+            member_data.user_id,
+            member_data.role,
+        )
 
         logger.info(f"Added user {member_data.user_id} to org {org_id} with role {member_data.role}")
 
@@ -655,12 +808,16 @@ async def add_organization_member(
             "role": member_data.role
         }
 
-    except ValueError as e:
-        # User already in organization or invalid role
-        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error adding member to org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to add member: {str(e)}")
     except Exception as e:
         logger.error(f"Error adding member to org {org_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add member: {str(e)}")
+    finally:
+        await conn.close()
 
 
 @router.put("/{org_id}/members/{user_id}/role")
@@ -694,15 +851,22 @@ async def update_member_role(
     # Require owner role to update member roles
     await verify_org_access(request, org_id, required_role="owner")
 
+    conn = await get_db_connection()
     try:
-        # Update user role
-        success = org_manager.update_user_role(
-            org_id=org_id,
-            user_id=user_id,
-            new_role=role_data.role
+        # Update user role (Postgres source of truth)
+        result = await conn.execute(
+            """
+            UPDATE organization_members
+            SET role = $3
+            WHERE org_id::text = $1 AND user_id = $2
+            """,
+            org_id,
+            user_id,
+            role_data.role,
         )
 
-        if not success:
+        # asyncpg returns e.g. "UPDATE 1" — 0 rows means user not a member
+        if result.endswith(" 0"):
             raise HTTPException(status_code=404, detail="User not found in organization")
 
         logger.info(f"Updated role for user {user_id} in org {org_id} to {role_data.role}")
@@ -714,9 +878,16 @@ async def update_member_role(
             "new_role": role_data.role
         }
 
+    except HTTPException:
+        raise
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error updating member role in org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
     except Exception as e:
         logger.error(f"Error updating member role in org {org_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
+    finally:
+        await conn.close()
 
 
 @router.delete("/{org_id}/members/{user_id}")
@@ -746,21 +917,30 @@ async def remove_organization_member(
     # Require owner role to remove members
     await verify_org_access(request, org_id, required_role="owner")
 
-    # Prevent removing the last owner
-    members = org_manager.get_org_users(org_id)
-    owners = [m for m in members if m.role == "owner"]
+    conn = await get_db_connection()
+    try:
+        # Prevent removing the last owner (Postgres source of truth)
+        members = await _get_org_members(conn, org_id)
+        owners = [m for m in members if m["role"] == "owner"]
 
-    if len(owners) == 1 and owners[0].user_id == user_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot remove the last owner. Transfer ownership first."
+        if len(owners) == 1 and owners[0]["user_id"] == user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last owner. Transfer ownership first."
+            )
+
+        # Remove user from organization
+        result = await conn.execute(
+            """
+            DELETE FROM organization_members
+            WHERE org_id::text = $1 AND user_id = $2
+            """,
+            org_id,
+            user_id,
         )
 
-    try:
-        # Remove user from organization
-        success = org_manager.remove_user_from_org(org_id=org_id, user_id=user_id)
-
-        if not success:
+        # asyncpg returns e.g. "DELETE 1" — 0 rows means user not a member
+        if result.endswith(" 0"):
             raise HTTPException(status_code=404, detail="User not found in organization")
 
         logger.info(f"Removed user {user_id} from org {org_id}")
@@ -771,9 +951,16 @@ async def remove_organization_member(
             "user_id": user_id
         }
 
+    except HTTPException:
+        raise
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error removing member from org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove member: {str(e)}")
     except Exception as e:
         logger.error(f"Error removing member from org {org_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to remove member: {str(e)}")
+    finally:
+        await conn.close()
 
 
 @router.get("/{org_id}/stats")
@@ -803,13 +990,16 @@ async def get_organization_stats(org_id: str, request: Request):
     # Verify user has access to this organization
     await verify_org_access(request, org_id)
 
-    # Get organization
-    org = org_manager.get_org(org_id)
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    # Get organization + members from Postgres
+    conn = await get_db_connection()
+    try:
+        org = await _get_org_row(conn, org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
 
-    # Get members
-    members = org_manager.get_org_users(org_id)
+        members = await _get_org_members(conn, org_id)
+    finally:
+        await conn.close()
 
     # Count members by role
     members_by_role = {}
@@ -817,22 +1007,24 @@ async def get_organization_stats(org_id: str, request: Request):
     admins = 0
 
     for member in members:
-        members_by_role[member.role] = members_by_role.get(member.role, 0) + 1
+        role = member["role"]
+        members_by_role[role] = members_by_role.get(role, 0) + 1
 
         # Count admins and owners
-        if member.role in ["owner", "admin"]:
+        if role in ["owner", "admin"]:
             admins += 1
 
         # Check if user is enabled in Keycloak
         try:
-            user_data = await get_user_by_id(member.user_id)
+            user_data = await get_user_by_id(member["user_id"])
             if user_data and user_data.get("enabled", False):
                 active_members += 1
         except Exception as e:
-            logger.warning(f"Could not check user status for {member.user_id}: {e}")
+            logger.warning(f"Could not check user status for {member['user_id']}: {e}")
             # Assume active if we can't check
             active_members += 1
 
+    created_at = org["created_at"]
     stats = {
         # Frontend expected fields
         "totalMembers": len(members),
@@ -843,10 +1035,10 @@ async def get_organization_stats(org_id: str, request: Request):
         # Additional legacy fields
         "total_members": len(members),
         "members_by_role": members_by_role,
-        "created_at": org.created_at.isoformat(),
-        "plan_tier": org.plan_tier,
-        "status": org.status,
-        "organization_name": org.name
+        "created_at": created_at.isoformat() if created_at else None,
+        "plan_tier": org["plan_tier"],
+        "status": org["status"],
+        "organization_name": org["name"]
     }
 
     logger.info(f"Retrieved stats for org {org_id}: {stats['totalMembers']} total, {stats['activeMembers']} active, {stats['admins']} admins")
@@ -877,17 +1069,23 @@ async def get_organization_billing(org_id: str, request: Request):
     # Require billing_admin or owner role to view billing
     await verify_org_access(request, org_id, required_role="billing_admin")
 
-    # Get organization
-    org = org_manager.get_org(org_id)
+    # Get organization from Postgres
+    conn = await get_db_connection()
+    try:
+        org = await _get_org_row(conn, org_id)
+    finally:
+        await conn.close()
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    created_at = org["created_at"]
     billing_info = {
-        "plan_tier": org.plan_tier,
-        "lago_customer_id": org.lago_customer_id,
-        "stripe_customer_id": org.stripe_customer_id,
-        "status": org.status,
-        "created_at": org.created_at.isoformat()
+        "plan_tier": org["plan_tier"],
+        "lago_customer_id": org["lago_customer_id"],
+        "stripe_customer_id": org["stripe_customer_id"],
+        "status": org["status"],
+        "created_at": created_at.isoformat() if created_at else None
     }
 
     logger.info(f"Retrieved billing info for org {org_id}")
@@ -920,17 +1118,23 @@ async def get_organization_settings(org_id: str, request: Request):
     # Verify user has access to this organization
     await verify_org_access(request, org_id)
 
-    # Get organization
-    org = org_manager.get_org(org_id)
+    # Get organization from Postgres
+    conn = await get_db_connection()
+    try:
+        org = await _get_org_row(conn, org_id)
+    finally:
+        await conn.close()
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    created_at = org["created_at"]
     settings = {
-        "id": org.id,
-        "name": org.name,
-        "plan_tier": org.plan_tier,
-        "status": org.status,
-        "created_at": org.created_at.isoformat(),
+        "id": org["id"],
+        "name": org["name"],
+        "plan_tier": org["plan_tier"],
+        "status": org["status"],
+        "created_at": created_at.isoformat() if created_at else None,
         "settings": {}  # Placeholder for future settings
     }
 
@@ -967,13 +1171,18 @@ async def update_organization_settings(
     # Require owner role to update settings
     await verify_org_access(request, org_id, required_role="owner")
 
-    # Get organization
-    org = org_manager.get_org(org_id)
+    # Verify organization exists (Postgres source of truth)
+    conn = await get_db_connection()
+    try:
+        org = await _get_org_row(conn, org_id)
+    finally:
+        await conn.close()
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    # TODO: Implement settings storage in org_manager
-    # For now, just return success
+    # TODO: Persist settings to the organization_settings table.
+    # For now, just return success.
 
     logger.info(f"Updated settings for org {org_id}")
 

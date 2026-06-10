@@ -340,6 +340,7 @@ const UserDashboard = lazy(() => import('./pages/UserDashboard'));
 
 // Credit & Usage pages (lazy loaded)
 const CreditPurchase = lazy(() => import('./pages/CreditPurchase'));
+const CreditDashboard = lazy(() => import('./pages/CreditDashboard'));
 const TierComparison = lazy(() => import('./pages/TierComparison'));
 const UpgradeFlow = lazy(() => import('./pages/UpgradeFlow'));
 const UserBillingDashboard = lazy(() => import('./pages/billing/UserBillingDashboard'));
@@ -756,7 +757,7 @@ function AppRoutes() {
                   {/* ============================================================ */}
                   {/* CREDITS & USAGE SECTION - Credit metering system */}
                   {/* ============================================================ */}
-                  <Route path="credits" element={<Navigate to="/admin/billing/credits" replace />} />
+                  <Route path="credits" element={<CreditDashboard />} />
                   <Route path="credits/purchase" element={<Navigate to="/admin/billing/credits/purchase" replace />} />
                   <Route path="credits/tiers" element={<Navigate to="/admin/billing/tiers/compare" replace />} />
 

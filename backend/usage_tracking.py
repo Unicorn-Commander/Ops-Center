@@ -225,35 +225,29 @@ class UsageTracker:
         }
 
     async def _get_user_tier(self, user_id: str) -> Dict[str, Any]:
-        """Get user's subscription tier from database"""
-        async with self.db_pool.acquire() as conn:
-            # Check PostgreSQL first (Keycloak attributes synced to PostgreSQL)
-            row = await conn.fetchrow(
-                """
-                SELECT subscription_tier, subscription_status
-                FROM usage_quotas
-                WHERE user_id = $1
-                """,
-                user_id
-            )
+        """
+        Get user's subscription tier from the source of truth: user_credits.tier.
 
-            if row:
-                return {
-                    "tier": row["subscription_tier"] or "trial",
-                    "status": row["subscription_status"] or "active"
-                }
+        user_credits.user_id is a UUID; the caller passes the Keycloak sub / user id,
+        so we compare on user_id::text. Fails soft to trial if the row/table is missing.
+        """
+        try:
+            async with self.db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT tier
+                    FROM user_credits
+                    WHERE user_id::text = $1
+                    """,
+                    str(user_id)
+                )
 
-            # Fallback: Create entry with trial tier
-            await conn.execute(
-                """
-                INSERT INTO usage_quotas (user_id, subscription_tier, api_calls_limit, reset_date)
-                VALUES ($1, 'trial', 100, CURRENT_DATE + INTERVAL '1 day')
-                ON CONFLICT (user_id) DO NOTHING
-                """,
-                user_id
-            )
+                if row and row["tier"]:
+                    return {"tier": row["tier"], "status": "active"}
+        except Exception as e:
+            logger.warning(f"Could not read tier from user_credits for {user_id}: {e}")
 
-            return {"tier": "trial", "status": "active"}
+        return {"tier": "trial", "status": "active"}
 
     async def _get_current_usage(self, user_id: str, reset_period: str) -> Dict[str, Any]:
         """Get current usage counts from Redis (with PostgreSQL fallback)"""
@@ -284,38 +278,40 @@ class UsageTracker:
         except Exception as e:
             logger.warning(f"Redis error, falling back to PostgreSQL: {e}")
 
-        # Fallback to PostgreSQL (slower but reliable)
-        async with self.db_pool.acquire() as conn:
-            # Monthly usage
-            if reset_period == "monthly":
-                billing_period = now.strftime("%Y-%m")
-            else:
-                billing_period = now.date().isoformat()
+        # Fallback to PostgreSQL (slower but reliable).
+        # Usage counts come from llm_usage_logs (user_id is varchar, created_at is the
+        # event time). Fail soft to zeros if the table/columns are unavailable.
+        try:
+            async with self.db_pool.acquire() as conn:
+                # Monthly usage (rows in the current calendar month)
+                monthly_row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(*) as count
+                    FROM llm_usage_logs
+                    WHERE user_id = $1
+                      AND date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE)
+                    """,
+                    str(user_id)
+                )
 
-            monthly_row = await conn.fetchrow(
-                """
-                SELECT COUNT(*) as count
-                FROM api_usage
-                WHERE user_id = $1 AND billing_period = $2
-                """,
-                user_id, billing_period
-            )
+                # Daily usage (rows today)
+                daily_row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(*) as count
+                    FROM llm_usage_logs
+                    WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE
+                    """,
+                    str(user_id)
+                )
 
-            # Daily usage
-            daily_row = await conn.fetchrow(
-                """
-                SELECT COUNT(*) as count
-                FROM api_usage
-                WHERE user_id = $1 AND DATE(timestamp) = CURRENT_DATE
-                """,
-                user_id
-            )
-
-            return {
-                "monthly": monthly_row["count"] if monthly_row else 0,
-                "daily": daily_row["count"] if daily_row else 0,
-                "reset_date": reset_date
-            }
+                return {
+                    "monthly": monthly_row["count"] if monthly_row else 0,
+                    "daily": daily_row["count"] if daily_row else 0,
+                    "reset_date": reset_date
+                }
+        except Exception as e:
+            logger.warning(f"Could not read usage from llm_usage_logs for {user_id}: {e}")
+            return {"monthly": 0, "daily": 0, "reset_date": reset_date}
 
     async def _increment_counters(
         self,
@@ -472,31 +468,37 @@ class UsageTracker:
 
         start_date = datetime.utcnow() - timedelta(days=days)
 
-        async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    DATE(timestamp) as date,
-                    COUNT(*) as calls,
-                    SUM(tokens_used) as total_tokens,
-                    SUM(cost_credits) as total_cost
-                FROM api_usage
-                WHERE user_id = $1 AND timestamp >= $2
-                GROUP BY DATE(timestamp)
-                ORDER BY date DESC
-                """,
-                user_id, start_date
-            )
+        # History comes from llm_usage_logs (user_id varchar, created_at, total_tokens,
+        # cost). Fail soft to an empty list if the table/columns are unavailable.
+        try:
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        DATE(created_at) as date,
+                        COUNT(*) as calls,
+                        SUM(total_tokens) as total_tokens,
+                        SUM(cost) as total_cost
+                    FROM llm_usage_logs
+                    WHERE user_id = $1 AND created_at >= $2
+                    GROUP BY DATE(created_at)
+                    ORDER BY date DESC
+                    """,
+                    str(user_id), start_date
+                )
 
-            return [
-                {
-                    "date": row["date"].isoformat(),
-                    "calls": row["calls"],
-                    "tokens": row["total_tokens"] or 0,
-                    "cost": float(row["total_cost"] or 0)
-                }
-                for row in rows
-            ]
+                return [
+                    {
+                        "date": row["date"].isoformat(),
+                        "calls": row["calls"],
+                        "tokens": row["total_tokens"] or 0,
+                        "cost": float(row["total_cost"] or 0)
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.warning(f"Could not read usage history from llm_usage_logs for {user_id}: {e}")
+            return []
 
     async def reset_quota(self, user_id: str) -> bool:
         """

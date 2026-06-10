@@ -13,7 +13,9 @@ import sys
 # Import Lago integration
 from lago_integration import (
     get_invoices,
+    get_invoices_by_email,
     get_subscription,
+    get_subscription_by_email,
     get_customer
 )
 
@@ -74,8 +76,8 @@ SUBSCRIPTION_PLANS = [
 ]
 
 
-async def get_user_org_id(request: Request) -> str:
-    """Get organization ID from user session (Redis-backed)"""
+def _load_session(request: Request) -> dict:
+    """Load the Redis-backed session for the request (raises 401 if missing)."""
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
@@ -93,6 +95,13 @@ async def get_user_org_id(request: Request) -> str:
     if not session_data:
         raise HTTPException(status_code=401, detail="Invalid session")
 
+    return session_data
+
+
+async def get_user_org_id(request: Request) -> str:
+    """Get organization ID from user session (Redis-backed)"""
+    session_data = _load_session(request)
+
     # org_id is at the top level of the session data
     org_id = session_data.get("org_id")
 
@@ -100,6 +109,23 @@ async def get_user_org_id(request: Request) -> str:
         raise HTTPException(status_code=400, detail="User not assigned to organization. Please contact support.")
 
     return org_id
+
+
+async def get_user_email(request: Request) -> str:
+    """
+    Get the user's email from the session for Lago billing lookups.
+
+    The Lago billing customer (invoices, subscription, billing cycle) is keyed by
+    EMAIL (external_id == email), not org_id, so billing-UI lookups resolve by email.
+    """
+    session_data = _load_session(request)
+    user = session_data.get("user", {}) or {}
+    email = user.get("email") or session_data.get("email")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="User has no email on file for billing lookup.")
+
+    return email
 
 
 @router.get("/plans")
@@ -112,40 +138,19 @@ async def get_subscription_plans():
     """
     logger.info("Fetching subscription plans")
 
-    # Try to fetch from database first
+    # Single source of truth: query the real subscription_tiers table (purchasable
+    # tiers only). Shared with /api/v1/subscriptions/plans via _fetch_purchasable_tiers.
     try:
-        import asyncpg
-        import os
+        from subscription_api import _fetch_purchasable_tiers
 
-        # Get database connection
-        conn = await asyncpg.connect(
-            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
-            user=os.getenv("POSTGRES_USER", "unicorn"),
-            password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
-            database=os.getenv("POSTGRES_DB", "unicorn_db")
-        )
-
-        try:
-            # Query subscription tiers
-            rows = await conn.fetch("""
-                SELECT tier_code as plan_code, display_name as name,
-                       price_monthly, credits_monthly, description, features
-                FROM subscription_tiers
-                WHERE is_active = true
-                ORDER BY price_monthly ASC
-            """)
-
-            if rows:
-                plans = [dict(row) for row in rows]
-                logger.info(f"Fetched {len(plans)} plans from database")
-                return {"plans": plans, "currency": "USD", "source": "database"}
-        finally:
-            await conn.close()
+        plans = await _fetch_purchasable_tiers()
+        if plans:
+            logger.info(f"Fetched {len(plans)} plans from subscription_tiers")
+            return {"plans": plans, "currency": "USD", "source": "database"}
     except Exception as e:
-        logger.warning(f"Failed to fetch plans from database: {e}")
+        logger.warning(f"Failed to fetch plans from subscription_tiers: {e}")
 
-    # Fallback to hardcoded plans
+    # Fallback to hardcoded plans only if the database query fails entirely.
     logger.info("Using hardcoded plans as fallback")
     return {
         "plans": SUBSCRIPTION_PLANS,
@@ -165,13 +170,13 @@ async def get_invoices_list(request: Request, limit: int = 50):
     Returns:
         List of invoices with status, amount, and dates
     """
-    org_id = await get_user_org_id(request)
+    email = await get_user_email(request)
 
-    logger.info(f"Fetching invoices for org {org_id}, limit={limit}")
+    logger.info(f"Fetching invoices for {email}, limit={limit}")
 
     try:
-        # Get invoices from Lago
-        invoices = await get_invoices(org_id, limit=limit)
+        # Get invoices from Lago (customer is email-keyed)
+        invoices = await get_invoices_by_email(email, limit=limit)
 
         # Format invoice data for frontend
         formatted_invoices = []
@@ -211,13 +216,13 @@ async def get_billing_cycle(request: Request):
     Returns:
         Billing cycle dates and status
     """
-    org_id = await get_user_org_id(request)
+    email = await get_user_email(request)
 
-    logger.info(f"Fetching billing cycle for org {org_id}")
+    logger.info(f"Fetching billing cycle for {email}")
 
     try:
-        # Get subscription from Lago
-        subscription = await get_subscription(org_id)
+        # Get subscription from Lago (customer is email-keyed)
+        subscription = await get_subscription_by_email(email)
 
         if not subscription:
             return {
@@ -267,13 +272,13 @@ async def download_invoice(invoice_id: str, request: Request):
     Returns:
         PDF download URL
     """
-    org_id = await get_user_org_id(request)
+    email = await get_user_email(request)
 
-    logger.info(f"Requesting download for invoice {invoice_id}, org {org_id}")
+    logger.info(f"Requesting download for invoice {invoice_id}, user {email}")
 
     try:
-        # Get invoices to find the specific one
-        invoices = await get_invoices(org_id, limit=100)
+        # Get invoices to find the specific one (customer is email-keyed)
+        invoices = await get_invoices_by_email(email, limit=100)
 
         target_invoice = None
         for invoice in invoices:
@@ -309,13 +314,13 @@ async def get_billing_summary(request: Request):
     Returns:
         Billing summary statistics
     """
-    org_id = await get_user_org_id(request)
+    email = await get_user_email(request)
 
-    logger.info(f"Fetching billing summary for org {org_id}")
+    logger.info(f"Fetching billing summary for {email}")
 
     try:
-        # Get recent invoices
-        invoices = await get_invoices(org_id, limit=12)
+        # Get recent invoices (customer is email-keyed)
+        invoices = await get_invoices_by_email(email, limit=12)
 
         # Calculate statistics
         total_paid = 0

@@ -47,6 +47,14 @@ async def get_current_usage(
     try:
         stats = await usage_tracker.get_usage_stats(user_id, period="current")
 
+        reset_date = stats.get("reset_date")
+        days_until = 0
+        if reset_date:
+            try:
+                days_until = (datetime.fromisoformat(reset_date) - datetime.utcnow()).days
+            except (ValueError, TypeError):
+                days_until = 0
+
         return {
             "success": True,
             "data": {
@@ -65,15 +73,28 @@ async def get_current_usage(
                     "limit": stats["daily_limit"]
                 },
                 "reset": {
-                    "date": stats["reset_date"],
-                    "days_until": (datetime.fromisoformat(stats["reset_date"]) - datetime.utcnow()).days
+                    "date": reset_date,
+                    "days_until": days_until
                 }
             }
         }
 
     except Exception as e:
+        # Fail soft: return a zeroed-out 200 instead of a 500 so the Usage page
+        # renders a clean empty state when a table/column is missing or DB is down.
         logger.error(f"Error fetching usage for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch usage data")
+        return {
+            "success": True,
+            "data": {
+                "user_id": user_id,
+                "email": user.get("email"),
+                "tier": "trial",
+                "status": "active",
+                "usage": {"used": 0, "limit": -1, "remaining": -1, "percentage": 0},
+                "daily": {"used": 0, "limit": -1},
+                "reset": {"date": None, "days_until": 0}
+            }
+        }
 
 
 @router.get("/history")
@@ -97,6 +118,7 @@ async def get_usage_history(
 
     try:
         stats = await usage_tracker.get_usage_stats(user_id, period=period)
+        history = stats.get("history", [])
 
         return {
             "success": True,
@@ -109,18 +131,30 @@ async def get_usage_history(
                     "limit": stats["limit"],
                     "remaining": stats["remaining"]
                 },
-                "history": stats.get("history", []),
+                "history": history,
                 "summary": {
-                    "total_calls": sum(h["calls"] for h in stats.get("history", [])),
-                    "total_tokens": sum(h["tokens"] for h in stats.get("history", [])),
-                    "total_cost": sum(h["cost"] for h in stats.get("history", []))
+                    "total_calls": sum(h["calls"] for h in history),
+                    "total_tokens": sum(h["tokens"] for h in history),
+                    "total_cost": sum(h["cost"] for h in history)
                 }
             }
         }
 
     except Exception as e:
+        # Fail soft: return an empty-but-valid 200 so the Usage page shows its empty
+        # state instead of erroring when history data is unavailable.
         logger.error(f"Error fetching usage history for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch usage history")
+        return {
+            "success": True,
+            "data": {
+                "user_id": user_id,
+                "period": period,
+                "tier": "trial",
+                "current_usage": {"used": 0, "limit": -1, "remaining": -1},
+                "history": [],
+                "summary": {"total_calls": 0, "total_tokens": 0, "total_cost": 0}
+            }
+        }
 
 
 @router.get("/limits")

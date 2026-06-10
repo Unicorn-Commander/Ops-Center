@@ -721,6 +721,12 @@ ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS metadata JSONB;
 ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS total_tokens INTEGER DEFAULT 0;
 ALTER TABLE add_ons ADD COLUMN IF NOT EXISTS version VARCHAR(50);
 
+-- Durable profile-picture URL (2026-06-09). The PUT /api/v1/auth/profile upload
+-- saved the avatar file to /app/public/avatars and wrote the URL ONLY into the
+-- Redis session, so it was lost on session expiry / re-login. Persist it here so
+-- get_session_info + the OAuth callback can rehydrate user.avatar durably.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
 -- Per-org gateway key (metered-inference billing keystone, 2026-06-09).
 -- Each org gets ONE LiteLLM virtual key (user_id == org_id) carrying its budget
 -- + model allow-list + metering identity. We store the LiteLLM token id and the

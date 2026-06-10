@@ -192,7 +192,9 @@ const UserManagement = () => {
 
       const data = await response.json();
       setUsers(data.users || []);
-      setTotalUsers(data.pagination?.total || 0);
+      // Backend returns the count as a flat `total` (also mirrored under
+      // `pagination.total`); accept either shape.
+      setTotalUsers(data.pagination?.total ?? data.total ?? 0);
     } catch (err) {
       setError(err.message);
       showToast('Failed to load users', 'error');
@@ -526,6 +528,28 @@ const UserManagement = () => {
   // Get status chip color
   const getStatusColor = (enabled) => {
     return enabled ? 'success' : 'error';
+  };
+
+  // Get tier chip color (MUI palette key)
+  const getTierChipColor = (tier) => {
+    switch (tier) {
+      case 'vip_founder':
+      case 'founder_friend':
+      case 'founders':
+        return 'warning'; // gold-ish for founder tiers
+      case 'enterprise':
+      case 'managed':
+      case 'professional':
+        return 'primary';
+      case 'byok':
+        return 'secondary';
+      case 'starter':
+        return 'info';
+      case 'trial':
+        return 'default';
+      default:
+        return 'default';
+    }
   };
 
   return (
@@ -1116,6 +1140,10 @@ const UserManagement = () => {
                     <TableCell>Email</TableCell>
                     <TableCell>Username</TableCell>
                     <TableCell>
+                      Tier
+                      <Tooltip title="The user's subscription tier, which controls feature access, usage limits, and pricing markup. 'Trial' is unpaid." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
+                    </TableCell>
+                    <TableCell>
                       Roles
                       <Tooltip title="Platform permission roles assigned to the user; roles containing 'admin' grant elevated access and are highlighted in red." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></Tooltip>
                     </TableCell>
@@ -1154,6 +1182,18 @@ const UserManagement = () => {
                         </Box>
                       </TableCell>
                       <TableCell>{user.username}</TableCell>
+                      <TableCell>
+                        {user.subscription_tier ? (
+                          <Chip
+                            label={user.subscription_tier}
+                            size="small"
+                            color={getTierChipColor(user.subscription_tier)}
+                            variant="outlined"
+                          />
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">—</Typography>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                           {/* REFACTORED: Using safeMap to prevent crashes on missing roles */}
