@@ -25,6 +25,12 @@ Env:
 - STRIPE_PUBLISHABLE_KEY   pk_... key; surfaced to the browser in LOCAL mode so card
                            entry works without a frontend rebuild (publishable keys are
                            public by design and already ship in the client bundle).
+
+Federated provenance (only meaningful when BILLING_PROVIDER=federated) — lets the UI
+render WHICH hub operates billing/metering, with its name, logo, and a link home:
+- FEDERATION_PROVIDER_NAME  provider display name   (default: "Unicorn Commander")
+- FEDERATION_PROVIDER_URL   provider home URL        (default: "https://unicorncommander.ai")
+- FEDERATION_PROVIDER_LOGO  provider logo path/URL   (default: "/logos/uc-logo-512.png")
 """
 
 import os
@@ -68,6 +74,25 @@ async def get_billing_provider_config():
     else:
         source = {"kind": "local", "label": name}
 
+    # Federated provenance: when a central hub operates billing/metering, surface its
+    # brand so the console can show "Billing & metering operated by <hub>" with a logo
+    # and a link home. Only populated in federated mode; blank otherwise so the UI can
+    # cleanly skip the treatment. All env-overridable for non-UC federations.
+    if provider == "federated":
+        provider_display_name = (
+            os.getenv("FEDERATION_PROVIDER_NAME") or "Unicorn Commander"
+        )
+        provider_url = (
+            os.getenv("FEDERATION_PROVIDER_URL") or "https://unicorncommander.ai"
+        )
+        provider_logo_url = (
+            os.getenv("FEDERATION_PROVIDER_LOGO") or "/logos/uc-logo-512.png"
+        )
+    else:
+        provider_display_name = ""
+        provider_url = ""
+        provider_logo_url = ""
+
     body = {
         "provider": provider,
         "display_name": name,
@@ -76,6 +101,10 @@ async def get_billing_provider_config():
         "currency": (os.getenv("BILLING_CURRENCY") or "usd").lower(),
         "capabilities": caps,
         "source": source,
+        # Federated provenance (branding only; blank unless provider == "federated")
+        "provider_display_name": provider_display_name,
+        "provider_url": provider_url,
+        "provider_logo_url": provider_logo_url,
         # public by design; only in local mode where THIS node does the charging
         "stripe_publishable_key": pk if (provider == "local" and has_stripe) else "",
     }

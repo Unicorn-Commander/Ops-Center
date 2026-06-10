@@ -50,8 +50,10 @@
     <meta property="twitter:description" content="Operations Center — System Administration Dashboard" />
     <meta property="twitter:image" content="/logos/uc-logo-512.png" />
 
-    <!-- Umami Analytics - Disabled until Umami is deployed -->
-    <!-- <script defer src="https://umami.magicunicorn.dev/script.js" data-website-id="7a8bd2c2-5482-472b-8242-6a33919f8ba7"></script> -->
+    <!-- Analytics (Umami pageviews + PostHog) are injected from the app bootstrap
+         (src/utils/analytics.js) so they can read Vite build-time env vars and stay
+         OFF in dev builds. Activate by setting VITE_UMAMI_WEBSITE_ID / VITE_POSTHOG_KEY
+         in the production build env. Canonical Umami: https://analytics.unicorncommander.ai -->
 
     <title>Ops-Center</title>
   </head>

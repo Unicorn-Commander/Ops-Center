@@ -721,6 +721,15 @@ ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS metadata JSONB;
 ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS total_tokens INTEGER DEFAULT 0;
 ALTER TABLE add_ons ADD COLUMN IF NOT EXISTS version VARCHAR(50);
 
+-- Per-org gateway key (metered-inference billing keystone, 2026-06-09).
+-- Each org gets ONE LiteLLM virtual key (user_id == org_id) carrying its budget
+-- + model allow-list + metering identity. We store the LiteLLM token id and the
+-- Fernet-encrypted key value so provisioning is idempotent (see
+-- gateway_key_provisioning.provision_org_gateway_key).
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS litellm_gateway_key_id VARCHAR(255);
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS litellm_gateway_key_encrypted TEXT;
+CREATE INDEX IF NOT EXISTS idx_organizations_gateway_key_id ON organizations(litellm_gateway_key_id);
+
 
 -- ============================================================================
 -- DONE

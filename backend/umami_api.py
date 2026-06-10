@@ -4,6 +4,7 @@ Manages Umami web analytics configuration, tracking scripts, and privacy setting
 """
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, List, Optional
+import os
 import httpx
 import logging
 from pydantic import BaseModel
@@ -11,8 +12,10 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/monitoring/umami", tags=["Monitoring"])
 
-# Umami Configuration
-UMAMI_URL = "http://umami.unicorncommander.ai:3000"
+# Umami Configuration — env-driven canonical URL (matches routers/umami.py).
+# Internal Docker host by default; the dead "umami.unicorncommander.ai:3000" host
+# that used to be hardcoded here is gone.
+UMAMI_URL = os.getenv("UMAMI_URL", "http://unicorn-umami:3000")
 UMAMI_TIMEOUT = 8.0  # fail fast: unreachable nodes must not hang the event loop
 
 # Pre-defined websites to track

@@ -243,6 +243,7 @@ from provider_keys_api import router as provider_keys_router
 from uc_api_keys import router as uc_api_keys_router
 from platform_keys_api import router as platform_keys_router
 from llm_keys import router as llm_keys_router
+from gateway_key_provisioning import router as gateway_key_router
 from vpn_keys import router as vpn_keys_router
 
 # Service API Keys Management (January 2026) - GUI-configurable service-to-service auth
@@ -660,6 +661,14 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         logger.error(f"Failed to create Lago subscription for org {org_id}: {lago_error}")
     except Exception as lago_error:
         logger.error(f"Unexpected error creating Lago subscription for org {org_id}: {lago_error}")
+
+    # Provision the per-org gateway key (metered-inference billing keystone).
+    # Best-effort + failure-isolated: never blocks provisioning.
+    try:
+        from gateway_key_provisioning import provision_org_gateway_key
+        await provision_org_gateway_key(org_id=org_id, plan_code="founders_friend")
+    except Exception as gw_error:
+        logger.error(f"Failed to provision gateway key for org {org_id}: {gw_error}")
 
     # Create credit account (best-effort)
     try:
@@ -1312,6 +1321,8 @@ app.include_router(uc_api_keys_router)
 logger.info("UC API Keys endpoints registered at /api/v1/account/uc-api-keys")
 app.include_router(llm_keys_router)
 logger.info("LLM Keys endpoints registered at /api/v1/llm/keys")
+app.include_router(gateway_key_router)
+logger.info("Org Gateway Key endpoint registered at /api/v1/org/gateway-key (per-org metered-inference key)")
 app.include_router(vpn_keys_router)
 logger.info("VPN Keys endpoints registered at /api/v1/network (vpn-keys, nodes)")
 app.include_router(platform_keys_router)
@@ -5446,6 +5457,14 @@ async def register_user(request: Request):
             # Log error but don't fail registration
             logger.error(f"Unexpected error creating Lago subscription: {lago_error}")
             logger.warning(f"Continuing registration without Lago subscription")
+
+        # Step 5.1: Provision the per-org gateway key (metered-inference billing
+        # keystone). Best-effort + failure-isolated: never fails registration.
+        try:
+            from gateway_key_provisioning import provision_org_gateway_key
+            await provision_org_gateway_key(org_id=org_id, plan_code="founders_friend")
+        except Exception as gw_error:
+            logger.error(f"Failed to provision gateway key for org {org_id}: {gw_error}")
 
         # Step 5.5: Create credit account for new user (CRITICAL - enables API access)
         credit_account_created = False
