@@ -82,6 +82,48 @@ const helpContent = {
         content: 'Automated backups run daily at 2 AM by default. Adjust schedule using cron syntax.'
       }
     ]
+  },
+  billing: {
+    title: 'Billing & Plans Help',
+    sections: [
+      {
+        title: 'How Billing Works',
+        content: 'AI usage is metered per request through the inference gateway. Local models (on our GPUs) bill at $0 — bundled and fair-use throttled, never hard-blocked. Cloud models (GPT, Claude, Gemini, DeepSeek) accrue their real provider cost plus a small margin, drawn against your plan budget.'
+      },
+      {
+        title: 'One Balance, Local + Cloud',
+        content: 'A single credit balance spans free local models and paid cloud usage. Cloud calls draw down credits at cost + markup; local calls draw $0. When cloud credits run out you are prompted to upgrade or top up — local models stay available.'
+      },
+      {
+        title: 'Plans & Tiers',
+        content: 'Each plan includes a monthly credit allowance, a model allow-list, and rate limits. Higher tiers unlock more cloud models, higher limits, and a larger included cloud budget with overage.'
+      },
+      {
+        title: 'Federated Billing',
+        content: 'Billing is operated centrally through Unicorn Commander. The provenance badge shows which node operates each function — your usage meters to the canonical billing hub no matter which node served the request.'
+      },
+      {
+        title: 'Invoices',
+        content: 'Invoices show your plan fee plus metered cloud usage for the period. Local usage appears as $0 line items, so you can see consumption without being charged.'
+      }
+    ]
+  },
+  credits: {
+    title: 'Credits Help',
+    sections: [
+      {
+        title: 'Your Balance',
+        content: 'One balance covers everything: free local models ($0) and paid cloud models (cost + markup). It draws down as you use cloud inference.'
+      },
+      {
+        title: 'Local vs Cloud',
+        content: 'Local models (Qwen, gpt-oss, etc. on our GPUs) are free and only throttled past fair-use. Cloud models (GPT-4o, Claude, Gemini, DeepSeek) cost real money and draw from your credits.'
+      },
+      {
+        title: 'Topping Up',
+        content: 'Buy additional credits any time, or upgrade your plan for a larger included allowance.'
+      }
+    ]
   }
 };
 
@@ -196,7 +238,7 @@ export default function HelpPanel({ isOpen, onClose, currentPage = 'dashboard' }
                 </span>
                 <div>
                   <p className="font-medium text-gray-800 dark:text-gray-200">Start Using AI Services</p>
-                  <p className="text-gray-600 dark:text-gray-400">Open Chat Interface (Open-WebUI) to start chatting with your AI models.</p>
+                  <p className="text-gray-600 dark:text-gray-400">Use the metered inference gateway (OpenAI-compatible API) or a connected suite app to run local and cloud models. Usage is metered per request — local at $0, cloud at cost + margin.</p>
                 </div>
               </li>
               <li className="flex gap-3">
@@ -218,32 +260,31 @@ export default function HelpPanel({ isOpen, onClose, currentPage = 'dashboard' }
               Documentation Links
             </h3>
             <div className="space-y-2">
-              <a 
-                href="http://localhost:8081" 
-                target="_blank" 
+              <a
+                href="https://unicorncommander.ai"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="block p-3 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
-                <p className="font-medium text-gray-800 dark:text-gray-200">📚 Full Documentation</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Complete UC-1 Pro documentation</p>
+                <p className="font-medium text-gray-800 dark:text-gray-200">🦄 Unicorn Commander</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Suite home & documentation</p>
               </a>
-              <a 
-                href="https://github.com/Unicorn-Commander/UC-1-Pro" 
-                target="_blank" 
+              <a
+                href="https://git.unicorncommander.ai/UnicornCommander"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="block p-3 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
-                <p className="font-medium text-gray-800 dark:text-gray-200">🐙 GitHub Repository</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Source code and issues</p>
+                <p className="font-medium text-gray-800 dark:text-gray-200">🐙 Source Repositories</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Ops-Center & suite source code</p>
               </a>
-              <a 
-                href="https://ollama.ai/library" 
-                target="_blank" 
+              <a
+                href="/admin/billing/rates"
                 rel="noopener noreferrer"
                 className="block p-3 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
-                <p className="font-medium text-gray-800 dark:text-gray-200">🦙 Ollama Models</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Browse Ollama model library</p>
+                <p className="font-medium text-gray-800 dark:text-gray-200">💳 Rates & Margin</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Inference rate book & cost-plus pricing</p>
               </a>
             </div>
           </div>
