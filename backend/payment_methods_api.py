@@ -124,12 +124,16 @@ async def list_payment_methods(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
+        # Get Stripe customer ID from Lago. No customer yet (e.g. exempt/founder
+        # users, or anyone who has never been set up for billing) is NOT an error
+        # for a LIST endpoint — return a clean empty list (200) so the UI shows a
+        # "no payment methods on file" empty state instead of a red error toast.
         stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
         if not stripe_customer_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Customer not found in billing system"
+            return PaymentMethodsListResponse(
+                payment_methods=[],
+                default_payment_method_id=None,
+                count=0
             )
 
         # Fetch payment methods from Stripe
