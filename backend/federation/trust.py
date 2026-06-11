@@ -204,32 +204,51 @@ class TrustModeEnforcer:
     # ------------------------------------------------------------------
 
     async def visible_service_types(self, peer_node_id: str) -> Optional[Set[str]]:
-        """Service types peer may SEE on us. None = all (unrestricted)."""
+        """Service types peer may SEE on us. None = all (unrestricted).
+
+        Resource-scoped grants ("agents/sql-analyst") expose their base type
+        in the catalog; the per-resource narrowing happens in
+        visible_resources() at the resource-listing endpoints.
+        """
         policy = await self.get_policy(peer_node_id)
         mode = policy["trust_mode"]
         if mode in _ADVERTISE_ALL:
             return None
         if mode == "scoped":
-            return set(policy["publish"])
+            return {e.split("/", 1)[0] for e in policy["publish"]}
         # consumer / isolated: advertise nothing
         return set()
 
+    @staticmethod
+    def _acl_match(acl: List[str], service_type: str, resource: Optional[str]) -> bool:
+        """ACL entries are either a bare service type ("agents" = the whole
+        type) or resource-scoped ("agents/sql-analyst" = that resource only).
+        A bare-type grant covers every resource of that type.
+        """
+        if service_type in acl:
+            return True
+        if resource and f"{service_type}/{resource}" in acl:
+            return True
+        return False
+
     async def peer_may_call(
-        self, peer_node_id: str, service_type: str
+        self, peer_node_id: str, service_type: str, resource: Optional[str] = None
     ) -> Tuple[bool, str]:
-        """May peer P CALL service_type on us? (inbound execution gate)"""
+        """May peer P CALL service_type (optionally a specific resource,
+        e.g. one agent id) on us? (inbound execution gate)"""
         policy = await self.get_policy(peer_node_id)
         mode = policy["trust_mode"]
         if mode in _INBOUND_ALL:
             return True, f"trust_mode={mode}"
         if mode == "scoped":
-            if service_type in policy["consume"]:
+            if self._acl_match(policy["consume"], service_type, resource):
                 return True, "scoped: in consume[] ACL"
-            return False, f"scoped: '{service_type}' not in consume[] ACL"
+            what = f"{service_type}/{resource}" if resource else service_type
+            return False, f"scoped: '{what}' not in consume[] ACL"
         return False, f"trust_mode={mode} blocks inbound calls"
 
     async def we_may_consume(
-        self, peer_node_id: str, service_type: str
+        self, peer_node_id: str, service_type: str, resource: Optional[str] = None
     ) -> Tuple[bool, str]:
         """May WE route/call service_type on peer P? (outbound routing gate)"""
         policy = await self.get_policy(peer_node_id)
@@ -237,10 +256,31 @@ class TrustModeEnforcer:
         if mode in _OUTBOUND_ALL:
             return True, f"trust_mode={mode}"
         if mode == "scoped":
-            if service_type in policy["consume"]:
+            if self._acl_match(policy["consume"], service_type, resource):
                 return True, "scoped: in consume[] ACL"
-            return False, f"scoped: '{service_type}' not in consume[] ACL"
+            what = f"{service_type}/{resource}" if resource else service_type
+            return False, f"scoped: '{what}' not in consume[] ACL"
         return False, f"trust_mode={mode} blocks outbound calls"
+
+    async def visible_resources(
+        self, peer_node_id: str, service_type: str
+    ) -> Optional[Set[str]]:
+        """Which resources of a service type may peer P SEE on us?
+
+        None = all resources (full/publisher, or a bare-type publish grant).
+        A set = only those resource ids (from "type/resource" entries).
+        Empty set = none.
+        """
+        policy = await self.get_policy(peer_node_id)
+        mode = policy["trust_mode"]
+        if mode in _ADVERTISE_ALL:
+            return None
+        if mode == "scoped":
+            if service_type in policy["publish"]:
+                return None
+            prefix = f"{service_type}/"
+            return {e[len(prefix):] for e in policy["publish"] if e.startswith(prefix)}
+        return set()
 
     async def filter_catalog_for_peer(
         self, catalog: List[Dict[str, Any]], peer_node_id: str

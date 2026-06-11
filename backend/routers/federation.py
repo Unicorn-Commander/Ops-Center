@@ -320,12 +320,24 @@ async def list_federation_agents(
     """
     catalog = await registry.get_service_catalog()
     catalog = await _trust_filter_catalog(catalog, request, auth, registry)
+
+    # Per-agent narrowing for federation peers with resource-scoped grants
+    # (publish ["agents/sql-analyst"] → only that agent is listed).
+    visible_agents = None
+    peer_id = _calling_peer_id(request, auth)
+    if peer_id is not None:
+        from federation.trust import get_trust_enforcer
+        enforcer = get_trust_enforcer(registry.db_pool, local_node_id=_local_node_id())
+        visible_agents = await enforcer.visible_resources(peer_id, "agents")
+
     agents = []
     for service in catalog:
         if service.get("service_type") == "agents":
             node_id = service.get("node_id", "unknown")
             node_name = service.get("node_name", "unknown")
             for agent_id in service.get("models", []):
+                if visible_agents is not None and agent_id not in visible_agents:
+                    continue
                 agents.append({
                     "agent_id": agent_id,
                     "node_id": node_id,
@@ -334,6 +346,50 @@ async def list_federation_agents(
                     "status": service.get("status", "unknown"),
                 })
     return {"agents": agents, "total": len(agents)}
+
+
+class FederatedAgentInvokePayload(BaseModel):
+    task: str
+    context: Optional[str] = None
+    org_id: Optional[str] = None  # consuming org; X-Federation-Org-Id wins
+
+
+@router.post("/agents/{agent_id}/invoke")
+@rate_limit("federation_route")
+async def federated_agent_invoke(
+    agent_id: str,
+    payload: FederatedAgentInvokePayload,
+    request: Request,
+    registry: NodeRegistry = Depends(get_registry),
+):
+    """Invoke a local Brigade agent on behalf of a federated consumer.
+
+    Layer-2 contract: the peer authenticates with federation credentials and
+    carries the consuming org's identity; trust modes gate per agent
+    (consume ["agents"] = all, ["agents/<id>"] = that agent); a completed
+    invocation fires exactly one `agent_invocation` Lago event keyed to the
+    org (outcome pricing — the agent's LLM tokens are publisher COGS).
+    """
+    from federation.agent_bridge import ORG_HEADER, serve_federated_agent_invoke
+    from federation.gateway_bridge import FederatedInferenceError
+
+    if not _federation_secret_ok(request):
+        raise HTTPException(status_code=401, detail="Federation authentication failed")
+    peer_id = getattr(request.state, "federation_node_id", None) or "unknown"
+    org_id = request.headers.get(ORG_HEADER) or payload.org_id
+
+    try:
+        return await serve_federated_agent_invoke(
+            peer_node_id=peer_id,
+            org_id=org_id,
+            agent_id=agent_id,
+            task=payload.task,
+            context=payload.context,
+            db_pool=registry.db_pool,
+            local_node_id=_local_node_id(),
+        )
+    except FederatedInferenceError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
 
 @router.post("/route")
