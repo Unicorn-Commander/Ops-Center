@@ -71,10 +71,12 @@ async def _refresh_catalog() -> None:
     _catalog["ts"] = time.monotonic()
 
 
-async def federated_node_for_model(model: Optional[str]) -> Optional[str]:
-    """Which peer publishes this model? None if nobody does (or on error)."""
-    if not model:
-        return None
+async def _catalog_models() -> Dict[str, str]:
+    """Current {model -> publishing node_id} map, refreshing if stale.
+
+    Fail-soft: registry errors keep the stale cache; an empty map simply
+    means no peer publishes a model right now.
+    """
     now = time.monotonic()
     if now - _catalog["ts"] > _CACHE_TTL:
         try:
@@ -83,7 +85,28 @@ async def federated_node_for_model(model: Optional[str]) -> Optional[str]:
             # Keep serving the stale cache; never break the LLM path.
             logger.debug("Federated catalog refresh failed: %s", exc)
             _catalog["ts"] = now
-    return _catalog["models"].get(model)
+    return _catalog["models"]
+
+
+async def federated_node_for_model(model: Optional[str]) -> Optional[str]:
+    """Which peer publishes this model? None if nobody does (or on error)."""
+    if not model:
+        return None
+    return (await _catalog_models()).get(model)
+
+
+async def federated_models() -> Dict[str, str]:
+    """All peer-published models available over federation: {model -> node_id}.
+
+    For listing endpoints (/models, /models/categorized) so customers can
+    browse the local models a trusted peer publishes. Never raises — returns
+    {} on any error.
+    """
+    try:
+        return dict(await _catalog_models())
+    except Exception as exc:
+        logger.debug("federated_models() unavailable: %s", exc)
+        return {}
 
 
 async def serve_llm_via_federation(

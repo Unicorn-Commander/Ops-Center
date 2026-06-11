@@ -51,6 +51,32 @@ async def test_catalog_maps_models_to_publishing_nodes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_federated_models_lists_all_peer_models(monkeypatch):
+    """federated_models() returns the full {model -> node} map for listings."""
+    monkeypatch.setenv("FEDERATION_NODE_ID", "uc-unicorncommander")
+    use_registry(monkeypatch, [
+        {"node_id": "uc-magicunicorn", "node_status": "online", "status": "running",
+         "models": ["qwen3.5-27b", "Qwen3-30B-Q4_K_M"]},
+        {"node_id": "uc-unicorncommander", "node_status": "online", "status": "running",
+         "models": ["cloud-proxy-model"]},  # self excluded
+    ])
+    catalog = await bridge.federated_models()
+    assert catalog == {"qwen3.5-27b": "uc-magicunicorn",
+                       "Qwen3-30B-Q4_K_M": "uc-magicunicorn"}
+
+
+@pytest.mark.asyncio
+async def test_federated_models_never_raises(monkeypatch):
+    """Listing helper must be fail-soft — returns {} on registry failure."""
+    async def boom():
+        raise RuntimeError("registry down")
+    monkeypatch.setattr(bridge, "_get_registry", boom)
+    bridge._catalog["ts"] = 0.0
+    bridge._catalog["models"] = {}
+    assert await bridge.federated_models() == {}
+
+
+@pytest.mark.asyncio
 async def test_catalog_refresh_failure_keeps_stale_cache(monkeypatch):
     monkeypatch.setenv("FEDERATION_NODE_ID", "uc-unicorncommander")
     use_registry(monkeypatch, [
