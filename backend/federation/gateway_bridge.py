@@ -125,7 +125,7 @@ class GatewayUpstreamError(FederatedInferenceError):
     http_status = 504
 
 
-async def serve_federated_inference(
+async def _prepare_gateway_forward(
     *,
     peer_node_id: str,
     org_id: Optional[str],
@@ -136,23 +136,13 @@ async def serve_federated_inference(
     trust_enforcer: Any = None,
     key_provisioner: Any = None,
     gateway_url: Optional[str] = None,
-    http_client: Any = None,
 ) -> Dict[str, Any]:
-    """Serve an inbound federated inference call under the org's gateway key.
+    """Trust-gate, provision the org key, resolve the gateway URL + model alias.
 
-    Args:
-        peer_node_id: Authenticated calling peer (from federation auth).
-        org_id: The CONSUMING org's id — becomes the metering identity.
-        service_type: Federation service type (must map to a gateway path).
-        payload: OpenAI-style request body, forwarded verbatim.
-        trust_enforcer/key_provisioner/gateway_url/http_client: injectable
-            for tests; default to the real singletons.
-
-    Returns:
-        {data, status_code, org_id, key_id, gateway_metered: True}
-
-    Raises:
-        TrustDenied / BadFederatedRequest / GatewayKeyUnavailable.
+    Shared by the buffered and streaming serve paths so both go through the
+    SAME trust + per-org-key + metering contract. Raises the explicit
+    FederatedInferenceError subclasses; on success returns the ready-to-send
+    forward plan {url, headers, payload, key_info, service_type}.
     """
     if not org_id:
         raise BadFederatedRequest(
@@ -218,21 +208,60 @@ async def serve_federated_inference(
         except Exception as exc:
             logger.debug("Model alias resolution skipped: %s", exc)
 
-    # 4. Forward under the org's key — the gateway meters this call to Lago
-    #    keyed user_id == org_id with the configured markup. Exactly one
-    #    billable event, fired by the gateway, not by us.
-    timeout = float(os.getenv("FEDERATION_PROXY_TIMEOUT", "120"))
-    url = f"{gateway_url}{path}"
-    headers = {
-        "Authorization": f"Bearer {org_key}",
-        "Content-Type": "application/json",
+    return {
+        "url": f"{gateway_url}{path}",
+        "headers": {
+            "Authorization": f"Bearer {org_key}",
+            "Content-Type": "application/json",
+        },
+        "payload": payload,
+        "key_info": key_info,
+        "service_type": service_type,
     }
+
+
+async def serve_federated_inference(
+    *,
+    peer_node_id: str,
+    org_id: Optional[str],
+    service_type: str,
+    payload: Dict[str, Any],
+    db_pool=None,
+    local_node_id: Optional[str] = None,
+    trust_enforcer: Any = None,
+    key_provisioner: Any = None,
+    gateway_url: Optional[str] = None,
+    http_client: Any = None,
+) -> Dict[str, Any]:
+    """Serve an inbound federated inference call under the org's gateway key
+    (BUFFERED — one request/response). See serve_federated_inference_stream
+    for the token-by-token SSE path.
+
+    Returns:
+        {data, status_code, org_id, key_id, gateway_metered: True}
+
+    Raises:
+        TrustDenied / BadFederatedRequest / GatewayKeyUnavailable.
+    """
+    plan = await _prepare_gateway_forward(
+        peer_node_id=peer_node_id, org_id=org_id, service_type=service_type,
+        payload=payload, db_pool=db_pool, local_node_id=local_node_id,
+        trust_enforcer=trust_enforcer, key_provisioner=key_provisioner,
+        gateway_url=gateway_url,
+    )
+
+    # Forward under the org's key — the gateway meters this call to Lago keyed
+    # user_id == org_id with the configured markup. Exactly one billable event,
+    # fired by the gateway, not by us.
+    timeout = float(os.getenv("FEDERATION_PROXY_TIMEOUT", "120"))
     own_client = False
     if http_client is None:
         http_client = httpx.AsyncClient(timeout=timeout)
         own_client = True
     try:
-        response = await http_client.post(url, json=payload, headers=headers)
+        response = await http_client.post(
+            plan["url"], json=plan["payload"], headers=plan["headers"]
+        )
     except httpx.TimeoutException as exc:
         raise GatewayUpstreamError(
             f"Gateway timed out serving {service_type} for org {org_id} "
@@ -248,12 +277,96 @@ async def serve_federated_inference(
 
     logger.info(
         "Federated inference: peer=%s org=%s %s -> %s [%d]",
-        peer_node_id, org_id, service_type, url, response.status_code,
+        peer_node_id, org_id, service_type, plan["url"], response.status_code,
     )
     return {
         "data": response.json(),
         "status_code": response.status_code,
         "org_id": org_id,
-        "key_id": key_info.get("key_id"),
+        "key_id": plan["key_info"].get("key_id"),
         "gateway_metered": response.status_code < 400,
     }
+
+
+def _sse_error_chunk(message: str) -> bytes:
+    """An in-band OpenAI-style SSE error event + terminator.
+
+    Streaming responses have already committed a 200 status to the client by
+    the time the gateway is reached, so a gateway-level failure is surfaced
+    in-band (the standard streaming-proxy contract) rather than as an HTTP code.
+    """
+    import json as _json
+    err = _json.dumps({"error": {"message": message, "type": "federation_error"}})
+    return f"data: {err}\n\ndata: [DONE]\n\n".encode()
+
+
+async def serve_federated_inference_stream(
+    *,
+    peer_node_id: str,
+    org_id: Optional[str],
+    service_type: str,
+    payload: Dict[str, Any],
+    db_pool=None,
+    local_node_id: Optional[str] = None,
+    trust_enforcer: Any = None,
+    key_provisioner: Any = None,
+    gateway_url: Optional[str] = None,
+    http_client: Any = None,
+):
+    """Serve a STREAMING federated inference call under the org's gateway key.
+
+    Two-phase so pre-stream failures map to a real HTTP status: this coroutine
+    runs the trust/key/url prep eagerly (raising TrustDenied / BadFederatedRequest
+    / GatewayKeyUnavailable BEFORE any bytes are committed), then returns an async
+    byte iterator that opens a streaming POST to the local gateway and relays its
+    SSE chunks verbatim. The gateway meters the call on stream completion exactly
+    as for the buffered path (LITELLM_SUCCESS_CALLBACK=lago, charge_by=user_id) —
+    still the single billable event, keyed to the org.
+
+    Usage:
+        agen = await serve_federated_inference_stream(...)   # may raise
+        return StreamingResponse(agen, media_type="text/event-stream")
+    """
+    plan = await _prepare_gateway_forward(
+        peer_node_id=peer_node_id, org_id=org_id, service_type=service_type,
+        payload=payload, db_pool=db_pool, local_node_id=local_node_id,
+        trust_enforcer=trust_enforcer, key_provisioner=key_provisioner,
+        gateway_url=gateway_url,
+    )
+
+    async def _byte_stream():
+        timeout = float(os.getenv("FEDERATION_PROXY_TIMEOUT", "120"))
+        own_client = False
+        client = http_client
+        if client is None:
+            client = httpx.AsyncClient(timeout=timeout)
+            own_client = True
+        try:
+            async with client.stream(
+                "POST", plan["url"], json=plan["payload"], headers=plan["headers"]
+            ) as response:
+                if response.status_code >= 400:
+                    detail = (await response.aread()).decode(errors="replace")[:300]
+                    logger.warning(
+                        "Federated stream: gateway %d for org %s: %s",
+                        response.status_code, org_id, detail,
+                    )
+                    yield _sse_error_chunk(
+                        f"gateway returned {response.status_code}"
+                    )
+                    return
+                async for chunk in response.aiter_bytes():
+                    if chunk:
+                        yield chunk
+        except httpx.HTTPError as exc:
+            logger.warning("Federated stream transport error for org %s: %s", org_id, exc)
+            yield _sse_error_chunk(f"gateway unreachable: {exc}")
+        finally:
+            if own_client:
+                await client.aclose()
+        logger.info(
+            "Federated stream done: peer=%s org=%s %s -> %s",
+            peer_node_id, org_id, service_type, plan["url"],
+        )
+
+    return _byte_stream()
