@@ -13,6 +13,7 @@ Federation Resilience — Circuit Breakers, Distributed Locks, Audit Trail
 """
 
 import json
+import os
 import time
 import uuid
 import logging
@@ -158,6 +159,31 @@ class RoutingAuditLog:
         self.db_pool = db_pool
         self._buffer = []  # buffer for batch inserts
         self._buffer_limit = 50
+        # Time-based flush so a low-traffic trickle of entries doesn't wait for
+        # 50 to accumulate (they'd otherwise be invisible to audit queries and
+        # lost on restart). A lazy background loop flushes every N seconds even
+        # when no new decision arrives. Configurable; 0 disables the timer.
+        self._buffer_max_age = float(os.getenv("FEDERATION_AUDIT_FLUSH_SECONDS", "30"))
+        self._flush_task: Optional[asyncio.Task] = None
+
+    def _ensure_flusher(self) -> None:
+        """Lazily start the periodic background flush loop (idempotent)."""
+        if self._buffer_max_age <= 0:
+            return
+        if self._flush_task is not None and not self._flush_task.done():
+            return
+        try:
+            self._flush_task = asyncio.create_task(self._periodic_flush())
+        except RuntimeError:
+            # No running loop (e.g. unit context) — count-based flush still works.
+            self._flush_task = None
+
+    async def _periodic_flush(self) -> None:
+        """Flush any buffered entries every _buffer_max_age seconds."""
+        while True:
+            await asyncio.sleep(self._buffer_max_age)
+            if self._buffer:
+                await self.flush()
 
     async def log_decision(
         self,
@@ -199,6 +225,7 @@ class RoutingAuditLog:
         }
 
         self._buffer.append(entry)
+        self._ensure_flusher()
 
         # Log important decisions
         if outcome in ("no_capacity", "error", "provisioning"):

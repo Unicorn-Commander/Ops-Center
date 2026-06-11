@@ -1528,7 +1528,11 @@ async def chat_completions(
             'power_level': power_level,
             'user_tier': user_tier,
             'using_byok': using_byok,
-            'byok_provider': detected_provider if using_byok else None
+            'byok_provider': detected_provider if using_byok else None,
+            # This handler is the authoritative debit point (org/individual
+            # deduction + Lago metering already happened above). The credit
+            # middleware MUST NOT debit again — it keys off this flag.
+            'credits_settled': True
         }
 
         return response_data
@@ -2121,7 +2125,9 @@ async def generate_image(
             'byok_provider': detected_provider if using_byok else None,
             'images_generated': request.n,
             'size': request.size,
-            'quality': request.quality
+            'quality': request.quality,
+            # Authoritative debit point — credit middleware must not re-debit.
+            'credits_settled': True
         }
 
         return response_data
@@ -2573,6 +2579,24 @@ async def list_models(
         for i in range(user_tier_index + 1):
             available_models.extend(models_by_tier.get(tier_order[i], []))
 
+        # Federated local models: published by a trusted peer (e.g. bigboy's
+        # GPUs) and served through this node's LLM API. Visible to every tier
+        # since the federated branch resolves them regardless of tier.
+        try:
+            from federation_llm_bridge import federated_models
+            seen = {m['id'] for m in available_models}
+            for model_id, node_id in (await federated_models()).items():
+                if model_id and model_id not in seen:
+                    available_models.append({
+                        'id': model_id, 'object': 'model',
+                        'owned_by': 'federation', 'tier': tier,
+                        'federated_node': node_id,
+                        'description': f'Local model served via federation ({node_id})',
+                    })
+                    seen.add(model_id)
+        except Exception as fed_err:
+            logger.debug(f"Federated model listing skipped: {fed_err}")
+
         return {
             'object': 'list',
             'data': available_models
@@ -2861,6 +2885,39 @@ async def list_models_categorized(
                 provider_info['note'] = f"Charged with credits from your account (tier markup: {tier_markup}%)"
                 provider_info['source'] = 'platform'
                 platform_models.append(provider_info)
+
+        # Federated local models: published by a trusted peer (e.g. bigboy's
+        # GPUs) and served through this node's LLM API. They are platform
+        # models (metered on the org's per-org gateway key), grouped on their
+        # own so the UI can show "local / sovereign" provenance.
+        try:
+            from federation_llm_bridge import federated_models
+            listed_ids = {
+                m['id']
+                for grp in (byok_models + platform_models)
+                for m in grp['models']
+            }
+            fed_by_node = {}
+            for model_id, node_id in (await federated_models()).items():
+                if model_id and model_id not in listed_ids:
+                    fed_by_node.setdefault(node_id, []).append({
+                        'id': model_id, 'object': 'model', 'name': model_id,
+                        'display_name': model_id,
+                        'federated_node': node_id,
+                    })
+            for node_id, models_list in fed_by_node.items():
+                platform_models.append({
+                    'provider': f'Federation · {node_id}',
+                    'provider_type': 'federation',
+                    'models': models_list,
+                    'count': len(models_list),
+                    'tier_markup': tier_markup,
+                    'note': f'Local model served via federation from {node_id}',
+                    'source': 'federation',
+                    'federated_node': node_id,
+                })
+        except Exception as fed_err:
+            logger.debug(f"Federated model categorization skipped: {fed_err}")
 
         # Build summary
         total_byok = sum(p['count'] for p in byok_models)
