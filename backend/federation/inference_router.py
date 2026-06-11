@@ -455,6 +455,80 @@ class InferenceRouter:
             logger.error("Proxy request to %s failed: %s", node_id, exc)
             raise
 
+    async def proxy_to_node_stream(
+        self,
+        node_id: str,
+        endpoint_path: str,
+        request_data: Dict[str, Any],
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        org_id: Optional[str] = None,
+    ):
+        """Streaming sibling of proxy_to_node — yields raw response bytes.
+
+        Same node resolution, circuit breaker, auth and org-identity header as
+        proxy_to_node, but opens a streaming POST and relays the peer's SSE
+        chunks verbatim. The PUBLISHER's gateway meters the call on stream
+        completion (gateway_metered), so we record only a local usage log.
+        """
+        circuit_breaker = get_circuit_breaker()
+        if not circuit_breaker.can_request(node_id):
+            raise ConnectionError(
+                f"Circuit breaker OPEN for node {node_id} — peer is unreachable"
+            )
+
+        node = await self.registry.get_node(node_id)
+        if not node:
+            raise ValueError(f"Unknown federation node: {node_id}")
+        endpoint_url = node.get("endpoint_url", "").rstrip("/")
+        if not endpoint_url:
+            raise ValueError(f"Node {node_id} has no endpoint URL configured")
+
+        url = f"{endpoint_url}{endpoint_path}"
+        request_headers = {"Content-Type": "application/json"}
+        auth_credential = node.get("auth_credential")
+        if auth_credential:
+            request_headers["Authorization"] = f"Bearer {auth_credential}"
+        if org_id:
+            request_headers["X-Federation-Org-Id"] = org_id
+        if headers:
+            request_headers.update(headers)
+
+        start_time = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=self._http_timeout) as client:
+                async with client.stream(
+                    "POST", url, json=request_data, headers=request_headers
+                ) as response:
+                    if response.status_code >= 500:
+                        circuit_breaker.record_failure(node_id)
+                    async for chunk in response.aiter_bytes():
+                        if chunk:
+                            yield chunk
+            latency_ms = (time.monotonic() - start_time) * 1000
+            self._record_latency(node_id, latency_ms)
+            circuit_breaker.record_success(node_id)
+            if self.meter:
+                try:
+                    await self.meter.record_usage({
+                        "event_type": "proxy_stream",
+                        "source_node_id": self.local_node_id,
+                        "target_node_id": node_id,
+                        "service_type": request_data.get("service_type", "unknown"),
+                        "model": request_data.get("model"),
+                        "latency_ms": latency_ms,
+                        "status": "success",
+                        "org_id": org_id,
+                        "gateway_metered": bool(org_id),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                except Exception as meter_exc:
+                    logger.warning("Failed to record stream usage: %s", meter_exc)
+        except Exception as exc:
+            circuit_breaker.record_failure(node_id)
+            logger.error("Proxy stream to %s failed: %s", node_id, exc)
+            raise
+
     # ------------------------------------------------------------------
     # Service discovery
     # ------------------------------------------------------------------

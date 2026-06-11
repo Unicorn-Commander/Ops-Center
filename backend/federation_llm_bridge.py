@@ -150,3 +150,43 @@ async def serve_llm_via_federation(
         "latency_ms": result.get("latency_ms"),
     }
     return response_json, meta
+
+
+async def stream_llm_via_federation(
+    *,
+    model: str,
+    node_id: str,
+    payload: Dict[str, Any],
+    org_id: str,
+):
+    """Stream an OpenAI-style chat completion from the publishing peer.
+
+    Yields the publisher's SSE bytes verbatim (which are the gateway's SSE
+    chunks) so the customer gets true token-by-token streaming. The publisher
+    forwards stream=true to ITS gateway under the org's per-org key, and the
+    gateway fires the single Lago ai_api_call event on stream completion — so,
+    as with the buffered path, no local credit is charged (the consumer returns
+    a text/event-stream response, which the credit middleware skips).
+    """
+    from federation.auth import get_federation_auth
+    from federation.inference_router import InferenceRouter
+
+    registry = await _get_registry()
+    router = InferenceRouter(registry, local_node_id=_local_node_id())
+
+    body = dict(payload)
+    body["stream"] = True
+    # Ask the gateway to emit a final usage chunk so cost is captured for
+    # metering and the client sees token counts.
+    body.setdefault("stream_options", {"include_usage": True})
+
+    async for chunk in router.proxy_to_node_stream(
+        node_id,
+        "/api/v1/federation/inference",
+        {"service_type": "llm", "model": model, "org_id": org_id, "payload": body},
+        org_id=org_id,
+        # Signed federation JWT — peers' stored auth_credential rows are not
+        # uniformly populated, so always send our own credential.
+        headers=get_federation_auth().get_auth_headers(node_id),
+    ):
+        yield chunk

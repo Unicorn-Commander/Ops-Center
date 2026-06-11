@@ -1027,6 +1027,20 @@ async def chat_completions(
                             f"and requires an organization context"
                         ),
                     )
+                # Streaming: relay the publisher's SSE token-by-token (the
+                # publisher's gateway meters the call; this is a text/event-stream
+                # response so the credit middleware charges nothing locally).
+                if request.stream:
+                    from federation_llm_bridge import stream_llm_via_federation
+                    return StreamingResponse(
+                        stream_llm_via_federation(
+                            model=request.model,
+                            node_id=fed_node,
+                            payload=proxy_request,
+                            org_id=org_id_fed,
+                        ),
+                        media_type="text/event-stream",
+                    )
                 try:
                     fed_response, fed_meta = await serve_llm_via_federation(
                         model=request.model,
@@ -1059,31 +1073,6 @@ async def chat_completions(
                     "cost_incurred": 0.0,
                     "provider": "federation",
                 })
-                if request.stream:
-                    # The federation envelope is JSON-only — synthesize SSE
-                    # from the buffered completion for streaming clients.
-                    import json as _json
-
-                    first_choice = (fed_response.get("choices") or [{}])[0]
-                    async def _fed_sse():
-                        chunk = {
-                            "id": fed_response.get("id", "fed"),
-                            "object": "chat.completion.chunk",
-                            "created": fed_response.get("created"),
-                            "model": fed_response.get("model", request.model),
-                            "choices": [{
-                                "index": 0,
-                                "delta": {
-                                    "role": "assistant",
-                                    "content": first_choice.get("message", {}).get("content", ""),
-                                },
-                                "finish_reason": first_choice.get("finish_reason", "stop"),
-                            }],
-                        }
-                        yield f"data: {_json.dumps(chunk)}\n\n"
-                        yield "data: [DONE]\n\n"
-
-                    return StreamingResponse(_fed_sse(), media_type="text/event-stream")
                 return fed_response
 
         # Determine API endpoint and headers based on BYOK or system key

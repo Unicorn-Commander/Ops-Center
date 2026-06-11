@@ -483,10 +483,12 @@ async def federated_inference(
     `ai_api_call` event keyed to the org with the configured markup. This
     is how the per-org billing contract survives the federation hop.
     """
+    from fastapi.responses import StreamingResponse
     from federation.gateway_bridge import (
         ORG_HEADER,
         FederatedInferenceError,
         serve_federated_inference,
+        serve_federated_inference_stream,
     )
 
     if not _federation_secret_ok(request):
@@ -497,6 +499,23 @@ async def federated_inference(
     body = dict(payload.payload)
     if payload.model and "model" not in body:
         body["model"] = payload.model
+
+    # Streaming: relay the gateway's SSE token-by-token. Prep (trust/key/url)
+    # runs eagerly and maps failures to a real HTTP status BEFORE any bytes are
+    # committed; only gateway-level errors degrade to an in-band SSE error.
+    if body.get("stream"):
+        try:
+            agen = await serve_federated_inference_stream(
+                peer_node_id=peer_id,
+                org_id=org_id,
+                service_type=payload.service_type,
+                payload=body,
+                db_pool=registry.db_pool,
+                local_node_id=_local_node_id(),
+            )
+        except FederatedInferenceError as exc:
+            raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+        return StreamingResponse(agen, media_type="text/event-stream")
 
     try:
         result = await serve_federated_inference(
