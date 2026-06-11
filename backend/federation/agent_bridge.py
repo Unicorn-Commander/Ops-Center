@@ -78,6 +78,33 @@ async def _agent_unit_price(agent_id: str, db_pool) -> float:
         return 1.0
 
 
+async def _resolve_lago_creds(db_pool) -> tuple:
+    """Canonical Lago target for federation agent billing.
+
+    platform_settings FEDERATION_LAGO_API_URL/KEY override the node env —
+    a publisher whose own LAGO_* env points at a local Lago (e.g. bigboy)
+    can aim federation billing at UC-1 Hub with a SQL UPDATE, no recreate.
+    """
+    url = (os.getenv("LAGO_API_URL") or os.getenv("LAGO_API_BASE") or "").rstrip("/")
+    key = os.getenv("LAGO_API_KEY", "")
+    if db_pool is not None:
+        try:
+            async with db_pool.acquire() as conn:
+                for setting, current in (("FEDERATION_LAGO_API_URL", "url"),
+                                         ("FEDERATION_LAGO_API_KEY", "key")):
+                    val = await conn.fetchval(
+                        "SELECT value FROM platform_settings WHERE key = $1", setting
+                    )
+                    if val:
+                        if current == "url":
+                            url = val.rstrip("/")
+                        else:
+                            key = val
+        except Exception as exc:
+            logger.debug("Federation Lago override lookup failed: %s", exc)
+    return url, key
+
+
 async def _report_invocation_to_lago(
     *,
     org_id: str,
@@ -86,14 +113,14 @@ async def _report_invocation_to_lago(
     duration_s: float,
     status: str,
     peer_node_id: str,
+    db_pool=None,
 ) -> None:
     """Fire the single billable agent event to the canonical Lago.
 
     Best-effort: metering failure must never fail the invocation that
-    already ran. Uses the node's Lago env (same vars lago_integration uses).
+    already ran.
     """
-    lago_url = (os.getenv("LAGO_API_URL") or os.getenv("LAGO_API_BASE") or "").rstrip("/")
-    lago_key = os.getenv("LAGO_API_KEY", "")
+    lago_url, lago_key = await _resolve_lago_creds(db_pool)
     if not lago_url or not lago_key:
         logger.debug("Lago not configured on this node; agent event not reported")
         return
@@ -223,13 +250,19 @@ async def serve_federated_agent_invoke(
     units = 0.0
     if invoke_status == "completed":
         units = await _agent_unit_price(agent_id, db_pool)
-        reporter = lago_reporter or _report_invocation_to_lago
         try:
-            await reporter(
-                org_id=org_id, agent_id=agent_id, units=units,
-                duration_s=duration_s, status=invoke_status,
-                peer_node_id=peer_node_id,
-            )
+            if lago_reporter is not None:
+                await lago_reporter(
+                    org_id=org_id, agent_id=agent_id, units=units,
+                    duration_s=duration_s, status=invoke_status,
+                    peer_node_id=peer_node_id,
+                )
+            else:
+                await _report_invocation_to_lago(
+                    org_id=org_id, agent_id=agent_id, units=units,
+                    duration_s=duration_s, status=invoke_status,
+                    peer_node_id=peer_node_id, db_pool=db_pool,
+                )
         except Exception as exc:  # metering must never fail a served result
             logger.warning("Agent invocation metering failed: %s", exc)
 
