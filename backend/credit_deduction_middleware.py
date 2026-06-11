@@ -379,6 +379,18 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 logger.debug("Non-JSON response detected, skipping middleware credit extraction")
                 return None
 
+            # Federation-served responses are already billed by the
+            # PUBLISHER's gateway under the org's per-org key (one Lago
+            # ai_api_call event) — charging local credits here would
+            # double-bill the same call.
+            if (response_data.get("_metadata") or {}).get("gateway_metered"):
+                logger.debug("gateway_metered response — skipping middleware credit extraction")
+                # The body iterator was consumed; restore it for the client.
+                async def _restored_body():
+                    yield body
+                response.body_iterator = _restored_body()
+                return None
+
             # Extract token usage
             tokens_used = 0
             if "usage" in response_data:

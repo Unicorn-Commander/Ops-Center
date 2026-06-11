@@ -992,6 +992,100 @@ async def chat_completions(
             proxy_request["model"] = normalized_model
             logger.info(f"Using model: {normalized_model} (original: {request.model})")
 
+        # Federated local models: if a trusted federation peer publishes the
+        # requested model (e.g. bigboy's GPUs), serve it through the
+        # federation runtime. The PUBLISHER's gateway meters the call under
+        # this org's per-org key (the single Lago ai_api_call event), so no
+        # local credits are charged here (gateway_metered).
+        if request.model and not using_byok:
+            fed_node = None
+            try:
+                from federation_llm_bridge import (
+                    federated_node_for_model,
+                    serve_llm_via_federation,
+                )
+                fed_node = (
+                    await federated_node_for_model(request.model)
+                    or await federated_node_for_model(proxy_request.get("model"))
+                )
+            except Exception as fed_exc:
+                logger.debug(f"Federated catalog unavailable: {fed_exc}")
+            if fed_node:
+                org_id_fed = None
+                if str(user_id).startswith("org_"):
+                    org_id_fed = user_id
+                else:
+                    try:
+                        org_id_fed = await get_org_credit_integration().get_user_org_id(user_id)
+                    except Exception:
+                        org_id_fed = None
+                if not org_id_fed:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Model '{request.model}' is served via federation "
+                            f"and requires an organization context"
+                        ),
+                    )
+                try:
+                    fed_response, fed_meta = await serve_llm_via_federation(
+                        model=request.model,
+                        node_id=fed_node,
+                        payload=proxy_request,
+                        org_id=org_id_fed,
+                    )
+                except Exception as fed_exc:
+                    logger.error(
+                        f"Federated serving failed for {request.model} via {fed_node}: {fed_exc}"
+                    )
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Federated model '{request.model}' is temporarily unavailable",
+                    )
+                publisher_status = fed_meta.get("publisher_status") or 200
+                if publisher_status >= 400:
+                    raise HTTPException(
+                        status_code=publisher_status,
+                        detail=f"Federated gateway error for '{request.model}'",
+                    )
+                if not isinstance(fed_response, dict):
+                    fed_response = {"response": fed_response}
+                # gateway_metered: the publisher billed this call — the credit
+                # middleware honors this flag and charges nothing locally.
+                fed_response.setdefault("_metadata", {})
+                fed_response["_metadata"].update({
+                    "federated_node": fed_node,
+                    "gateway_metered": True,
+                    "cost_incurred": 0.0,
+                    "provider": "federation",
+                })
+                if request.stream:
+                    # The federation envelope is JSON-only — synthesize SSE
+                    # from the buffered completion for streaming clients.
+                    import json as _json
+
+                    first_choice = (fed_response.get("choices") or [{}])[0]
+                    async def _fed_sse():
+                        chunk = {
+                            "id": fed_response.get("id", "fed"),
+                            "object": "chat.completion.chunk",
+                            "created": fed_response.get("created"),
+                            "model": fed_response.get("model", request.model),
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "content": first_choice.get("message", {}).get("content", ""),
+                                },
+                                "finish_reason": first_choice.get("finish_reason", "stop"),
+                            }],
+                        }
+                        yield f"data: {_json.dumps(chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+
+                    return StreamingResponse(_fed_sse(), media_type="text/event-stream")
+                return fed_response
+
         # Determine API endpoint and headers based on BYOK or system key
         if using_byok:
             # User is using their own API key
