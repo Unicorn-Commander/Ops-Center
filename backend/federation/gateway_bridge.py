@@ -50,6 +50,59 @@ GATEWAY_PATHS = {
 
 ORG_HEADER = "X-Federation-Org-Id"
 
+# The federation catalog advertises the RAW model names the GPU backend
+# reports (e.g. "Qwen_Qwen3.5-27B-Q4_K_M") while the local gateway serves
+# ALIASES (e.g. "qwen3.5-27b" → openai/Qwen_Qwen3.5-27B-Q4_K_M). Consumers
+# route by catalog name, so the publisher translates raw→alias using the
+# gateway's /model/info. Cached; fail-soft (unknown names pass through and
+# the gateway's own 400 surfaces).
+_ALIAS_CACHE_TTL = 300.0
+_alias_cache: Dict[str, Any] = {"ts": 0.0, "aliases": set(), "raw_to_alias": {}}
+
+
+async def _resolve_gateway_model(
+    model: str, gateway_url: str, master_key: str, http_client: Any = None
+) -> str:
+    import time as _time
+    now = _time.monotonic()
+    if now - _alias_cache["ts"] > _ALIAS_CACHE_TTL:
+        try:
+            own = False
+            if http_client is None:
+                http_client = httpx.AsyncClient(timeout=10.0)
+                own = True
+            try:
+                resp = await http_client.get(
+                    f"{gateway_url}/model/info",
+                    headers={"Authorization": f"Bearer {master_key}"},
+                )
+            finally:
+                if own:
+                    await http_client.aclose()
+            if resp.status_code == 200:
+                aliases, raw_map = set(), {}
+                for entry in resp.json().get("data", []):
+                    alias = entry.get("model_name")
+                    upstream = (entry.get("litellm_params") or {}).get("model") or ""
+                    if not alias:
+                        continue
+                    aliases.add(alias)
+                    if "/" in upstream:
+                        raw_map.setdefault(upstream.split("/", 1)[1], alias)
+                _alias_cache.update(
+                    {"aliases": aliases, "raw_to_alias": raw_map, "ts": now}
+                )
+        except Exception as exc:
+            logger.debug("Gateway model-info refresh failed: %s", exc)
+            _alias_cache["ts"] = now
+    if model in _alias_cache["aliases"]:
+        return model
+    resolved = _alias_cache["raw_to_alias"].get(model)
+    if resolved:
+        logger.debug("Resolved catalog model %s -> gateway alias %s", model, resolved)
+        return resolved
+    return model
+
 
 class FederatedInferenceError(Exception):
     """Base error; http_status tells the API layer what to return."""
@@ -147,12 +200,23 @@ async def serve_federated_inference(
         )
 
     # 3. Resolve the LOCAL gateway URL (DB-first, same as provisioning).
+    master_key = ""
     if gateway_url is None:
         from gateway_key_provisioning import _resolve_gateway_creds
-        gateway_url, _ = await _resolve_gateway_creds()
+        gateway_url, master_key = await _resolve_gateway_creds()
     gateway_url = (gateway_url or "").rstrip("/")
     if not gateway_url:
         raise GatewayKeyUnavailable("No gateway URL configured on this node")
+
+    # 3b. Translate catalog (raw backend) model names to gateway aliases.
+    if master_key and payload.get("model"):
+        try:
+            payload = dict(payload)
+            payload["model"] = await _resolve_gateway_model(
+                payload["model"], gateway_url, master_key
+            )
+        except Exception as exc:
+            logger.debug("Model alias resolution skipped: %s", exc)
 
     # 4. Forward under the org's key — the gateway meters this call to Lago
     #    keyed user_id == org_id with the configured markup. Exactly one
