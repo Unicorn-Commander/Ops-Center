@@ -354,6 +354,73 @@ async def provision_org_gateway_key(
                 pass
 
 
+async def update_org_gateway_key_budget(
+    org_id: str,
+    max_budget: Optional[float],
+    plan_code: Optional[str] = None,
+) -> bool:
+    """Apply/refresh the budget on an org's EXISTING gateway key.
+
+    provision_org_gateway_key is create-only idempotent — a key that already
+    exists is returned untouched, so plan changes never updated budgets.
+    This closes that gap via LiteLLM /key/update. max_budget=None is a no-op
+    (unlimited stays unlimited); pass 0.0 to hard-block.
+
+    Failure-isolated: returns False on any problem, never raises.
+    """
+    if not org_id or max_budget is None:
+        return False
+    proxy_url, master_key = await _resolve_gateway_creds()
+    if not master_key:
+        logger.warning("No gateway master key; cannot update budget for org %s", org_id)
+        return False
+
+    conn = None
+    try:
+        conn = await get_db_connection()
+        stored = await _read_stored_key(conn, org_id)
+    except Exception as e:
+        logger.warning("Could not read stored key for budget update (org %s): %s", org_id, e)
+        return False
+    finally:
+        if conn is not None:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+
+    if not stored:
+        return False
+    # /key/update accepts the raw key value or the hashed token id.
+    key_ref = stored.get("key") or stored.get("key_id")
+    if not key_ref:
+        return False
+
+    payload: Dict[str, Any] = {"key": key_ref, "max_budget": float(max_budget)}
+    if plan_code:
+        payload["metadata"] = {"org_id": org_id, "plan": plan_code,
+                               "provisioned_by": "ops-center"}
+    try:
+        async with httpx.AsyncClient(timeout=_GATEWAY_TIMEOUT) as client:
+            resp = await client.post(
+                f"{proxy_url}/key/update",
+                json=payload,
+                headers={"Authorization": f"Bearer {master_key}"},
+            )
+    except httpx.RequestError as e:
+        logger.warning("Gateway unreachable during key/update for org %s: %s", org_id, e)
+        return False
+    if resp.status_code != 200:
+        logger.warning(
+            "Gateway key/update failed for org %s: %s %s",
+            org_id, resp.status_code, resp.text[:200],
+        )
+        return False
+    logger.info("Set max_budget=%.2f on gateway key for org %s (plan=%s)",
+                max_budget, org_id, plan_code)
+    return True
+
+
 # ===========================================================================
 # Endpoint — multi-tenant apps fetch the right gateway key for their org.
 # Authed; provisions on demand if missing (idempotent).
