@@ -46,11 +46,11 @@ SERVICE_PROFILES = {
         ("artwork-studio", "unicorn-artwork-api", 8095, 8095, "image_gen", "/health", None),
         ("majiks-studio", "unicorn-majiks-api", 8090, 8091, "music_gen", "/health", None),
         ("granite-proxy", "unicorn-granite-proxy", 8080, 8089, "extraction", "/health", None),
-        ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/agents"),
+        ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/v1/agents"),
     ],
     "vps": [
         ("litellm", "uchub-litellm", 4000, 4000, "llm", "/health", "/v1/models"),
-        ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/agents"),
+        ("brigade", "unicorn-brigade", 8100, 8101, "agents", "/", "/api/v1/agents"),
     ],
     "centerdeep": [
         ("search-web", "center-deep-tool-search", 8001, 11001, "search", "/health", None),
@@ -373,7 +373,9 @@ class NodeAgent:
 
         models = []
         if models_path:
-            models = await self._fetch_models(client, base_url, models_path)
+            models = await self._fetch_models(
+                client, base_url, models_path, service_type=service_type
+            )
 
         endpoint_path = self._service_endpoint_path(service_type)
 
@@ -393,12 +395,24 @@ class NodeAgent:
         }
 
     async def _fetch_models(
-        self, client: httpx.AsyncClient, base_url: str, models_path: str
+        self,
+        client: httpx.AsyncClient,
+        base_url: str,
+        models_path: str,
+        *,
+        service_type: Optional[str] = None,
     ) -> List[str]:
         """Fetch the model list from a service's /v1/models endpoint."""
         url = f"{base_url}{models_path}"
+        headers = {}
+        # Brigade's agent list is auth-protected — without the key the fetch
+        # 401s and the federation catalog advertises an empty agent list.
+        if service_type == "agents":
+            brigade_key = os.getenv("BRIGADE_API_KEY") or os.getenv("BRIGADE_ADMIN_KEY")
+            if brigade_key:
+                headers["X-API-Key"] = brigade_key
         try:
-            response = await client.get(url)
+            response = await client.get(url, headers=headers)
             if response.status_code >= 400:
                 return []
             data = response.json()
