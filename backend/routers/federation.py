@@ -401,6 +401,59 @@ async def route_inference(
     return route
 
 
+class FederatedInferencePayload(BaseModel):
+    service_type: Literal["llm", "tts", "stt", "embeddings", "image_gen", "reranker"]
+    model: Optional[str] = None
+    org_id: Optional[str] = None  # consuming org; X-Federation-Org-Id header wins
+    payload: Dict[str, Any] = Field(default_factory=dict)  # OpenAI-style body
+
+
+@router.post("/inference")
+@rate_limit("federation_route")
+async def federated_inference(
+    payload: FederatedInferencePayload,
+    request: Request,
+    registry: NodeRegistry = Depends(get_registry),
+):
+    """Serve an inbound federated inference call under the CONSUMING org's
+    per-org gateway key.
+
+    The calling peer authenticates with federation credentials and carries
+    the consuming org's identity (X-Federation-Org-Id). We provision/reuse
+    that org's virtual key on OUR gateway (user_id == org_id) and forward
+    the payload under it, so the gateway fires exactly one Lago
+    `ai_api_call` event keyed to the org with the configured markup. This
+    is how the per-org billing contract survives the federation hop.
+    """
+    from federation.gateway_bridge import (
+        ORG_HEADER,
+        FederatedInferenceError,
+        serve_federated_inference,
+    )
+
+    if not _federation_secret_ok(request):
+        raise HTTPException(status_code=401, detail="Federation authentication failed")
+    peer_id = getattr(request.state, "federation_node_id", None) or "unknown"
+    org_id = request.headers.get(ORG_HEADER) or payload.org_id
+
+    body = dict(payload.payload)
+    if payload.model and "model" not in body:
+        body["model"] = payload.model
+
+    try:
+        result = await serve_federated_inference(
+            peer_node_id=peer_id,
+            org_id=org_id,
+            service_type=payload.service_type,
+            payload=body,
+            db_pool=registry.db_pool,
+            local_node_id=_local_node_id(),
+        )
+    except FederatedInferenceError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    return result
+
+
 @router.get("/topology")
 async def topology(
     _auth=Depends(require_federation_or_admin),

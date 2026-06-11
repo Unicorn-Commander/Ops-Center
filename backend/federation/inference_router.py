@@ -335,6 +335,7 @@ class InferenceRouter:
         *,
         method: str = "POST",
         headers: Optional[Dict[str, str]] = None,
+        org_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Forward a request to a peer federation node and track latency.
 
@@ -344,6 +345,11 @@ class InferenceRouter:
             request_data: JSON body to send.
             method: HTTP method (default POST).
             headers: Additional headers.
+            org_id: Consuming org identity. When set, it is carried in the
+                X-Federation-Org-Id header so the publisher's gateway meters
+                the call under that org's per-org virtual key — the
+                publisher fires the (single) billable Lago event, so our own
+                meter records this hop as gateway_metered.
 
         Returns:
             Dict with response data and metadata (latency_ms, status_code).
@@ -371,6 +377,11 @@ class InferenceRouter:
         auth_credential = node.get("auth_credential")
         if auth_credential:
             request_headers["Authorization"] = f"Bearer {auth_credential}"
+
+        # Carry the consuming org identity so the publisher's gateway meters
+        # under the org's per-org virtual key (see federation/gateway_bridge).
+        if org_id:
+            request_headers["X-Federation-Org-Id"] = org_id
 
         if headers:
             request_headers.update(headers)
