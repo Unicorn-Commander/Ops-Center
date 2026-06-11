@@ -273,8 +273,10 @@ class NodeRegistry:
             catalog = []
             for row in rows:
                 item = dict(row)
-                item["models"] = item.get("models") or []
-                item["capabilities"] = item.get("capabilities") or {}
+                # asyncpg returns JSONB columns as JSON strings (no codec
+                # registered) — decode so consumers get real lists/dicts.
+                item["models"] = self._parse_json_field(item.get("models"), [])
+                item["capabilities"] = self._parse_json_field(item.get("capabilities"), {})
                 item["last_heartbeat"] = self._iso(item.get("last_heartbeat"))
                 item["node_status"] = await self._live_status(item["node_id"], "offline")
                 if include_offline or item["node_status"] != "offline":
@@ -440,6 +442,17 @@ class NodeRegistry:
                 except json.JSONDecodeError:
                     pass
         return parsed
+
+    @staticmethod
+    def _parse_json_field(value: Any, default: Any) -> Any:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                return default
+        return value if value else default
 
     @staticmethod
     def _json_or_none(value: Any) -> Optional[str]:
