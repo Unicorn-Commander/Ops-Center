@@ -405,7 +405,10 @@ class InferenceRouter:
             # Proxy succeeded — record success in circuit breaker
             circuit_breaker.record_success(node_id)
 
-            # Record usage if metering is available
+            # Record usage if metering is available. When the call carried an
+            # org identity, the PUBLISHER's gateway fired the billable Lago
+            # event — mark gateway_metered so FederationMeter only logs it
+            # locally and never double-fires Lago.
             if self.meter:
                 try:
                     await self.meter.record_usage({
@@ -416,6 +419,8 @@ class InferenceRouter:
                         "model": request_data.get("model"),
                         "latency_ms": latency_ms,
                         "status": "success",
+                        "org_id": org_id,
+                        "gateway_metered": bool(org_id),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
                 except Exception as meter_exc:
