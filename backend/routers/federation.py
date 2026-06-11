@@ -251,34 +251,75 @@ async def list_nodes(
     return {"nodes": await registry.get_nodes(include_offline=include_offline)}
 
 
+def _local_node_id() -> Optional[str]:
+    return os.getenv("FEDERATION_LOCAL_NODE_ID") or os.getenv("FEDERATION_NODE_ID")
+
+
+def _calling_peer_id(request: Request, auth: Any) -> Optional[str]:
+    """Node id of the calling federation peer, or None for local admin/user.
+
+    `_federation_secret_ok` stashes the verified node id on request.state;
+    require_federation_or_admin returns {"method": "federation_key"} for
+    peer callers and a user dict for admin sessions.
+    """
+    if isinstance(auth, dict) and auth.get("method") == "federation_key":
+        return getattr(request.state, "federation_node_id", None) or "unknown"
+    return None
+
+
+async def _trust_filter_catalog(
+    catalog: list, request: Request, auth: Any, registry: NodeRegistry
+) -> list:
+    """Apply trust-mode advertisement filtering when the caller is a peer.
+
+    Local admins see the full catalog; federation peers see only the
+    service types their federation_peers row publishes to them.
+    """
+    peer_id = _calling_peer_id(request, auth)
+    if peer_id is None:
+        return catalog
+    from federation.trust import get_trust_enforcer
+    enforcer = get_trust_enforcer(registry.db_pool, local_node_id=_local_node_id())
+    return await enforcer.filter_catalog_for_peer(catalog, peer_id)
+
+
 @router.get("/services")
 async def list_services(
-    _admin=Depends(require_federation_or_admin),
+    request: Request,
+    auth=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
-    return {"services": await registry.get_service_catalog()}
+    catalog = await registry.get_service_catalog()
+    catalog = await _trust_filter_catalog(catalog, request, auth, registry)
+    return {"services": catalog}
 
 
 @router.get("/services/{service_type}")
 async def list_services_by_type(
     service_type: str,
-    _admin=Depends(require_federation_or_admin),
+    request: Request,
+    auth=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
-    return {"services": await registry.get_service_catalog(service_type=service_type)}
+    catalog = await registry.get_service_catalog(service_type=service_type)
+    catalog = await _trust_filter_catalog(catalog, request, auth, registry)
+    return {"services": catalog}
 
 
 @router.get("/agents")
 async def list_federation_agents(
     request: Request,
+    auth=Depends(require_federation_or_admin),
     registry: NodeRegistry = Depends(get_registry),
 ):
     """List all agents available across the federation.
 
     Returns agents from all online nodes that have Brigade running,
-    including which node hosts each agent.
+    including which node hosts each agent. Peers only see agents when
+    their trust row publishes the `agents` service type to them.
     """
     catalog = await registry.get_service_catalog()
+    catalog = await _trust_filter_catalog(catalog, request, auth, registry)
     agents = []
     for service in catalog:
         if service.get("service_type") == "agents":
@@ -304,6 +345,31 @@ async def route_inference(
 ):
     from federation.credit_estimator import estimate_credits
     from federation.access_control import get_service_access_control
+    from federation.resilience import get_routing_audit_log
+
+    # Trust-mode gate: when the caller authenticated as a federation peer,
+    # its federation_peers row must allow CALLING this service type on us
+    # (full/publisher = all, scoped = consume[] ACL, consumer/isolated = none).
+    # _federation_secret_ok() stashes the verified peer node id on request.state.
+    if _federation_secret_ok(request):
+        peer_id = getattr(request.state, "federation_node_id", None) or "unknown"
+        from federation.trust import get_trust_enforcer
+        enforcer = get_trust_enforcer(registry.db_pool, local_node_id=_local_node_id())
+        allowed, reason = await enforcer.peer_may_call(peer_id, payload.service_type)
+        audit = get_routing_audit_log(registry.db_pool)
+        await audit.log_decision(
+            request_id=f"trust-{peer_id}"[:36], service_type=payload.service_type,
+            model=payload.model, user_id=payload.user_id, user_tier=payload.user_tier,
+            candidates_found=0, candidates_after_constraints=0,
+            selected_target="inbound", selected_node_id=peer_id,
+            selected_reason=f"trust: {reason}",
+            outcome="trust_allowed" if allowed else "trust_denied",
+        )
+        if not allowed:
+            raise HTTPException(
+                403, f"Trust mode denies peer '{peer_id}' calling "
+                     f"'{payload.service_type}': {reason}"
+            )
 
     # Check service ACL before routing
     acl = get_service_access_control()

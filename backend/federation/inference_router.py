@@ -65,6 +65,7 @@ class InferenceRouter:
         local_node_id: Optional[str] = None,
         litellm_url: Optional[str] = None,
         meter: Any = None,
+        trust_enforcer: Any = None,
     ):
         self.registry = registry
         self.local_node_id = local_node_id
@@ -72,7 +73,25 @@ class InferenceRouter:
             "LITELLM_PROXY_URL", "http://unicorn-litellm:4000"
         )
         self.meter = meter
+        self._trust_enforcer = trust_enforcer
         self._http_timeout = float(os.getenv("FEDERATION_PROXY_TIMEOUT", "120"))
+
+    def _get_trust_enforcer(self) -> Any:
+        """Trust-mode enforcer (federation_peers.trust_mode/publish/consume).
+
+        Injectable for tests; otherwise resolved from the module singleton,
+        late-binding the registry's db_pool so policies load from PostgreSQL.
+        """
+        if self._trust_enforcer is None:
+            try:
+                from federation.trust import get_trust_enforcer
+                self._trust_enforcer = get_trust_enforcer(
+                    getattr(self.registry, "db_pool", None),
+                    local_node_id=self.local_node_id,
+                )
+            except Exception as exc:  # never let trust wiring break routing
+                logger.error("Trust enforcer unavailable: %s", exc)
+        return self._trust_enforcer
 
     # ------------------------------------------------------------------
     # Public API
@@ -448,10 +467,19 @@ class InferenceRouter:
     async def _find_peer_services(
         self, service_type: str, model: Optional[str]
     ) -> List[Dict[str, Any]]:
-        """Query registry for matching peer node services."""
+        """Query registry for matching peer node services.
+
+        Candidates are filtered through the trust-mode enforcer: a peer is
+        only routable if our federation_peers row for it allows outbound
+        consumption of this service type (full/consumer = all, scoped =
+        consume[] ACL only, publisher/isolated = nothing). Denials are
+        written to the federation_routing_audit table.
+        """
         all_services = await self.registry.get_service_catalog(
             service_type=service_type
         )
+        enforcer = self._get_trust_enforcer()
+        audit_log = get_routing_audit_log()
         candidates = []
         for svc in all_services:
             # Skip local node
@@ -465,6 +493,25 @@ class InferenceRouter:
             # Check model availability
             if model and model not in (svc.get("models") or []):
                 continue
+            # Trust-mode gate (deny-by-default inside scoped ACLs)
+            if enforcer is not None:
+                peer_id = svc.get("node_id", "")
+                allowed, reason = await enforcer.we_may_consume(peer_id, service_type)
+                if not allowed:
+                    logger.info(
+                        "Trust mode blocked peer candidate %s for %s: %s",
+                        peer_id, service_type, reason,
+                    )
+                    await audit_log.log_decision(
+                        request_id=str(uuid.uuid4()),
+                        service_type=service_type, model=model,
+                        user_id=None, user_tier=None,
+                        candidates_found=1, candidates_after_constraints=0,
+                        selected_target="peer", selected_node_id=peer_id,
+                        selected_reason=f"trust: {reason}",
+                        outcome="trust_denied",
+                    )
+                    continue
             # Peer services are self-hosted (free between nodes)
             svc.setdefault("cost_usd", 0.0)
             svc["is_local"] = False
