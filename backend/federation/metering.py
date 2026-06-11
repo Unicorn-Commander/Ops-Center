@@ -53,10 +53,16 @@ class FederationMeter:
         self.billing_node_key = billing_node_key
         self._pending_batch: List[Dict[str, Any]] = []
         self._batch_max_size = 100
-        # Canonical billable metric + markup — must match the proven
-        # UC-1 Hub chain (gateway: ai_api_call, sum(response_cost) × 1.32).
+        # Canonical billable metric — identical contract to the gateway's
+        # Lago callback. Verified live 2026-06-11: the gateway emits RAW
+        # response_cost in the event; the ×1.32 never-lose-money markup is
+        # applied downstream at the Lago plan/charge level. Default markup
+        # here is therefore 1.0 (raw) — only set FEDERATION_LAGO_MARKUP when
+        # a deployment's billing plan does NOT apply the markup itself,
+        # otherwise the same usage would bill 1.32× differently depending on
+        # which path metered it.
         self.lago_event_code = os.getenv("FEDERATION_LAGO_EVENT_CODE", "ai_api_call")
-        self.lago_markup = float(os.getenv("FEDERATION_LAGO_MARKUP", "1.32"))
+        self.lago_markup = float(os.getenv("FEDERATION_LAGO_MARKUP", "1.0"))
 
     # ------------------------------------------------------------------
     # Record usage

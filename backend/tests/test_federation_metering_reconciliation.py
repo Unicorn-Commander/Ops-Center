@@ -73,9 +73,10 @@ async def test_gateway_metered_event_never_fires_lago(lago_capture):
 
 
 @pytest.mark.asyncio
-async def test_org_event_fires_canonical_metric_with_markup(lago_capture):
+async def test_org_event_fires_canonical_metric(lago_capture):
     """Non-gateway org-attributed usage fires ai_api_call keyed to the org
-    with the 1.32 never-lose-money markup — one event, same contract."""
+    with RAW response_cost — the gateway's exact contract (verified live:
+    the ×1.32 markup is applied at the Lago plan level, not in the event)."""
     meter = make_meter()
     await meter.record_usage({
         "source_node_id": "uc-commander",
@@ -89,7 +90,7 @@ async def test_org_event_fires_canonical_metric_with_markup(lago_capture):
     ev = lago_capture[0]["json"]["event"]
     assert ev["code"] == "ai_api_call"
     assert ev["external_subscription_id"] == "org_123"  # org, NOT node slug
-    assert ev["properties"]["response_cost"] == pytest.approx(0.132)  # ×1.32
+    assert ev["properties"]["response_cost"] == pytest.approx(0.10)  # raw
     assert ev["properties"]["via"] == "federation_meter"
 
 
