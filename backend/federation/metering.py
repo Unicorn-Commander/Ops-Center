@@ -9,6 +9,7 @@ billing node. Provides aggregated usage summaries by period.
 
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -52,6 +53,10 @@ class FederationMeter:
         self.billing_node_key = billing_node_key
         self._pending_batch: List[Dict[str, Any]] = []
         self._batch_max_size = 100
+        # Canonical billable metric + markup — must match the proven
+        # UC-1 Hub chain (gateway: ai_api_call, sum(response_cost) × 1.32).
+        self.lago_event_code = os.getenv("FEDERATION_LAGO_EVENT_CODE", "ai_api_call")
+        self.lago_markup = float(os.getenv("FEDERATION_LAGO_MARKUP", "1.32"))
 
     # ------------------------------------------------------------------
     # Record usage
@@ -81,6 +86,14 @@ class FederationMeter:
         now = datetime.now(timezone.utc)
 
         # Normalize event
+        metadata = dict(usage_event.get("metadata", {}) or {})
+        org_id = usage_event.get("org_id") or metadata.get("org_id")
+        gateway_metered = bool(
+            usage_event.get("gateway_metered", metadata.get("gateway_metered", False))
+        )
+        if org_id:
+            metadata["org_id"] = org_id
+        metadata["gateway_metered"] = gateway_metered
         event = {
             "event_id": event_id,
             "source_node_id": usage_event.get("source_node_id", "unknown"),
@@ -93,7 +106,9 @@ class FederationMeter:
             "latency_ms": usage_event.get("latency_ms"),
             "cost_usd": usage_event.get("cost_usd", 0.0),
             "status": usage_event.get("status", "success"),
-            "metadata": usage_event.get("metadata", {}),
+            "org_id": org_id,
+            "gateway_metered": gateway_metered,
+            "metadata": metadata,
             "timestamp": usage_event.get("timestamp", now.isoformat()),
             "created_at": now.isoformat(),
         }
@@ -105,8 +120,16 @@ class FederationMeter:
             except Exception as exc:
                 logger.error("Failed to insert usage event: %s", exc)
 
-        # Report to Lago (non-blocking)
-        if self.lago_url and self.lago_api_key:
+        # Report to Lago (non-blocking) — UNLESS the request was already
+        # metered by a gateway. A federated call served under a per-org
+        # gateway key fires its (single) billable Lago event from the
+        # publisher's gateway; firing here too would double-bill.
+        if gateway_metered:
+            logger.debug(
+                "Skipping Lago report for %s — already gateway-metered (org=%s)",
+                event_id, org_id,
+            )
+        elif self.lago_url and self.lago_api_key:
             try:
                 await self._report_to_lago(event)
             except Exception as exc:
@@ -163,25 +186,59 @@ class FederationMeter:
     # ------------------------------------------------------------------
 
     async def _report_to_lago(self, event: Dict[str, Any]) -> None:
-        """Send a metering event to Lago for billing purposes."""
+        """Send a metering event to Lago for billing purposes.
+
+        Two shapes, ONE billable metric:
+
+        - Org-attributed event (org_id known, NOT gateway-metered): emit the
+          canonical `ai_api_call` metric keyed external_subscription_id ==
+          org_id with response_cost = cost_usd × markup — the same contract
+          the LiteLLM gateway fires, so org billing is uniform regardless of
+          which path metered the call.
+        - Node-level event (no org identity): legacy `federation_<service>`
+          code keyed by source node slug. This is NOT the billable metric —
+          it exists for node-to-node settlement visibility only.
+        """
         if not self.lago_url or not self.lago_api_key:
             return
 
-        lago_event = {
-            "event": {
-                "transaction_id": event["event_id"],
-                "external_subscription_id": event["source_node_id"],
-                "code": f"federation_{event['service_type']}",
-                "timestamp": event["timestamp"],
-                "properties": {
-                    "model": event.get("model", ""),
-                    "tokens_input": event.get("tokens_input", 0),
-                    "tokens_output": event.get("tokens_output", 0),
-                    "target_node": event.get("target_node_id", ""),
-                    "cost_usd": str(event.get("cost_usd", 0.0)),
-                },
+        org_id = event.get("org_id")
+        cost = float(event.get("cost_usd") or 0.0)
+        if org_id:
+            lago_event = {
+                "event": {
+                    "transaction_id": event["event_id"],
+                    "external_subscription_id": org_id,
+                    "code": self.lago_event_code,
+                    "timestamp": event["timestamp"],
+                    "properties": {
+                        "model": event.get("model", ""),
+                        "tokens_input": event.get("tokens_input", 0),
+                        "tokens_output": event.get("tokens_output", 0),
+                        "source_node": event.get("source_node_id", ""),
+                        "target_node": event.get("target_node_id", ""),
+                        "response_cost": round(cost * self.lago_markup, 10),
+                        "cost_usd": str(cost),
+                        "via": "federation_meter",
+                    },
+                }
             }
-        }
+        else:
+            lago_event = {
+                "event": {
+                    "transaction_id": event["event_id"],
+                    "external_subscription_id": event["source_node_id"],
+                    "code": f"federation_{event['service_type']}",
+                    "timestamp": event["timestamp"],
+                    "properties": {
+                        "model": event.get("model", ""),
+                        "tokens_input": event.get("tokens_input", 0),
+                        "tokens_output": event.get("tokens_output", 0),
+                        "target_node": event.get("target_node_id", ""),
+                        "cost_usd": str(cost),
+                    },
+                }
+            }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
