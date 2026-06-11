@@ -33,21 +33,28 @@ class _FakeAcquireCtx:
 
 
 class FakeConn:
-    def __init__(self, rows):
+    def __init__(self, rows, settings=None):
         self.rows = rows
+        self.settings = settings or {}
 
     async def fetch(self, query, *params):
         return self.rows
+
+    async def fetchval(self, query, *params):
+        if "platform_settings" in query:
+            return self.settings.get("FEDERATION_DEFAULT_TRUST_MODE")
+        return None
 
 
 class FakePool:
     """Minimal asyncpg-pool stand-in returning canned federation_peers rows."""
 
-    def __init__(self, rows):
+    def __init__(self, rows, settings=None):
         self.rows = rows
+        self.settings = settings
 
     def acquire(self):
-        return _FakeAcquireCtx(FakeConn(self.rows))
+        return _FakeAcquireCtx(FakeConn(self.rows, self.settings))
 
 
 def make_enforcer(policies=None, *, default_mode="full"):
@@ -158,6 +165,22 @@ async def test_refresh_loads_rows_and_fails_closed_on_bad_data():
     assert (await e.peer_may_call("scoped-peer", "embeddings"))[0] is True
     assert (await e.peer_may_call("inactive-peer", "llm"))[0] is False
     assert (await e.we_may_consume("weird-peer", "llm"))[0] is False
+
+
+@pytest.mark.asyncio
+async def test_default_mode_flippable_via_platform_settings():
+    """Deny-by-default can be enabled with a SQL UPDATE — no container
+    recreate. platform_settings overrides the env default at refresh."""
+    pool = FakePool([], settings={"FEDERATION_DEFAULT_TRUST_MODE": "isolated"})
+    e = TrustModeEnforcer(pool, local_node_id="self-node", default_mode="full")
+    await e.refresh()
+    assert e.default_mode == "isolated"
+    assert (await e.peer_may_call("stranger", "llm"))[0] is False
+    # Invalid DB values are ignored (env/constructor default stands)
+    pool2 = FakePool([], settings={"FEDERATION_DEFAULT_TRUST_MODE": "frenemy"})
+    e2 = TrustModeEnforcer(pool2, local_node_id="self-node", default_mode="full")
+    await e2.refresh()
+    assert e2.default_mode == "full"
 
 
 @pytest.mark.asyncio

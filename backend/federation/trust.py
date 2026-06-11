@@ -147,6 +147,24 @@ class TrustModeEnforcer:
                 params = []
             async with self.db_pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
+                # DB-configurable unknown-peer default: platform_settings
+                # overrides the env value so deny-by-default can be flipped
+                # with a SQL UPDATE (no container recreate — env changes on
+                # these nodes require the risky compose recreate path).
+                try:
+                    db_default = await conn.fetchval(
+                        "SELECT value FROM platform_settings "
+                        "WHERE key = 'FEDERATION_DEFAULT_TRUST_MODE'"
+                    )
+                    if db_default and db_default.lower() in VALID_TRUST_MODES:
+                        if db_default.lower() != self.default_mode:
+                            logger.info(
+                                "Unknown-peer default trust mode set from "
+                                "platform_settings: %s", db_default.lower(),
+                            )
+                        self.default_mode = db_default.lower()
+                except Exception:
+                    pass  # table may not exist on minimal deployments
             policies: Dict[str, Dict[str, Any]] = {}
             for row in rows:
                 item = dict(row)
