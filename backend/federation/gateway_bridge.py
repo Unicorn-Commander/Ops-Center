@@ -68,6 +68,10 @@ class GatewayKeyUnavailable(FederatedInferenceError):
     http_status = 503
 
 
+class GatewayUpstreamError(FederatedInferenceError):
+    http_status = 504
+
+
 async def serve_federated_inference(
     *,
     peer_node_id: str,
@@ -165,6 +169,15 @@ async def serve_federated_inference(
         own_client = True
     try:
         response = await http_client.post(url, json=payload, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise GatewayUpstreamError(
+            f"Gateway timed out serving {service_type} for org {org_id} "
+            f"after {timeout:.0f}s (model may be cold-loading): {exc}"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise GatewayUpstreamError(
+            f"Gateway unreachable serving {service_type} for org {org_id}: {exc}"
+        ) from exc
     finally:
         if own_client:
             await http_client.aclose()
