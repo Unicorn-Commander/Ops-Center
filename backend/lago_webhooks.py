@@ -81,6 +81,23 @@ async def lago_webhook(
     return {"status": "received", "event_type": event_type}
 
 
+async def _provision_if_org_keyed(subscription: Dict[str, Any], source: str):
+    """Org-keyed subscriptions (external_id == 'org_<uuid>') get gateway-key
+    + budget provisioning — catches plan changes driven from Stripe or the
+    Lago UI that never pass through our API paths. Failure-isolated."""
+    external_id = subscription.get("external_id") or ""
+    plan_code = subscription.get("plan_code") or ""
+    if not external_id.startswith("org_"):
+        return
+    try:
+        from plan_provisioning import on_plan_activated
+        await on_plan_activated(external_id, plan_code, source=source)
+    except Exception as exc:
+        logger.warning(
+            "Plan provisioning hook failed for %s/%s: %s", external_id, plan_code, exc
+        )
+
+
 async def handle_subscription_created(payload: Dict[str, Any]):
     """Handle new subscription creation"""
     subscription = payload.get("subscription", {})
@@ -90,6 +107,8 @@ async def handle_subscription_created(payload: Dict[str, Any]):
     plan_code = subscription.get("plan_code")
     status = subscription.get("status")
     subscription_id = subscription.get("lago_id")
+
+    await _provision_if_org_keyed(subscription, "webhook:subscription.created")
 
     if not user_email:
         logger.error("No email found in subscription.created webhook")
@@ -119,6 +138,8 @@ async def handle_subscription_updated(payload: Dict[str, Any]):
     plan_code = subscription.get("plan_code")
     status = subscription.get("status")
     subscription_id = subscription.get("lago_id")
+
+    await _provision_if_org_keyed(subscription, "webhook:subscription.updated")
 
     if not user_email:
         logger.error("No email found in subscription.updated webhook")

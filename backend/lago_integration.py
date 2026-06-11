@@ -433,6 +433,18 @@ async def create_subscription(
             if response.status_code in [200, 201]:
                 result = response.json()
                 logger.info(f"Created subscription for org {org_id}: {plan_code}")
+                # Billing-on-signup: every org-keyed subscription flows
+                # through here (signup, /upgrade, /change), so this is THE
+                # choke point to ensure the org's gateway key exists and
+                # carries the plan's inference budget. Failure-isolated —
+                # never breaks the subscribe flow.
+                try:
+                    from plan_provisioning import on_plan_activated
+                    await on_plan_activated(org_id, plan_code, source="create_subscription")
+                except Exception as provision_exc:
+                    logger.warning(
+                        f"Plan provisioning hook failed for {org_id}/{plan_code}: {provision_exc}"
+                    )
                 return result.get("subscription", result)
             else:
                 error_msg = f"Failed to create subscription: {response.status_code} - {response.text}"
