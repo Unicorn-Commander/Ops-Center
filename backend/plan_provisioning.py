@@ -7,10 +7,18 @@ up with:
 
   1. its per-org LiteLLM gateway key (the metering/billing contract,
      user_id == org_id; created idempotently if missing), and
-  2. that key's max_budget set from the plan (so a $19 starter org cannot
-     burn $500 of inference), and
-  3. organizations.plan_tier tracking reality (it was previously only
+  2. organizations.plan_tier tracking reality (it was previously only
      written at org creation).
+
+NOTE — inference budget is DECOUPLED from the subscription tier. Subscription
+(app access) and credits (a metered inference wallet) are orthogonal: a solo
+founder can need far more inference than an enterprise. Inference spend is
+guarded by the credit WALLET (has_sufficient_org_credits in the credit
+middleware), NOT by a per-plan gateway-key cap. on_plan_activated therefore
+does not source a max_budget from the plan tier; budget_for_plan /
+update_org_gateway_key_budget are retained as helpers for admin use and for the
+future credit-wallet sync that will guard the FEDERATED path (where the local
+credit middleware isn't in the request loop).
 
 Budget resolution order for a plan code:
   a. subscription_tiers.max_monthly_llm_budget where lago_plan_code or
@@ -132,23 +140,29 @@ async def on_plan_activated(
         if key_provisioner is None:
             from gateway_key_provisioning import provision_org_gateway_key
             key_provisioner = provision_org_gateway_key
-        if budget_updater is None:
-            from gateway_key_provisioning import update_org_gateway_key_budget
-            budget_updater = update_org_gateway_key_budget
-        if budget_resolver is None:
-            budget_resolver = budget_for_plan
 
-        # 1. Ensure the org key exists (create-only idempotent).
+        # 1. Ensure the org key exists (create-only idempotent) — the org's
+        #    metering identity on the gateway.
         key_info = await key_provisioner(org_id=org_id, plan_code=plan_code)
         out["key"] = bool(key_info)
 
-        # 2. Apply the plan's budget to the (new or existing) key.
-        budget = await budget_resolver(plan_code)
-        out["budget"] = budget
-        if budget is not None:
-            out["budget_applied"] = bool(await budget_updater(
-                org_id, budget, plan_code=plan_code
-            ))
+        # 2. Budget is DECOUPLED from the subscription tier. The two axes are
+        #    orthogonal: subscription = app access; credits = a metered inference
+        #    wallet. A solo founder can need more inference than an enterprise —
+        #    so inference spend is guarded by the credit WALLET
+        #    (has_sufficient_org_credits), NOT by a per-plan cap. We therefore do
+        #    NOT source a gateway-key max_budget from the plan tier. A budget is
+        #    applied ONLY when a caller explicitly supplies a resolver (reserved
+        #    for the future credit-wallet sync that guards the federated path,
+        #    where the local credit middleware isn't in the loop); the
+        #    signup/upgrade/webhook path supplies none → key left uncapped.
+        if budget_resolver is not None and budget_updater is not None:
+            budget = await budget_resolver(plan_code)
+            out["budget"] = budget
+            if budget is not None:
+                out["budget_applied"] = bool(await budget_updater(
+                    org_id, budget, plan_code=plan_code
+                ))
 
         # 3. Track the plan on the org record.
         _update_org_plan_tier(org_id, plan_code)

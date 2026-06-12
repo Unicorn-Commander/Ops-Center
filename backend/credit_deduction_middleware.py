@@ -168,10 +168,25 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     user_info = await manager.validate_api_key(token)
 
                     if user_info:
-                        logger.info(f"API key authenticated user: {user_info['user_id']}")
+                        uid = user_info['user_id']
+                        # Resolve the key OWNER's REAL tier — do NOT blanket-exempt
+                        # direct-API callers (that = we eat the cost). The owner's
+                        # actual tier decides exempt-vs-metered: internal/founder
+                        # owners (e.g. aaron@magicunicorn.tech → vip_founder) stay
+                        # exempt naturally; a real paid customer gets billed.
+                        # get_user_tier already fails safe to "free" (exempt), so a
+                        # lookup error never wrongly charges (fail-open).
+                        try:
+                            owner_tier = await self.credit_system.get_user_tier(uid)
+                        except Exception as tier_exc:
+                            logger.warning(
+                                f"uc_ key tier lookup failed for {uid}; exempting (fail-open): {tier_exc}"
+                            )
+                            owner_tier = "free"
+                        logger.info(f"API key authenticated user: {uid} (tier={owner_tier})")
                         return {
-                            "user_id": user_info['user_id'],
-                            "subscription_tier": "vip_founder",  # VIP users get vip_founder tier
+                            "user_id": uid,
+                            "subscription_tier": owner_tier,
                         }
                     else:
                         logger.warning(f"Invalid API key in credit middleware")
@@ -227,11 +242,14 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 if service_name:
                     tier = "internal" if service_name in internal_services else "professional"
                     if x_user_id:
-                        # Service key with user context - return user data
+                        # Service key with user context - return user data.
+                        # _app carries the calling UC app so the per-(app,model)
+                        # included-vs-metered policy can apply (see dispatch).
                         logger.info(f"Service key request with user context: {x_user_id}")
                         return {
                             "user_id": x_user_id,
                             "subscription_tier": tier,
+                            "_app": service_name,
                         }
                     else:
                         # Service key without user context - use org-prefixed ID for billing
@@ -242,7 +260,8 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                             return {
                                 "user_id": org_prefixed_id,
                                 "subscription_tier": tier,
-                                "is_service_account": True
+                                "is_service_account": True,
+                                "_app": service_name,
                             }
                         else:
                             logger.error(f"Service org ID not configured for: {service_name}")
@@ -618,6 +637,32 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
             response.headers["X-Credits-Remaining"] = "unlimited"
 
             return response
+
+        # Per-(app, model) policy: a non-exempt customer using a UC app (service
+        # key + X-User-ID) may have SOME inference bundled into their app
+        # subscription (e.g. Parakeet STT, Qwen3.6 summaries) and the rest
+        # metered. If this (app, model) is "included", the subscription covers
+        # it — pass through free. With no app_model_policy rows this never
+        # triggers (default "metered"), so behavior is unchanged until an admin
+        # adds explicit "included" rows.
+        app_ctx = user.get("_app")
+        if app_ctx and model:
+            try:
+                from inference_policy import resolve_inference_policy
+                db_pool = getattr(request.app.state, "db_pool", None)
+                policy = await resolve_inference_policy(app_ctx, model, db_pool)
+            except Exception as pol_exc:
+                logger.debug(f"Inference policy resolution failed (defaulting metered): {pol_exc}")
+                policy = "metered"
+            if policy == "included":
+                logger.info(
+                    f"Inference INCLUDED for app='{app_ctx}' model='{model}' "
+                    f"(bundled in subscription) — no credit charge"
+                )
+                response = await call_next(request)
+                response.headers["X-Inference-Included"] = "true"
+                response.headers["X-Credits-Used"] = "0.0"
+                return response
 
         # Check if BYOK enabled for this user/model
         is_byok, byok_provider = await self._check_byok_enabled(user_id, model)

@@ -133,6 +133,28 @@ async def test_activation_provisions_key_and_applies_budget(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_signup_path_does_not_apply_a_tier_budget(monkeypatch):
+    """Gap 3 decouple: with no resolver/updater (the real signup/webhook path),
+    the key is provisioned but NO budget is sourced from the plan tier — the
+    credit wallet is the spend guard, not a per-plan cap."""
+    monkeypatch.setattr(plan_provisioning, "_update_org_plan_tier", lambda *a: None)
+    provision = make_provisioner()
+    # Guard: budget_for_plan must NOT be consulted by the default path.
+    async def _boom_resolver(_):
+        raise AssertionError("budget_for_plan should not be called by signup path")
+    monkeypatch.setattr(plan_provisioning, "budget_for_plan", _boom_resolver)
+
+    out = await on_plan_activated(
+        "org_abc", "professional_monthly", source="create_subscription",
+        key_provisioner=provision,
+    )
+    assert provision.calls == [{"org_id": "org_abc", "plan_code": "professional_monthly"}]
+    assert out["key"] is True
+    assert out["budget_applied"] is False
+    assert out["budget"] is None
+
+
+@pytest.mark.asyncio
 async def test_unlimited_plan_skips_budget_update(monkeypatch):
     monkeypatch.setattr(plan_provisioning, "_update_org_plan_tier", lambda *a: None)
     update = make_budget_updater()
