@@ -738,6 +738,22 @@ CREATE INDEX IF NOT EXISTS idx_organizations_gateway_key_id ON organizations(lit
 
 
 -- ============================================================================
+-- app_model_policy — per-(app, model) included-vs-metered inference policy.
+-- Empty by default → everything resolves "metered" (no behavior change).
+-- app   = calling UC app (service-key service_name) or feature_key
+-- model = exact model id, a prefix ending in '*' (e.g. 'Qwen3.6-*'), or '*'
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS app_model_policy (
+    id SERIAL PRIMARY KEY,
+    app VARCHAR(128) NOT NULL,
+    model VARCHAR(255) NOT NULL,
+    policy VARCHAR(16) NOT NULL DEFAULT 'metered' CHECK (policy IN ('included','metered')),
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (app, model)
+);
+
+-- ============================================================================
 -- DONE
 -- ============================================================================
 DO $$
