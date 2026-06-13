@@ -227,17 +227,27 @@ const AddPeerDialog = ({ open, onClose, onAdd }) => {
             helperText="Optional friendly name for this peer"
           />
           <FormControl fullWidth>
-            <InputLabel>Trust Level</InputLabel>
+            <InputLabel>Bootstrap Trust Level</InputLabel>
             <Select
               value={trustLevel}
-              label="Trust Level"
+              label="Bootstrap Trust Level"
               onChange={(e) => setTrustLevel(e.target.value)}
             >
-              <MenuItem value="full">Full - Complete trust, share all services</MenuItem>
-              <MenuItem value="standard">Standard - Normal federation access</MenuItem>
-              <MenuItem value="limited">Limited - Restricted service access</MenuItem>
+              <MenuItem value="full">Full - bootstrap metadata only</MenuItem>
+              <MenuItem value="standard">Standard - bootstrap metadata only</MenuItem>
+              <MenuItem value="limited">Limited - bootstrap metadata only</MenuItem>
             </Select>
           </FormControl>
+          <Alert
+            severity="warning"
+            action={
+              <Button color="inherit" size="small" href="/admin/infra/federation/contracts">
+                Contracts
+              </Button>
+            }
+          >
+            This field does not govern live federation enforcement. Use Federation Contracts for trust_mode, publish, and consume.
+          </Alert>
           <FormControlLabel
             control={
               <Switch
@@ -1035,6 +1045,17 @@ const FederationSettings = () => {
           </Box>
         </AccordionSummary>
         <AccordionDetails>
+          <Alert
+            severity="warning"
+            sx={{ mb: 2 }}
+            action={
+              <Button color="inherit" size="small" href="/admin/infra/federation/contracts">
+                Federation Contracts
+              </Button>
+            }
+          >
+            Peer trust levels here are connection bootstrap metadata only and do not affect live enforcement.
+          </Alert>
           <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="body2" color="text.secondary">
               {peers.length === 0 ? 'No peers configured yet' : `${peers.length} peer(s) configured`}
@@ -1069,7 +1090,7 @@ const FederationSettings = () => {
                   <TableRow>
                     <TableCell>Status</TableCell>
                     <TableCell>Name / URL</TableCell>
-                    <TableCell>Trust Level</TableCell>
+                    <TableCell>Bootstrap Trust</TableCell>
                     <TableCell>Last Seen</TableCell>
                     <TableCell>Latency</TableCell>
                     <TableCell align="right">Actions</TableCell>
@@ -1088,12 +1109,14 @@ const FederationSettings = () => {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={peer.trust_level || 'standard'}
-                          size="small"
-                          variant="outlined"
-                          color={peer.trust_level === 'full' ? 'success' : peer.trust_level === 'limited' ? 'warning' : 'default'}
-                        />
+                        <Tooltip title="Bootstrap metadata only. Enforcement is managed in Federation Contracts.">
+                          <Chip
+                            label={peer.trust_level || 'standard'}
+                            size="small"
+                            variant="outlined"
+                            color={peer.trust_level === 'full' ? 'success' : peer.trust_level === 'limited' ? 'warning' : 'default'}
+                          />
+                        </Tooltip>
                       </TableCell>
                       <TableCell>
                         <Typography variant="caption">{timeAgo(peer.last_seen)}</Typography>
