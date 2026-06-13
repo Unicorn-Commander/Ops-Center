@@ -234,7 +234,8 @@ export default function MobileNavigation({ user, currentPath }) {
         { label: 'Network', path: '/admin/infra/network', icon: <LanguageIcon /> },
         { label: 'Storage & Backup', path: '/admin/infra/storage', icon: <ServerIcon /> },
         { label: 'Reverse Proxy', path: '/admin/infra/traefik', icon: <LanguageIcon /> },
-        { label: 'Federation', path: '/admin/infra/federation', icon: <CloudIcon /> }
+        { label: 'Federation', path: '/admin/infra/federation', icon: <CloudIcon /> },
+        { label: 'Federation Contracts', path: '/admin/infra/federation/contracts', icon: <SecurityIcon /> }
       ]
     },
     {
