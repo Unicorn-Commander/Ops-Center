@@ -54,18 +54,65 @@ logger = logging.getLogger(__name__)
 # Default includes common "unlimited" tier names. Customize for your deployment.
 # Set to "*" to exempt ALL tiers (effectively disabling billing)
 CREDIT_EXEMPT_TIERS_ENV = os.getenv("CREDIT_EXEMPT_TIERS", "free,vip_founder,vip,founder,admin,unlimited,internal")
+# Env-derived defaults (the fallback floor). The EFFECTIVE values are DB-first
+# (platform_settings), so a change made in the admin GUI survives a container
+# restart instead of resetting to whatever the env baked in at deploy time.
 CREDIT_EXEMPT_TIERS = set(t.strip() for t in CREDIT_EXEMPT_TIERS_ENV.split(",") if t.strip())
-
-# Master billing toggle - set to "false" to disable all credit checking
 BILLING_ENABLED = os.getenv("BILLING_ENABLED", "true").lower() == "true"
 
+# Runtime billing config, refreshed from platform_settings (DB-first) by the
+# middleware on each request (cached). None = not yet loaded → use env defaults.
+import time as _time
+_billing_cfg = {"ts": 0.0, "enabled": None, "exempt": None}
+_BILLING_CFG_TTL = 30.0
+
+
+async def refresh_billing_config(db_pool=None) -> None:
+    """Refresh BILLING_ENABLED / CREDIT_EXEMPT_TIERS from platform_settings.
+
+    DB-first so the admin GUI's billing posture persists across restarts; falls
+    back to the env defaults. Cached (30s); never raises.
+    """
+    now = _time.monotonic()
+    if _billing_cfg["enabled"] is not None and (now - _billing_cfg["ts"]) < _BILLING_CFG_TTL:
+        return
+    enabled, exempt = None, None
+    if db_pool is not None:
+        try:
+            async with db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT key, value FROM platform_settings WHERE key = ANY($1)",
+                    ["BILLING_ENABLED", "CREDIT_EXEMPT_TIERS"],
+                )
+            kv = {r["key"]: r["value"] for r in rows}
+            if kv.get("BILLING_ENABLED") is not None:
+                enabled = str(kv["BILLING_ENABLED"]).strip().lower() == "true"
+            if kv.get("CREDIT_EXEMPT_TIERS"):
+                exempt = set(t.strip() for t in str(kv["CREDIT_EXEMPT_TIERS"]).split(",") if t.strip())
+        except Exception as e:
+            logger.debug(f"Billing config DB refresh failed (using env/defaults): {e}")
+    _billing_cfg["enabled"] = enabled if enabled is not None else BILLING_ENABLED
+    _billing_cfg["exempt"] = exempt if exempt is not None else CREDIT_EXEMPT_TIERS
+    _billing_cfg["ts"] = now
+
+
 def is_credit_exempt(user_tier: str) -> bool:
-    """Check if a user tier is exempt from credit charges."""
-    if not BILLING_ENABLED:
+    """Check if a user tier is exempt from credit charges.
+
+    Uses the DB-backed runtime config when loaded (refresh_billing_config),
+    else falls back to the env defaults (cold start / no DB) = prior behavior.
+    """
+    enabled = _billing_cfg["enabled"]
+    exempt = _billing_cfg["exempt"]
+    if enabled is None:
+        enabled = BILLING_ENABLED
+    if exempt is None:
+        exempt = CREDIT_EXEMPT_TIERS
+    if not enabled:
         return True
-    if "*" in CREDIT_EXEMPT_TIERS:
+    if "*" in exempt:
         return True
-    return user_tier in CREDIT_EXEMPT_TIERS
+    return user_tier in exempt
 
 
 class CreditDeductionMiddleware(BaseHTTPMiddleware):
@@ -589,6 +636,10 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
 
         # Initialize credit systems if needed
         await self._ensure_initialized(request)
+
+        # Refresh DB-backed billing posture (BILLING_ENABLED / CREDIT_EXEMPT_TIERS)
+        # so admin-GUI changes survive restarts. Cached 30s; fail-soft to env.
+        await refresh_billing_config(getattr(request.app.state, "db_pool", None))
 
         # If credit system failed to initialize, pass through without credit checks
         if self.credit_system is None:
