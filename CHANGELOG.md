@@ -5,6 +5,47 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] - 2026-06-13
+
+Federation monetization complete + inference cost-recovery substrate. (Tracked in
+Project-Ops P-00067. Full detail: `~/Documents/federation-build-report.md` and
+`~/Documents/UC-Inference-Cost-Recovery-Design.md`.)
+
+### Added
+- **Federation reconciliation**: trust modes (full/scoped/consumer/publisher/isolated)
+  now ENFORCED at `/services`, `/agents`, `/route` with deny-by-default
+  (`FEDERATION_DEFAULT_TRUST_MODE`, platform_settings-overridable). The per-org gateway
+  key (`user_id == org_id`) now survives the federation hop (`X-Federation-Org-Id`), so
+  the single billable Lago `ai_api_call` event keys to the consuming org across nodes.
+- **Billing-on-signup** (`plan_provisioning`): plan activation auto-provisions the org's
+  gateway key (migration 011; `/key/update` on plan changes).
+- **Federated local models in the customer LLM API**: a trusted peer's published model is
+  served via federation under the caller's org; publisher resolves raw catalog names →
+  gateway aliases. Surfaced in `/models` and `/models/categorized`.
+- **Layer-2 agent contracts**: per-agent ACLs (`consume: ["agents/<id>"]`) +
+  `POST /federation/agents/{id}/invoke` → one `agent_invocation` Lago event (completed-only;
+  units from `FEDERATION_AGENT_PRICING`).
+- **True SSE stream-through** for federated inference — token-by-token relay across both
+  nodes (`serve_federated_inference_stream`, `proxy_to_node_stream`,
+  `stream_llm_via_federation`); the publisher's gateway meters once on stream completion.
+- **Per-(app, model) included-vs-metered policy** (`inference_policy.py` + `app_model_policy`
+  table) — bundle specific models into an app subscription; default metered (zero rows = no
+  behavior change).
+- **Routing-audit timed flush** (`FEDERATION_AUDIT_FLUSH_SECONDS`, default 30s).
+
+### Fixed
+- **Credit double-debit**: chat/image handlers stamp `_metadata.credits_settled`; the credit
+  middleware skips its own deduction on `credits_settled`/`gateway_metered` (was a latent
+  double-charge for non-exempt paid users, masked by exempt tiers).
+- **Mode C cost leak**: direct-API (`uc_`) keys now bill the key owner's real tier instead of
+  a hardcoded `vip_founder` exempt (fail-open to exempt on lookup error).
+- **Budget/tier decouple**: gateway-key budget is no longer sourced from the subscription
+  tier — inference spend is guarded by the credit wallet (subscription and credits are
+  orthogonal axes).
+
+### Removed
+- Opus-distill model (weights + presets + alias).
+
 ## [2.5.2] - 2026-02-27
 
 ### Added
