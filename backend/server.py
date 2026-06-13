@@ -194,6 +194,7 @@ from routers.federation import router as federation_router
 # Federation Settings API (March 2026) - GUI configuration for federation
 from federation_settings_api import router as federation_settings_router
 from federation_contracts_api import router as federation_contracts_router
+from schema_drift_api import router as schema_drift_router
 from federation.startup import start_federation_agent, stop_federation_agent
 # Admin GUI: pricing/policy config (June 2026)
 from app_model_policy_api import router as app_model_policy_router
@@ -915,6 +916,22 @@ async def startup_event():
         except Exception as e:
             logger.error(f"ensure_feature_tables.sql failed (non-fatal, continuing startup): {e}")
 
+        # Versioned core-table migration parity + schema-drift self-check (2026-06-13).
+        # Both deploy branches run the SAME migrations/core/*.sql here so cherry-picked
+        # code can't assume a column the other node lacks; then we compare the live
+        # CORE tables to the canonical contract and log LOUDLY on drift (deploy-time
+        # signal instead of a customer-facing 500). Both steps are non-fatal.
+        try:
+            import core_migrations
+            import schema_drift
+            _cm = await core_migrations.run_core_migrations(db_pool)
+            if _cm.get("applied"):
+                logger.info(f"core_migrations applied: {[a['version'] for a in _cm['applied']]}")
+            _drift = await schema_drift.check_drift(db_pool)
+            schema_drift.log_report(_drift)
+        except Exception as e:
+            logger.error(f"core_migrations/schema_drift failed (non-fatal, continuing startup): {e}")
+
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
         redis_client = aioredis.from_url(
@@ -1232,6 +1249,10 @@ logger.info("Alerts Management API endpoints registered at /api/v1/monitoring/al
 # Federation mesh management (March 2026)
 app.include_router(federation_router)
 logger.info("Federation API endpoints registered at /api/v1/federation")
+
+# Core-table schema-drift check (2026-06-13)
+app.include_router(schema_drift_router)
+logger.info("Schema-drift API endpoints registered at /api/v1/admin/schema-drift")
 
 # Webhooks Management (January 2026)
 app.include_router(webhooks_router)
