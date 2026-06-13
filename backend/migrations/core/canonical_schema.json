@@ -300,8 +300,7 @@
     },
     "credit_packages": {
       "id": {
-        "class": "uuid",
-        "signoff": "commander int->uuid (4 rows, no FK deps; fixes live admin edit/delete)"
+        "class": "uuid"
       },
       "package_code": {
         "class": "string"
