@@ -138,6 +138,11 @@ def _make_client(monkeypatch):
     pool = FakePool()
     audit = FakeAuditLogger()
     monkeypatch.setenv("FEDERATION_LOCAL_NODE_ID", "self-node")
+    # Isolate from ambient / other-test env pollution: the platform_settings PUT
+    # handler sets os.environ[FEDERATION_DEFAULT_TRUST_MODE] in-process (by design,
+    # for immediate effect), which leaks across tests in one pytest process. Clear
+    # it so the default resolves from the (empty) FakePool platform_settings -> "full".
+    monkeypatch.delenv("FEDERATION_DEFAULT_TRUST_MODE", raising=False)
     monkeypatch.setattr(contracts_api, "audit_logger", audit)
 
     app = FastAPI()
