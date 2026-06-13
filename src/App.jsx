@@ -314,6 +314,7 @@ const SystemAuditLog = lazy(() => import('./pages/admin/SystemAuditLog'));
 // Federation pages (lazy loaded)
 const FederationSettings = lazy(() => import('./pages/admin/FederationSettings'));
 const FederationNodes = lazy(() => import('./pages/admin/FederationNodes'));
+const FederationContracts = lazy(() => import('./pages/admin/FederationContracts'));
 const NetworkVPNKeys = lazy(() => import('./pages/admin/NetworkVPNKeys'));
 const FederationTopology = lazy(() => import('./pages/admin/FederationTopology'));
 const FederationServiceCatalog = lazy(() => import('./pages/admin/FederationServiceCatalog'));
@@ -670,6 +671,7 @@ function AppRoutes() {
                   <Route path="infra/migration" element={<MigrationWizard />} />
                   <Route path="infra/federation" element={<FederationSettings />} />
                   <Route path="infra/federation/nodes" element={<FederationNodes />} />
+                  <Route path="infra/federation/contracts" element={<FederationContracts />} />
                   <Route path="infra/federation/topology" element={<FederationTopology />} />
                   <Route path="infra/federation/services" element={<FederationServiceCatalog />} />
 

@@ -538,6 +538,13 @@ export const routes = {
             name: 'Federation Nodes',
             nav: false
           },
+          federationContracts: {
+            path: '/admin/infra/federation/contracts',
+            component: 'FederationContracts',
+            roles: ['admin'],
+            name: 'Federation Contracts',
+            icon: 'ShieldCheckIcon'
+          },
           federationTopology: {
             path: '/admin/infra/federation/topology',
             component: 'FederationTopology',

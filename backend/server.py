@@ -193,6 +193,7 @@ from routers.federation import router as federation_router
 
 # Federation Settings API (March 2026) - GUI configuration for federation
 from federation_settings_api import router as federation_settings_router
+from federation_contracts_api import router as federation_contracts_router
 from federation.startup import start_federation_agent, stop_federation_agent
 
 # Webhooks Management API (January 2026)
@@ -1313,6 +1314,8 @@ logger.info("Billing Events API endpoints registered at /api/v1/billing/events")
 # Federation Settings API (Admin GUI) - March 2026
 app.include_router(federation_settings_router)
 logger.info("Federation Settings API endpoints registered at /api/v1/admin/federation")
+app.include_router(federation_contracts_router)
+logger.info("Federation Contracts API endpoints registered at /api/v1/admin/federation/contracts")
 
 # Billing Analytics API
 app.include_router(billing_analytics_router)
