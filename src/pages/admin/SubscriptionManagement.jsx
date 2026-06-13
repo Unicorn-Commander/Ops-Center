@@ -891,12 +891,12 @@ const SubscriptionManagement = () => {
             <Grid item xs={12} md={4}>
               <TextField
                 fullWidth
-                label="Credit Markup (%)"
+                label="LLM Markup %"
                 type="number"
                 value={formData.llm_markup_percentage}
                 onChange={(e) => setFormData({ ...formData, llm_markup_percentage: parseFloat(e.target.value) || 0 })}
                 helperText="Markup added on LLM cost (e.g. 25 = +25%)"
-                inputProps={{ min: 0, step: 0.5 }}
+                inputProps={{ min: 0, step: 0.01 }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -1106,12 +1106,12 @@ const SubscriptionManagement = () => {
             <Grid item xs={12} md={4}>
               <TextField
                 fullWidth
-                label="Credit Markup (%)"
+                label="LLM Markup %"
                 type="number"
                 value={formData.llm_markup_percentage}
                 onChange={(e) => setFormData({ ...formData, llm_markup_percentage: parseFloat(e.target.value) || 0 })}
                 helperText="Markup added on LLM cost (e.g. 25 = +25%)"
-                inputProps={{ min: 0, step: 0.5 }}
+                inputProps={{ min: 0, step: 0.01 }}
               />
             </Grid>
             <Grid item xs={12}>

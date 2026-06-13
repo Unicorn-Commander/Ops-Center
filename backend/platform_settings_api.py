@@ -14,6 +14,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Audit logging for config writes. Imported defensively so this module still
+# loads in minimal/standalone contexts (e.g. ad-hoc scripts) where the audit
+# logger's filesystem/SQLite setup is unavailable; PUTs simply skip auditing
+# rather than failing in that case.
+try:
+    from audit_logger import audit_logger
+except Exception as _audit_exc:  # pragma: no cover - environment dependent
+    audit_logger = None
+    logging.getLogger(__name__).debug(
+        "audit_logger unavailable in platform_settings_api: %s", _audit_exc
+    )
+
 router = APIRouter(prefix="/api/v1/platform", tags=["Platform Settings"])
 
 # Security: Only admin role can access platform settings
@@ -155,6 +167,94 @@ PLATFORM_SETTINGS = {
         "required": False,
         "test_connection": True
     },
+
+    # ------------------------------------------------------------------
+    # Scalar platform-config keys (non-credential).
+    #
+    # These are plain configuration values (not secrets) that the platform
+    # reads at runtime. They round-trip through the PUT handler into the
+    # `platform_settings` PostgreSQL table under their exact key (see the
+    # INSERT ... ON CONFLICT in update_platform_settings). That table-write
+    # is load-bearing for FEDERATION_DEFAULT_TRUST_MODE: the live federation
+    # enforcer (backend/federation/trust.py, refresh()) does
+    #   SELECT value FROM platform_settings WHERE key='FEDERATION_DEFAULT_TRUST_MODE'
+    # and applies it within its ~30s cache with NO container restart. So a GUI
+    # edit to that key takes effect on the mesh in ≤30s.
+    #
+    # Extra registry metadata understood here:
+    #   "options"    -> list of allowed values; renders as a <select> in the GUI
+    #                   and is enforced server-side on PUT (400 on invalid value)
+    #   "default"    -> effective default surfaced by GET when neither the
+    #                   platform_settings table nor the env var has a value
+    #   "admin_only" -> documentation flag; all /platform endpoints already sit
+    #                   behind require_admin, so this is advisory only
+    # ------------------------------------------------------------------
+
+    # Federation Settings
+    "FEDERATION_DEFAULT_TRUST_MODE": {
+        "description": (
+            "Default trust mode for unknown federation peers (peers with no "
+            "explicit contract row in federation_peers). `isolated` = "
+            "deny-by-default (no inbound visibility, inbound calls, or outbound "
+            "routing). The live enforcer reads this from the platform_settings "
+            "table and applies it within ~30s — no restart required."
+        ),
+        "category": "federation",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False,
+        "options": ["full", "scoped", "consumer", "publisher", "isolated"],
+        "default": "full",
+        "admin_only": True,
+    },
+    "FEDERATION_SERVICE_PROFILE": {
+        "description": (
+            "Deployment service-discovery profile. Controls which local "
+            "containers the node agent advertises to the federation mesh: "
+            "`home` (magicunicorn.dev GPU stack), `vps` (unicorncommander.ai), "
+            "`centerdeep` (search tools), or `custom` (parse "
+            "FEDERATION_CUSTOM_SERVICES JSON). Picked up on the next discovery "
+            "cycle; restart the node agent if it does not refresh."
+        ),
+        "category": "federation",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False,
+        "options": ["home", "vps", "centerdeep", "custom"],
+        "default": "home",
+        "admin_only": True,
+    },
+
+    # Billing Settings (scalar toggles — distinct from the credential keys above)
+    "BILLING_ENABLED": {
+        "description": (
+            "Master billing toggle. `true` = credit checking and metering are "
+            "active for non-exempt tiers. `false` = disable ALL credit checking "
+            "(e.g. personal or fully-internal deployments). Read by the credit "
+            "deduction middleware."
+        ),
+        "category": "billing",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False,
+        "options": ["true", "false"],
+        "default": "true",
+        "admin_only": True,
+    },
+    "CREDIT_EXEMPT_TIERS": {
+        "description": (
+            "Comma-separated list of tier codes exempt from credit metering "
+            "(e.g. `free,vip_founder,internal`). Members of these tiers are "
+            "never charged credits even when BILLING_ENABLED=true. Use `*` to "
+            "exempt every tier."
+        ),
+        "category": "billing",
+        "is_secret": False,
+        "required": False,
+        "test_connection": False,
+        "default": "free,vip_founder,vip,founder,admin,unlimited,internal",
+        "admin_only": True,
+    },
 }
 
 def mask_secret(value: str) -> str:
@@ -168,8 +268,10 @@ def get_current_env_value(key: str) -> Optional[str]:
     Get current setting value
 
     Priority:
-    1. Database (if saved via settings UI)
+    1. Database (platform_settings table — written via settings UI)
     2. Environment variable (from docker-compose or shell)
+    3. Registry "default" (for non-secret scalar keys that declare one), so the
+       GUI shows the effective default before any explicit override exists.
     """
     try:
         import psycopg2
@@ -199,7 +301,12 @@ def get_current_env_value(key: str) -> Optional[str]:
         logger.debug(f"Database lookup failed for {key}, using environment: {e}")
 
     # Fall back to environment variable
-    return os.getenv(key)
+    env_value = os.getenv(key)
+    if env_value is not None:
+        return env_value
+
+    # Fall back to the registry-declared default (scalar config keys only).
+    return PLATFORM_SETTINGS.get(key, {}).get("default")
 
 @router.get("/settings", summary="Get all platform settings")
 async def get_platform_settings(admin: bool = Depends(require_admin)):
@@ -221,6 +328,10 @@ async def get_platform_settings(admin: bool = Depends(require_admin)):
             "is_secret": config["is_secret"],
             "required": config["required"],
             "test_connection": config["test_connection"],
+            # Optional scalar-config metadata (None for credential keys):
+            "options": config.get("options"),       # -> renders a <select>
+            "default": config.get("default"),
+            "admin_only": config.get("admin_only", False),
             "is_configured": bool(current_value),
             "last_updated": None  # TODO: Track in database
         })
@@ -258,6 +369,9 @@ async def get_setting(key: str, admin: bool = Depends(require_admin)):
         "is_secret": config["is_secret"],
         "required": config["required"],
         "test_connection": config["test_connection"],
+        "options": config.get("options"),
+        "default": config.get("default"),
+        "admin_only": config.get("admin_only", False),
         "is_configured": bool(current_value)
     }
 
@@ -287,6 +401,22 @@ async def update_platform_settings(
             status_code=400,
             detail=f"Invalid setting keys: {', '.join(invalid_keys)}"
         )
+
+    # Validate enum-constrained values (keys that declare an "options" list).
+    # This fail-closed check is what stops, e.g., a typo'd trust mode from
+    # reaching the platform_settings table and being applied by the live
+    # federation enforcer. trust.py itself also fails closed on an unknown
+    # value, but rejecting it here gives the admin immediate feedback.
+    for key, value in update.settings.items():
+        options = PLATFORM_SETTINGS[key].get("options")
+        if options is not None and value not in options:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid value for {key}: {value!r}. "
+                    f"Allowed values: {', '.join(options)}"
+                ),
+            )
 
     try:
         import psycopg2
@@ -339,6 +469,32 @@ async def update_platform_settings(
         conn.close()
 
         logger.info(f"Updated {updated_count} platform settings")
+
+        # Audit the config write. Config writes previously had NO audit trail.
+        # Record only the KEYS that changed (never secret values). For
+        # non-secret scalar keys we also record the new value so the trail
+        # shows what a federation/billing toggle was set to.
+        if audit_logger is not None:
+            try:
+                changed_keys = list(update.settings.keys())
+                non_secret_values = {
+                    k: v for k, v in update.settings.items()
+                    if not PLATFORM_SETTINGS[k]["is_secret"]
+                }
+                await audit_logger.log(
+                    action="platform.settings.update",
+                    result="success",
+                    resource_type="platform_setting",
+                    resource_id=",".join(changed_keys),
+                    metadata={
+                        "keys": changed_keys,
+                        "values": non_secret_values,  # secrets omitted by design
+                        "restart_required": update.restart_required,
+                    },
+                )
+            except Exception as audit_exc:
+                # Never let an audit failure undo a successful config write.
+                logger.warning(f"Failed to audit platform settings update: {audit_exc}")
 
         # Restart container if requested
         restart_output = None

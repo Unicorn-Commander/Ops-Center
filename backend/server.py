@@ -194,6 +194,10 @@ from routers.federation import router as federation_router
 # Federation Settings API (March 2026) - GUI configuration for federation
 from federation_settings_api import router as federation_settings_router
 from federation.startup import start_federation_agent, stop_federation_agent
+# Admin GUI: pricing/policy config (June 2026)
+from app_model_policy_api import router as app_model_policy_router
+from credit_packages_admin_api import router as credit_packages_admin_router
+from federation_agent_pricing_api import router as federation_agent_pricing_router
 
 # Webhooks Management API (January 2026)
 from routers.webhooks_api import router as webhooks_router
@@ -1313,6 +1317,12 @@ logger.info("Billing Events API endpoints registered at /api/v1/billing/events")
 # Federation Settings API (Admin GUI) - March 2026
 app.include_router(federation_settings_router)
 logger.info("Federation Settings API endpoints registered at /api/v1/admin/federation")
+
+# Admin GUI: pricing/policy config (June 2026)
+app.include_router(app_model_policy_router)
+app.include_router(credit_packages_admin_router)
+app.include_router(federation_agent_pricing_router)
+logger.info("Admin pricing/policy API endpoints registered (inference-policy, credit-packages, agent-pricing)")
 
 # Billing Analytics API
 app.include_router(billing_analytics_router)

@@ -218,6 +218,12 @@ export const routes = {
             component: 'Authentication',
             roles: ['admin'],
             name: 'Authentication'
+          },
+          orgFeatures: {
+            path: '/admin/people/org-features',
+            component: 'OrgFeatures',
+            roles: ['admin'],
+            name: 'Org Feature Grants'
           }
         }
       },
@@ -263,6 +269,24 @@ export const routes = {
             component: 'CreditPurchase',
             roles: ['admin'],
             name: 'Credit Management'
+          },
+          inferencePolicy: {
+            path: '/admin/billing/inference-policy',
+            component: 'AppModelPolicy',
+            roles: ['admin'],
+            name: 'Inference Pricing'
+          },
+          creditPacks: {
+            path: '/admin/billing/credit-packs',
+            component: 'CreditPackages',
+            roles: ['admin'],
+            name: 'Credit Packs'
+          },
+          agentPricing: {
+            path: '/admin/billing/agent-pricing',
+            component: 'AgentPricing',
+            roles: ['admin'],
+            name: 'Agent Pricing'
           },
           // Keep old paths routable but hidden from nav
           systemBilling: {

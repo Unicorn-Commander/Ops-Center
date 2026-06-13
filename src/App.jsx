@@ -286,6 +286,11 @@ const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionMana
 const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
 const WhiteLabelBuilder = lazy(() => import('./pages/admin/WhiteLabelBuilder'));
 const DynamicPricingManagement = lazy(() => import('./pages/admin/DynamicPricingManagement'));
+// Admin pricing/policy pages (June 2026)
+const AppModelPolicy = lazy(() => import('./pages/admin/AppModelPolicy'));
+const CreditPackages = lazy(() => import('./pages/admin/CreditPackages'));
+const AgentPricing = lazy(() => import('./pages/admin/AgentPricing'));
+const OrgFeatures = lazy(() => import('./pages/admin/OrgFeatures'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const UserDetail = lazy(() => import('./pages/UserDetail'));
 // Consolidated: Using LocalUserManagement for all local user operations
@@ -619,6 +624,7 @@ function AppRoutes() {
                   <Route path="people/organizations/:orgId/billing" element={<OrganizationBillingPro />} />
                   <Route path="people/invite-codes" element={<InviteCodesManagement />} />
                   <Route path="people/authentication" element={<Authentication />} />
+                  <Route path="people/org-features" element={<OrgFeatures />} />
 
                   {/* Billing & Plans */}
                   <Route path="billing/tiers" element={<SubscriptionManagement />} />
@@ -632,6 +638,9 @@ function AppRoutes() {
                   <Route path="billing/overview" element={<SystemBillingOverview />} />
                   <Route path="billing/credits" element={<CreditPurchase />} />
                   <Route path="billing/credits/purchase" element={<CreditPurchase />} />
+                  <Route path="billing/inference-policy" element={<AppModelPolicy />} />
+                  <Route path="billing/credit-packs" element={<CreditPackages />} />
+                  <Route path="billing/agent-pricing" element={<AgentPricing />} />
 
                   {/* AI & Models */}
                   <Route path="ai" element={<LLMHub />} />

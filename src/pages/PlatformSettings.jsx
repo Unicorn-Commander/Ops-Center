@@ -19,7 +19,8 @@ import {
   DialogActions,
   CircularProgress,
   Tooltip,
-  Grid
+  Grid,
+  MenuItem
 } from '@mui/material';
 import {
   Visibility,
@@ -36,7 +37,9 @@ import {
   Key,
   Cloud,
   Domain,
-  Code
+  Code,
+  Hub,
+  AccountBalance
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -61,6 +64,8 @@ const PlatformSettings = () => {
     cloudflare: { icon: <Cloud />, color: '#F38020', label: 'Cloudflare DNS' },
     namecheap: { icon: <Domain />, color: '#FF6C02', label: 'NameCheap Domains' },
     forgejo: { icon: <Code />, color: '#609926', label: 'Forgejo Git' },
+    federation: { icon: <Hub />, color: '#7C3AED', label: 'Federation' },
+    billing: { icon: <AccountBalance />, color: '#0EA5E9', label: 'Billing' },
     other: { icon: <Key />, color: '#9CA3AF', label: 'Other' }
   };
 
@@ -368,37 +373,59 @@ const PlatformSettings = () => {
                   const currentValue = editedSettings[setting.key] ?? setting.value ?? '';
                   const isSecret = setting.is_secret;
                   const showValue = showSecrets[setting.key] || !isSecret;
+                  // Enum-constrained scalar keys (e.g. FEDERATION_DEFAULT_TRUST_MODE)
+                  // carry an `options` list and render as a dropdown.
+                  const hasOptions = Array.isArray(setting.options) && setting.options.length > 0;
 
                   return (
                     <Grid item xs={12} key={setting.key}>
-                      <TextField
-                        fullWidth
-                        label={setting.key}
-                        value={currentValue}
-                        onChange={(e) => handleEdit(setting.key, e.target.value)}
-                        type={showValue ? 'text' : 'password'}
-                        helperText={setting.description}
-                        required={setting.required}
-                        InputProps={{
-                          endAdornment: isSecret && (
-                            <InputAdornment position="end">
-                              <IconButton
-                                onClick={() => handleToggleSecret(setting.key)}
-                                edge="end"
-                              >
-                                {showValue ? <VisibilityOff /> : <Visibility />}
-                              </IconButton>
-                            </InputAdornment>
-                          ),
-                          startAdornment: setting.is_configured && !editedSettings[setting.key] && (
-                            <InputAdornment position="start">
-                              <Tooltip title="Currently configured">
-                                <CheckCircle color="success" fontSize="small" />
-                              </Tooltip>
-                            </InputAdornment>
-                          )
-                        }}
-                      />
+                      {hasOptions ? (
+                        <TextField
+                          select
+                          fullWidth
+                          label={setting.key}
+                          value={currentValue}
+                          onChange={(e) => handleEdit(setting.key, e.target.value)}
+                          helperText={setting.description}
+                          required={setting.required}
+                        >
+                          {setting.options.map(opt => (
+                            <MenuItem key={opt} value={opt}>
+                              {opt}
+                              {setting.default === opt ? ' (default)' : ''}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      ) : (
+                        <TextField
+                          fullWidth
+                          label={setting.key}
+                          value={currentValue}
+                          onChange={(e) => handleEdit(setting.key, e.target.value)}
+                          type={showValue ? 'text' : 'password'}
+                          helperText={setting.description}
+                          required={setting.required}
+                          InputProps={{
+                            endAdornment: isSecret && (
+                              <InputAdornment position="end">
+                                <IconButton
+                                  onClick={() => handleToggleSecret(setting.key)}
+                                  edge="end"
+                                >
+                                  {showValue ? <VisibilityOff /> : <Visibility />}
+                                </IconButton>
+                              </InputAdornment>
+                            ),
+                            startAdornment: setting.is_configured && !editedSettings[setting.key] && (
+                              <InputAdornment position="start">
+                                <Tooltip title="Currently configured">
+                                  <CheckCircle color="success" fontSize="small" />
+                                </Tooltip>
+                              </InputAdornment>
+                            )
+                          }}
+                        />
+                      )}
                     </Grid>
                   );
                 })}
