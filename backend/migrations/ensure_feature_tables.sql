@@ -160,6 +160,28 @@ CREATE TABLE IF NOT EXISTS credit_packages (
     CONSTRAINT discount_valid   CHECK (discount_percentage >= 0 AND discount_percentage <= 100)
 );
 
+-- Schema convergence: some older deployments created credit_packages with a
+-- legacy shape (id integer, name/price_cents NOT NULL, no stripe_* columns).
+-- CREATE TABLE IF NOT EXISTS above is a no-op there, so additively reconcile to
+-- the canonical columns the app reads, and relax legacy NOT NULLs the current
+-- code doesn't populate. Idempotent + safe on canonical nodes (all no-ops).
+ALTER TABLE credit_packages ADD COLUMN IF NOT EXISTS stripe_price_id   VARCHAR(255);
+ALTER TABLE credit_packages ADD COLUMN IF NOT EXISTS stripe_product_id VARCHAR(255);
+ALTER TABLE credit_packages ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'credit_packages' AND column_name = 'name'
+               AND is_nullable = 'NO') THEN
+        ALTER TABLE credit_packages ALTER COLUMN name DROP NOT NULL;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'credit_packages' AND column_name = 'price_cents'
+               AND is_nullable = 'NO') THEN
+        ALTER TABLE credit_packages ALTER COLUMN price_cents DROP NOT NULL;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_credit_packages_code   ON credit_packages(package_code);
 CREATE INDEX IF NOT EXISTS idx_credit_packages_active ON credit_packages(is_active);
 
