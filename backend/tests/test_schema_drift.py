@@ -219,7 +219,12 @@ def test_shipped_contract_is_valid_and_flags_known_signoff_columns():
     tables = contract["tables"]
     assert len(tables) == 16
     signoff = {f"{t}.{c}" for t, cols in tables.items() for c, s in cols.items() if "signoff" in s}
-    assert signoff == {"credit_packages.id", "user_credits.user_id", "user_provider_keys.user_id"}
+    # signoff flags mark the PK/identity type changes; each is cleared once signed
+    # off + applied, so the remaining set must always be a subset of the known three.
+    known = {"credit_packages.id", "user_credits.user_id", "user_provider_keys.user_id"}
+    assert signoff <= known
+    # credit_packages.id was signed off + applied (both nodes uuid) -> resolved.
+    assert "credit_packages.id" not in signoff
 
 
 def test_shipped_contract_reports_ok_against_itself():
