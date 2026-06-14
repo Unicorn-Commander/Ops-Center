@@ -169,8 +169,12 @@ async def _pick_model(gateway_url: str, master_key: str, client: httpx.AsyncClie
     if _CONFIGURED_MODEL and (_CONFIGURED_MODEL in ids or not ids):
         chosen = _CONFIGURED_MODEL
     if not chosen and ids:
-        # prefer small/local chat models for a fast, free help experience
-        prefer = ("local", "qwen3-30b", "gpt-oss", "gemma", "llama-3.2", "qwen3.6")
+        # Prefer models that RELIABLY emit OpenAI tool_calls (the Guide's account
+        # lookups depend on it) and are still cheap/local. Measured on the home
+        # gateway: qwen3.x-35b-a3b + llama-3.3-70b = 3/3; gpt-oss-20b = mostly but
+        # prompt-sensitive; qwen3-30b-a3b = 0/3 (emits text, never structured).
+        prefer = ("qwen3.6-35b", "qwen3.5-35b", "llama-3.3-70b", "qwen3.6", "qwen3.5",
+                  "gpt-oss-20b", "gemma", "llama-3.2", "local")
         for p in prefer:
             match = next((m for m in ids if p in m.lower()), None)
             if match:
@@ -328,15 +332,13 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
     system = GUIDE_SYSTEM_PROMPT
     if tools_enabled:
         system += (
-            "\n\nACCOUNT LOOKUP: You have read-only tools to look up THIS signed-in user's own "
-            "account (credit balance, usage, plan, invoices, API key names, account summary). "
-            "When the user asks about their own balance, usage, plan, charges/invoices, or API keys, "
-            "CALL the appropriate tool and answer from the real returned data — never guess or invent "
-            "numbers. Call the tool immediately when account data is needed; do not narrate your "
-            "reasoning before calling. The tools are read-only and scoped to this user; you still "
-            "cannot change anything or see anyone else's data. Never reveal an API key secret (only "
-            "names/prefixes exist). If a tool returns an error, tell the user plainly and suggest the "
-            "relevant page."
+            "\n\nACCOUNT LOOKUP: You have READ-ONLY tools for THIS signed-in user's own account "
+            "(balance, usage, plan, invoices, API key names, summary). When the user asks about their "
+            "own balance/usage/plan/charges/invoices/API keys, call the appropriate tool immediately "
+            "and answer from the real returned data — do not narrate your reasoning, and never invent "
+            "numbers. Tools are read-only and scoped to this user (you can't change anything or see "
+            "anyone else's data); never reveal an API key secret. If a tool errors, say so plainly and "
+            "point to the relevant page."
         )
     if payload.page:
         system += f"\n\nThe user is currently on: {payload.page}"
