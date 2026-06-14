@@ -485,6 +485,11 @@ function AppRoutes() {
   const location = useLocation();
   const [showHelp, setShowHelp] = useState(false);
   const isAdminShellRoute = location.pathname.startsWith('/admin') && location.pathname !== '/admin/login';
+  // Role (same source Layout uses) — the Help button/panel is an admin affordance;
+  // end users get the floating Guide bubble instead.
+  let userRole = 'viewer';
+  try { userRole = JSON.parse(localStorage.getItem('userInfo') || '{}').role || 'viewer'; } catch (_) { userRole = 'viewer'; }
+  const isAdmin = userRole === 'admin';
   
   // Keyboard shortcut for help (only on admin pages)
   useEffect(() => {
@@ -836,8 +841,9 @@ function AppRoutes() {
         </Suspense>
       )}
 
-      {/* Floating Help / Ask-the-Guide launcher (visible entry; '?' also opens it) */}
-      {isAdminShellRoute && !showHelp && (
+      {/* Floating Help / Ask-the-Guide launcher — admins only (end users get the
+          Guide bubble; the '?' shortcut still opens the panel for anyone). */}
+      {isAdminShellRoute && !showHelp && isAdmin && (
         <button
           onClick={() => setShowHelp(true)}
           title="Help & The Guide  (press ?)"
