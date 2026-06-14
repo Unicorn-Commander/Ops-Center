@@ -14,6 +14,7 @@ billed for asking for help and a malicious prompt can't run anything.
 
 import logging
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -113,6 +114,21 @@ class GuideAskRequest(BaseModel):
     history: List[GuideMessage] = Field(default_factory=list)
 
 
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking(text: str) -> str:
+    """Reasoning models (Qwen3/DeepSeek-style) emit <think>...</think> chain-of-
+    thought. Strip it so the Guide shows only the answer."""
+    if not text:
+        return text
+    # Remove properly-closed reasoning blocks, then any stray/unclosed tags
+    # (keeping the answer text that follows a bare <think> prefix).
+    text = _THINK_BLOCK.sub("", text)
+    text = re.sub(r"</?think>", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 async def _resolve_gateway() -> tuple:
     try:
         from gateway_key_provisioning import _resolve_gateway_creds
@@ -194,6 +210,7 @@ async def guide_ask(payload: GuideAskRequest, request: Request, user_id: str = D
             return {"answer": fallback, "ok": False}
         data = resp.json()
         answer = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        answer = _strip_thinking(answer)
         return {"answer": answer or fallback, "ok": bool(answer), "model": model}
     except Exception as exc:
         logger.warning("Guide ask failed for user %s: %s", user_id, exc)
