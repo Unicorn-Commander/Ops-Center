@@ -835,6 +835,23 @@ function AppRoutes() {
           />
         </Suspense>
       )}
+
+      {/* Floating Help / Ask-the-Guide launcher (visible entry; '?' also opens it) */}
+      {isAdminShellRoute && !showHelp && (
+        <button
+          onClick={() => setShowHelp(true)}
+          title="Help & The Guide  (press ?)"
+          aria-label="Open Help and ask the Guide"
+          className="fixed bottom-20 right-5 z-40 flex items-center gap-2 pl-3 pr-4 py-2 rounded-full shadow-lg text-white bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 transition-colors"
+        >
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3l1.6 3.8L17.5 8.4 13.6 10 12 13.8 10.4 10 6.5 8.4 10.4 6.8z" />
+            <circle cx="18" cy="17" r="1.5" />
+            <circle cx="6" cy="16" r="1" />
+          </svg>
+          <span className="text-sm font-medium">Help</span>
+        </button>
+      )}
     </>
   );
 }
