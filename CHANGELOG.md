@@ -5,6 +5,17 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.1] - 2026-06-14
+
+### Added
+- **`revoke_api_key`** — second confirm-gated mutation, completing the API-key self-service
+  lifecycle (create · list · revoke). The Guide lists the user's keys to find the right id,
+  then proposes a revoke; the confirm card spells out that any app using the key stops working
+  immediately. Generalized the pending-action record to carry method/path/body (supports the
+  `DELETE /account/uc-api-keys/{id}` path param), with `key_id` validated against a strict
+  pattern to block path injection. Read tools execute before a same-turn write proposal, so the
+  list→revoke chain resolves the real key id before the confirm card is shown.
+
 ## [3.9.0] - 2026-06-14
 
 **Personal Account Assistant — Phase 2 (confirm-gated mutations).** The Guide can now

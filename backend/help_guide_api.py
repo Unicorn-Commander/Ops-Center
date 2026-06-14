@@ -326,8 +326,6 @@ _ALLOWED_KEY_SCOPES = ("llm:inference", "llm:models")
 WRITE_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "create_api_key",
-        "method": "POST",
-        "path": "/api/v1/account/uc-api-keys",
         "confirm_label": "Create key",
         "description": (
             "PROPOSE creating a new API key for the signed-in user. This does NOT execute — the "
@@ -346,8 +344,26 @@ WRITE_TOOLS: List[Dict[str, Any]] = [
             "required": ["name"],
         },
     },
+    {
+        "name": "revoke_api_key",
+        "confirm_label": "Revoke key",
+        "description": (
+            "PROPOSE revoking (deactivating) one of the user's existing API keys. This does NOT "
+            "execute — the user must confirm. You need the key's id: if you don't have it, call "
+            "list_my_api_keys FIRST, then pass its key_id (and key_name, for the confirmation display)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key_id": {"type": "string", "description": "The id of the key to revoke (from list_my_api_keys)."},
+                "key_name": {"type": "string", "description": "The key's name, for the confirmation display."},
+            },
+            "required": ["key_id"],
+        },
+    },
 ]
 _WRITE_BY_NAME = {t["name"]: t for t in WRITE_TOOLS}
+_KEY_ID_RE = re.compile(r"^[0-9a-fA-F-]{8,64}$")  # plain id only — blocks path injection into the URL
 
 
 def _write_tools_openai() -> List[Dict[str, Any]]:
@@ -358,9 +374,10 @@ def _write_tools_openai() -> List[Dict[str, Any]]:
 
 
 def _prepare_write(tool_name: str, raw: Dict[str, Any]) -> tuple:
-    """Validate+normalize the model's proposed params. Returns
-    (params, title, summary). Raises ValueError(clarifying_question) if the
-    proposal is incomplete (the Guide then asks the user instead of proposing)."""
+    """Validate+normalize the model's proposed params into a concrete call.
+    Returns (method, path, body, title, summary). Raises ValueError(clarifying
+    question) if the proposal is incomplete — the Guide then asks the user
+    instead of proposing."""
     if tool_name == "create_api_key":
         name = (str(raw.get("name") or "")).strip()
         if not name:
@@ -372,10 +389,20 @@ def _prepare_write(tool_name: str, raw: Dict[str, Any]) -> tuple:
             days = 90
         perms = [p for p in (raw.get("permissions") or []) if p in _ALLOWED_KEY_SCOPES]
         perms = perms or list(_ALLOWED_KEY_SCOPES)
-        params = {"name": name, "expires_in_days": days, "permissions": perms}
-        title = "Create API key"
+        body = {"name": name, "expires_in_days": days, "permissions": perms}
         summary = f"Create API key “{name}” — scopes: {', '.join(perms)}; expires in {days} days."
-        return params, title, summary
+        return "POST", "/api/v1/account/uc-api-keys", body, "Create API key", summary
+
+    if tool_name == "revoke_api_key":
+        key_id = (str(raw.get("key_id") or "")).strip()
+        if not _KEY_ID_RE.match(key_id):
+            raise ValueError("Which key should I revoke? Tell me its name and I'll look up the right one.")
+        label = (str(raw.get("key_name") or "")).strip()
+        disp = f"“{label}”" if label else f"id {key_id[:8]}…"
+        summary = (f"Revoke API key {disp} — any app or script using it will stop working immediately. "
+                   "This can't be undone.")
+        return "DELETE", f"/api/v1/account/uc-api-keys/{key_id}", None, "Revoke API key", summary
+
     raise ValueError("That action isn't supported yet.")
 
 
@@ -451,12 +478,14 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
             "numbers. Tools are read-only and scoped to this user (you can't change anything or see "
             "anyone else's data); never reveal an API key secret. If a tool errors, say so plainly and "
             "point to the relevant page."
-            "\n\nACTIONS (require user confirmation): You can PROPOSE creating an API key via "
-            "create_api_key — when the user asks to create/make/generate an API key, call it with a "
-            "sensible 'name' (ask for a name if they didn't give one). It does NOT execute; the user "
-            "gets a Confirm button. You CANNOT change plans, buy credits, or make any payment — for "
-            "those, point the user to the page: upgrade/downgrade at /admin/billing/tiers (or My "
-            "Dashboard), buy credits at /admin/billing/credits. Never claim you performed an action."
+            "\n\nACTIONS (require user confirmation): You can PROPOSE two actions; neither executes "
+            "until the user clicks Confirm. (1) create_api_key — when the user wants a new API key, "
+            "call it with a sensible 'name' (ask for one if they didn't give it). (2) revoke_api_key — "
+            "when the user wants to delete/revoke a key, FIRST call list_my_api_keys to find the right "
+            "key, then call revoke_api_key with its key_id and key_name. You CANNOT change plans, buy "
+            "credits, or make any payment — for those, point the user to the page: upgrade/downgrade at "
+            "/admin/billing/tiers (or My Dashboard), buy credits at /admin/billing/credits. Never claim "
+            "you performed an action."
         )
     if payload.page:
         system += f"\n\nThe user is currently on: {payload.page}"
@@ -511,25 +540,61 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
                 tool_calls = msg.get("tool_calls") or []
 
                 if tool_calls and tools and tool_choice == "auto":
-                    # WRITE tool? Never execute here — validate, stash a single-use
+                    read_calls = [tc for tc in tool_calls
+                                  if ((tc.get("function") or {}).get("name") in _TOOL_BY_NAME)]
+                    write_calls = [tc for tc in tool_calls
+                                   if ((tc.get("function") or {}).get("name") in _WRITE_BY_NAME)]
+
+                    # READ tools execute first. A WRITE proposed in the same turn is
+                    # dropped and the model re-proposes next round with the real data
+                    # (e.g. list_my_api_keys → then revoke_api_key by id).
+                    if read_calls:
+                        # Some models emit the same call many times — dedup + cap.
+                        seen, deduped = set(), []
+                        for tc in read_calls:
+                            fn = (tc.get("function") or {})
+                            sig = (fn.get("name") or "", fn.get("arguments") or "")
+                            if sig in seen:
+                                continue
+                            seen.add(sig)
+                            deduped.append(tc)
+                            if len(deduped) >= _MAX_TOOLS_PER_ROUND:
+                                break
+                        messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": deduped})
+                        cache: Dict[str, Any] = {}
+                        for tc in deduped:
+                            tname = (tc.get("function") or {}).get("name") or ""
+                            if tname not in cache:
+                                cache[tname] = await _execute_account_tool(tname, session_token, client)
+                                used_tools.append(tname)
+                                logger.info("Guide account tool user=%s tool=%s ok=%s",
+                                            user_id, tname, not (isinstance(cache[tname], dict) and "error" in cache[tname]))
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.get("id") or tname,
+                                "name": tname,
+                                "content": json.dumps(cache[tname], default=str)[:_TOOL_RESULT_CAP],
+                            })
+                        rounds += 1
+                        continue
+
+                    # WRITE only → never execute here: validate, stash a single-use
                     # pending action, and hand the UI a Confirm/Cancel card.
-                    write_call = next((tc for tc in tool_calls
-                                       if ((tc.get("function") or {}).get("name") in _WRITE_BY_NAME)), None)
-                    if write_call:
-                        fn = write_call.get("function") or {}
+                    if write_calls:
+                        fn = write_calls[0].get("function") or {}
                         wname = fn.get("name")
                         try:
                             raw_args = json.loads(fn.get("arguments") or "{}")
                         except Exception:
                             raw_args = {}
                         try:
-                            params, title, summary = _prepare_write(wname, raw_args)
+                            method, path, body, title, summary = _prepare_write(wname, raw_args)
                         except ValueError as ve:
-                            # Incomplete proposal (e.g. missing name) — ask, don't propose.
+                            # Incomplete proposal (e.g. missing name/id) — ask, don't propose.
                             return {"answer": str(ve), "ok": True}
                         action_id = uuid.uuid4().hex
-                        _pending_set(action_id, {"user_id": user_id, "tool": wname, "params": params,
-                                                 "title": title, "summary": summary})
+                        _pending_set(action_id, {"user_id": user_id, "tool": wname, "method": method,
+                                                 "path": path, "body": body, "title": title, "summary": summary})
                         await _audit(request, user, f"guide.{wname}.proposed", "success",
                                      resource_type="api-key", metadata={"summary": summary})
                         logger.info("Guide proposed write user=%s tool=%s action=%s", user_id, wname, action_id)
@@ -540,38 +605,7 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
                                                "confirm_label": _WRITE_BY_NAME[wname].get("confirm_label", "Confirm")},
                             "ok": True, "model": model,
                         }
-
-                    # Some models emit the same tool call many times — dedup by
-                    # (name, arguments) and cap, so we make at most a few self-calls.
-                    seen, deduped = set(), []
-                    for tc in tool_calls:
-                        fn = (tc.get("function") or {})
-                        sig = (fn.get("name") or "", fn.get("arguments") or "")
-                        if sig in seen:
-                            continue
-                        seen.add(sig)
-                        deduped.append(tc)
-                        if len(deduped) >= _MAX_TOOLS_PER_ROUND:
-                            break
-                    # Record the assistant turn (only the deduped calls we'll answer),
-                    # execute each tool AS the user once, feed results back.
-                    messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": deduped})
-                    cache: Dict[str, Any] = {}
-                    for tc in deduped:
-                        tname = (tc.get("function") or {}).get("name") or ""
-                        if tname not in cache:
-                            cache[tname] = await _execute_account_tool(tname, session_token, client)
-                            used_tools.append(tname)
-                            logger.info("Guide account tool user=%s tool=%s ok=%s",
-                                        user_id, tname, not (isinstance(cache[tname], dict) and "error" in cache[tname]))
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id") or tname,
-                            "name": tname,
-                            "content": json.dumps(cache[tname], default=str)[:_TOOL_RESULT_CAP],
-                        })
-                    rounds += 1
-                    continue
+                    # else: only unrecognized tool calls — fall through to a text answer.
 
                 answer = _strip_thinking((msg.get("content") or "").strip())
                 return {"answer": answer or fallback, "ok": bool(answer), "model": model,
@@ -601,8 +635,9 @@ async def guide_confirm_action(payload: ConfirmActionRequest, request: Request,
         return {"ok": False, "detail": "That action isn't available to your account."}
 
     tool = _WRITE_BY_NAME.get(pending.get("tool", ""))
-    if not tool:
-        return {"ok": False, "detail": "Unknown action."}
+    method, path = pending.get("method"), pending.get("path")
+    if not tool or not method or not path:
+        return {"ok": False, "detail": "That action is no longer valid — please ask again."}
 
     session_token = request.cookies.get("session_token")
     csrf = request.cookies.get("csrf_token")
@@ -611,11 +646,11 @@ async def guide_confirm_action(payload: ConfirmActionRequest, request: Request,
     if csrf:                                   # satisfy the mutation endpoint's CSRF
         headers["X-CSRF-Token"] = csrf
         cookies["csrf_token"] = csrf
-    url = f"{_self_base_url()}{tool['path']}"
+    url = f"{_self_base_url()}{path}"
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.request(tool["method"], url, json=pending.get("params") or {},
+            resp = await client.request(method, url, json=pending.get("body"),
                                         headers=headers, cookies=cookies)
     except Exception as exc:
         logger.warning("Guide confirm self-call failed user=%s tool=%s: %s", user_id, tool["name"], exc)
