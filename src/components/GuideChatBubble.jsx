@@ -77,9 +77,9 @@ export default function GuideChatBubble() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
         {msgs.length === 0 && (
           <div className="text-sm text-gray-600 dark:text-gray-300 space-y-3">
-            <p>Hi! I’m the Guide. Ask me how anything works here — credits, billing, models, your account, and more. I’ll point you the right way (I can’t change settings for you).</p>
+            <p>Hi! I’m the Guide. Ask me how anything works here — credits, billing, models, federation — and I can also look up your own account (balance, usage, plan, invoices). I’ll point you the right way; I can’t change settings for you.</p>
             <div className="flex flex-wrap gap-1.5">
-              {['How do credits work?', 'How do I upgrade my plan?', 'Where are my invoices?', 'How do I get an API key?'].map((s) => (
+              {["What's my balance?", 'How much usage do I have left?', 'Show my recent invoices', 'How do credits work?'].map((s) => (
                 <button key={s} onClick={() => send(s)} className="text-xs px-2 py-1 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                   {s}
                 </button>

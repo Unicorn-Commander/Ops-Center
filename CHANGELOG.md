@@ -5,6 +5,28 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] - 2026-06-14
+
+**Personal Account Assistant — Phase 1 (read-only).** The Guide can now answer questions about
+the signed-in user's **own** account with real data.
+
+### Added
+- **Read-only account tools for The Guide** (`help_guide_api.py`): when a logged-in user asks
+  about their own balance, usage, plan, invoices, or API keys, the Guide calls a small set of
+  fixed, read-only tools and answers from real data — `get_my_credit_balance`, `get_my_usage`,
+  `get_my_plan`, `get_my_invoices`, `list_my_api_keys` (names/prefixes only — never a secret),
+  and `get_my_account_summary`. New discovery chips in the Guide bubble ("What's my balance?",
+  "How much usage do I have left?", "Show my recent invoices").
+- **Safety model:** every tool is a thin wrapper over an existing user-facing endpoint, invoked
+  via a localhost self-call that forwards **only the caller's session cookie** — so each
+  endpoint's own auth + RLS + RBAC re-run and the Guide can do nothing the user couldn't do
+  themselves in the UI. The LLM call stays internal (master key + local model = free); only the
+  tool *executions* run as the user. Tool paths/params are fixed server-side (the model only
+  picks which tool — no URL/param injection surface). Bounded tool-calling loop with graceful
+  fallback to plain help when the model/gateway doesn't support tools. Phase 1 is read-only;
+  mutations (upgrade/buy-credits/create-key) are a future Phase 2 behind confirmation + audit.
+- Configurable via `ACCOUNT_ASSISTANT_ENABLED` (default on) and `OPS_CENTER_SELF_URL`.
+
 ## [3.7.0] - 2026-06-14
 
 Comprehensive Help section + **The Guide** (end-user help agent).
