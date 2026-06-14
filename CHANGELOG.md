@@ -5,6 +5,26 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-06-14
+
+Comprehensive Help section + **The Guide** (end-user help agent).
+
+### Added
+- **Comprehensive, route-aware Help** (`HelpPanel.jsx` + `src/data/helpContent.js`): help for
+  ~40 admin routes across all 8 areas (billing, AI/models, infra/federation, people/access,
+  monitoring, integrations, platform), auto-selected by the current route, plus a searchable
+  **FAQ** tab (~20 Q&As) and refreshed Docs links. Content authored grounded in the real pages.
+- **The Guide** — a separate, end-user-facing help agent (distinct from Colonel, which is the
+  root-level admin agent). The Guide has **zero system access**: it cannot run any skill,
+  command, or change any setting — it only explains the platform and points to the right page.
+  Ops-center-native (calls the local inference gateway directly with an internal key + a local
+  model, so users are never billed and a prompt can't run anything). Backend `help_guide_api.py`
+  (`POST /api/v1/help/guide/ask`, seeded with the help knowledge), front-end "Ask the Guide" tab
+  with its own avatar.
+
+### Fixed
+- Stale sidebar version label (`v3.3.0` → live version).
+
 ## [3.6.0] - 2026-06-13
 
 Federation monetization complete + inference cost-recovery substrate. (Tracked in
