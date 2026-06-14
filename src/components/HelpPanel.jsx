@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { XMarkIcon, BookOpenIcon, AcademicCapIcon, QuestionMarkCircleIcon, ChatBubbleLeftRightIcon, MagnifyingGlassIcon, SparklesIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { helpContent, helpKeyForPath, guideFaqs } from '../data/helpContent';
+import GuideActionCard from './GuideActionCard';
 
 // Route-aware, comprehensive Help panel. Help content + FAQs live in
 // src/data/helpContent.js (also seeds the Colonel "Guide" persona). The panel
@@ -46,7 +47,7 @@ export default function HelpPanel({ isOpen, onClose, currentPage }) {
         body: JSON.stringify({ question: q, page: pathname, page_help: pageHelpText, history }),
       });
       const data = await res.json();
-      setGuideMsgs((prev) => [...prev, { role: 'assistant', content: data.answer || 'Sorry, I could not get an answer right now — try the FAQ tab.' }]);
+      setGuideMsgs((prev) => [...prev, { role: 'assistant', content: data.answer || 'Sorry, I could not get an answer right now — try the FAQ tab.', pendingAction: data.pending_action || null }]);
     } catch (e) {
       setGuideMsgs((prev) => [...prev, { role: 'assistant', content: "I'm having trouble reaching my knowledge service — try the FAQ tab in the meantime." }]);
     } finally {
@@ -127,7 +128,7 @@ export default function HelpPanel({ isOpen, onClose, currentPage }) {
                 </div>
               )}
               {guideMsgs.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                   <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
                     m.role === 'user'
                       ? 'bg-blue-600 text-white'
@@ -135,6 +136,9 @@ export default function HelpPanel({ isOpen, onClose, currentPage }) {
                   }`}>
                     {m.content}
                   </div>
+                  {m.pendingAction && (
+                    <div className="mt-1.5 w-[85%]"><GuideActionCard action={m.pendingAction} /></div>
+                  )}
                 </div>
               ))}
               {guideLoading && (

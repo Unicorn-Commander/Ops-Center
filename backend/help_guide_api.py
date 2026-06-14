@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -304,6 +305,122 @@ async def _execute_account_tool(name: str, session_token: Optional[str], client:
     return data
 
 
+# ============================================================================
+# Personal Account Assistant — Phase 2 (MUTATIONS, confirm-gated).
+#
+# A WRITE tool is NEVER auto-executed. When the model calls one, we validate the
+# params, stash a single-use "pending action" in Redis (owner-scoped, short-
+# lived), and return it to the UI as a Confirm/Cancel card. Only an explicit
+# POST /guide/confirm-action (as the same user, forwarding the session+CSRF
+# cookies) runs the underlying mutation endpoint — so the model can PROPOSE but
+# never DO, and the human approves the exact action. Every proposal + execution
+# is audited. Financial actions (upgrade/buy-credits) are intentionally NOT
+# tools here — the Guide points the user to the existing checkout UI instead, so
+# the agent never moves money. Phase 1 read tools stay above. See
+# ~/Documents/UC-Personal-Account-Assistant-Design.md.
+# ============================================================================
+
+_PENDING_PREFIX = "guide_pending:"  # stored via redis_session_manager (its own prefix is added)
+_ALLOWED_KEY_SCOPES = ("llm:inference", "llm:models")
+
+WRITE_TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "create_api_key",
+        "method": "POST",
+        "path": "/api/v1/account/uc-api-keys",
+        "confirm_label": "Create key",
+        "description": (
+            "PROPOSE creating a new API key for the signed-in user. This does NOT execute — the "
+            "user must confirm. Provide a short descriptive 'name'; if the user didn't give one, ask "
+            "for it instead of guessing."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short descriptive name, e.g. 'CI bot' or 'staging server'."},
+                "expires_in_days": {"type": "integer", "minimum": 1, "maximum": 3650,
+                                    "description": "Days until the key expires (1-3650). Default 90."},
+                "permissions": {"type": "array", "items": {"type": "string", "enum": list(_ALLOWED_KEY_SCOPES)},
+                                "description": "Scopes to grant. Default both."},
+            },
+            "required": ["name"],
+        },
+    },
+]
+_WRITE_BY_NAME = {t["name"]: t for t in WRITE_TOOLS}
+
+
+def _write_tools_openai() -> List[Dict[str, Any]]:
+    return [
+        {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
+        for t in WRITE_TOOLS
+    ]
+
+
+def _prepare_write(tool_name: str, raw: Dict[str, Any]) -> tuple:
+    """Validate+normalize the model's proposed params. Returns
+    (params, title, summary). Raises ValueError(clarifying_question) if the
+    proposal is incomplete (the Guide then asks the user instead of proposing)."""
+    if tool_name == "create_api_key":
+        name = (str(raw.get("name") or "")).strip()
+        if not name:
+            raise ValueError("Sure — what would you like to name the API key?")
+        name = name[:255]
+        try:
+            days = max(1, min(3650, int(raw.get("expires_in_days") or 90)))
+        except (TypeError, ValueError):
+            days = 90
+        perms = [p for p in (raw.get("permissions") or []) if p in _ALLOWED_KEY_SCOPES]
+        perms = perms or list(_ALLOWED_KEY_SCOPES)
+        params = {"name": name, "expires_in_days": days, "permissions": perms}
+        title = "Create API key"
+        summary = f"Create API key “{name}” — scopes: {', '.join(perms)}; expires in {days} days."
+        return params, title, summary
+    raise ValueError("That action isn't supported yet.")
+
+
+def _shape_write_result(tool_name: str, data: Any) -> Dict[str, Any]:
+    """Shape the underlying endpoint's response for the UI. For api-key creation
+    the full secret is passed through ONCE (shown once, never audited/logged)."""
+    if tool_name == "create_api_key" and isinstance(data, dict):
+        return {
+            "api_key": data.get("api_key"),          # full secret — shown once in the UI
+            "key_preview": data.get("key_preview"),
+            "key_name": data.get("key_name"),
+            "expires_at": data.get("expires_at"),
+            "warning": data.get("warning") or "Save this key now — you won't be able to see it again.",
+        }
+    return data if isinstance(data, dict) else {"result": data}
+
+
+def _pending_set(action_id: str, payload: Dict[str, Any]) -> None:
+    from redis_session import redis_session_manager
+    redis_session_manager.set(_PENDING_PREFIX + action_id, payload)
+
+
+def _pending_pop(action_id: str) -> Optional[Dict[str, Any]]:
+    """Get-and-delete (single use) so a proposal can't be replayed."""
+    from redis_session import redis_session_manager
+    data = redis_session_manager.get(_PENDING_PREFIX + action_id)
+    if data is not None:
+        redis_session_manager.delete(_PENDING_PREFIX + action_id)
+    return data
+
+
+async def _audit(request: Request, user: Dict[str, Any], action: str, result: str, **kw) -> None:
+    try:
+        from audit_logger import audit_logger
+        await audit_logger.log(
+            action=action, result=result,
+            user_id=user.get("user_id"), username=user.get("email"),
+            ip_address=(request.client.host if request.client else None),
+            user_agent=request.headers.get("user-agent"),
+            **kw,
+        )
+    except Exception as exc:  # never let auditing break the action
+        logger.debug("Guide audit log failed (%s): %s", action, exc)
+
+
 @router.post("/guide/ask")
 async def guide_ask(payload: GuideAskRequest, request: Request,
                     user: Dict[str, Any] = Depends(require_authenticated_user)):
@@ -334,6 +451,12 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
             "numbers. Tools are read-only and scoped to this user (you can't change anything or see "
             "anyone else's data); never reveal an API key secret. If a tool errors, say so plainly and "
             "point to the relevant page."
+            "\n\nACTIONS (require user confirmation): You can PROPOSE creating an API key via "
+            "create_api_key — when the user asks to create/make/generate an API key, call it with a "
+            "sensible 'name' (ask for a name if they didn't give one). It does NOT execute; the user "
+            "gets a Confirm button. You CANNOT change plans, buy credits, or make any payment — for "
+            "those, point the user to the page: upgrade/downgrade at /admin/billing/tiers (or My "
+            "Dashboard), buy credits at /admin/billing/credits. Never claim you performed an action."
         )
     if payload.page:
         system += f"\n\nThe user is currently on: {payload.page}"
@@ -366,7 +489,7 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
             if not model:
                 return {"answer": fallback, "ok": False}
 
-            tools = _account_tools_openai() if tools_enabled else None
+            tools = (_account_tools_openai() + _write_tools_openai()) if tools_enabled else None
             rounds = 0
             while True:
                 # Final round (rounds exhausted): force a text answer, no more tools.
@@ -388,6 +511,36 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
                 tool_calls = msg.get("tool_calls") or []
 
                 if tool_calls and tools and tool_choice == "auto":
+                    # WRITE tool? Never execute here — validate, stash a single-use
+                    # pending action, and hand the UI a Confirm/Cancel card.
+                    write_call = next((tc for tc in tool_calls
+                                       if ((tc.get("function") or {}).get("name") in _WRITE_BY_NAME)), None)
+                    if write_call:
+                        fn = write_call.get("function") or {}
+                        wname = fn.get("name")
+                        try:
+                            raw_args = json.loads(fn.get("arguments") or "{}")
+                        except Exception:
+                            raw_args = {}
+                        try:
+                            params, title, summary = _prepare_write(wname, raw_args)
+                        except ValueError as ve:
+                            # Incomplete proposal (e.g. missing name) — ask, don't propose.
+                            return {"answer": str(ve), "ok": True}
+                        action_id = uuid.uuid4().hex
+                        _pending_set(action_id, {"user_id": user_id, "tool": wname, "params": params,
+                                                 "title": title, "summary": summary})
+                        await _audit(request, user, f"guide.{wname}.proposed", "success",
+                                     resource_type="api-key", metadata={"summary": summary})
+                        logger.info("Guide proposed write user=%s tool=%s action=%s", user_id, wname, action_id)
+                        return {
+                            "answer": "Here's what I'll do — review and confirm below.",
+                            "pending_action": {"id": action_id, "tool": wname, "title": title,
+                                               "summary": summary,
+                                               "confirm_label": _WRITE_BY_NAME[wname].get("confirm_label", "Confirm")},
+                            "ok": True, "model": model,
+                        }
+
                     # Some models emit the same tool call many times — dedup by
                     # (name, arguments) and cap, so we make at most a few self-calls.
                     seen, deduped = set(), []
@@ -426,3 +579,68 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
     except Exception as exc:
         logger.warning("Guide ask failed for user %s: %s", user_id, exc)
         return {"answer": fallback, "ok": False}
+
+
+class ConfirmActionRequest(BaseModel):
+    action_id: str = Field(..., min_length=8, max_length=64)
+
+
+@router.post("/guide/confirm-action")
+async def guide_confirm_action(payload: ConfirmActionRequest, request: Request,
+                               user: Dict[str, Any] = Depends(require_authenticated_user)):
+    """Execute a previously-proposed write action — ONLY after the user clicks
+    Confirm. Runs the underlying mutation endpoint AS the user (forwards the
+    session + CSRF cookies → its own auth/RLS/RBAC re-run). Single-use + audited."""
+    user_id = user.get("user_id") or "unknown"
+    pending = _pending_pop(payload.action_id)
+    if not pending:
+        return {"ok": False, "detail": "This action expired or was already used — please ask again."}
+    if pending.get("user_id") != user_id:
+        await _audit(request, user, "guide.confirm.denied", "denied",
+                     metadata={"action_id": payload.action_id})
+        return {"ok": False, "detail": "That action isn't available to your account."}
+
+    tool = _WRITE_BY_NAME.get(pending.get("tool", ""))
+    if not tool:
+        return {"ok": False, "detail": "Unknown action."}
+
+    session_token = request.cookies.get("session_token")
+    csrf = request.cookies.get("csrf_token")
+    headers = {"Content-Type": "application/json"}
+    cookies = {"session_token": session_token or ""}
+    if csrf:                                   # satisfy the mutation endpoint's CSRF
+        headers["X-CSRF-Token"] = csrf
+        cookies["csrf_token"] = csrf
+    url = f"{_self_base_url()}{tool['path']}"
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.request(tool["method"], url, json=pending.get("params") or {},
+                                        headers=headers, cookies=cookies)
+    except Exception as exc:
+        logger.warning("Guide confirm self-call failed user=%s tool=%s: %s", user_id, tool["name"], exc)
+        await _audit(request, user, f"guide.{tool['name']}.confirmed", "error",
+                     resource_type="api-key", error_message=str(exc)[:300],
+                     metadata={"summary": pending.get("summary")})
+        return {"ok": False, "detail": "I couldn't reach the account service to complete that."}
+
+    if resp.status_code >= 400:
+        detail = "your session may have expired — try again" if resp.status_code in (401, 403) else f"it didn't go through (status {resp.status_code})"
+        await _audit(request, user, f"guide.{tool['name']}.confirmed", "failure",
+                     resource_type="api-key", error_message=f"{resp.status_code}",
+                     metadata={"summary": pending.get("summary")})
+        return {"ok": False, "detail": f"The action failed — {detail}."}
+
+    try:
+        data = resp.json()
+    except Exception:
+        data = {}
+    result = _shape_write_result(tool["name"], data)
+    # Audit success WITHOUT the secret (only the preview/name).
+    await _audit(request, user, f"guide.{tool['name']}.confirmed", "success",
+                 resource_type="api-key",
+                 resource_id=str(data.get("key_id")) if isinstance(data, dict) else None,
+                 metadata={"summary": pending.get("summary"),
+                           "key_preview": result.get("key_preview") if isinstance(result, dict) else None})
+    logger.info("Guide executed write user=%s tool=%s ok", user_id, tool["name"])
+    return {"ok": True, "tool": tool["name"], "result": result, "message": "Done!"}
