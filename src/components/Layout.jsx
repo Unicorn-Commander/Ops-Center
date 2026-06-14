@@ -75,6 +75,7 @@ import MobileBreadcrumbs from './MobileBreadcrumbs';
 import BottomNavBar from './BottomNavBar';
 import { lazy, Suspense } from 'react';
 const ColonelChatBubble = lazy(() => import('./colonel/ColonelChatBubble'));
+const GuideChatBubble = lazy(() => import('./GuideChatBubble'));
 
 // Icon mapping for dynamic icon resolution from route configuration
 const iconMap = {
@@ -652,6 +653,14 @@ export default function Layout({ children }) {
       {userRole === 'admin' && !location.pathname.startsWith('/admin/ai/colonel') && (
         <Suspense fallback={null}>
           <ColonelChatBubble />
+        </Suspense>
+      )}
+
+      {/* The Guide - end-user assistant (read-only, no system access). Shown to
+          non-admins as their floating help agent (Colonel is admin-only). */}
+      {userRole !== 'admin' && (
+        <Suspense fallback={null}>
+          <GuideChatBubble />
         </Suspense>
       )}
     </div>
