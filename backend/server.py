@@ -95,6 +95,7 @@ from litellm_routing_api import router as litellm_routing_router
 from billing_config_api import router as billing_config_router
 from pricing_rates_api import router as pricing_rates_router
 from litellm_api import router as litellm_api_router  # Chat completions, credits, BYOK
+from help_guide_api import router as help_guide_router  # The Guide — end-user help agent (no system access)
 from model_catalog_api import router as model_catalog_router  # Model catalog API
 from model_access_api import router as model_access_router  # Model access control (Epic 3.3)
 from litellm_credit_system import CreditSystem
@@ -1151,6 +1152,10 @@ logger.info("Admin subscription management registered at /api/v1/admin/subscript
 # Register tier check ForwardAuth router (for Traefik middleware)
 app.include_router(tier_check_router)
 logger.info("Tier check ForwardAuth endpoints registered at /api/v1/tier-check")
+
+# Register The Guide (end-user help agent — no system access, internal/local model)
+app.include_router(help_guide_router)
+logger.info("The Guide help-agent endpoint registered at /api/v1/help/guide")
 
 # Register user-facing subscription management router
 app.include_router(subscription_router)
