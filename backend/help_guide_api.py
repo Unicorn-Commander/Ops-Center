@@ -27,8 +27,13 @@ logger = logging.getLogger("help_guide")
 
 router = APIRouter(prefix="/api/v1/help", tags=["help"])
 
-# Reuse the platform's user-auth dependency (session cookie / Bearer / API key).
-from litellm_api import get_user_id  # noqa: E402
+# Authenticate via the platform's Redis-backed session dependency (same one the
+# rest of the user-facing app and the AuthMiddleware use). NB: litellm_api's
+# get_user_id reads an in-memory session dict that is wiped on every backend
+# restart — using it here makes the Guide 401 until the user re-logs in. The
+# Redis-backed dependency survives restarts and matches the cookie the account
+# tools forward to their self-calls.
+from auth_dependencies import require_authenticated_user  # noqa: E402
 
 GUIDE_NAME = os.getenv("HELP_GUIDE_NAME", "Guide")
 # Model is configurable; if unset or unavailable we auto-pick an available local
@@ -293,7 +298,8 @@ async def _execute_account_tool(name: str, session_token: Optional[str], client:
 
 
 @router.post("/guide/ask")
-async def guide_ask(payload: GuideAskRequest, request: Request, user_id: str = Depends(get_user_id)):
+async def guide_ask(payload: GuideAskRequest, request: Request,
+                    user: Dict[str, Any] = Depends(require_authenticated_user)):
     """Ask the Guide. Returns {answer}. Never bills the user (internal key +
     local model). For account questions it may call READ-ONLY account tools that
     run strictly as the signed-in user (forwarded session cookie → RLS/RBAC
@@ -302,6 +308,7 @@ async def guide_ask(payload: GuideAskRequest, request: Request, user_id: str = D
         "I'm having trouble reaching my knowledge service right now. "
         "Try the FAQ tab in this Help panel, or check the page you're on — most settings have an info banner."
     )
+    user_id = user.get("user_id") or "unknown"
     gateway_url, master_key = await _resolve_gateway()
     if not gateway_url or not master_key:
         return {"answer": fallback, "ok": False}
