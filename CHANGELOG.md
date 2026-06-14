@@ -5,6 +5,27 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.0] - 2026-06-14
+
+**Personal Account Assistant — Phase 2 (confirm-gated mutations).** The Guide can now
+*propose* account actions; nothing executes without an explicit user Confirm.
+
+### Added
+- **Confirm-card / pending-action framework** (`help_guide_api.py`): a WRITE tool is never
+  auto-executed. When the model calls one, the params are validated, a single-use pending
+  action is stashed in Redis (owner-scoped, short-lived), and the UI gets a Confirm/Cancel
+  card (`GuideActionCard.jsx`, wired into the Guide bubble + Help panel). Only an explicit
+  `POST /api/v1/help/guide/confirm-action` runs the underlying mutation — **as the user**
+  (forwards the session + CSRF cookies, so the endpoint's own auth/RLS/RBAC re-run). The
+  model can PROPOSE but never DO; the human approves the exact action. Every proposal and
+  execution is audited (`audit_logger`, secrets never logged).
+- **First mutation: `create_api_key`** — wraps `POST /api/v1/account/uc-api-keys`; the new
+  key is shown once in the confirm result with a "save it now" warning. Discovery chip added.
+- **Financial actions are intentionally NOT agent-executed**: the Guide will not change plans
+  or buy credits — it points the user to the existing checkout UI (`/admin/billing/tiers`,
+  `/admin/billing/credits`), so the agent never moves money. (Revisit once the model is proven
+  reliable enough to trust with payments.)
+
 ## [3.8.0] - 2026-06-14
 
 **Personal Account Assistant — Phase 1 (read-only).** The Guide can now answer questions about

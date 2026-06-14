@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { SparklesIcon, PaperAirplaneIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import GuideActionCard from './GuideActionCard';
 
 // The Guide — the END-USER floating assistant (counterpart to the admin-only
 // Colonel bubble). Read-only help agent: it explains the platform and points to
@@ -34,7 +35,7 @@ export default function GuideChatBubble() {
         body: JSON.stringify({ question: q, page: pathname, history }),
       });
       const data = await res.json();
-      setMsgs((p) => [...p, { role: 'assistant', content: data.answer || 'Sorry, I could not get an answer right now.' }]);
+      setMsgs((p) => [...p, { role: 'assistant', content: data.answer || 'Sorry, I could not get an answer right now.', pendingAction: data.pending_action || null }]);
     } catch (e) {
       setMsgs((p) => [...p, { role: 'assistant', content: "I'm having trouble reaching my knowledge service right now. Please try again in a moment." }]);
     } finally {
@@ -79,7 +80,7 @@ export default function GuideChatBubble() {
           <div className="text-sm text-gray-600 dark:text-gray-300 space-y-3">
             <p>Hi! I’m the Guide. Ask me how anything works here — credits, billing, models, federation — and I can also look up your own account (balance, usage, plan, invoices). I’ll point you the right way; I can’t change settings for you.</p>
             <div className="flex flex-wrap gap-1.5">
-              {["What's my balance?", 'How much usage do I have left?', 'Show my recent invoices', 'How do credits work?'].map((s) => (
+              {["What's my balance?", 'Create an API key', 'Show my recent invoices', 'How do credits work?'].map((s) => (
                 <button key={s} onClick={() => send(s)} className="text-xs px-2 py-1 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                   {s}
                 </button>
@@ -88,10 +89,13 @@ export default function GuideChatBubble() {
           </div>
         )}
         {msgs.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
               m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
             }`}>{m.content}</div>
+            {m.pendingAction && (
+              <div className="mt-1.5 w-[85%]"><GuideActionCard action={m.pendingAction} /></div>
+            )}
           </div>
         ))}
         {loading && (
