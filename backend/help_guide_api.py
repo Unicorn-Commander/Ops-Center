@@ -185,6 +185,7 @@ async def _pick_model(gateway_url: str, master_key: str, client: httpx.AsyncClie
 
 _ACCOUNT_ENABLED = os.getenv("ACCOUNT_ASSISTANT_ENABLED", "true").lower() not in ("0", "false", "no")
 _MAX_TOOL_ROUNDS = 2          # tool-executing rounds before forcing a text answer
+_MAX_TOOLS_PER_ROUND = 4      # cap distinct tool execs/round (some models repeat a call many times)
 _TOOL_RESULT_CAP = 3000       # max chars of a tool result fed back to the model
 
 # Each tool = a fixed (method, path[, params]) over an existing user endpoint.
@@ -370,20 +371,34 @@ async def guide_ask(payload: GuideAskRequest, request: Request, user_id: str = D
                 tool_calls = msg.get("tool_calls") or []
 
                 if tool_calls and tools and tool_choice == "auto":
-                    # Record the assistant turn, execute each tool AS the user, feed results back.
-                    messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+                    # Some models emit the same tool call many times — dedup by
+                    # (name, arguments) and cap, so we make at most a few self-calls.
+                    seen, deduped = set(), []
                     for tc in tool_calls:
                         fn = (tc.get("function") or {})
-                        tname = fn.get("name") or ""
-                        result = await _execute_account_tool(tname, session_token, client)
-                        used_tools.append(tname)
-                        logger.info("Guide account tool user=%s tool=%s ok=%s",
-                                    user_id, tname, not (isinstance(result, dict) and "error" in result))
+                        sig = (fn.get("name") or "", fn.get("arguments") or "")
+                        if sig in seen:
+                            continue
+                        seen.add(sig)
+                        deduped.append(tc)
+                        if len(deduped) >= _MAX_TOOLS_PER_ROUND:
+                            break
+                    # Record the assistant turn (only the deduped calls we'll answer),
+                    # execute each tool AS the user once, feed results back.
+                    messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": deduped})
+                    cache: Dict[str, Any] = {}
+                    for tc in deduped:
+                        tname = (tc.get("function") or {}).get("name") or ""
+                        if tname not in cache:
+                            cache[tname] = await _execute_account_tool(tname, session_token, client)
+                            used_tools.append(tname)
+                            logger.info("Guide account tool user=%s tool=%s ok=%s",
+                                        user_id, tname, not (isinstance(cache[tname], dict) and "error" in cache[tname]))
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc.get("id") or tname,
                             "name": tname,
-                            "content": json.dumps(result, default=str)[:_TOOL_RESULT_CAP],
+                            "content": json.dumps(cache[tname], default=str)[:_TOOL_RESULT_CAP],
                         })
                     rounds += 1
                     continue
