@@ -121,17 +121,25 @@ class GuideAskRequest(BaseModel):
 
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+# gpt-oss "harmony" format: ...<|channel|>final<|message|>ANSWER<|return|>. When
+# present, the real answer is the LAST final-channel message; otherwise strip the
+# stray control tokens (<|...|>) so they never leak into the UI.
+_HARMONY_FINAL = re.compile(r"<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>|<\|return\|>|$)", re.DOTALL)
+_HARMONY_TOKENS = re.compile(r"<\|[^|>]*\|>")
 
 
 def _strip_thinking(text: str) -> str:
-    """Reasoning models (Qwen3/DeepSeek-style) emit <think>...</think> chain-of-
-    thought. Strip it so the Guide shows only the answer."""
+    """Reasoning models emit chain-of-thought we must not show: Qwen/DeepSeek use
+    <think>...</think>; gpt-oss uses harmony channels (<|channel|>analysis|final...).
+    Return only the user-facing answer."""
     if not text:
         return text
-    # Remove properly-closed reasoning blocks, then any stray/unclosed tags
-    # (keeping the answer text that follows a bare <think> prefix).
+    finals = _HARMONY_FINAL.findall(text)
+    if finals:
+        text = finals[-1]
     text = _THINK_BLOCK.sub("", text)
     text = re.sub(r"</?think>", "", text, flags=re.IGNORECASE)
+    text = _HARMONY_TOKENS.sub("", text)  # drop any leftover harmony control tokens
     return text.strip()
 
 
@@ -324,9 +332,11 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
             "account (credit balance, usage, plan, invoices, API key names, account summary). "
             "When the user asks about their own balance, usage, plan, charges/invoices, or API keys, "
             "CALL the appropriate tool and answer from the real returned data — never guess or invent "
-            "numbers. The tools are read-only and scoped to this user; you still cannot change anything "
-            "or see anyone else's data. Never reveal an API key secret (only names/prefixes exist). "
-            "If a tool returns an error, tell the user plainly and suggest the relevant page."
+            "numbers. Call the tool immediately when account data is needed; do not narrate your "
+            "reasoning before calling. The tools are read-only and scoped to this user; you still "
+            "cannot change anything or see anyone else's data. Never reveal an API key secret (only "
+            "names/prefixes exist). If a tool returns an error, tell the user plainly and suggest the "
+            "relevant page."
         )
     if payload.page:
         system += f"\n\nThe user is currently on: {payload.page}"
@@ -344,7 +354,10 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
     headers = {"Authorization": f"Bearer {master_key}", "Content-Type": "application/json"}
 
     async def _chat(client, model, tools, tool_choice):
-        body: Dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 700}
+        # gpt-oss/Qwen reasoning models spend tokens "thinking" before the tool
+        # call or answer — too small a budget truncates the tool call mid-emit
+        # (LiteLLM then returns it as raw text instead of structured tool_calls).
+        body: Dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 2000}
         if tools:
             body["tools"] = tools
             body["tool_choice"] = tool_choice
