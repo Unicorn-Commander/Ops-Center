@@ -12,6 +12,7 @@ dependency) with an INTERNAL key and a local model, so end users are never
 billed for asking for help and a malicious prompt can't run anything.
 """
 
+import json
 import logging
 import os
 import re
@@ -168,10 +169,134 @@ async def _pick_model(gateway_url: str, master_key: str, client: httpx.AsyncClie
     return chosen
 
 
+# ============================================================================
+# Personal Account Assistant — Phase 1 (READ-ONLY) account tools.
+#
+# Safety model: every tool is a thin wrapper over an EXISTING user-facing
+# endpoint, called via a localhost self-call that forwards ONLY the caller's
+# session cookie. The wrapped endpoint's own auth + RLS + RBAC re-run, so the
+# Guide can do nothing the user couldn't do themselves in the UI. The LLM call
+# stays internal (master key + local model = free); tool EXECUTIONS run strictly
+# as the user. Tool paths/params are FIXED here — the model only chooses WHICH
+# tool, never a URL or arbitrary query params (no injection surface). Phase 1 is
+# read-only; mutations (upgrade/buy-credits/create-key) are Phase 2 and require
+# confirmation + audit. See ~/Documents/UC-Personal-Account-Assistant-Design.md.
+# ============================================================================
+
+_ACCOUNT_ENABLED = os.getenv("ACCOUNT_ASSISTANT_ENABLED", "true").lower() not in ("0", "false", "no")
+_MAX_TOOL_ROUNDS = 2          # tool-executing rounds before forcing a text answer
+_TOOL_RESULT_CAP = 3000       # max chars of a tool result fed back to the model
+
+# Each tool = a fixed (method, path[, params]) over an existing user endpoint.
+ACCOUNT_TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "get_my_credit_balance",
+        "path": "/api/v1/credits/balance",
+        "description": "The signed-in user's current credit balance, monthly allocation, and tier. Use for 'what's my balance / how many credits do I have left'.",
+    },
+    {
+        "name": "get_my_usage",
+        "path": "/api/v1/usage/current",
+        "description": "The user's current billing-period API usage: used, limit, remaining, percentage, and reset date. Use for 'how much usage do I have left / am I near my limit'.",
+    },
+    {
+        "name": "get_my_plan",
+        "path": "/api/v1/subscriptions/my-access",
+        "description": "The user's current subscription: plan name, monthly price, included features, and call limit. Use for 'what plan am I on / what does my plan include'.",
+    },
+    {
+        "name": "get_my_invoices",
+        "path": "/api/v1/billing/invoices",
+        "params": {"limit": 10},
+        "description": "The user's recent invoices (number, amount, status, dates, PDF link). Use for 'show my invoices / why was I charged / my last payment'.",
+    },
+    {
+        "name": "list_my_api_keys",
+        "path": "/api/v1/account/uc-api-keys",
+        "description": "The user's API keys — names, prefixes, status, last-used ONLY. Never returns a secret. Use for 'what API keys do I have / when was a key last used'.",
+    },
+    {
+        "name": "get_my_account_summary",
+        "path": "/api/v1/billing/my-dashboard",
+        "description": "One-shot overview across the user's org(s): plan, price, allocated/used/remaining credits, and 30-day usage. A good default for broad 'how's my account' questions.",
+    },
+]
+_TOOL_BY_NAME = {t["name"]: t for t in ACCOUNT_TOOLS}
+
+# Defensive whitelist: only these fields survive on an API-key listing.
+_ALLOWED_KEY_FIELDS = {
+    "key_id", "id", "key_name", "name", "key_preview", "permissions",
+    "created_at", "last_used", "expires_at", "is_active", "status",
+}
+
+
+def _self_base_url() -> str:
+    return os.getenv("OPS_CENTER_SELF_URL", "http://localhost:8084").rstrip("/")
+
+
+def _account_tools_openai() -> List[Dict[str, Any]]:
+    """OpenAI-format tool specs. No params are exposed to the model — paths and
+    query params are fixed server-side, so the model only picks a tool name."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+        for t in ACCOUNT_TOOLS
+    ]
+
+
+def _sanitize_api_keys(data: Any) -> Any:
+    """Strip everything but safe metadata from an API-key listing — never let a
+    secret/hash leave the backend even if an upstream change starts returning it."""
+    def clean(item: Any) -> Any:
+        if isinstance(item, dict):
+            return {k: v for k, v in item.items() if k in _ALLOWED_KEY_FIELDS}
+        return item
+    if isinstance(data, list):
+        return [clean(i) for i in data]
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return {**{k: v for k, v in data.items() if k != "data"}, "data": [clean(i) for i in data["data"]]}
+    return data
+
+
+async def _execute_account_tool(name: str, session_token: Optional[str], client: httpx.AsyncClient) -> Any:
+    """Run one read tool AS the user (forward only the session cookie). Returns the
+    endpoint's JSON, or {"error": ...} — never raises into the loop."""
+    tool = _TOOL_BY_NAME.get(name)
+    if not tool:
+        return {"error": f"unknown tool '{name}'"}
+    if not session_token:
+        return {"error": "I can't see your account right now — you don't appear to be signed in with a session."}
+    url = f"{_self_base_url()}{tool['path']}"
+    try:
+        resp = await client.get(url, params=tool.get("params"), cookies={"session_token": session_token}, timeout=20.0)
+    except Exception as exc:
+        logger.debug("Account tool %s self-call failed: %s", name, exc)
+        return {"error": "the account service is unavailable right now."}
+    if resp.status_code in (401, 403):
+        return {"error": "your session may have expired, or you don't have access to that — try signing in again."}
+    if resp.status_code >= 400:
+        return {"error": f"couldn't fetch that (status {resp.status_code})."}
+    try:
+        data = resp.json()
+    except Exception:
+        return {"error": "the account service returned an unexpected response."}
+    if name == "list_my_api_keys":
+        data = _sanitize_api_keys(data)
+    return data
+
+
 @router.post("/guide/ask")
 async def guide_ask(payload: GuideAskRequest, request: Request, user_id: str = Depends(get_user_id)):
     """Ask the Guide. Returns {answer}. Never bills the user (internal key +
-    local model); never executes anything. Fail-soft to a helpful message."""
+    local model). For account questions it may call READ-ONLY account tools that
+    run strictly as the signed-in user (forwarded session cookie → RLS/RBAC
+    enforced by the wrapped endpoints). Fail-soft to a helpful message."""
     fallback = (
         "I'm having trouble reaching my knowledge service right now. "
         "Try the FAQ tab in this Help panel, or check the page you're on — most settings have an info banner."
@@ -180,38 +305,92 @@ async def guide_ask(payload: GuideAskRequest, request: Request, user_id: str = D
     if not gateway_url or not master_key:
         return {"answer": fallback, "ok": False}
 
+    # Forward ONLY the session cookie to account tools — so they run as the user.
+    session_token = request.cookies.get("session_token")
+    tools_enabled = bool(_ACCOUNT_ENABLED and session_token)
+
     system = GUIDE_SYSTEM_PROMPT
+    if tools_enabled:
+        system += (
+            "\n\nACCOUNT LOOKUP: You have read-only tools to look up THIS signed-in user's own "
+            "account (credit balance, usage, plan, invoices, API key names, account summary). "
+            "When the user asks about their own balance, usage, plan, charges/invoices, or API keys, "
+            "CALL the appropriate tool and answer from the real returned data — never guess or invent "
+            "numbers. The tools are read-only and scoped to this user; you still cannot change anything "
+            "or see anyone else's data. Never reveal an API key secret (only names/prefixes exist). "
+            "If a tool returns an error, tell the user plainly and suggest the relevant page."
+        )
     if payload.page:
         system += f"\n\nThe user is currently on: {payload.page}"
     if payload.page_help:
         system += f"\nHelp shown for this page:\n{payload.page_help[:2000]}"
 
-    messages = [{"role": "system", "content": system}]
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": system}]
     for m in payload.history[-6:]:
         if m.role in ("user", "assistant") and m.content:
             messages.append({"role": m.role, "content": m.content[:4000]})
     messages.append({"role": "user", "content": payload.question})
 
     timeout = float(os.getenv("HELP_GUIDE_TIMEOUT", "60"))
+    used_tools: List[str] = []
+    headers = {"Authorization": f"Bearer {master_key}", "Content-Type": "application/json"}
+
+    async def _chat(client, model, tools, tool_choice):
+        body: Dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 700}
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice
+        return await client.post(f"{gateway_url}/v1/chat/completions", headers=headers, json=body)
+
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             model = await _pick_model(gateway_url, master_key, client)
             if not model:
                 return {"answer": fallback, "ok": False}
-            resp = await client.post(
-                f"{gateway_url}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {master_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "temperature": 0.3, "max_tokens": 700},
-            )
-        if resp.status_code >= 400:
-            logger.warning("Guide gateway %d: %s", resp.status_code, resp.text[:200])
-            # stale model? clear cache so next call re-picks.
-            _model_cache.update({"model": None, "ts": 0.0})
-            return {"answer": fallback, "ok": False}
-        data = resp.json()
-        answer = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-        answer = _strip_thinking(answer)
-        return {"answer": answer or fallback, "ok": bool(answer), "model": model}
+
+            tools = _account_tools_openai() if tools_enabled else None
+            rounds = 0
+            while True:
+                # Final round (rounds exhausted): force a text answer, no more tools.
+                tool_choice = "none" if (tools and rounds >= _MAX_TOOL_ROUNDS) else "auto"
+                resp = await _chat(client, model, tools, tool_choice)
+
+                # Gateway/model may not support tool-calling — drop tools and retry once.
+                if resp.status_code == 400 and tools:
+                    logger.info("Guide gateway rejected tools (400); retrying without account tools.")
+                    tools = None
+                    continue
+                if resp.status_code >= 400:
+                    logger.warning("Guide gateway %d: %s", resp.status_code, resp.text[:200])
+                    _model_cache.update({"model": None, "ts": 0.0})  # stale model? re-pick next time.
+                    return {"answer": fallback, "ok": False}
+
+                data = resp.json()
+                msg = ((data.get("choices") or [{}])[0].get("message") or {})
+                tool_calls = msg.get("tool_calls") or []
+
+                if tool_calls and tools and tool_choice == "auto":
+                    # Record the assistant turn, execute each tool AS the user, feed results back.
+                    messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+                    for tc in tool_calls:
+                        fn = (tc.get("function") or {})
+                        tname = fn.get("name") or ""
+                        result = await _execute_account_tool(tname, session_token, client)
+                        used_tools.append(tname)
+                        logger.info("Guide account tool user=%s tool=%s ok=%s",
+                                    user_id, tname, not (isinstance(result, dict) and "error" in result))
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id") or tname,
+                            "name": tname,
+                            "content": json.dumps(result, default=str)[:_TOOL_RESULT_CAP],
+                        })
+                    rounds += 1
+                    continue
+
+                answer = _strip_thinking((msg.get("content") or "").strip())
+                return {"answer": answer or fallback, "ok": bool(answer), "model": model,
+                        "used_tools": used_tools or None}
     except Exception as exc:
         logger.warning("Guide ask failed for user %s: %s", user_id, exc)
         return {"answer": fallback, "ok": False}
