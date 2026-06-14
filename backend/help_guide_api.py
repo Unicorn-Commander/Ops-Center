@@ -233,11 +233,6 @@ ACCOUNT_TOOLS: List[Dict[str, Any]] = [
         "path": "/api/v1/account/uc-api-keys",
         "description": "The user's API keys — names, prefixes, status, last-used ONLY. Never returns a secret. Use for 'what API keys do I have / when was a key last used'.",
     },
-    {
-        "name": "get_my_account_summary",
-        "path": "/api/v1/billing/my-dashboard",
-        "description": "One-shot overview across the user's org(s): plan, price, allocated/used/remaining credits, and 30-day usage. A good default for broad 'how's my account' questions.",
-    },
 ]
 _TOOL_BY_NAME = {t["name"]: t for t in ACCOUNT_TOOLS}
 

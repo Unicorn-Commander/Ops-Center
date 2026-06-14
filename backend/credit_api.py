@@ -104,10 +104,10 @@ class CreditBalance(BaseModel):
     allocated_monthly: Decimal  # maps to credits_allocated
     bonus_credits: Decimal = Decimal("0.00")  # calculated field (not in DB)
     free_tier_used: Decimal = Decimal("0.00")  # calculated field (not in DB)
-    reset_date: datetime  # maps to last_reset
-    last_updated: datetime  # maps to updated_at
+    reset_date: Optional[datetime] = None   # maps to last_reset (nullable in DB)
+    last_updated: Optional[datetime] = None  # maps to updated_at (nullable in DB)
     tier: str  # subscription tier from DB
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
 
 class CreditTransaction(BaseModel):
