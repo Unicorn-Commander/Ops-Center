@@ -399,8 +399,7 @@
         "class": "uuid"
       },
       "user_id": {
-        "class": "string",
-        "signoff": "bigboy uuid->varchar (1 row; suite-wide user_id is varchar)"
+        "class": "string"
       },
       "credits_remaining": {
         "class": "numeric"
@@ -444,8 +443,7 @@
         "class": "uuid"
       },
       "user_id": {
-        "class": "string",
-        "signoff": "bigboy uuid->varchar (0 rows; suite-wide user_id is varchar)"
+        "class": "string"
       },
       "provider": {
         "class": "string"

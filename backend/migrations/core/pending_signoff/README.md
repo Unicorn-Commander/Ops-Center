@@ -14,7 +14,12 @@ When a change here is signed off and applied, also flip the corresponding
 `signoff` flag in `../canonical_schema.json` to the agreed `class` (drop the
 `signoff` key) so the drift-check goes green for that column.
 
-Tracked targets (see the schema-drift audit, 2026-06-13):
-- `credit_packages.id`        commander `integer` → `uuid`   (4 rows, no FK deps)
-- `user_credits.user_id`      bigboy `uuid` → `varchar`      (1 row)
-- `user_provider_keys.user_id` bigboy `uuid` → `varchar`     (0 rows)
+Tracked targets (see the schema-drift audit, 2026-06-13) — ALL SIGNED OFF + APPLIED:
+- `D001` `credit_packages.id`        commander `integer` → `uuid`   (4 rows, no FK deps) — APPLIED 2026-06-13, backed up first
+- `D002` `user_credits.user_id`      bigboy `uuid` → `varchar`      (1 row)  — APPLIED 2026-06-13, dropped local-users FK (was ON DELETE CASCADE)
+- `D003` `user_provider_keys.user_id` bigboy `uuid` → `varchar`     (0 rows) — APPLIED 2026-06-13, dropped local-users FK
+
+Their `signoff` flags are cleared from `../canonical_schema.json`; the drift-check now
+treats the canonical types (uuid / varchar / varchar) as plain requirements, so a FUTURE
+node that diverges trips a loud ERROR and an operator re-applies the matching D00x here.
+A deployment that wants the local-users FK back: see `OVERLAY_local_user_integrity.md`.
