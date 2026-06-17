@@ -541,7 +541,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         try:
             org_id = org_manager.create_organization(
                 name=org_name,
-                plan_tier="founders_friend"
+                plan_tier="free"
             )
             break
         except ValueError as e:
@@ -579,7 +579,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
                     "name": org_name,
                     "display_name": org_name,
                     "slug": slugify(org_name) if "slug" in org_column_names else None,
-                    "plan_tier": "founders_friend",
+                    "plan_tier": "free",
                     "status": "active",
                     "is_active": True,
                     "max_seats": 1,
@@ -656,7 +656,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         from lago_integration import subscribe_org_to_plan, LagoIntegrationError
         subscription = await subscribe_org_to_plan(
             org_id=org_id,
-            plan_code="founders_friend",
+            plan_code="free",
             org_name=org_name,
             email=email or "",
             user_id=user_id
@@ -675,7 +675,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
     # Best-effort + failure-isolated: never blocks provisioning.
     try:
         from gateway_key_provisioning import provision_org_gateway_key
-        await provision_org_gateway_key(org_id=org_id, plan_code="founders_friend")
+        await provision_org_gateway_key(org_id=org_id, plan_code="free")
     except Exception as gw_error:
         logger.error(f"Failed to provision gateway key for org {org_id}: {gw_error}")
 
@@ -5349,7 +5349,7 @@ async def register_user(request: Request):
     4. Create user in Keycloak with org_id attribute
     5. Add user as organization owner
     6. Create Lago customer for organization
-    7. Subscribe organization to "founders_friend" plan
+    7. Subscribe organization to "free" plan
     8. Create session with org context
     """
     org_id = None
@@ -5408,7 +5408,7 @@ async def register_user(request: Request):
         try:
             org_id = org_manager.create_organization(
                 name=org_name,
-                plan_tier="founders_friend"
+                plan_tier="free"
             )
             logger.info(f"Created organization: {org_id} - {org_name}")
         except Exception as org_error:
@@ -5515,7 +5515,7 @@ async def register_user(request: Request):
             logger.info(f"Creating Lago customer for org {org_id}")
             subscription = await subscribe_org_to_plan(
                 org_id=org_id,
-                plan_code="founders_friend",
+                plan_code="free",
                 org_name=org_name,
                 email=email,
                 user_id=keycloak_user_id or local_user["id"]
@@ -5529,7 +5529,7 @@ async def register_user(request: Request):
                     lago_id=subscription.get("lago_id")
                 )
 
-            logger.info(f"Successfully subscribed org {org_id} to founders_friend plan")
+            logger.info(f"Successfully subscribed org {org_id} to free plan")
 
         except LagoIntegrationError as lago_error:
             # Log error but don't fail registration - billing can be fixed later
@@ -5544,7 +5544,7 @@ async def register_user(request: Request):
         # keystone). Best-effort + failure-isolated: never fails registration.
         try:
             from gateway_key_provisioning import provision_org_gateway_key
-            await provision_org_gateway_key(org_id=org_id, plan_code="founders_friend")
+            await provision_org_gateway_key(org_id=org_id, plan_code="free")
         except Exception as gw_error:
             logger.error(f"Failed to provision gateway key for org {org_id}: {gw_error}")
 

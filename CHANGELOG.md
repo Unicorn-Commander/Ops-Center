@@ -5,6 +5,21 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.3] - 2026-06-17
+
+### Added / Fixed — canonical Free tier + consistent new-org default
+- **New `free` tier** (both nodes): $0, `api_calls_limit=0` (in-browser / on-device AI + local
+  storage — no server inference), no premium app grants. It's the safe floor and is already the
+  name used in `CREDIT_EXEMPT_TIERS`. Added a matching `free` plan to the in-memory plan registry
+  so it displays correctly in My Access.
+- **New orgs now default to `free`** instead of `founders_friend`. The old default (`founders_friend`,
+  plural) matched no tier-code, so every new org silently fell to trial. Normalized the default
+  across `org_manager.py`, `server.py` (org-creation + gateway-key `plan_code` label), and
+  `org_api.py`; added `free` to `NON_PURCHASABLE_TIERS`.
+- **Tier-code drift fixed:** commander's `founder-friend` → `founder_friend`, matching bigboy.
+- Frontend: org-tier filter + tier badge colors updated to the real tier set
+  (free / founder_friend / vip_founder / byok / managed / client).
+
 ## [3.9.2] - 2026-06-17
 
 ### Fixed

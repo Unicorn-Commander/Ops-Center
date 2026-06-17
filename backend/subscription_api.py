@@ -138,7 +138,7 @@ async def get_authoritative_tier(user: dict) -> Optional[str]:
 
 # Tiers that are assigned internally (not purchasable via the customer-facing
 # Compare Plans / Upgrade views). Excluded from the plans listing.
-NON_PURCHASABLE_TIERS = {"vip_founder", "founder_friend", "client"}
+NON_PURCHASABLE_TIERS = {"free", "vip_founder", "founder_friend", "client"}
 
 
 async def _fetch_purchasable_tiers() -> List[Dict]:
