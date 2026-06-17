@@ -25,10 +25,12 @@ export default function OrganizationCard({ organization, onSelect, isSelected })
   };
 
   const tierColors = {
-    founders_friend: 'bg-purple-100 text-purple-800',
-    starter: 'bg-blue-100 text-blue-800',
-    professional: 'bg-indigo-100 text-indigo-800',
-    enterprise: 'bg-pink-100 text-pink-800'
+    free: 'bg-gray-100 text-gray-700',
+    founder_friend: 'bg-purple-100 text-purple-800',
+    vip_founder: 'bg-amber-100 text-amber-800',
+    byok: 'bg-blue-100 text-blue-800',
+    managed: 'bg-indigo-100 text-indigo-800',
+    client: 'bg-pink-100 text-pink-800'
   };
 
   return (

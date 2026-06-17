@@ -68,6 +68,23 @@ class ServiceAccessConfig(BaseModel):
 # Default subscription plans
 DEFAULT_PLANS = [
     SubscriptionPlan(
+        id="free",
+        name="free",
+        display_name="Free",
+        price_monthly=0.00,
+        price_yearly=0.00,
+        features=[
+            "In-browser / on-device AI",
+            "Local storage",
+            "No server inference",
+            "No credit card required",
+        ],
+        services=[ServiceType.OPS_CENTER],
+        api_calls_limit=0,           # browser-only — no server inference
+        byok_enabled=False,
+        priority_support=False,
+    ),
+    SubscriptionPlan(
         id="trial",
         name="trial",
         display_name="Trial",

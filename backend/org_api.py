@@ -113,7 +113,7 @@ class OrganizationSettingsUpdate(BaseModel):
 class OrganizationCreate(BaseModel):
     """Request model for creating a new organization"""
     name: str
-    plan_tier: str = "founders_friend"
+    plan_tier: str = "free"
 
 
 # ==================== Helper Functions ====================

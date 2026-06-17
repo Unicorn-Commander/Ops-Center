@@ -29,7 +29,7 @@ class Organization(BaseModel):
         id: Unique organization identifier (org_{uuid4})
         name: Organization name
         created_at: Timestamp of organization creation
-        plan_tier: Current subscription plan (defaults to founders_friend)
+        plan_tier: Current subscription plan (defaults to free)
         lago_customer_id: Lago billing system customer ID
         stripe_customer_id: Stripe payment system customer ID
         status: Organization status (active, suspended, deleted)
@@ -37,7 +37,7 @@ class Organization(BaseModel):
     id: str = Field(..., description="Unique organization ID")
     name: str = Field(..., min_length=1, max_length=200, description="Organization name")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    plan_tier: str = Field(default="founders_friend", description="Current subscription plan")
+    plan_tier: str = Field(default="free", description="Current subscription plan")
     lago_customer_id: Optional[str] = Field(default=None, description="Lago customer ID")
     stripe_customer_id: Optional[str] = Field(default=None, description="Stripe customer ID")
     status: str = Field(default="active", description="Organization status")
@@ -257,13 +257,13 @@ class OrgManager:
 
     # ==================== Organization Operations ====================
 
-    def create_organization(self, name: str, plan_tier: str = "founders_friend") -> str:
+    def create_organization(self, name: str, plan_tier: str = "free") -> str:
         """
         Create a new organization
 
         Args:
             name: Organization name
-            plan_tier: Initial subscription plan (defaults to founders_friend)
+            plan_tier: Initial subscription plan (defaults to free)
 
         Returns:
             org_id: The newly created organization ID

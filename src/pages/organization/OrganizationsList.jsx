@@ -409,11 +409,12 @@ const OrganizationsList = () => {
                 label="Tier"
               >
                 <MenuItem value="all">All Tiers</MenuItem>
-                <MenuItem value="trial">Trial</MenuItem>
-                <MenuItem value="starter">Starter</MenuItem>
-                <MenuItem value="professional">Professional</MenuItem>
-                <MenuItem value="enterprise">Enterprise</MenuItem>
-                <MenuItem value="founders_friend">Founders Friend</MenuItem>
+                <MenuItem value="free">Free</MenuItem>
+                <MenuItem value="founder_friend">Founder Friend</MenuItem>
+                <MenuItem value="vip_founder">VIP / Founder</MenuItem>
+                <MenuItem value="byok">BYOK</MenuItem>
+                <MenuItem value="managed">Managed</MenuItem>
+                <MenuItem value="client">Client</MenuItem>
               </Select>
             </FormControl>
           </Grid>
