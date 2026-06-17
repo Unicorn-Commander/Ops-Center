@@ -361,6 +361,25 @@ WRITE_TOOLS: List[Dict[str, Any]] = [
             "required": ["key_id"],
         },
     },
+    {
+        "name": "rotate_api_key",
+        "confirm_label": "Rotate key",
+        "description": (
+            "PROPOSE rotating one of the user's API keys: issue a NEW key with the same scopes and "
+            "revoke the OLD one. Does NOT execute — the user must confirm. Call list_my_api_keys FIRST "
+            "to find the key, then pass key_id, key_name, and (if known) its permissions."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key_id": {"type": "string", "description": "The id of the key to rotate (from list_my_api_keys)."},
+                "key_name": {"type": "string", "description": "The key's name — reused for the new key + display."},
+                "permissions": {"type": "array", "items": {"type": "string", "enum": list(_ALLOWED_KEY_SCOPES)},
+                                "description": "Scopes to carry to the new key. Default both."},
+            },
+            "required": ["key_id"],
+        },
+    },
 ]
 _WRITE_BY_NAME = {t["name"]: t for t in WRITE_TOOLS}
 _KEY_ID_RE = re.compile(r"^[0-9a-fA-F-]{8,64}$")  # plain id only — blocks path injection into the URL
@@ -374,10 +393,11 @@ def _write_tools_openai() -> List[Dict[str, Any]]:
 
 
 def _prepare_write(tool_name: str, raw: Dict[str, Any]) -> tuple:
-    """Validate+normalize the model's proposed params into a concrete call.
-    Returns (method, path, body, title, summary). Raises ValueError(clarifying
-    question) if the proposal is incomplete — the Guide then asks the user
-    instead of proposing."""
+    """Validate+normalize the model's proposed params into a concrete action.
+    Returns (spec, title, summary) where spec is either
+    {"kind":"single","method","path","body"} or a named compound (e.g. rotate).
+    Raises ValueError(clarifying question) if the proposal is incomplete — the
+    Guide then asks the user instead of proposing."""
     if tool_name == "create_api_key":
         name = (str(raw.get("name") or "")).strip()
         if not name:
@@ -389,9 +409,10 @@ def _prepare_write(tool_name: str, raw: Dict[str, Any]) -> tuple:
             days = 90
         perms = [p for p in (raw.get("permissions") or []) if p in _ALLOWED_KEY_SCOPES]
         perms = perms or list(_ALLOWED_KEY_SCOPES)
-        body = {"name": name, "expires_in_days": days, "permissions": perms}
+        spec = {"kind": "single", "method": "POST", "path": "/api/v1/account/uc-api-keys",
+                "body": {"name": name, "expires_in_days": days, "permissions": perms}}
         summary = f"Create API key “{name}” — scopes: {', '.join(perms)}; expires in {days} days."
-        return "POST", "/api/v1/account/uc-api-keys", body, "Create API key", summary
+        return spec, "Create API key", summary
 
     if tool_name == "revoke_api_key":
         key_id = (str(raw.get("key_id") or "")).strip()
@@ -399,9 +420,23 @@ def _prepare_write(tool_name: str, raw: Dict[str, Any]) -> tuple:
             raise ValueError("Which key should I revoke? Tell me its name and I'll look up the right one.")
         label = (str(raw.get("key_name") or "")).strip()
         disp = f"“{label}”" if label else f"id {key_id[:8]}…"
+        spec = {"kind": "single", "method": "DELETE", "path": f"/api/v1/account/uc-api-keys/{key_id}", "body": None}
         summary = (f"Revoke API key {disp} — any app or script using it will stop working immediately. "
                    "This can't be undone.")
-        return "DELETE", f"/api/v1/account/uc-api-keys/{key_id}", None, "Revoke API key", summary
+        return spec, "Revoke API key", summary
+
+    if tool_name == "rotate_api_key":
+        key_id = (str(raw.get("key_id") or "")).strip()
+        if not _KEY_ID_RE.match(key_id):
+            raise ValueError("Which key should I rotate? Tell me its name and I'll look up the right one.")
+        name = (str(raw.get("key_name") or "")).strip()[:255] or "rotated key"
+        perms = [p for p in (raw.get("permissions") or []) if p in _ALLOWED_KEY_SCOPES]
+        perms = perms or list(_ALLOWED_KEY_SCOPES)
+        spec = {"kind": "rotate", "old_key_id": key_id,
+                "create_body": {"name": name, "permissions": perms}}
+        summary = (f"Rotate API key “{name}” — issue a NEW key with the same scopes, then revoke the old "
+                   "one. You'll see the new key once; apps must switch to it.")
+        return spec, "Rotate API key", summary
 
     raise ValueError("That action isn't supported yet.")
 
@@ -482,7 +517,9 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
             "until the user clicks Confirm. (1) create_api_key — when the user wants a new API key, "
             "call it with a sensible 'name' (ask for one if they didn't give it). (2) revoke_api_key — "
             "when the user wants to delete/revoke a key, FIRST call list_my_api_keys to find the right "
-            "key, then call revoke_api_key with its key_id and key_name. You CANNOT change plans, buy "
+            "key, then call revoke_api_key with its key_id and key_name. (3) rotate_api_key — when the "
+            "user wants to rotate/replace a key, FIRST call list_my_api_keys, then call rotate_api_key "
+            "with its key_id, key_name, and permissions. You CANNOT change plans, buy "
             "credits, or make any payment — for those, point the user to the page: upgrade/downgrade at "
             "/admin/billing/tiers (or My Dashboard), buy credits at /admin/billing/credits. Never claim "
             "you performed an action."
@@ -588,13 +625,13 @@ async def guide_ask(payload: GuideAskRequest, request: Request,
                         except Exception:
                             raw_args = {}
                         try:
-                            method, path, body, title, summary = _prepare_write(wname, raw_args)
+                            spec, title, summary = _prepare_write(wname, raw_args)
                         except ValueError as ve:
                             # Incomplete proposal (e.g. missing name/id) — ask, don't propose.
                             return {"answer": str(ve), "ok": True}
                         action_id = uuid.uuid4().hex
-                        _pending_set(action_id, {"user_id": user_id, "tool": wname, "method": method,
-                                                 "path": path, "body": body, "title": title, "summary": summary})
+                        _pending_set(action_id, {"user_id": user_id, "tool": wname, "spec": spec,
+                                                 "title": title, "summary": summary})
                         await _audit(request, user, f"guide.{wname}.proposed", "success",
                                      resource_type="api-key", metadata={"summary": summary})
                         logger.info("Guide proposed write user=%s tool=%s action=%s", user_id, wname, action_id)
@@ -635,9 +672,10 @@ async def guide_confirm_action(payload: ConfirmActionRequest, request: Request,
         return {"ok": False, "detail": "That action isn't available to your account."}
 
     tool = _WRITE_BY_NAME.get(pending.get("tool", ""))
-    method, path = pending.get("method"), pending.get("path")
-    if not tool or not method or not path:
+    spec = pending.get("spec") or {}
+    if not tool or not spec:
         return {"ok": False, "detail": "That action is no longer valid — please ask again."}
+    tname = tool["name"]
 
     session_token = request.cookies.get("session_token")
     csrf = request.cookies.get("csrf_token")
@@ -646,22 +684,53 @@ async def guide_confirm_action(payload: ConfirmActionRequest, request: Request,
     if csrf:                                   # satisfy the mutation endpoint's CSRF
         headers["X-CSRF-Token"] = csrf
         cookies["csrf_token"] = csrf
-    url = f"{_self_base_url()}{path}"
+
+    async def _call(client, method, path, body):
+        return await client.request(method, f"{_self_base_url()}{path}", json=body, headers=headers, cookies=cookies)
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.request(method, url, json=pending.get("body"),
-                                        headers=headers, cookies=cookies)
+            # Compound: rotate = create a new key, then revoke the old one.
+            if spec.get("kind") == "rotate":
+                cresp = await _call(client, "POST", "/api/v1/account/uc-api-keys", spec.get("create_body") or {})
+                if cresp.status_code >= 400:
+                    await _audit(request, user, f"guide.{tname}.confirmed", "failure", resource_type="api-key",
+                                 error_message=f"create:{cresp.status_code}", metadata={"summary": pending.get("summary")})
+                    return {"ok": False, "detail": f"Couldn't create the new key (status {cresp.status_code}) — nothing was changed."}
+                new_data = cresp.json() if cresp.headers.get("content-type", "").startswith("application/json") else {}
+                old_revoked = False
+                try:                                   # best-effort: the new key already exists
+                    rresp = await _call(client, "DELETE", f"/api/v1/account/uc-api-keys/{spec.get('old_key_id')}", None)
+                    old_revoked = rresp.status_code < 400
+                except Exception:
+                    old_revoked = False
+                result = _shape_write_result("create_api_key", new_data)
+                if not old_revoked:
+                    result["warning"] = (result.get("warning", "") + " Heads up: the OLD key could not be revoked — revoke it yourself under Account → API Keys.").strip()
+                await _audit(request, user, f"guide.{tname}.confirmed", "success", resource_type="api-key",
+                             resource_id=str(new_data.get("key_id")) if isinstance(new_data, dict) else None,
+                             metadata={"summary": pending.get("summary"),
+                                       "key_preview": result.get("key_preview"), "old_revoked": old_revoked})
+                logger.info("Guide rotated key user=%s old_revoked=%s", user_id, old_revoked)
+                return {"ok": True, "tool": tname, "result": result,
+                        "message": "Rotated — new key issued and old key revoked." if old_revoked
+                                   else "New key issued, but the old key wasn't revoked."}
+
+            # Single call.
+            method, path = spec.get("method"), spec.get("path")
+            if not method or not path:
+                return {"ok": False, "detail": "That action is no longer valid — please ask again."}
+            resp = await _call(client, method, path, spec.get("body"))
     except Exception as exc:
-        logger.warning("Guide confirm self-call failed user=%s tool=%s: %s", user_id, tool["name"], exc)
-        await _audit(request, user, f"guide.{tool['name']}.confirmed", "error",
+        logger.warning("Guide confirm self-call failed user=%s tool=%s: %s", user_id, tname, exc)
+        await _audit(request, user, f"guide.{tname}.confirmed", "error",
                      resource_type="api-key", error_message=str(exc)[:300],
                      metadata={"summary": pending.get("summary")})
         return {"ok": False, "detail": "I couldn't reach the account service to complete that."}
 
     if resp.status_code >= 400:
         detail = "your session may have expired — try again" if resp.status_code in (401, 403) else f"it didn't go through (status {resp.status_code})"
-        await _audit(request, user, f"guide.{tool['name']}.confirmed", "failure",
+        await _audit(request, user, f"guide.{tname}.confirmed", "failure",
                      resource_type="api-key", error_message=f"{resp.status_code}",
                      metadata={"summary": pending.get("summary")})
         return {"ok": False, "detail": f"The action failed — {detail}."}
@@ -670,12 +739,12 @@ async def guide_confirm_action(payload: ConfirmActionRequest, request: Request,
         data = resp.json()
     except Exception:
         data = {}
-    result = _shape_write_result(tool["name"], data)
+    result = _shape_write_result(tname, data)
     # Audit success WITHOUT the secret (only the preview/name).
-    await _audit(request, user, f"guide.{tool['name']}.confirmed", "success",
+    await _audit(request, user, f"guide.{tname}.confirmed", "success",
                  resource_type="api-key",
                  resource_id=str(data.get("key_id")) if isinstance(data, dict) else None,
                  metadata={"summary": pending.get("summary"),
                            "key_preview": result.get("key_preview") if isinstance(result, dict) else None})
-    logger.info("Guide executed write user=%s tool=%s ok", user_id, tool["name"])
-    return {"ok": True, "tool": tool["name"], "result": result, "message": "Done!"}
+    logger.info("Guide executed write user=%s tool=%s ok", user_id, tname)
+    return {"ok": True, "tool": tname, "result": result, "message": "Done!"}

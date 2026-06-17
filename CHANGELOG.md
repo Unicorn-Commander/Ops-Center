@@ -5,6 +5,20 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.0] - 2026-06-17
+
+### Added
+- **`rotate_api_key`** — third confirm-gated Guide mutation, completing the API-key lifecycle
+  (create · list · revoke · rotate). On confirm it issues a NEW key with the same scopes and
+  revokes the old one; the new key is shown once. Generalized the pending-action to a `spec`
+  (`{kind:"single"|"rotate", …}`) so the framework now supports **compound** mutations; rotate is
+  best-effort on the revoke step (new key always created first; if the old can't be revoked the UI
+  says so). The Guide lists keys to resolve the real id before proposing.
+- **Anthropic BYOK clarifier** (`AccountAPIKeys.jsx`): the Anthropic provider card now notes that a
+  Claude Pro/Max **subscription can't be used in third-party apps** — use an API key from the
+  Console (bills the API account, separate from the subscription). Reflects Anthropic's current
+  policy; pre-empts users expecting subscription sign-in.
+
 ## [3.9.3] - 2026-06-17
 
 ### Added / Fixed — canonical Free tier + consistent new-org default
