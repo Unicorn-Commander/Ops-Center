@@ -145,7 +145,8 @@ export default function AccountAPIKeys() {
       ],
       getKeyUrl: 'https://console.anthropic.com/settings/keys',
       keyFormat: 'sk-ant-...',
-      description: 'Claude 3.5 Sonnet, Opus, Haiku'
+      description: 'Claude 3.5 Sonnet, Opus, Haiku',
+      note: 'Use an API key from the Anthropic Console — a Claude Pro/Max subscription can’t be used in third-party apps (Anthropic blocks subscription sign-in outside Claude Code & claude.ai). The key bills your Anthropic API account, separate from your subscription.'
     },
     google: {
       name: 'Google AI',
@@ -1022,6 +1023,13 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
                       </li>
                     ))}
                   </ul>
+
+                  {/* Provider note (e.g. Anthropic subscription caveat) */}
+                  {info.note && (
+                    <div className="mb-4 text-xs rounded-md border border-amber-400/30 bg-amber-500/10 text-amber-300 px-3 py-2">
+                      {info.note}
+                    </div>
+                  )}
 
                   {/* Connected Key Display */}
                   {isConnected && status && (
