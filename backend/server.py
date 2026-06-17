@@ -426,6 +426,7 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
                         JOIN organizations o ON om.org_id = o.id
                         LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
                         WHERE u.zitadel_id = $1
+                          AND COALESCE(o.status, 'active') = 'active'
                         LIMIT 1
                     """, uid)
 
@@ -443,6 +444,7 @@ async def get_user_org_context(user_id: str, email: str = None) -> dict:
                         FROM organization_members om
                         JOIN organizations o ON om.org_id = o.id
                         WHERE om.user_id = $1
+                          AND COALESCE(o.status, 'active') = 'active'
                         LIMIT 1
                     """, uid)
 
