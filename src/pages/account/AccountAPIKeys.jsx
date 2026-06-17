@@ -1211,6 +1211,12 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
                     </a>
                   </div>
 
+                  {providerInfo[selectedProvider].note && (
+                    <div className="text-xs rounded-md border border-amber-400/30 bg-amber-500/10 text-amber-300 px-3 py-2">
+                      {providerInfo[selectedProvider].note}
+                    </div>
+                  )}
+
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${themeClasses.text}`}>
                       Label (Optional)
