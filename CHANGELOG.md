@@ -5,6 +5,11 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.1] - 2026-06-17
+
+### Changed
+- Anthropic BYOK clarifier now also appears in the **Add API Key** form (next to the "get your key" link), not just the provider card — so it shows at the moment a user is about to paste a key.
+
 ## [3.10.0] - 2026-06-17
 
 ### Added
