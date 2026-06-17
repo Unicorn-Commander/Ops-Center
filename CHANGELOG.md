@@ -5,6 +5,23 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.2] - 2026-06-17
+
+### Fixed
+- **Org resolution now only resolves *active* organizations.** The login lookup used
+  `LIMIT 1` with no status filter, so a user in multiple orgs could be dropped into a
+  suspended/stale workspace arbitrarily (e.g. landing in a defunct pilot org instead of their
+  real one). Now filters `status='active'`, so suspended/deleted orgs are skipped and multi-org
+  users land in a live workspace.
+
+### Housekeeping (data)
+- Suspended stale orgs on production (commander): NDA-AutoPilot, Test Organization (API Tests),
+  M10 Ventures, Doug "Crash" Walker, CJ Torres; and on dogfood (bigboy): M10 Ventures.
+  Deactivated 4 unused bespoke tier-codes (crash-dev, m10_partner, nda-autopilot, partnerpulse).
+  All reversible — Keycloak users + memberships preserved (status flip only, no deletes). This
+  also resolves the earlier "dashboard says Professional / plan says Trial" mismatch (it came
+  from a defunct org whose `plan_tier` matched no tier-code → silent trial).
+
 ## [3.9.1] - 2026-06-14
 
 ### Added
