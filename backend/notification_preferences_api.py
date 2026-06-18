@@ -22,7 +22,10 @@ when delivery ships. /test returns a non-sending preview (matches the UI's
 Created: 2026-06-17
 """
 
+import inspect
+import json
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -37,6 +40,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Notification Preferences"])
 
 _TABLE_READY = False
+
+
+@asynccontextmanager
+async def _db():
+    """
+    Acquire a DB connection compatibly across deployments.
+
+    `get_db_connection` resolves to a pool-backed package on the running nodes
+    (returns a pool-acquire context manager) but to a plain asyncpg connection
+    in other checkouts. Handle both: await if needed, use as an async context
+    manager when supported, otherwise close() on exit.
+    """
+    res = get_db_connection()
+    conn = await res if inspect.isawaitable(res) else res
+    if hasattr(conn, "__aenter__"):
+        async with conn as c:
+            yield c
+    else:
+        try:
+            yield conn
+        finally:
+            await conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -145,17 +170,17 @@ async def get_notification_preferences(
 ):
     """Return the caller's saved notification preferences (defaults if unset)."""
     user_id = _resolve(user)
-    conn = await get_db_connection()
     try:
-        await _ensure_table(conn)
-        row = await conn.fetchrow(
-            "SELECT preferences FROM user_notification_preferences WHERE user_id = $1",
-            user_id,
-        )
+        async with _db() as conn:
+            await _ensure_table(conn)
+            row = await conn.fetchrow(
+                "SELECT preferences FROM user_notification_preferences WHERE user_id = $1",
+                user_id,
+            )
         stored = None
         if row and row["preferences"]:
             raw = row["preferences"]
-            stored = raw if isinstance(raw, dict) else __import__("json").loads(raw)
+            stored = raw if isinstance(raw, dict) else json.loads(raw)
         return _merge(stored, user.get("email"))
     except HTTPException:
         raise
@@ -163,8 +188,6 @@ async def get_notification_preferences(
         logger.error(f"Error loading notification preferences: {e}")
         # Never hard-fail the settings page — return defaults
         return _merge(None, user.get("email"))
-    finally:
-        await conn.close()
 
 
 @router.put("/api/v1/notifications/preferences", response_model=NotificationPreferences)
@@ -174,8 +197,6 @@ async def update_notification_preferences(
     user: dict = Depends(require_authenticated_user),
 ):
     """Persist the caller's notification preferences."""
-    import json
-
     user_id = _resolve(user)
 
     if preferences.alert_frequency not in _ALERT_FREQUENCIES:
@@ -185,24 +206,22 @@ async def update_notification_preferences(
         )
 
     payload = preferences.model_dump()
-    conn = await get_db_connection()
     try:
-        await _ensure_table(conn)
-        await conn.execute(
-            """
-            INSERT INTO user_notification_preferences (user_id, preferences, updated_at)
-            VALUES ($1, $2::jsonb, now())
-            ON CONFLICT (user_id)
-            DO UPDATE SET preferences = EXCLUDED.preferences, updated_at = now()
-            """,
-            user_id,
-            json.dumps(payload),
-        )
+        async with _db() as conn:
+            await _ensure_table(conn)
+            await conn.execute(
+                """
+                INSERT INTO user_notification_preferences (user_id, preferences, updated_at)
+                VALUES ($1, $2::jsonb, now())
+                ON CONFLICT (user_id)
+                DO UPDATE SET preferences = EXCLUDED.preferences, updated_at = now()
+                """,
+                user_id,
+                json.dumps(payload),
+            )
     except Exception as e:
         logger.error(f"Error saving notification preferences: {e}")
         raise HTTPException(status_code=500, detail="Failed to save preferences")
-    finally:
-        await conn.close()
 
     # Audit (no secrets: drop the slack webhook URL from the logged metadata)
     try:
@@ -249,21 +268,19 @@ async def test_notification(
         )
 
     # Load current prefs to reflect thresholds / enabled state in the preview
-    conn = await get_db_connection()
+    stored = None
     try:
-        await _ensure_table(conn)
-        row = await conn.fetchrow(
-            "SELECT preferences FROM user_notification_preferences WHERE user_id = $1",
-            user_id,
-        )
-        stored = None
+        async with _db() as conn:
+            await _ensure_table(conn)
+            row = await conn.fetchrow(
+                "SELECT preferences FROM user_notification_preferences WHERE user_id = $1",
+                user_id,
+            )
         if row and row["preferences"]:
             raw = row["preferences"]
-            stored = raw if isinstance(raw, dict) else __import__("json").loads(raw)
+            stored = raw if isinstance(raw, dict) else json.loads(raw)
     except Exception:
         stored = None
-    finally:
-        await conn.close()
 
     prefs = _merge(stored, user.get("email"))
     subject, body_tmpl = _TEST_TEMPLATES[ntype]
