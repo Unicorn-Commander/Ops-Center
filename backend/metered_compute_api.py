@@ -105,19 +105,25 @@ def _is_exempt(tier: Optional[str]) -> bool:
 
 
 async def _get_meter():
-    """Build a FederationMeter configured with the live Lago credentials."""
+    """Build a FederationMeter pointed at the canonical Lago target.
+
+    Uses the same `FEDERATION_LAGO_API_URL/KEY` platform_settings override the
+    rest of the federation rail uses, so a node whose local LAGO_* env points
+    at a local Lago (e.g. bigboy, whose local key 401s) relays billing to the
+    UC-1 Hub instead of failing.
+    """
     from database.connection import get_db_pool
     from federation.metering import FederationMeter
-    try:
-        from get_credential import get_credential
-        lago_key = get_credential("LAGO_API_KEY", "")
-    except Exception:
-        lago_key = os.getenv("LAGO_API_KEY", "")
     try:
         pool = await get_db_pool()
     except Exception:
         pool = None
-    return FederationMeter(pool, lago_url=LAGO_API_URL, lago_api_key=lago_key)
+    try:
+        from federation.agent_bridge import _resolve_lago_creds
+        lago_url, lago_key = await _resolve_lago_creds(pool)
+    except Exception:
+        lago_url, lago_key = LAGO_API_URL, os.getenv("LAGO_API_KEY", "")
+    return FederationMeter(pool, lago_url=lago_url, lago_api_key=lago_key)
 
 
 async def _resolve_org(user_id: str) -> tuple[Optional[str], Optional[str]]:
