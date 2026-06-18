@@ -54,8 +54,13 @@ router = APIRouter(prefix="/api/v1/metered", tags=["Metered Compute"])
 # Config
 # ---------------------------------------------------------------------------
 
-INFINITY_EMBEDDINGS_URL = os.getenv("INFINITY_EMBEDDINGS_URL", "http://unicorn-embeddings:8082")
-INFINITY_RERANK_URL = os.getenv("INFINITY_RERANK_URL", "http://unicorn-reranker:8083")
+# Default to the unified Infinity proxy (on the shared unicorn-network). Per
+# deployment, override with INFINITY_EMBEDDINGS_URL / INFINITY_RERANK_URL —
+# e.g. the host-published backends http://<infinity-host>:8082 / :8083 when the
+# unified proxy isn't fronting them. The route paths (/embeddings, /rerank) are
+# appended below.
+INFINITY_EMBEDDINGS_URL = os.getenv("INFINITY_EMBEDDINGS_URL", "http://unicorn-infinity-proxy:8080")
+INFINITY_RERANK_URL = os.getenv("INFINITY_RERANK_URL", "http://unicorn-infinity-proxy:8080")
 INFINITY_SERVICE_KEY = os.getenv("INFINITY_SERVICE_KEY", "")
 
 # Service-to-service key for the /report bridge. Reuse the federation key by
