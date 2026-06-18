@@ -39,6 +39,13 @@ import {
   Sms as SmsIcon,
 } from '@mui/icons-material';
 
+// Read the double-submit CSRF token (non-httponly cookie) so mutating
+// requests succeed whether or not CSRF enforcement is enabled server-side.
+const csrfHeaders = () => {
+  const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? { 'X-CSRF-Token': decodeURIComponent(m[1]) } : {};
+};
+
 const NotificationSettings = () => {
   // State
   const [loading, setLoading] = useState(true);
@@ -87,6 +94,7 @@ const NotificationSettings = () => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...csrfHeaders(),
         },
         credentials: 'include',
         body: JSON.stringify(preferences),
@@ -120,6 +128,7 @@ const NotificationSettings = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...csrfHeaders(),
         },
         credentials: 'include',
         body: JSON.stringify({ notification_type: notificationType }),

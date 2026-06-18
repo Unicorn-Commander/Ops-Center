@@ -228,7 +228,6 @@ const PurchaseHistory = lazy(() => import('./pages/extensions/PurchaseHistory'))
 
 // Account pages (lazy loaded)
 const AccountProfile = lazy(() => import('./pages/account/AccountProfile'));
-const AccountNotifications = lazy(() => import('./pages/account/AccountNotifications'));
 const AccountSecurity = lazy(() => import('./pages/account/AccountSecurity'));
 const AccountAPIKeys = lazy(() => import('./pages/account/AccountAPIKeys'));
 const NotificationSettings = lazy(() => import('./pages/NotificationSettings'));
@@ -559,7 +558,7 @@ function AppRoutes() {
                   {/* ACCOUNT SECTION - Personal user settings */}
                   {/* ============================================================ */}
                   <Route path="account/profile" element={<AccountProfile />} />
-                  <Route path="account/notifications" element={<AccountNotifications />} />
+                  <Route path="account/notifications" element={<Navigate to="/admin/account/notification-settings" replace />} />
                   <Route path="account/notification-settings" element={<NotificationSettings />} />
                   <Route path="account/security" element={<AccountSecurity />} />
                   <Route path="account/api-keys" element={<AccountAPIKeys />} />
