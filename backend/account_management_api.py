@@ -209,42 +209,9 @@ async def get_current_user(
 
 
 # ============================================================================
-# 3. GET /api/v1/notifications/preferences - User notification settings
+# 3. Notification preferences  →  MOVED to notification_preferences_api.py
+#    (real, persisted GET/PUT/test; this mock was removed 2026-06-17)
 # ============================================================================
-
-@router.get("/api/v1/notifications/preferences", response_model=NotificationPreferences)
-async def get_notification_preferences(
-    user: Dict = Depends(require_authenticated_user)
-):
-    """
-    Get user's notification preferences.
-
-    Returns settings for:
-    - Email notifications (enabled/disabled)
-    - Email frequency (immediate, daily, weekly)
-    - Billing alerts
-    - Security alerts
-    - Marketing emails
-    - Usage warnings
-    """
-    try:
-        # TODO: Query database for user preferences
-        # For now, return sensible defaults
-        preferences = {
-            "email_enabled": True,
-            "email_frequency": "immediate",
-            "billing_alerts": True,
-            "security_alerts": True,
-            "marketing_emails": False,
-            "usage_warnings": True
-        }
-
-        logger.info(f"Retrieved notification preferences for user {user.get('email')}")
-        return preferences
-
-    except Exception as e:
-        logger.error(f"Error fetching notification preferences: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve preferences")
 
 
 # ============================================================================

@@ -5,6 +5,31 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.2] - 2026-06-17
+
+### Fixed
+- **Notification Preferences now actually work.** The Account → "Notification
+  Preferences" page (`NotificationSettings`) previously loaded a mock payload
+  whose field names didn't match the UI and had no save endpoint, so toggles
+  rendered blank and "Save" always failed.
+  - New `notification_preferences_api.py`: real persisted `GET`/`PUT
+    /api/v1/notifications/preferences` (JSONB-backed `user_notification_preferences`
+    table keyed by Keycloak user id) plus `POST /api/v1/notifications/test`
+    (non-sending preview, matching the "email delivery coming soon" notice).
+  - Removed the conflicting mock GET from `account_management_api.py`.
+  - Frontend sends the double-submit CSRF token on save/test so it works
+    whether or not CSRF enforcement is enabled.
+- **Removed the duplicate, broken notifications page.** The orphaned
+  `AccountNotifications` page (route `/admin/account/notifications`, not in the
+  menu) posted to a nonexistent `/api/v1/auth/notifications`; its route now
+  redirects to the canonical `notification-settings` page and the file is gone.
+
+### Audited
+- Full admin sidebar menu audit (44 items): every other menu entry resolves to
+  the correct route, component, and backing endpoints. No other mispointed or
+  dead menu links found (FederationContracts and `/subscriptions/current` were
+  verified real, not stubs).
+
 ## [3.10.1] - 2026-06-17
 
 ### Changed
