@@ -100,6 +100,17 @@ class FederationMeter:
         if org_id:
             metadata["org_id"] = org_id
         metadata["gateway_metered"] = gateway_metered
+        # Optional unit-based billable metric for non-LLM local compute
+        # (embeddings/reranking/STT/TTS). When set, _report_to_lago emits THIS
+        # metric code with the unit quantity instead of the cost-based
+        # `ai_api_call`. The LLM path leaves these unset → unchanged behavior.
+        billing_metric = usage_event.get("billing_metric")
+        billing_quantity = usage_event.get("billing_quantity")
+        billing_unit = usage_event.get("billing_unit")
+        if billing_metric:
+            metadata.setdefault("billing_metric", billing_metric)
+            metadata.setdefault("billing_quantity", billing_quantity)
+            metadata.setdefault("billing_unit", billing_unit)
         event = {
             "event_id": event_id,
             "source_node_id": usage_event.get("source_node_id", "unknown"),
@@ -114,6 +125,9 @@ class FederationMeter:
             "status": usage_event.get("status", "success"),
             "org_id": org_id,
             "gateway_metered": gateway_metered,
+            "billing_metric": billing_metric,
+            "billing_quantity": billing_quantity,
+            "billing_unit": billing_unit,
             "metadata": metadata,
             "timestamp": usage_event.get("timestamp", now.isoformat()),
             "created_at": now.isoformat(),
@@ -210,7 +224,36 @@ class FederationMeter:
 
         org_id = event.get("org_id")
         cost = float(event.get("cost_usd") or 0.0)
-        if org_id:
+        billing_metric = event.get("billing_metric")
+        if org_id and billing_metric:
+            # Non-LLM unit-based compute (embeddings / reranking / STT / TTS):
+            # emit the dedicated metric code with the unit quantity. The Lago
+            # plan charge converts units → price; response_cost is carried for
+            # cost dashboards but the billable dimension is the unit count.
+            quantity = event.get("billing_quantity") or 0
+            unit = event.get("billing_unit") or "units"
+            props = {
+                "service_type": event.get("service_type", ""),
+                "model": event.get("model", ""),
+                "units": quantity,
+                "response_cost": round(cost * self.lago_markup, 10),
+                "cost_usd": str(cost),
+                "via": "federation_meter",
+            }
+            # Also expose the count under its named unit (e.g. "tokens",
+            # "characters", "audio_seconds", "searches") for Lago metric
+            # aggregation flexibility.
+            props[unit] = quantity
+            lago_event = {
+                "event": {
+                    "transaction_id": event["event_id"],
+                    "external_subscription_id": org_id,
+                    "code": billing_metric,
+                    "timestamp": event["timestamp"],
+                    "properties": props,
+                }
+            }
+        elif org_id:
             lago_event = {
                 "event": {
                     "transaction_id": event["event_id"],

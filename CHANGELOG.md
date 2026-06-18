@@ -5,6 +5,31 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.0] - 2026-06-18
+
+### Added
+- **Lago metering for non-LLM local compute** (closes the gap where only the
+  Qwen LLMs emitted billing events). Embeddings, reranking, STT, and TTS now
+  meter through the existing federation rail (`FederationMeter.record_usage`,
+  keyed `external_subscription_id = org_id`, with the `gateway_metered`
+  double-bill guard), each with its own unit-based billable metric:
+  `embeddings_tokens`, `rerank_searches`, `stt_audio_seconds`, `tts_characters`.
+  - `FederationMeter._report_to_lago` extended to emit a distinct unit metric
+    when `billing_metric` is set; the LLM `ai_api_call` path is unchanged.
+  - New `metered_compute_api.py` (`/api/v1/metered`): metered **proxy** for
+    embeddings/rerank (forwards to the Infinity server, counts units), and a
+    service-key **report bridge** (`POST /api/v1/metered/report`) so the
+    STT/TTS voice plane reports unit counts without transiting audio.
+  - Exempt tiers (free / on-device / vip / internal) are not metered;
+    collect-don't-gate (usage is metered, the call is never blocked).
+  - `scripts/register_metering_metrics.py` registers the four billable
+    metrics in Lago (idempotent). `/api/v1/metered/` added to CSRF exempt
+    (API/service auth, like `/api/v1/llm/`).
+  - NOTE: this builds and proves the metering rail; each client (Center-Deep
+    RAG → embeddings/rerank, voice plane → STT/TTS) must point at the metered
+    endpoints / call the report bridge for its real traffic to be billed, and
+    a charge/price must be attached to each metric in the Lago plan.
+
 ## [3.10.2] - 2026-06-17
 
 ### Fixed
