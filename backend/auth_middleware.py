@@ -69,6 +69,9 @@ PUBLIC_PREFIXES = (
     "/api/v1/compute/",
     "/api/v1/inference/",
     "/api/v1/uuda/",
+    "/api/v1/metered/",               # metered compute: /report is service-key m2m;
+                                      # /embeddings & /rerank still enforce session via
+                                      # their own require_authenticated_user dependency
     "/api/v1/llm/",                   # API-key (Brigade/Open-WebUI/Bolt). Admin subpaths
                                       # (usage/providers/costs/routing/...) get their own
                                       # per-endpoint require_admin_user.

@@ -781,6 +781,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
+        "/api/v1/metered/",  # Metered compute proxy/bridge - API/service auth, not forms
         "/api/v1/network/vpn-keys",  # VPN pre-auth key management (admin, REST API)
         "/api/v1/network/nodes",      # VPN node management (admin, REST API)
         "/api/llmcall",  # Bolt.DIY LLM proxy endpoint - external integration
