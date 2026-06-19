@@ -998,6 +998,9 @@ async def chat_completions(
         # (federation is gateway_metered/zeroed regardless). NEVER infer local
         # from the model string — real local names lack ollama/vllm prefixes.
         is_local_provider = False
+        # Local-pricing state (set by the gate after the provider is resolved):
+        local_rate_per_1k = None      # metered-mode per-1k local rate (None = free)
+        record_local_usage = False    # whether to add served tokens to the monthly local quota
 
         # Federated local models: if a trusted federation peer publishes the
         # requested model (e.g. bigboy's GPUs), serve it through the
@@ -1151,6 +1154,61 @@ async def chat_completions(
                     'unicorn-' in provider.get('api_base_url', '')
                 )
 
+                # --- Per-tier local-pricing gate (inert unless LOCAL_PRICING_ENABLED) ---
+                # Runs only for LOCAL providers. resolve_local_pricing decides:
+                #   metered  -> keep model, price local at local_rate_per_1k;
+                #   overflow -> re-resolve provider for a PAID model (bills as cloud);
+                #   deny     -> 429; otherwise serve free (today's behavior).
+                # Fail-open: any error serves the request unchanged.
+                if is_local_provider:
+                    try:
+                        from local_pricing import resolve_local_pricing, OVERFLOW, DENY
+                        _dec = await resolve_local_pricing(
+                            org_id, model_name, estimated_tokens,
+                            tier_code=user_tier, is_local=True,
+                        )
+                        if _dec["decision"] == DENY:
+                            raise HTTPException(
+                                status_code=429,
+                                detail="Local AI usage limit reached for your plan. Upgrade or wait for the monthly reset.",
+                            )
+                        if _dec["decision"] == OVERFLOW and _dec.get("model"):
+                            overflow_model = _dec["model"]
+                            logger.info(f"[local_pricing] org={org_id} local quota exceeded -> overflow to '{overflow_model}'")
+                            ov = await conn.fetchrow("""
+                                SELECT p.id, p.name, p.type, p.api_key_encrypted, p.api_base_url, p.config
+                                FROM llm_models m JOIN llm_providers p ON m.provider_id = p.id
+                                WHERE m.name = $1 AND m.enabled = true AND p.enabled = true
+                            """, overflow_model)
+                            if ov:
+                                provider = ov
+                                model_name = overflow_model
+                                request.model = overflow_model
+                                proxy_request["model"] = normalize_model_id(overflow_model)
+                                provider_db_config = provider['config'] or {}
+                                if isinstance(provider_db_config, str):
+                                    import json as _json
+                                    provider_db_config = _json.loads(provider_db_config)
+                                base_url = provider.get('api_base_url') or provider_db_config.get('base_url', 'https://openrouter.ai/api/v1')
+                                provider_name = provider['name']
+                                # Re-derive locality for the overflow provider (almost always cloud).
+                                is_local_provider = provider['type'] in ('openai_compatible', 'local') and (
+                                    provider.get('api_base_url', '').startswith('http://') or
+                                    'localhost' in provider.get('api_base_url', '') or
+                                    'unicorn-' in provider.get('api_base_url', '')
+                                )
+                            else:
+                                logger.warning(f"[local_pricing] overflow model '{overflow_model}' not found; serving local")
+                        elif _dec.get("meter") and _dec.get("local_rate_per_1k") is not None:
+                            local_rate_per_1k = _dec["local_rate_per_1k"]
+                        # Record served tokens against the monthly local quota only when
+                        # the served provider is (still) local.
+                        record_local_usage = bool(org_id) and is_local_provider
+                    except HTTPException:
+                        raise
+                    except Exception as _gate_err:
+                        logger.warning(f"[local_pricing] gate error (fail-open, serving unchanged): {_gate_err}")
+
                 # Get system API key (prefer database over environment) - skip for local providers
                 api_key = None
                 if not is_local_provider:
@@ -1297,7 +1355,8 @@ async def chat_completions(
                             model=provider_used,
                             power_level=power_level,
                             user_tier=user_tier,
-                            is_local=is_local_provider
+                            is_local=is_local_provider,
+                            local_rate_per_1k=local_rate_per_1k
                         )
 
                         # Deduct credits
@@ -1333,6 +1392,14 @@ async def chat_completions(
                                 }
                             )
                             logger.info(f"Deducted {actual_cost:.6f} credits from user {user_id} for streaming request")
+
+                        # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
+                        if record_local_usage:
+                            try:
+                                from local_quota import add_local_tokens
+                                await add_local_tokens(org_id, tokens_for_billing)
+                            except Exception as _q_err:
+                                logger.debug(f"[local_pricing] quota record skipped: {_q_err}")
 
                         # Track usage event
                         try:
@@ -1421,7 +1488,8 @@ async def chat_completions(
             model=provider_used,
             power_level=power_level,
             user_tier=user_tier,
-            is_local=is_local_provider
+            is_local=is_local_provider,
+            local_rate_per_1k=local_rate_per_1k
         )
 
         # Debit credits (skip if using BYOK - user pays provider directly)
@@ -1494,6 +1562,14 @@ async def chat_completions(
             else:
                 new_balance = await credit_system.get_user_credits(user_id)
             transaction_id = None
+
+        # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
+        if record_local_usage:
+            try:
+                from local_quota import add_local_tokens
+                await add_local_tokens(org_id, tokens_used)
+            except Exception as _q_err:
+                logger.debug(f"[local_pricing] quota record skipped: {_q_err}")
 
         # Track usage event (Epic 1.8: Usage Metering)
         try:
