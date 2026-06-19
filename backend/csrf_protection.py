@@ -118,6 +118,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/byok/",  # BYOK API endpoints (Bring Your Own Key)
             "/api/v1/llm/",  # LLM API endpoints (used by Brigade, Open-WebUI, etc.)
             "/api/v1/metered/",  # Metered compute proxy/bridge (apps + voice plane, API-key/session auth)
+            "/api/v1/internal/llm/",  # Gateway local-pricing preflight (service-key m2m)
             "/api/v1/email-provider/",  # Email provider API (used for testing providers)
             "/api/v1/platform/",  # Platform settings API (credential management)
             "/api/v1/monitoring/grafana/",  # Grafana integration API (monitoring)
