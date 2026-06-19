@@ -281,8 +281,16 @@ async def upgrade_subscription(
                 "plan_code": target_plan.id,
                 "user_id": user_id,
                 "user_email": user_email,
-                "change_type": "upgrade"
-            }
+                "change_type": "upgrade",
+                # Suite marker — the shared Stripe account fans every event out to
+                # all suite webhooks; the ops-center webhook only provisions
+                # checkouts carrying THIS marker (so a Meeting-Ops/Magic Unicorn/
+                # Majiks purchase can't trigger an ops-center paid-org provision).
+                "suite": os.getenv("OPS_CENTER_STRIPE_SUITE", "unicorn-commander"),
+            },
+            subscription_data={
+                "metadata": {"suite": os.getenv("OPS_CENTER_STRIPE_SUITE", "unicorn-commander")}
+            },
         )
 
         # Log the upgrade attempt
