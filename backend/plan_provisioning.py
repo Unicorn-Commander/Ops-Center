@@ -131,6 +131,7 @@ async def on_plan_activated(
     """
     out: Dict[str, Any] = {"org_id": org_id, "plan_code": plan_code,
                            "key": False, "budget": None, "budget_applied": False}
+    budget = None  # referenced in the summary log even when no budget_resolver is passed
     if not org_id or not str(org_id).startswith("org_"):
         # Email-keyed legacy customers and service accounts are not org
         # contracts — nothing to provision.
