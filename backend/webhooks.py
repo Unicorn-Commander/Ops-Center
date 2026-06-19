@@ -83,7 +83,7 @@ async def handle_stripe_checkout_completed(
 
     # Get tier from metadata
     metadata = session.get('metadata', {})
-    tier_name = metadata.get('tier_name') or metadata.get('tier_id')
+    tier_name = metadata.get('tier_name') or metadata.get('tier_id') or metadata.get('plan_code')
 
     logger.info(f"Processing checkout completed: {customer_email} -> {tier_name}")
 
@@ -110,27 +110,28 @@ async def handle_stripe_checkout_completed(
         user_id = user.get("id")
         org_id = user.get("attributes", {}).get("org_id", [f"org_{user_id}"])[0]
 
-        # Get current subscription
+        # Get current subscription (for the upgrade email + to terminate the old Lago sub).
         current_subscription = await get_subscription(org_id)
         old_tier = "trial"
-
         if current_subscription:
             old_tier = current_subscription.get("plan_code", "").split("_")[0]
-
-            # Terminate old subscription in Lago
             lago_subscription_id = current_subscription.get("lago_id")
             if lago_subscription_id:
-                await terminate_subscription(org_id, lago_subscription_id)
-                logger.info(f"Terminated old subscription {lago_subscription_id}")
+                try:
+                    await terminate_subscription(org_id, lago_subscription_id)
+                    logger.info(f"Terminated old subscription {lago_subscription_id}")
+                except Exception as e:
+                    logger.error(f"Failed to terminate old subscription: {e}")
 
-        # Create new subscription in Lago
-        lago_plan_code = f"{tier_name}_monthly"
-        try:
-            new_subscription = await create_subscription(org_id, lago_plan_code)
-            logger.info(f"Created Lago subscription for {org_id}: {new_subscription.get('lago_id')}")
-        except Exception as e:
-            logger.error(f"Failed to create Lago subscription: {e}")
-            # Continue even if Lago fails - user paid, so honor the upgrade
+        # Full, correct paid-org provisioning — the SAME path manual onboarding uses:
+        # set tier + Lago subscription on the tier's REAL plan + gateway key cloud
+        # HARD CAP + funded wallet. Reads pricing from subscription_tiers (no
+        # hardcoded {tier}_monthly codes). org_id/tier forms are normalized inside.
+        from paid_org_provisioning import provision_paid_org
+        prov = await provision_paid_org(org_id, tier_code=tier_name, email=customer_email, source="stripe")
+        logger.info(f"Stripe self-serve provisioned org {org_id} -> {tier_name}: {prov}")
+        if prov.get("error"):
+            logger.error(f"provision_paid_org error for org {org_id}: {prov['error']}")
 
         # Update user tier in Keycloak
         await update_user_attributes(
