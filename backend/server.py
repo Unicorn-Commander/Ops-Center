@@ -811,6 +811,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/inference/",  # Inference proxy - programmatic API, session auth not CSRF
         "/api/v1/compute/",  # GPU Compute Fabric - machine-to-machine, uses agent key auth
         "/api/v1/billing/events",  # Billing Events API - machine-to-machine, uses agent key auth
+        "/api/v1/internal/llm/",  # Gateway local-pricing preflight - service-key m2m, not forms
         "/api/v1/uuda/",  # UUDA control plane
         "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
     },
