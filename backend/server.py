@@ -111,6 +111,7 @@ from redis_session import redis_session_manager
 from account_management_api import router as account_management_router
 from notification_preferences_api import router as notification_preferences_router
 from metered_compute_api import router as metered_compute_router
+from internal_llm_preflight_api import router as internal_llm_preflight_router
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
@@ -1291,6 +1292,7 @@ logger.info("Notification Preferences API endpoints registered")
 
 # Metered Compute API (Lago billing for embeddings/reranking/STT/TTS)
 app.include_router(metered_compute_router)
+app.include_router(internal_llm_preflight_router)
 logger.info("Metered Compute API endpoints registered at /api/v1/metered")
 
 # Avatar Storage API (November 2025 - CORS fix for bolt.diy)
