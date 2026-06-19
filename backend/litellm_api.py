@@ -992,6 +992,13 @@ async def chat_completions(
             proxy_request["model"] = normalized_model
             logger.info(f"Using model: {normalized_model} (original: {request.model})")
 
+        # Authoritative local/cloud signal for billing. Set True only when the
+        # resolved provider record is a local backend (see ~line 1141). Default
+        # False so the federation branch and any early return bill as cloud-safe
+        # (federation is gateway_metered/zeroed regardless). NEVER infer local
+        # from the model string — real local names lack ollama/vllm prefixes.
+        is_local_provider = False
+
         # Federated local models: if a trusted federation peer publishes the
         # requested model (e.g. bigboy's GPUs), serve it through the
         # federation runtime. The PUBLISHER's gateway meters the call under
@@ -1289,7 +1296,8 @@ async def chat_completions(
                             tokens_used=tokens_for_billing,
                             model=provider_used,
                             power_level=power_level,
-                            user_tier=user_tier
+                            user_tier=user_tier,
+                            is_local=is_local_provider
                         )
 
                         # Deduct credits
@@ -1412,7 +1420,8 @@ async def chat_completions(
             tokens_used=tokens_used,
             model=provider_used,
             power_level=power_level,
-            user_tier=user_tier
+            user_tier=user_tier,
+            is_local=is_local_provider
         )
 
         # Debit credits (skip if using BYOK - user pays provider directly)
