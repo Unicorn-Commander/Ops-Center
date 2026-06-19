@@ -38,6 +38,18 @@ router = APIRouter(prefix="/api/v1/internal/llm", tags=["Internal LLM"])
 
 INTERNAL_LLM_KEY = os.getenv("INTERNAL_LLM_KEY", "") or os.getenv("FEDERATION_KEY", "")
 
+# Gateway models that run on OUR OWN infrastructure (org-local) but are reached
+# THROUGH the gateway, so the host node (e.g. commander, a VPS) has no local
+# llm_models row for them. "local" = org-owned compute, NOT physical co-location:
+# uc/chat-default -> bigboy 3090, uc/chat-local-p40 -> midboy P40. Third-party
+# cloud rungs (deepseek-*, or/*) are NOT matched, so they bill as cloud.
+LOCAL_GATEWAY_PREFIXES = tuple(
+    p.strip() for p in os.getenv("LOCAL_GATEWAY_MODEL_PREFIXES", "uc/").split(",") if p.strip()
+)
+LOCAL_GATEWAY_MODELS = set(
+    m.strip() for m in os.getenv("LOCAL_GATEWAY_MODELS", "").split(",") if m.strip()
+)
+
 
 def _check_key(request: Request) -> None:
     key = request.headers.get("X-Internal-Key", "")
@@ -57,8 +69,13 @@ async def _tier_for_org(org_id: str) -> Optional[str]:
 
 
 async def _is_local_model(model: str) -> bool:
-    """Authoritative local check: resolve the model's provider record (same logic
-    as the inline chat path) — never inferred from the model string."""
+    """Authoritative local check. Two sources:
+    1. Declared org-local gateway models (uc/* etc.) — own GPUs reached via the
+       gateway, with no local llm_models row on a VPS host like commander.
+    2. The model's provider record (same logic as the inline chat path) — for
+       nodes that DO have local-provider models (e.g. bigboy's Qwen3-30B)."""
+    if model in LOCAL_GATEWAY_MODELS or (LOCAL_GATEWAY_PREFIXES and model.startswith(LOCAL_GATEWAY_PREFIXES)):
+        return True
     from database import get_db_connection
     try:
         async with await get_db_connection() as conn:
