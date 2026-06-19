@@ -541,7 +541,9 @@ class CreditSystem:
         tokens_used: int,
         model: str,
         power_level: str = "balanced",
-        user_tier: str = "vip_founder"
+        user_tier: str = "vip_founder",
+        is_local: bool = False,
+        local_rate_per_1k: Optional[float] = None,
     ) -> float:
         """
         Calculate cost for LLM request - NOW ASYNC WITH DB LOOKUP
@@ -551,13 +553,26 @@ class CreditSystem:
             model: Model identifier
             power_level: User's selected power level (eco, balanced, precision)
             user_tier: User's subscription tier (vip_founder, byok, managed)
+            is_local: True when the request was served by a LOCAL provider. This is
+                the AUTHORITATIVE local/cloud signal — it must come from the resolved
+                provider record (is_local_provider), NEVER inferred from the model
+                string. Real local model names (e.g. ``qwen3.6-35b``, ``Qwen3-30B-Q4_K_M``)
+                do NOT carry an ``ollama/``/``vllm/`` prefix, so ``_extract_provider``
+                would mis-classify them as cloud ($0.01/1k). See Risk B.
+            local_rate_per_1k: Per-1k local rate for the *metered* local-pricing mode.
+                When None, local is free ($0). Ignored unless ``is_local``.
 
         Returns:
             Cost in credits (float)
         """
         try:
             # Get base cost from model pricing
-            if model in MODEL_PRICING:
+            if is_local:
+                # Authoritative: local is free by default, or the metered local rate.
+                base_cost_per_1k = (
+                    local_rate_per_1k if local_rate_per_1k is not None else PRICING["local"]
+                )
+            elif model in MODEL_PRICING:
                 base_cost_per_1k = MODEL_PRICING[model]
             else:
                 # Extract provider from model name
@@ -600,7 +615,10 @@ class CreditSystem:
 
         except Exception as e:
             logger.error(f"Error calculating cost: {e}")
-            # Return safe default
+            # Return safe default — but a LOCAL request must never fall back to a
+            # cloud rate (Risk B): local stays free (or its metered rate).
+            if is_local:
+                return round((tokens_used / 1000) * (local_rate_per_1k or 0.0), 6)
             return (tokens_used / 1000) * 0.01
 
     def _extract_provider(self, model: str) -> str:
