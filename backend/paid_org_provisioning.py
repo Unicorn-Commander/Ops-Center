@@ -84,38 +84,47 @@ async def provision_paid_org(
     lago_plan = tier["lago_plan_code"]
     out["cloud_cap"] = cloud_cap
 
+    # ID forms differ by subsystem: organizations.id is a bare UUID, while the
+    # gateway key (litellm user_id) and Lago external_id use the "org_<uuid>"
+    # form (so metered ai_api_call events attach). Normalize to both.
+    s = str(org_id)
+    bare_id = s[4:] if s.startswith("org_") else s
+    org_key = "org_" + bare_id
+    out["bare_id"], out["org_key"] = bare_id, org_key
+
     # 1. Set the org's tier (non-exempt paid tier → billing engages).
     try:
         from database import get_db_connection
         async with await get_db_connection() as conn:
-            await conn.execute("UPDATE organizations SET plan_tier = $1 WHERE id = $2", tier_code, org_id)
+            await conn.execute("UPDATE organizations SET plan_tier = $1 WHERE id = $2", tier_code, bare_id)
         out["tier_set"] = True
     except Exception as e:
         out["tier_error"] = str(e)
-        logger.warning("[provision_paid_org] tier set failed org=%s: %s", org_id, e)
+        logger.warning("[provision_paid_org] tier set failed org=%s: %s", bare_id, e)
 
-    # 2. Lago subscription on the tier's real plan (external_id == org_id).
+    # 2. Lago subscription on the tier's real plan (external_id == org_key, to
+    #    match the gateway's per-org metering identity).
     try:
         from lago_integration import subscribe_org_to_plan
         sub = await subscribe_org_to_plan(
-            org_id=org_id, plan_code=lago_plan, org_name=await _org_name(org_id), email=email,
+            org_id=org_key, plan_code=lago_plan, org_name=await _org_name(bare_id), email=email,
         )
         out["lago_sub"] = bool(sub and sub.get("lago_id"))
         out["lago_plan"] = lago_plan
     except Exception as e:
         out["lago_error"] = str(e)
-        logger.warning("[provision_paid_org] lago sub failed org=%s plan=%s: %s", org_id, lago_plan, e)
+        logger.warning("[provision_paid_org] lago sub failed org=%s plan=%s: %s", org_key, lago_plan, e)
 
     # 3. Gateway key WITH the cloud hard cap (create-with-budget, then ensure on
     #    a pre-existing key — provision is create-only idempotent).
     try:
         from gateway_key_provisioning import provision_org_gateway_key, update_org_gateway_key_budget
-        await provision_org_gateway_key(org_id=org_id, plan_code=tier_code, max_budget=cloud_cap)
+        await provision_org_gateway_key(org_id=org_key, plan_code=tier_code, max_budget=cloud_cap)
         if cloud_cap is not None:
-            out["key_capped"] = bool(await update_org_gateway_key_budget(org_id, cloud_cap, plan_code=tier_code))
+            out["key_capped"] = bool(await update_org_gateway_key_budget(org_key, cloud_cap, plan_code=tier_code))
     except Exception as e:
         out["key_error"] = str(e)
-        logger.warning("[provision_paid_org] key cap failed org=%s: %s", org_id, e)
+        logger.warning("[provision_paid_org] key cap failed org=%s: %s", org_key, e)
 
     # 4. Optionally fund the inline-path credit wallet.
     if included_credits is not None:
@@ -129,12 +138,12 @@ async def provision_paid_org(
                     ON CONFLICT (org_id) DO UPDATE
                       SET total_credits = GREATEST(organization_credit_pools.total_credits, EXCLUDED.total_credits)
                     """,
-                    org_id, int(included_credits),
+                    bare_id, int(included_credits),
                 )
             out["wallet_funded"] = True
         except Exception as e:
             out["wallet_error"] = str(e)
-            logger.warning("[provision_paid_org] wallet fund failed org=%s: %s", org_id, e)
+            logger.warning("[provision_paid_org] wallet fund failed org=%s: %s", bare_id, e)
 
     logger.info("[provision_paid_org] %s", out)
     return out
