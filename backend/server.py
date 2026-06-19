@@ -778,6 +778,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/auth/validate-key",  # Machine-to-machine key validation for mesh services
         "/api/v1/auth/profile",  # Profile update - session-authenticated, multipart form upload
         "/api/v1/webhooks/lago",  # Lago webhooks
+        "/api/v1/webhooks/stripe",  # Stripe webhooks (signature-verified, not session/CSRF)
         "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
         "/api/v1/tier-check/health",  # Health checks
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
