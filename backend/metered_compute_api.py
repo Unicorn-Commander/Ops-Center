@@ -2,27 +2,22 @@
 Metered Compute API — Lago billing for non-LLM local models
 ============================================================
 
-Closes the metering gap: today only the Qwen LLMs emit Lago events (via the
-litellm success_callback). The other local compute — embeddings, reranking,
-STT, TTS — runs unbilled. This router meters all four through the EXISTING
-federation metering rail (`FederationMeter.record_usage` →
-`_report_to_lago`, keyed `external_subscription_id = org_id`, with the
-`gateway_metered` double-bill guard), each with its own unit-based billable
-metric:
+Meters non-LLM local compute that does NOT transit ops-center — currently
+STT and TTS (the voice plane on another box) — through the EXISTING federation
+metering rail (`FederationMeter.record_usage` → `_report_to_lago`, keyed
+`external_subscription_id = org_id`, with the `gateway_metered` double-bill
+guard), with unit-based billable metrics:
 
-    embeddings  → metric `embeddings_tokens`     (unit: tokens)
-    reranking   → metric `rerank_searches`       (unit: searches)
     STT         → metric `stt_audio_seconds`     (unit: audio_seconds)
     TTS         → metric `tts_characters`        (unit: characters)
 
-Two entry styles:
-  - Proxy (small payloads): POST /api/v1/metered/embeddings, /rerank — an
-    authenticated app calls these, we forward to the Infinity server, count
-    the units from the response, and meter. Transparent once a client
-    repoints at it.
-  - Report bridge (no payload transit): POST /api/v1/metered/report — a
-    service (e.g. the STT/TTS voice plane on another box) reports unit counts
-    with a service key. Audio/text never transits ops-center.
+Entry: a service reports unit counts via POST /api/v1/metered/report with a
+service key (audio/text never transits ops-center).
+
+NOTE: embeddings + reranking are metered the other way — they ride the public
+litellm gateway (`llm.unicorncommander.ai`) and bill as `ai_api_call` via the
+litellm cost map + the plan markup. The earlier embeddings/rerank proxy routes
+here were retired 2026-06-19 (redundant with the gateway path).
 
 Exempt tiers (free / on-device / vip / internal — see CREDIT_EXEMPT_TIERS)
 are not metered. Collect-don't-gate: we meter usage but never block the call.
@@ -35,16 +30,11 @@ Created: 2026-06-18
 
 import logging
 import os
-import time
-import uuid
 from typing import Any, Dict, Optional
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from auth_dependencies import require_authenticated_user
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +43,6 @@ router = APIRouter(prefix="/api/v1/metered", tags=["Metered Compute"])
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-
-# Default to the unified Infinity proxy (on the shared unicorn-network). Per
-# deployment, override with INFINITY_EMBEDDINGS_URL / INFINITY_RERANK_URL —
-# e.g. the host-published backends http://<infinity-host>:8082 / :8083 when the
-# unified proxy isn't fronting them. The route paths (/embeddings, /rerank) are
-# appended below.
-INFINITY_EMBEDDINGS_URL = os.getenv("INFINITY_EMBEDDINGS_URL", "http://unicorn-infinity-proxy:8080")
-INFINITY_RERANK_URL = os.getenv("INFINITY_RERANK_URL", "http://unicorn-infinity-proxy:8080")
-INFINITY_SERVICE_KEY = os.getenv("INFINITY_SERVICE_KEY", "")
 
 # Service-to-service key for the /report bridge. Reuse the federation key by
 # default so the voice plane can authenticate without a new secret.
@@ -85,8 +66,6 @@ _LOCAL_NODE_ID = os.getenv("FEDERATION_NODE_ID", "ops-center")
 # Cost basis from the scoping handoff (2026-06-17). The Lago plan charge is
 # the source of truth for price; cost_usd here feeds cost dashboards only.
 _METRICS: Dict[str, Dict[str, Any]] = {
-    "embeddings": {"metric": "embeddings_tokens", "unit": "tokens", "cost_per_unit": 0.02 / 1_000_000},
-    "rerank":     {"metric": "rerank_searches",   "unit": "searches", "cost_per_unit": 0.75 / 1_000_000},
     "stt":        {"metric": "stt_audio_seconds", "unit": "audio_seconds", "cost_per_unit": 0.004 / 60.0},
     "tts":        {"metric": "tts_characters",    "unit": "characters", "cost_per_unit": 15.0 / 1_000_000},
 }
@@ -182,82 +161,6 @@ async def _meter(service_type: str, org_id: str, quantity: float, metadata: Dict
         "metadata": metadata,
     })
     return result.get("event_id")
-
-
-def _estimate_tokens(payload: Dict[str, Any]) -> int:
-    """Fallback token estimate (~4 chars/token) when the upstream omits usage."""
-    inp = payload.get("input", payload.get("inputs", ""))
-    items = inp if isinstance(inp, list) else [inp]
-    chars = sum(len(str(x)) for x in items)
-    return max(1, chars // 4)
-
-
-# ---------------------------------------------------------------------------
-# Proxy routes — embeddings & reranking (small payloads, ops-center → Infinity)
-# ---------------------------------------------------------------------------
-
-async def _proxy_and_meter(
-    request: Request, service_type: str, upstream_base: str, path: str,
-    user: Dict[str, Any],
-) -> JSONResponse:
-    body = await request.json()
-    user_id = user.get("user_id") or user.get("sub") or "unknown"
-    org_id, tier = await _resolve_org(user_id)
-    request_id = str(uuid.uuid4())
-
-    headers = {"X-Request-ID": request_id}
-    if INFINITY_SERVICE_KEY:
-        headers["Authorization"] = f"Bearer {INFINITY_SERVICE_KEY}"
-
-    start = time.time()
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-            resp = await client.post(f"{upstream_base}{path}", headers=headers, json=body)
-    except httpx.TimeoutException:
-        return JSONResponse(status_code=504, content={"error": "Gateway Timeout", "detail": f"{service_type} service did not respond in time."})
-    except httpx.ConnectError:
-        return JSONResponse(status_code=503, content={"error": "Service Unavailable", "detail": f"{service_type} service is not reachable."})
-    except Exception as exc:
-        return JSONResponse(status_code=502, content={"error": "Bad Gateway", "detail": str(exc)})
-    elapsed = round(time.time() - start, 3)
-
-    data = None
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
-
-    # Meter only successful responses for non-exempt orgs.
-    if resp.status_code in (200, 201) and org_id and not _is_exempt(tier):
-        try:
-            if service_type == "embeddings":
-                usage = (data or {}).get("usage") or {}
-                qty = usage.get("total_tokens") or usage.get("prompt_tokens") or _estimate_tokens(body)
-            else:  # rerank — one search per request
-                qty = 1
-            await _meter(service_type, org_id, qty, {
-                "request_id": request_id, "elapsed_seconds": elapsed,
-                "model": body.get("model", ""), "user_id": user_id,
-                "documents": len(body.get("documents", [])) if service_type == "rerank" else None,
-            })
-        except Exception as exc:
-            logger.warning("[metered] %s metering failed (request served): %s", service_type, exc)
-    elif org_id and _is_exempt(tier):
-        logger.debug("[metered] exempt tier '%s' (org=%s) — %s not metered", tier, org_id, service_type)
-
-    return JSONResponse(status_code=resp.status_code, content=data if data is not None else {"raw": resp.text[:500]})
-
-
-@router.post("/embeddings")
-async def metered_embeddings(request: Request, user: Dict = Depends(require_authenticated_user)):
-    """Proxy an OpenAI-style embeddings request to the Infinity server and meter tokens."""
-    return await _proxy_and_meter(request, "embeddings", INFINITY_EMBEDDINGS_URL, "/embeddings", user)
-
-
-@router.post("/rerank")
-async def metered_rerank(request: Request, user: Dict = Depends(require_authenticated_user)):
-    """Proxy a rerank request to the Infinity reranker and meter one search."""
-    return await _proxy_and_meter(request, "rerank", INFINITY_RERANK_URL, "/rerank", user)
 
 
 # ---------------------------------------------------------------------------
