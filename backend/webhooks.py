@@ -32,6 +32,91 @@ stripe.api_key = get_credential("STRIPE_SECRET_KEY")
 email_service = EmailNotificationService()
 
 
+async def _resolve_org_by_email(email: str) -> Optional[str]:
+    """Map a Stripe customer email -> the org_<uuid> the gateway/Lago use."""
+    if not email:
+        return None
+    try:
+        user = await get_user_by_email(email)
+        if not user:
+            return None
+        user_id = user.get("id")
+        return user.get("attributes", {}).get("org_id", [f"org_{user_id}"])[0]
+    except Exception as e:
+        logger.error(f"org resolve by email failed for {email}: {e}")
+        return None
+
+
+@router.post("/stripe")
+async def handle_stripe_webhook(
+    request: Request,
+    stripe_signature: str = Header(None, alias="stripe-signature"),
+):
+    """UNIFIED Stripe webhook — verify signature once, dispatch by event type.
+    Point ONE Stripe endpoint at https://<host>/api/v1/webhooks/stripe with the
+    events below. checkout.session.completed -> provision_paid_org (full paid-org
+    provisioning incl the cloud hard cap); customer.subscription.deleted ->
+    downgrade_org (re-cap the key, stop cloud spend); invoice.payment_failed ->
+    log (Stripe retries; we downgrade only on final subscription.deleted).
+    Failure-isolated: returns a status, never 500s on dispatch errors.
+    """
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(payload, stripe_signature, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Invalid Stripe signature: {e}")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    except Exception as e:
+        logger.error(f"Invalid Stripe payload: {e}")
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    etype = event.get("type")
+    obj = event.get("data", {}).get("object", {})
+    from paid_org_provisioning import provision_paid_org, downgrade_org
+    try:
+        if etype == "checkout.session.completed":
+            md = obj.get("metadata", {}) or {}
+            tier = md.get("tier_name") or md.get("tier_id") or md.get("plan_code")
+            email = obj.get("customer_email") or (obj.get("customer_details", {}) or {}).get("email")
+            if obj.get("payment_status") != "paid":
+                return {"status": "ignored", "reason": f"payment_status={obj.get('payment_status')}"}
+            if not tier or not email:
+                return {"status": "ignored", "reason": "missing tier/email metadata"}
+            org_id = await _resolve_org_by_email(email)
+            if not org_id:
+                return {"status": "error", "reason": "org not found for " + email}
+            r = await provision_paid_org(org_id, tier, email=email, source="stripe")
+            return {"status": "provisioned", "org_id": org_id, "result": r}
+
+        if etype == "customer.subscription.deleted":
+            email = (obj.get("customer_details", {}) or {}).get("email")
+            if not email:
+                # subscription objects carry only the customer id — fetch the email
+                try:
+                    cust = stripe.Customer.retrieve(obj.get("customer"))
+                    email = cust.get("email")
+                except Exception as e:
+                    logger.error(f"could not retrieve Stripe customer {obj.get('customer')}: {e}")
+            org_id = await _resolve_org_by_email(email)
+            if not org_id:
+                return {"status": "ignored", "reason": "org not found (cancel)"}
+            r = await downgrade_org(org_id, source="stripe-canceled")
+            return {"status": "downgraded", "org_id": org_id, "result": r}
+
+        if etype == "invoice.payment_failed":
+            logger.warning("Stripe payment_failed: customer=%s sub=%s (Stripe retries; downgrade on subscription.deleted)",
+                           obj.get("customer"), obj.get("subscription"))
+            return {"status": "noted"}
+
+        return {"status": "ignored", "event_type": etype}
+    except Exception as e:
+        logger.error(f"Stripe webhook dispatch error ({etype}): {e}")
+        return {"status": "error", "detail": str(e)}
+
+
 @router.post("/stripe/checkout-completed")
 async def handle_stripe_checkout_completed(
     request: Request,
