@@ -149,6 +149,18 @@ async def provision_paid_org(
     return out
 
 
+async def downgrade_org(org_id: str, *, to_tier: str = "free", source: str = "stripe") -> Dict[str, Any]:
+    """Downgrade an org when its subscription is canceled / payment fails.
+
+    Reuses provision_paid_org with the lower tier — which immediately RE-CAPS the
+    gateway key to that tier's budget (e.g. free = $0.10), the critical effect:
+    stop the org's third-party cloud spend the moment they stop paying. Sets the
+    tier and (best-effort) the lower Lago plan too. Never raises.
+    """
+    logger.info("[downgrade_org] org=%s -> %s (%s)", org_id, to_tier, source)
+    return await provision_paid_org(org_id, to_tier, source=f"downgrade:{source}")
+
+
 class ProvisionRequest(BaseModel):
     org_id: str
     tier_code: str
