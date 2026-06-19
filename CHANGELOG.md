@@ -5,6 +5,29 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.0] - 2026-06-19
+
+### Added
+- **Public inference gateway: embeddings + reranking + LLM failover.** The
+  `llm.unicorncommander.ai` LiteLLM gateway now fronts the whole GPU mesh with
+  embeddings (`bge-m3`) + rerank (`bge-reranker-v2-m3`) routes, and a 4-tier
+  automatic failover under one alias (`uc/chat-default`): local 3090 → local
+  P40 → DeepSeek V4 Flash → OpenRouter. Direct DeepSeek + OpenAI providers
+  wired (keys in env, not committed config). All authed per-org + metered to
+  Lago; verified failover fires live.
+- **Usage-based pricing across all modalities** (LLM/embeddings/rerank/STT/TTS)
+  with per-tier budget gating (`subscription_tiers.max_monthly_llm_budget` →
+  per-org litellm key `max_budget`): local is $0/unlimited, cloud counts against
+  a bundled allowance, free = local-only/fail-closed.
+
+### Changed
+- **Retired the redundant `/api/v1/metered/embeddings` + `/rerank` proxy routes**
+  (embeddings/rerank now ride the litellm gateway). The `/report` bridge for
+  STT/TTS unit metrics stays. Removed dead helpers + imports.
+- **Dope new README** — local-first/federated-mesh framing, the smart-gateway
+  architecture + failover diagram, real screenshots, current feature set.
+- Help/Guide FAQ updated for the gateway failover + local-first billing model.
+
 ## [3.11.0] - 2026-06-18
 
 ### Added

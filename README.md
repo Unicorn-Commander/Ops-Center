@@ -2,15 +2,18 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-3.3.0-blue.svg)
+![Version](https://img.shields.io/badge/version-3.12.0-blue.svg)
 ![Status](https://img.shields.io/badge/status-production-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-purple.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
 ![React](https://img.shields.io/badge/react-18-61dafb.svg)
+![Inference](https://img.shields.io/badge/inference-local--first-ff69b4.svg)
+![Fallback](https://img.shields.io/badge/failover-local→local→cloud-orange.svg)
+![Security](https://img.shields.io/badge/security-zero--trust-red.svg)
 
-**The Central Hub for Managing Your Entire AI Infrastructure — Now with Federated Inference Mesh**
+**Run your own AI cloud.** Ops-Center is the command deck for a **local-first, federated inference mesh** — your GPUs do the work, a single public gateway fronts it with **automatic local→local→cloud failover**, and every token is **authenticated, metered, and billed** across your entire app suite. One pane of glass for users, orgs, subscriptions, models, billing, and the multi-node GPU fabric underneath.
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [API Reference](#-api-reference)
+[Why it's different](#-what-makes-it-different) • [Features](#-key-features) • [The Gateway](#-the-smart-inference-gateway) • [Quick Start](#-quick-start) • [API](#-api-reference)
 
 </div>
 
@@ -29,6 +32,20 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 - 📊 **Grafana** - Real-time analytics and monitoring
 
 **All in one beautiful, unified interface with zero-trust security.**
+
+---
+
+## 🔥 What Makes It Different
+
+Most "LLM gateways" are a thin proxy in front of someone else's cloud. Ops-Center is the opposite — **you are the cloud.**
+
+- **🏠 Local-first economics.** Inference runs on *your* GPUs (marginal cost ≈ electricity). 3rd-party APIs (DeepSeek, OpenAI, OpenRouter) are **invisible insurance**, not the product — customers only ever touch them when your hardware is overwhelmed or down, and only within their plan's allowance. The margin lives on your own iron.
+- **🛟 Failover nobody else has.** One model alias, four rungs: **local GPU-A → local GPU-B → cheap cloud → premium cloud.** A box dies mid-request and the caller never notices. (Verified: kill the primary, the response still lands.)
+- **🔌 One ingress, one key, every modality.** Chat, embeddings, reranking, and STT/TTS all ride a single public, key-authed, OpenAI-compatible endpoint — metered to Lago, gated by budget, no VPN or raw GPU ports exposed.
+- **🧩 Built for a whole app suite.** Per-org keys, per-app metering, and a unified credit/billing rail designed so one subscription's allowance can span Meeting-Ops, Center-Deep, Brigade, and the rest.
+- **🔐 Zero-trust by construction.** Headscale/WireGuard mesh, per-node signed JWTs, per-service ACLs, CSRF + budget gates, full audit trail. The gateway is the *only* tailnet boundary-crosser; backends stay private.
+
+> **The pitch in one line:** the cost structure of self-hosting, the reliability of a managed cloud, and the billing of a SaaS — fused.
 
 ---
 
@@ -96,6 +113,42 @@ Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosyste
 - **Usage Analytics**: API calls, credits consumed, costs per service
 - **Audit Logs**: Complete activity tracking across all operations
 - **Federation Audit**: Routing decision log with candidates, constraints, and scoring
+
+---
+
+## 🛰️ The Smart Inference Gateway
+
+A single public, OpenAI-compatible endpoint (`llm.unicorncommander.ai`) fronts the entire GPU mesh. Consumers — your apps, the customer node, external products — hold **one per-org key** and call it like any AI provider. Behind it, the gateway authenticates, rate-limits, **meters every call to Lago**, and routes with automatic multi-tier failover.
+
+```
+   app / customer node / external          one key  ▸ Authorization: Bearer REMOVED…
+                  │
+       HTTPS :443 │  (Cloudflare → Traefik)
+                  ▼
+        ┌───────────────────────────────────────────────┐
+        │  LiteLLM gateway  —  authn · RPM/TPM · Lago     │
+        │  /v1/chat · /v1/embeddings · /v1/rerank · STT   │
+        └───────────────┬───────────────────────────────┘
+                        │   model: uc/chat-default
+        ┌───────────────┴───────────────────────────────────────────┐
+        ▼                ▼                 ▼                ▼
+   ① local 3090     ② local P40       ③ DeepSeek V4     ④ OpenRouter
+   (primary, free)  (redundancy, free) Flash (cheap)     (premium)
+        └──────── automatic failover, left → right, caller never knows ────────┘
+
+   Metering:  LLM + embeddings → ai_api_call (cost × plan)   |   STT/TTS → unit metrics
+   Gating:    per-org key max_budget — local is $0 (unlimited), cloud counts against the allowance
+```
+
+**Why this matters:** rungs ① and ② are *your* GPUs — free and fast. Only a full local outage spills to ③/④, and even then a free-tier org is **fail-closed** (local-only) while paid orgs draw down their bundled cloud allowance. You get managed-cloud reliability on self-hosted economics, billed like a SaaS.
+
+| Capability | How |
+|---|---|
+| **Local→local→cloud failover** | LiteLLM model-group + ordered `fallbacks` (verified live) |
+| **Per-org metering** | `success_callback: [lago]`, `external_subscription_id = org_id` |
+| **Budget gating** | per-key `max_budget`; local = $0 so it never depletes, cloud does |
+| **Non-LLM compute** | STT/TTS report unit metrics (audio-seconds / characters) via a service-key bridge — audio never transits the gateway |
+| **Cloud-GPU burst** | Lambda Labs auto-provision + idle-shutdown for sustained overflow (privacy-preserving — your models on rented iron) |
 
 ---
 
@@ -264,17 +317,28 @@ ops-center/
 
 ## 🎨 Screenshots
 
-### Dashboard Overview
-Beautiful, modern interface with real-time metrics and service status.
+### Admin Dashboard — infrastructure at a glance
+GPU status, service health, hosted sites, billing, and the federation mesh in one view.
 
-### User Management
-Advanced filtering, bulk operations, and detailed user profiles.
+![Admin Dashboard](public/logos/Admin-Dashboard.png)
 
-### Apps Marketplace
-Dynamic tier-based app access with single sign-on across all services.
+### AI Model Management — the whole catalog + gateway
+Curate models, route providers, and manage the inference gateway.
 
-### Billing Dashboard
-Complete subscription management, usage tracking, and payment processing.
+![AI Model Management](public/logos/AI-Model-Management.png)
+
+### Service Management & System Monitoring
+
+| Services | Monitoring |
+|---|---|
+| ![Service Management](public/logos/Service%20Management.png) | ![System Monitoring](public/logos/System%20Monitoring.png) |
+
+### User Dashboard — credits, usage, plan
+Per-user view of allowance, spend, models used, and quick actions.
+
+![User Dashboard](public/logos/User%20Dashboard-Homepage.png)
+
+> _Screenshots reflect recent builds; the daylight theme + gateway/billing surfaces are continually refreshed._
 
 ---
 
@@ -440,6 +504,14 @@ mypy backend/
 ---
 
 ## 🌟 Recent Updates
+
+### v3.11.0 (June 2026) — Public Inference Gateway, Smart Failover & Metered Billing
+- **Public, key-authed gateway** for the whole GPU mesh: chat + **embeddings + reranking** now ride one OpenAI-compatible endpoint, authed per-org and metered to Lago.
+- **4-tier automatic failover**: `local 3090 → local P40 → DeepSeek V4 Flash → OpenRouter` under a single model alias — verified live (kill the primary, the response still lands).
+- **Direct providers wired**: DeepSeek V4 (flash/pro) + OpenAI, keys in secure env (never the committed config).
+- **Usage-based pricing across every modality** (LLM / embeddings / rerank / STT / TTS), with per-tier **budget gating** — free = local-only fail-closed, paid = bundled cloud allowance.
+- **Non-LLM metering bridge**: STT/TTS report unit metrics (audio-seconds / characters) without audio ever transiting the gateway.
+- **Account assistant ("The Guide")** gained confirm-gated API-key lifecycle (create/revoke/rotate); **notification preferences** rebuilt with real persistence.
 
 ### v3.3.0 (March 22, 2026) - Mesh Network + Service Auto-Discovery
 - **4-Node WireGuard Mesh**: Encrypted peer-to-peer mesh via Headscale/Tailscale with MagicDNS (`unicorncommander.net`)
