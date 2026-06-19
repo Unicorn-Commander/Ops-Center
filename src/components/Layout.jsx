@@ -381,7 +381,7 @@ export default function Layout({ children }) {
 
                   {/* Version */}
                   <div className={`text-xs ${currentTheme === 'unicorn' ? 'text-purple-300/60' : currentTheme === 'light' ? 'text-gray-500' : 'text-gray-500'} font-mono`}>
-                    v3.10.2
+                    v3.12.0
                   </div>
                 </>
               )}
