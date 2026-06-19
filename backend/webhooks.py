@@ -28,6 +28,12 @@ router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 STRIPE_WEBHOOK_SECRET = get_credential("STRIPE_WEBHOOK_SECRET")
 stripe.api_key = get_credential("STRIPE_SECRET_KEY")
 
+# Suite marker — the Stripe account is SHARED across suites (unicorn-commander,
+# magicunicorn, majiks, ...) and Stripe fans every event out to all webhooks.
+# The ops-center webhook ONLY acts on events carrying this marker, so another
+# suite's purchase can never trigger ops-center paid-org provisioning.
+OPS_CENTER_SUITE = os.getenv("OPS_CENTER_STRIPE_SUITE", "unicorn-commander")
+
 # Email service
 email_service = EmailNotificationService()
 
@@ -79,6 +85,9 @@ async def handle_stripe_webhook(
     try:
         if etype == "checkout.session.completed":
             md = obj.get("metadata", {}) or {}
+            # Suite guard: ignore checkouts that aren't ops-center's (shared account).
+            if (md.get("suite") or "") != OPS_CENTER_SUITE:
+                return {"status": "ignored", "reason": f"other suite ({md.get('suite')})"}
             tier = md.get("tier_name") or md.get("tier_id") or md.get("plan_code")
             email = obj.get("customer_email") or (obj.get("customer_details", {}) or {}).get("email")
             if obj.get("payment_status") != "paid":
@@ -92,6 +101,9 @@ async def handle_stripe_webhook(
             return {"status": "provisioned", "org_id": org_id, "result": r}
 
         if etype == "customer.subscription.deleted":
+            # Suite guard: only downgrade our own subscriptions (shared account).
+            if ((obj.get("metadata", {}) or {}).get("suite") or "") != OPS_CENTER_SUITE:
+                return {"status": "ignored", "reason": "other suite (cancel)"}
             email = (obj.get("customer_details", {}) or {}).get("email")
             if not email:
                 # subscription objects carry only the customer id — fetch the email
