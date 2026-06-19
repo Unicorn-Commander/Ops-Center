@@ -105,6 +105,7 @@ from user_management_api import router as user_management_router
 # from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
 from redis_session import redis_session_manager
 from account_management_api import router as account_management_router
+from paid_org_provisioning import router as paid_org_provisioning_router
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
@@ -1151,6 +1152,9 @@ logger.info("User Management API endpoints registered at /api/v1/admin/users")
 # Account & System Management API (Missing endpoints fix - November 2025)
 app.include_router(account_management_router)
 logger.info("Account & System Management API endpoints registered")
+
+app.include_router(paid_org_provisioning_router)
+logger.info("Paid Org Provisioning API endpoints registered at /api/v1/admin/billing")
 
 # Avatar Storage API (November 2025 - CORS fix for bolt.diy)
 # TODO: Uncomment when Pillow dependency is installed
