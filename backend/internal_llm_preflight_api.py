@@ -116,12 +116,17 @@ async def preflight(req: PreflightRequest, request: Request):
 class RecordRequest(BaseModel):
     org_id: str
     tokens: int
+    model: Optional[str] = None   # if given, only count when the model is local
 
 
 @router.post("/record-local-tokens")
 async def record_local_tokens(req: RecordRequest, request: Request):
     _check_key(request)
     try:
+        # The gateway can't tell local from cloud, so it passes the served model
+        # and we filter here — only LOCAL usage counts against the local quota.
+        if req.model is not None and not await _is_local_model(req.model):
+            return {"status": "skipped_cloud", "org_id": req.org_id, "model": req.model}
         from local_quota import add_local_tokens
         await add_local_tokens(req.org_id, req.tokens)
         return {"status": "recorded", "org_id": req.org_id, "tokens": req.tokens}
