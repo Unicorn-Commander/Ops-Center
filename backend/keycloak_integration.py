@@ -902,6 +902,64 @@ async def get_user_2fa_status(user_id: str) -> Dict[str, Any]:
         }
 
 
+async def send_account_action_email(
+    user_id: str,
+    actions: List[str],
+    lifespan: int = 43200,
+    client_id: Optional[str] = None,
+    redirect_uri: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Send a Keycloak "required actions" email to a user (server-side, no password
+    ever leaves the system). This is the realm-native self-service primitive:
+
+      - ["UPDATE_PASSWORD"]               -> "set / reset your password" link
+      - ["VERIFY_EMAIL"]                  -> "verify your email" link
+      - ["UPDATE_PASSWORD","VERIFY_EMAIL"] -> onboarding: set password + verify
+
+    Delivery uses the realm's configured SMTP (Postmark) and templates. Returns a
+    status dict; never raises into the caller.
+
+    Args:
+        user_id:      Keycloak user UUID
+        actions:      list of KC required-action ids (see above)
+        lifespan:     link validity in seconds (default 12h; onboarding wants longer)
+        client_id:    optional OIDC client to land in after the action completes
+        redirect_uri: optional post-action redirect (must be a valid redirect URI
+                      for client_id) — both omitted => KC's generic info page
+    """
+    if not user_id or not actions:
+        return {"success": False, "user_id": user_id, "message": "user_id and actions required"}
+    try:
+        token = await get_admin_token()
+        params: Dict[str, Any] = {"lifespan": lifespan}
+        if client_id:
+            params["client_id"] = client_id
+        if redirect_uri:
+            params["redirect_uri"] = redirect_uri
+
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.put(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/execute-actions-email",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json=actions,
+                params=params,
+                timeout=15.0,
+            )
+        if response.status_code == 204:
+            logger.info(f"Sent account-action email {actions} to user {user_id}")
+            return {"success": True, "user_id": user_id, "actions": actions, "message": "Email sent"}
+        logger.error(f"Failed to send account-action email to {user_id}: {response.status_code} - {response.text}")
+        return {
+            "success": False, "user_id": user_id, "actions": actions,
+            "status_code": response.status_code,
+            "message": f"Keycloak returned {response.status_code} (check realm SMTP config)",
+        }
+    except Exception as e:
+        logger.error(f"Error sending account-action email to {user_id}: {e}")
+        return {"success": False, "user_id": user_id, "message": str(e)}
+
+
 async def enforce_user_2fa(user_id: str, method: str = "email", lifespan: int = 86400) -> Dict[str, Any]:
     """
     Enforce 2FA for a user.

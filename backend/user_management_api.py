@@ -38,6 +38,7 @@ from keycloak_integration import (
     delete_user as keycloak_delete_user,
     set_subscription_tier,
     set_user_password,
+    send_account_action_email,
     get_admin_token,
     _get_attr_value,
     KEYCLOAK_URL,
@@ -450,29 +451,64 @@ async def reset_user_password(
     user_id: str,
     admin: bool = Depends(require_admin)
 ):
-    """Reset user password (generates temporary password)"""
+    """Reset a user's password by emailing them a secure Keycloak set-password link.
+
+    Uses the realm's SMTP (Postmark) + UPDATE_PASSWORD required-action email — no
+    password is ever generated, stored, or transmitted by us. The user clicks the
+    link and chooses their own password. Link valid 12h.
+    """
     try:
-        # Generate temporary password
-        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
-
-        # Set password in Keycloak
-        success = await set_user_password(user_id, temp_password, temporary=True)
-
-        if not success:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        # TODO: Implement email sending
-        # For now, log securely and return message
-        logger.info(f"Password reset for user {user_id} (temp password generated but not returned for security)")
+        result = await send_account_action_email(user_id, ["UPDATE_PASSWORD"], lifespan=43200)
+        if not result.get("success"):
+            # 404 if the user_id is unknown; otherwise surface the SMTP/KC reason.
+            code = result.get("status_code")
+            raise HTTPException(
+                status_code=404 if code == 404 else 502,
+                detail=result.get("message", "Failed to send reset email"),
+            )
         return {
-            "message": "Password reset successfully. A new temporary password has been set.",
-            "note": "The user will need to contact admin to receive the password securely, or implement email notification."
+            "message": "Password reset email sent. The user can set a new password via the secure link.",
+            "delivery": "keycloak-email",
         }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error resetting password: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{user_id}/send-onboarding-email")
+async def send_onboarding_email(
+    user_id: str,
+    admin: bool = Depends(require_admin)
+):
+    """Send a new user the onboarding email: set-password + verify-email links.
+
+    The self-service alternative to manually setting a password via kcadm. Lets an
+    admin provision an account (no password) and have Keycloak email the user a
+    secure link to choose their own password and verify their address. Link valid 7d.
+    """
+    try:
+        result = await send_account_action_email(
+            user_id, ["UPDATE_PASSWORD", "VERIFY_EMAIL"], lifespan=604800
+        )
+        if not result.get("success"):
+            code = result.get("status_code")
+            raise HTTPException(
+                status_code=404 if code == 404 else 502,
+                detail=result.get("message", "Failed to send onboarding email"),
+            )
+        return {
+            "message": "Onboarding email sent (set password + verify email).",
+            "actions": ["UPDATE_PASSWORD", "VERIFY_EMAIL"],
+            "delivery": "keycloak-email",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending onboarding email: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
