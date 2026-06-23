@@ -672,8 +672,8 @@ async def register_with_brigade(base_url: str = ""):
             # Build the registration payload for Brigade's POST /api/v1/agents
             registration_payload = {
                 "id": f"colonel-{config.id}",
-                "name": config.name or "Col. Corelli",
-                "displayName": f"{config.name or 'Col. Corelli'} ({config.server_name or 'Server'})",
+                "name": config.name or "The Colonel",
+                "displayName": f"{config.name or 'The Colonel'} ({config.server_name or 'Server'})",
                 "bio": card["description"],
                 "persona": (
                     f"I am {config.name or 'The Colonel'}, an AI command agent managing "

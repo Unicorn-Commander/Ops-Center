@@ -117,7 +117,7 @@ class ColonelPersonality(BaseModel):
 class ColonelConfig(BaseModel):
     """Configuration for a Colonel instance."""
     id: str = Field(default="default")
-    name: str = Field(default="Col. Corelli")
+    name: str = Field(default="The Colonel")
     server_name: str = Field(default_factory=lambda: __import__('os').getenv("COLONEL_SERVER_NAME", __import__('os').getenv("EXTERNAL_HOST", "My Server")))
     mission: Literal["devops", "monitoring", "security", "general"] = "devops"
     personality: ColonelPersonality = Field(default_factory=ColonelPersonality)

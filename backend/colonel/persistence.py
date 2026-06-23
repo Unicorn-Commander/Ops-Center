@@ -27,7 +27,7 @@ async def save_conversation(
     title: Optional[str],
     messages: List[Dict[str, Any]],
     metadata: Optional[Dict[str, Any]] = None,
-    colonel_name: str = "Col. Corelli",
+    colonel_name: str = "The Colonel",
 ) -> bool:
     """
     Upsert a conversation and its messages into PostgreSQL.
