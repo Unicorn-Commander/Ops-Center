@@ -5,6 +5,14 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-06-24
+
+### Added
+- **Self-service storefront (P-00107)**: public four-tier plan picker (Free/App/Suite-BYOK/Suite-Managed), paid signup->Stripe checkout handoff, add-on checkout with entitlement grants, MyApps API, Contact-Ops registration; checkout resolves Stripe price IDs from the DB (subscription_tiers). Live Stripe monthly prices created (app $15 / byok $49 / managed $65); annual disabled pending annual prices.
+
+### Changed
+- Consolidated to a single unified Stripe webhook endpoint.
+
 ## [3.6.0] - 2026-06-24
 
 ### Added
