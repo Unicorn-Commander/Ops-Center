@@ -49,24 +49,21 @@ async def get_db_connection():
 # ============================================================================
 
 async def get_current_user(request: Request) -> str:
-    """
-    Get current user ID from session
-
-    TODO: In production, integrate with Keycloak:
-    1. Extract session_token from cookies
-    2. Validate token with Keycloak
-    3. Return user_id from validated session
-    """
+    """Get the authenticated Keycloak user ID from the Redis-backed session."""
     session_token = request.cookies.get("session_token")
     if not session_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Not authenticated. Please log in."
-        )
+        raise HTTPException(status_code=401, detail="Not authenticated. Please log in.")
 
-    # Placeholder: Return test user for development
-    # In production, validate with Keycloak and return real user_id
-    return "test-user-123"
+    from redis_session import redis_session_manager
+    session_data = redis_session_manager.get(session_token)
+    if not session_data:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+
+    user = session_data.get("user", {})
+    user_id = user.get("sub") or user.get("id") or session_data.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in session")
+    return str(user_id)
 
 
 # ============================================================================
