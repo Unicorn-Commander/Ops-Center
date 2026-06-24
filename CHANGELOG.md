@@ -5,6 +5,14 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] - 2026-06-24
+
+### Added
+- **Self-service pricing foundation (P-00107)**: `migrations/update_pricing_sheet_2026.sql` seeds the locked price sheet — Free $0, App (Meeting+Contact) $15, Suite-BYOK $30->$49, Suite-Managed $50->$65. Idempotent; `stripe_price_*` left NULL pending Stripe product creation.
+
+### Fixed
+- **Stripe suite-marker bug**: `stripe_integration.create_checkout_session` now sets `metadata.suite` (+ subscription_data metadata). The unified webhook ignores events without it, so the mounted subscription checkout was silently failing to provision paid orgs.
+
 ## [2.5.2] - 2026-02-27
 
 ### Added
