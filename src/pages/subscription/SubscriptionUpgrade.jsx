@@ -450,16 +450,14 @@ export default function SubscriptionUpgrade() {
             Monthly
           </button>
           <button
-            onClick={() => setBillingCycle('annual')}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
-              billingCycle === 'annual'
-                ? 'bg-purple-600 text-white'
-                : `${theme.text.secondary} hover:text-white`
-            }`}
+            type="button"
+            disabled
+            title="Annual checkout will be enabled after annual Stripe price IDs are configured"
+            className="px-6 py-2 rounded-lg font-medium text-slate-500 cursor-not-allowed"
           >
             Annual
-            <span className="ml-2 text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
-              Save 15%
+            <span className="ml-2 text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">
+              Unavailable
             </span>
           </button>
         </div>

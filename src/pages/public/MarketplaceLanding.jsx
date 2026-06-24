@@ -1,180 +1,163 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import ErrorBoundary from '../../components/ErrorBoundary';
 
-/**
- * MarketplaceLanding - Public-facing landing page for unauthenticated users
- *
- * This is a simplified version that shows a basic landing page.
- * Full featured components (LandingHero, LandingFeatures, etc.) can be added later.
- */
+const PRODUCT_TIERS = ['free', 'app', 'byok', 'managed'];
+
+const formatPrice = (value) => {
+  const amount = Number(value || 0);
+  return amount === 0 ? 'Free' : `$${amount.toFixed(0)}`;
+};
+
+const signupUrl = (tierCode) => {
+  const destination = tierCode === 'free'
+    ? '/dashboard'
+    : `/checkout/continue?tier=${encodeURIComponent(tierCode)}`;
+  return `/auth/login?signup=1&return_url=${encodeURIComponent(destination)}`;
+};
+
 export default function MarketplaceLanding() {
+  const [tiers, setTiers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [startingTier, setStartingTier] = useState(null);
+
+  useEffect(() => {
+    const loadTiers = async () => {
+      try {
+        const response = await fetch('/api/v1/public/pricing/tiers?include_features=true');
+        if (!response.ok) throw new Error('Pricing is temporarily unavailable.');
+        const data = await response.json();
+        setTiers(
+          PRODUCT_TIERS
+            .map((code) => data.find((tier) => tier.tier_code === code))
+            .filter(Boolean)
+        );
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadTiers();
+  }, []);
+
+  const selectTier = async (tier) => {
+    if (tier.tier_code === 'free') {
+      window.location.href = signupUrl('free');
+      return;
+    }
+
+    setStartingTier(tier.tier_code);
+    try {
+      const sessionResponse = await fetch('/api/v1/auth/session', { credentials: 'include' });
+      if (!sessionResponse.ok) {
+        window.location.href = signupUrl(tier.tier_code);
+        return;
+      }
+      const checkoutResponse = await fetch('/api/v1/billing/subscriptions/checkout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier_id: tier.tier_code, billing_cycle: 'monthly' })
+      });
+      const checkout = await checkoutResponse.json().catch(() => ({}));
+      if (!checkoutResponse.ok) {
+        throw new Error(checkout.detail || 'Unable to start checkout.');
+      }
+      window.location.href = checkout.checkout_url;
+    } catch (err) {
+      setError(err.message);
+      setStartingTier(null);
+    }
+  };
+
   return (
-    <ErrorBoundary>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        {/* Navigation Header */}
-        <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-purple-500/20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              {/* Logo */}
-              <div className="flex items-center space-x-3">
-                <img
-                  src="/logos/The_Colonel.png"
-                  alt="The Colonel - Unicorn Commander"
-                  className="h-10 w-10 rounded-full"
-                />
-                <span className="text-xl font-bold text-white">
-                  Unicorn Commander
-                </span>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
+      <header className="border-b border-purple-500/20 bg-slate-950/80 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+          <Link to="/" className="flex items-center gap-3 font-bold">
+            <img src="/logos/The_Colonel.png" alt="" className="h-10 w-10 rounded-full" />
+            Unicorn Commander
+          </Link>
+          <a href="/auth/login" className="rounded-lg border border-purple-400/60 px-5 py-2 font-medium hover:bg-purple-500/10">
+            Sign in
+          </a>
+        </div>
+      </header>
 
-              {/* Navigation Links */}
-              <nav className="hidden md:flex items-center space-x-8">
-                <a href="#features" className="text-gray-300 hover:text-white transition-colors">
-                  Features
-                </a>
-                <a href="#pricing" className="text-gray-300 hover:text-white transition-colors">
-                  Pricing
-                </a>
-                <a href="#about" className="text-gray-300 hover:text-white transition-colors">
-                  About
-                </a>
-              </nav>
+      <main className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+        <section className="mx-auto max-w-3xl text-center">
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-purple-300">AI operations suite</p>
+          <h1 className="text-4xl font-bold sm:text-6xl">Choose the setup that fits your work</h1>
+          <p className="mt-6 text-lg text-slate-300">
+            Start free, buy the focused apps, bring your own model keys, or use the fully managed suite.
+          </p>
+        </section>
 
-              {/* CTA Buttons */}
-              <div className="flex items-center space-x-4">
-                <Link
-                  to="/auth/login"
-                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
-                >
-                  Sign In
-                </Link>
-              </div>
+        <section id="pricing" className="mt-14">
+          {error && (
+            <div role="alert" className="mx-auto mb-6 max-w-2xl rounded-lg border border-red-400/40 bg-red-950/40 p-4 text-red-200">
+              {error}
             </div>
-          </div>
-        </header>
+          )}
 
-        {/* Main Content */}
-        <main className="pt-24 pb-16">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {/* Hero Section */}
-            <div className="text-center py-20">
-              <h1 className="text-5xl md:text-6xl font-bold text-white mb-6">
-                Welcome to <span className="text-purple-400">Unicorn Commander</span>
-              </h1>
-              <p className="text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
-                Your all-in-one platform for AI-powered productivity and innovation
-              </p>
-              <Link
-                to="/auth/login"
-                className="inline-block px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-lg"
-              >
-                Get Started
-              </Link>
+          {loading ? (
+            <div className="py-20 text-center text-slate-300">Loading current plans…</div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+              {tiers.map((tier) => {
+                const paid = Number(tier.monthly_price_usd) > 0;
+                const checkoutReady = !paid || tier.stripe_price_monthly_configured;
+                const busy = startingTier === tier.tier_code;
+                return (
+                  <article
+                    key={tier.tier_code}
+                    className={`flex min-h-[430px] flex-col rounded-2xl border p-6 ${
+                      tier.is_popular
+                        ? 'border-purple-400 bg-purple-500/15 shadow-xl shadow-purple-950/40'
+                        : 'border-slate-700 bg-slate-900/70'
+                    }`}
+                  >
+                    {tier.badge_text && (
+                      <span className="mb-4 w-fit rounded-full bg-purple-500 px-3 py-1 text-xs font-semibold">
+                        {tier.badge_text}
+                      </span>
+                    )}
+                    <h2 className="text-2xl font-semibold">{tier.display_name || tier.tier_name}</h2>
+                    <p className="mt-2 min-h-16 text-sm text-slate-300">{tier.description}</p>
+                    <p className="mt-5 text-4xl font-bold text-purple-300">
+                      {formatPrice(tier.monthly_price_usd)}
+                      {paid && <span className="text-base font-normal text-slate-400">/month</span>}
+                    </p>
+                    <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-200">
+                      {(tier.features || []).slice(0, 6).map((feature) => (
+                        <li key={feature} className="flex gap-2">
+                          <span className="text-emerald-400">✓</span>
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      disabled={!checkoutReady || busy}
+                      onClick={() => selectTier(tier)}
+                      className="mt-6 rounded-lg bg-purple-600 px-5 py-3 font-semibold hover:bg-purple-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                    >
+                      {busy
+                        ? 'Starting checkout…'
+                        : !checkoutReady
+                          ? 'Contact us'
+                          : paid
+                            ? 'Choose plan'
+                            : 'Start free'}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
-
-            {/* Features Section */}
-            <div id="features" className="py-20">
-              <h2 className="text-3xl font-bold text-white text-center mb-12">
-                Powerful Features
-              </h2>
-              <div className="grid md:grid-cols-3 gap-8">
-                <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20">
-                  <h3 className="text-xl font-semibold text-white mb-3">AI Chat Interface</h3>
-                  <p className="text-gray-300">
-                    Advanced AI models at your fingertips with Open-WebUI integration
-                  </p>
-                </div>
-                <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20">
-                  <h3 className="text-xl font-semibold text-white mb-3">Smart Search</h3>
-                  <p className="text-gray-300">
-                    Center-Deep metasearch engine with 70+ search engines
-                  </p>
-                </div>
-                <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20">
-                  <h3 className="text-xl font-semibold text-white mb-3">Full Control</h3>
-                  <p className="text-gray-300">
-                    Comprehensive operations dashboard for complete system management
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Pricing Section */}
-            <div id="pricing" className="py-20">
-              <h2 className="text-3xl font-bold text-white text-center mb-12">
-                Simple Pricing
-              </h2>
-              <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-8 border border-purple-500/20">
-                  <h3 className="text-2xl font-semibold text-white mb-4">Starter</h3>
-                  <p className="text-4xl font-bold text-purple-400 mb-6">$19<span className="text-lg text-gray-300">/mo</span></p>
-                  <ul className="space-y-3 text-gray-300">
-                    <li>✓ 1,000 API calls/month</li>
-                    <li>✓ Basic AI models</li>
-                    <li>✓ Email support</li>
-                  </ul>
-                </div>
-                <div className="bg-purple-600/20 backdrop-blur-sm rounded-lg p-8 border-2 border-purple-400">
-                  <div className="bg-purple-500 text-white text-sm font-semibold px-3 py-1 rounded-full inline-block mb-4">
-                    Most Popular
-                  </div>
-                  <h3 className="text-2xl font-semibold text-white mb-4">Professional</h3>
-                  <p className="text-4xl font-bold text-purple-400 mb-6">$49<span className="text-lg text-gray-300">/mo</span></p>
-                  <ul className="space-y-3 text-gray-300">
-                    <li>✓ 10,000 API calls/month</li>
-                    <li>✓ All AI models</li>
-                    <li>✓ Priority support</li>
-                    <li>✓ Advanced features</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-8 border border-purple-500/20">
-                  <h3 className="text-2xl font-semibold text-white mb-4">Enterprise</h3>
-                  <p className="text-4xl font-bold text-purple-400 mb-6">$99<span className="text-lg text-gray-300">/mo</span></p>
-                  <ul className="space-y-3 text-gray-300">
-                    <li>✓ Unlimited API calls</li>
-                    <li>✓ Team management</li>
-                    <li>✓ 24/7 dedicated support</li>
-                    <li>✓ White-label options</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            {/* About Section */}
-            <div id="about" className="py-20 text-center">
-              <h2 className="text-3xl font-bold text-white mb-6">
-                About Unicorn Commander
-              </h2>
-              <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-8">
-                Magic Unicorn Unconventional Technology & Stuff Inc brings you cutting-edge AI infrastructure
-                designed for the NVIDIA RTX 5090 GPU generation. Our platform combines powerful LLM inference,
-                speech processing, document intelligence, and advanced search capabilities in one unified system.
-              </p>
-              <Link
-                to="/auth/login"
-                className="inline-block px-8 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-lg"
-              >
-                Start Your Journey
-              </Link>
-            </div>
-          </div>
-        </main>
-
-        {/* Footer */}
-        <footer className="bg-slate-900/80 border-t border-purple-500/20 py-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center text-gray-400">
-              <p>&copy; 2025 Magic Unicorn Unconventional Technology & Stuff Inc. All rights reserved.</p>
-              <p className="mt-2">
-                <a href="https://unicorncommander.com" className="text-purple-400 hover:text-purple-300 transition-colors">
-                  unicorncommander.com
-                </a>
-              </p>
-            </div>
-          </div>
-        </footer>
-      </div>
-    </ErrorBoundary>
+          )}
+        </section>
+      </main>
+    </div>
   );
 }
