@@ -39,14 +39,20 @@ async def get_db_connection():
 
 
 async def get_current_user(request: Request) -> str:
-    """Get current authenticated user ID from session"""
+    """Get current authenticated Keycloak user ID from the Redis-backed session."""
     session_token = request.cookies.get("session_token")
     if not session_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # TODO: Integrate with actual Keycloak/auth system
-    # For now, return test user ID
-    return "test-user-123"
+    from redis_session import redis_session_manager
+    session_data = redis_session_manager.get(session_token)
+    if not session_data:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    user = session_data.get("user", {})
+    user_id = user.get("sub") or user.get("id") or session_data.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in session")
+    return str(user_id)
 
 
 # Pydantic models
@@ -93,7 +99,8 @@ async def create_checkout(
                 a.base_price,
                 a.id as addon_id,
                 a.category,
-                a.features
+                a.features,
+                a.billing_type
             FROM cart_items c
             JOIN add_ons a ON c.add_on_id = a.id
             WHERE c.user_id = $1
@@ -103,6 +110,14 @@ async def create_checkout(
         if not cart_items:
             raise HTTPException(status_code=400, detail="Cart is empty")
 
+        session_token = request.cookies.get("session_token")
+        from redis_session import redis_session_manager
+        session_data = redis_session_manager.get(session_token) or {}
+        session_user = session_data.get("user", {})
+        user_email = session_user.get("email") or session_data.get("email")
+        if not user_email:
+            raise HTTPException(status_code=400, detail="User email not found in session")
+
         # Build Stripe line items
         line_items = []
         total_amount = 0
@@ -111,8 +126,7 @@ async def create_checkout(
             unit_amount = int(float(item['base_price']) * 100)  # Convert to cents
             total_amount += unit_amount * item['quantity']
 
-            line_items.append({
-                'price_data': {
+            price_data = {
                     'currency': 'usd',
                     'product_data': {
                         'name': item['name'],
@@ -123,7 +137,14 @@ async def create_checkout(
                         }
                     },
                     'unit_amount': unit_amount,
-                },
+                }
+            if item['billing_type'] in {'monthly', 'annual'}:
+                price_data['recurring'] = {
+                    'interval': 'month' if item['billing_type'] == 'monthly' else 'year'
+                }
+
+            line_items.append({
+                'price_data': price_data,
                 'quantity': item['quantity'],
             })
 
@@ -155,20 +176,41 @@ async def create_checkout(
         success_url = checkout_data.success_url or 'https://unicorncommander.ai/extensions/success?session_id={CHECKOUT_SESSION_ID}'
         cancel_url = checkout_data.cancel_url or 'https://unicorncommander.ai/extensions/cancelled'
 
+        billing_types = {item['billing_type'] or 'one_time' for item in cart_items}
+        recurring = billing_types.issubset({'monthly', 'annual'})
+        if any(kind in {'monthly', 'annual'} for kind in billing_types) and not recurring:
+            raise HTTPException(status_code=400, detail="Recurring and one-time add-ons must be purchased separately")
+        if recurring and len(billing_types) > 1:
+            raise HTTPException(status_code=400, detail="Monthly and annual add-ons must be purchased separately")
+        mode = 'subscription' if recurring else 'payment'
+        cart_item_ids = ','.join(str(item['id']) for item in cart_items)
+
         # Create Stripe session
         session_params = {
             'payment_method_types': ['card'],
             'line_items': line_items,
-            'mode': 'payment',
+            'mode': mode,
             'success_url': success_url,
             'cancel_url': cancel_url,
             'client_reference_id': user_id,
             'metadata': {
+                'suite': os.getenv("OPS_CENTER_STRIPE_SUITE", "unicorn-commander"),
+                'purchase_type': 'addon',
                 'user_id': user_id,
+                'user_email': user_email,
                 'promo_code': checkout_data.promo_code or '',
-                'cart_item_count': str(len(cart_items))
+                'cart_item_count': str(len(cart_items)),
+                'cart_item_ids': cart_item_ids
             },
         }
+        if recurring:
+            session_params['subscription_data'] = {
+                'metadata': dict(session_params['metadata'])
+            }
+        else:
+            session_params['payment_intent_data'] = {
+                'metadata': dict(session_params['metadata'])
+            }
 
         # Add discount if applicable
         if discount_amount > 0:
@@ -439,127 +481,7 @@ async def get_active_addons(
 
 
 # ============================================================================
-# ENDPOINT 5: Stripe Webhook Handler
-# ============================================================================
-
-@router.post("/webhooks/stripe")
-async def stripe_webhook(
-    request: Request,
-    stripe_signature: str = Header(None, alias="stripe-signature")
-):
-    """
-    Handle Stripe webhook events
-
-    Events handled:
-    - checkout.session.completed: Process successful payment
-    - payment_intent.succeeded: Confirm payment
-    - payment_intent.payment_failed: Handle failed payment
-    """
-    payload = await request.body()
-
-    try:
-        # Verify webhook signature
-        event = stripe.Webhook.construct_event(
-            payload, stripe_signature, STRIPE_WEBHOOK_SECRET
-        )
-    except ValueError as e:
-        logger.error(f"Invalid webhook payload: {str(e)}")
-        raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
-        logger.error(f"Invalid webhook signature: {str(e)}")
-        raise HTTPException(status_code=400, detail="Invalid signature")
-
-    event_type = event['type']
-    logger.info(f"Received Stripe webhook: {event_type}")
-
-    # Handle checkout.session.completed
-    if event_type == 'checkout.session.completed':
-        session = event['data']['object']
-        user_id = session.get('client_reference_id')
-        payment_intent = session.get('payment_intent')
-        amount_total = session.get('amount_total', 0) / 100  # Convert cents to dollars
-
-        conn = await get_db_connection()
-        try:
-            # Get cart items for this user
-            cart_query = """
-                SELECT add_on_id, quantity, user_id
-                FROM cart_items
-                WHERE user_id = $1
-            """
-            cart_items = await conn.fetch(cart_query, user_id)
-
-            if not cart_items:
-                logger.warning(f"No cart items found for user {user_id}")
-                return {"received": True}
-
-            # Create purchase records for each cart item
-            for item in cart_items:
-                # Get addon base price
-                price_query = "SELECT base_price FROM add_ons WHERE id = $1"
-                base_price = await conn.fetchval(price_query, item['add_on_id'])
-
-                purchase_query = """
-                    INSERT INTO add_on_purchases
-                    (user_id, add_on_id, amount, currency, status, stripe_payment_id, purchased_at)
-                    VALUES ($1, $2, $3, 'usd', 'completed', $4, NOW())
-                    RETURNING id
-                """
-                purchase_id = await conn.fetchval(
-                    purchase_query,
-                    user_id,
-                    item['add_on_id'],
-                    base_price * item['quantity'],
-                    payment_intent
-                )
-
-                logger.info(f"Created purchase {purchase_id} for addon {item['add_on_id']}")
-
-            # Clear cart after successful payment
-            await conn.execute("DELETE FROM cart_items WHERE user_id = $1", user_id)
-
-            # Update promo code usage if one was used
-            promo_code = session.get('metadata', {}).get('promo_code')
-            if promo_code:
-                promo_update = """
-                    UPDATE promotional_codes
-                    SET current_uses = current_uses + 1
-                    WHERE code = $1
-                """
-                await conn.execute(promo_update, promo_code)
-
-            logger.info(f"Successfully processed payment for user {user_id}. Amount: ${amount_total}")
-
-        except Exception as e:
-            logger.error(f"Error processing checkout.session.completed: {str(e)}")
-            raise
-        finally:
-            await conn.close()
-
-    # Handle payment_intent.payment_failed
-    elif event_type == 'payment_intent.payment_failed':
-        payment_intent = event['data']['object']
-        payment_id = payment_intent.get('id')
-
-        conn = await get_db_connection()
-        try:
-            # Update purchase status to failed
-            update_query = """
-                UPDATE add_on_purchases
-                SET status = 'failed'
-                WHERE stripe_payment_id = $1
-            """
-            await conn.execute(update_query, payment_id)
-
-            logger.warning(f"Payment failed: {payment_id}")
-        finally:
-            await conn.close()
-
-    return {"received": True}
-
-
-# ============================================================================
-# ENDPOINT 6: Cancel Purchase (Phase 2 placeholder)
+# ENDPOINT 5: Cancel Purchase (Phase 2 placeholder)
 # ============================================================================
 
 @router.post("/purchase/{purchase_id}/cancel")

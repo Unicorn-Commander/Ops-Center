@@ -85,7 +85,7 @@ DEFAULT_PLANS = [
         api_calls_limit=700,  # 100/day * 7 days
         byok_enabled=True,
         stripe_price_id="price_1SI0FHDzk9HqAZnHbUgvaidP",  # Monthly
-        stripe_annual_price_id="price_1SI0FHDzk9HqAZnHbUgvaidP"  # Weekly trial only (no annual)
+        stripe_annual_price_id=None
     ),
     SubscriptionPlan(
         id="starter",
@@ -104,7 +104,7 @@ DEFAULT_PLANS = [
         api_calls_limit=1000,
         byok_enabled=True,
         stripe_price_id="price_1SI0FHDzk9HqAZnHAsMKY9tS",  # Monthly
-        stripe_annual_price_id="price_1SI0FHDzk9HqAZnHAsMKY9tS"  # TODO: Create annual price in Stripe
+        stripe_annual_price_id=None
     ),
     SubscriptionPlan(
         id="professional",
@@ -135,7 +135,7 @@ DEFAULT_PLANS = [
         byok_enabled=True,
         priority_support=True,
         stripe_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk",  # Monthly
-        stripe_annual_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk"  # TODO: Create annual price in Stripe
+        stripe_annual_price_id=None
     ),
     SubscriptionPlan(
         id="founders-friend",
@@ -169,7 +169,7 @@ DEFAULT_PLANS = [
         byok_enabled=True,
         priority_support=True,
         stripe_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk",  # Same as Professional (monthly)
-        stripe_annual_price_id="price_1SI0FIDzk9HqAZnHgA63KIpk"  # TODO: Create annual price in Stripe
+        stripe_annual_price_id=None
     ),
     SubscriptionPlan(
         id="enterprise",
@@ -202,7 +202,7 @@ DEFAULT_PLANS = [
         priority_support=True,
         team_seats=10,
         stripe_price_id="price_1SI0FIDzk9HqAZnHZFRzBjgP",  # Monthly
-        stripe_annual_price_id="price_1SI0FIDzk9HqAZnHZFRzBjgP"  # TODO: Create annual price in Stripe
+        stripe_annual_price_id=None
     )
 ]
 

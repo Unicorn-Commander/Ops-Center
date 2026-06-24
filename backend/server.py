@@ -105,6 +105,7 @@ from user_management_api import router as user_management_router
 # from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
 from redis_session import redis_session_manager
 from account_management_api import router as account_management_router
+from paid_org_provisioning import router as paid_org_provisioning_router
 from subscription_tiers_api import router as subscription_tiers_router
 from tier_features_api import router as tier_features_router
 from app_definitions_api import router as app_definitions_router
@@ -524,7 +525,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         try:
             org_id = org_manager.create_organization(
                 name=org_name,
-                plan_tier="founders_friend"
+                plan_tier="free"
             )
             break
         except ValueError as e:
@@ -562,7 +563,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
                     "name": org_name,
                     "display_name": org_name,
                     "slug": slugify(org_name) if "slug" in org_column_names else None,
-                    "plan_tier": "founders_friend",
+                    "plan_tier": "free",
                     "status": "active",
                     "is_active": True,
                     "max_seats": 1,
@@ -625,7 +626,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         try:
             from keycloak_integration import update_user_attributes
             await update_user_attributes(email, {
-                "subscription_tier": ["trial"],
+                "subscription_tier": ["free"],
                 "subscription_status": ["active"],
                 "org_id": [org_id],
                 "org_name": [org_name],
@@ -639,7 +640,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         from lago_integration import subscribe_org_to_plan, LagoIntegrationError
         subscription = await subscribe_org_to_plan(
             org_id=org_id,
-            plan_code="founders_friend",
+            plan_code="free",
             org_name=org_name,
             email=email or "",
             user_id=user_id
@@ -660,7 +661,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         await credit_manager.initialize()
         await credit_manager.create_user_credits(
             user_id=email or user_id,
-            tier="trial"
+            tier="free"
         )
     except Exception as credit_error:
         logger.error(f"Failed to create credit account during auto-provision for {email}: {credit_error}")
@@ -669,7 +670,8 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
     return {
         "org_id": org_id,
         "org_name": org_name,
-        "org_role": "owner"
+        "org_role": "owner",
+        "subscription_tier": "free",
     }
 
 
@@ -749,7 +751,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/auth/validate-key",  # Machine-to-machine key validation for mesh services
         "/api/v1/auth/profile",  # Profile update - session-authenticated, multipart form upload
         "/api/v1/webhooks/lago",  # Lago webhooks
-        "/api/v1/billing/webhooks/stripe",  # Stripe webhooks
+        "/api/v1/webhooks/stripe",  # Stripe webhooks (signature-verified, not session/CSRF)
         "/api/v1/tier-check/health",  # Health checks
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
@@ -1151,6 +1153,9 @@ logger.info("User Management API endpoints registered at /api/v1/admin/users")
 # Account & System Management API (Missing endpoints fix - November 2025)
 app.include_router(account_management_router)
 logger.info("Account & System Management API endpoints registered")
+
+app.include_router(paid_org_provisioning_router)
+logger.info("Paid Org Provisioning API endpoints registered at /api/v1/admin/billing")
 
 # Avatar Storage API (November 2025 - CORS fix for bolt.diy)
 # TODO: Uncomment when Pillow dependency is installed
@@ -5665,11 +5670,11 @@ async def direct_login(request: Request, credentials: dict):
 # OAuth endpoints
 @app.get("/auth/login")
 async def oauth_login(request: Request):
-    """Redirect to Authentik OAuth authorization"""
+    """Redirect to Keycloak, preserving the requested post-login destination."""
     state = secrets.token_urlsafe(32)
-    # Capture return_url for post-login redirect
     return_url = request.query_params.get("return_url")
-    sessions[state] = {"created": time.time(), "return_url": return_url}
+    signup = request.query_params.get("signup") == "1"
+    sessions[state] = {"created": time.time(), "return_url": return_url, "signup": signup}
     
     # Build redirect URI based on the request host
     if "yoda.unicorncommander.ai" in str(request.url):
@@ -5693,6 +5698,8 @@ async def oauth_login(request: Request):
         f"&scope=openid%20profile%20email"
         f"&state={state}"
     )
+    if signup:
+        auth_url += "&prompt=create"
     return RedirectResponse(url=auth_url)
 
 # SSO Login Initiation Endpoints
@@ -5844,6 +5851,26 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                     org_context = await get_user_org_context(user_id, email)
                     auto_provisioned = False  # Initialize for subscription check logic
 
+                    # Keycloak self-signup creates identity first. Ensure the
+                    # org-of-one exists before a storefront return URL starts
+                    # Stripe Checkout, so the payment webhook can resolve and
+                    # provision the purchaser's organization.
+                    if not org_context.get("org_id") and user_info.get("role", "viewer") != "admin":
+                        display_name = (
+                            user_info.get("name")
+                            or user_info.get("preferred_username")
+                            or username
+                        )
+                        try:
+                            org_context = await auto_provision_user_org(
+                                user_id=user_id,
+                                email=email,
+                                display_name=display_name,
+                            )
+                            auto_provisioned = True
+                        except Exception as provision_error:
+                            logger.error("OAuth org auto-provision failed for %s: %s", email, provision_error)
+
                     # Create session with org data (store id_token for logout!)
                     session_token = secrets.token_urlsafe(32)
                     sessions[session_token] = {
@@ -5933,10 +5960,16 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         print(f"User has no organization, redirecting to signup flow")
                         redirect_url = "/signup-flow.html"
 
-                    # Override with stored return_url if valid (external subdomain)
-                    if stored_return_url and redirect_url != "/signup-flow.html":
-                        # Validate return_url is a safe subdomain
-                        if stored_return_url.startswith(f"https://") and EXTERNAL_HOST in stored_return_url:
+                    # A storefront-selected return URL takes precedence over the
+                    # legacy signup-flow redirect. Accept same-site relative paths
+                    # and HTTPS URLs on this deployment's host only.
+                    if stored_return_url:
+                        safe_relative = stored_return_url.startswith("/") and not stored_return_url.startswith("//")
+                        safe_absolute = (
+                            stored_return_url.startswith("https://")
+                            and EXTERNAL_HOST in stored_return_url
+                        )
+                        if safe_relative or safe_absolute:
                             print(f"Redirecting to return_url: {stored_return_url}")
                             redirect_url = stored_return_url
                         else:

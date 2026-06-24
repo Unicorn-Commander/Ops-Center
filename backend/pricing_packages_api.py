@@ -49,6 +49,8 @@ class SubscriptionTierPublic(BaseModel):
     is_popular: bool = False
     badge_text: Optional[str] = None
     sort_order: int = 0
+    stripe_price_monthly_configured: bool = False
+    stripe_price_yearly_configured: bool = False
 
 
 class CreditPackagePublic(BaseModel):
@@ -113,19 +115,26 @@ async def get_public_pricing_tiers(
                 SELECT
                     tier_code,
                     tier_name,
-                    display_name,
+                    tier_name AS display_name,
                     description,
-                    monthly_price_usd,
-                    annual_price_usd,
-                    annual_discount_pct,
+                    price_monthly AS monthly_price_usd,
+                    price_yearly AS annual_price_usd,
+                    CASE
+                      WHEN price_yearly IS NOT NULL AND price_monthly > 0
+                      THEN ROUND((1 - (price_yearly / (price_monthly * 12))) * 100)::int
+                      ELSE NULL
+                    END AS annual_discount_pct,
                     api_calls_limit,
-                    is_popular,
-                    badge_text,
-                    sort_order
+                    tier_code = 'managed' AS is_popular,
+                    CASE WHEN tier_code = 'managed' THEN 'Most Popular' ELSE NULL END AS badge_text,
+                    sort_order,
+                    stripe_price_monthly IS NOT NULL AS stripe_price_monthly_configured,
+                    stripe_price_yearly IS NOT NULL AS stripe_price_yearly_configured
                 FROM subscription_tiers
-                WHERE is_public = true AND is_active = true
-                ORDER BY sort_order, monthly_price_usd
-            """)
+                WHERE is_active = true
+                  AND tier_code = ANY($1::text[])
+                ORDER BY sort_order, price_monthly
+            """, ['free', 'app', 'byok', 'managed'])
 
             tiers = []
             for tier_row in tiers_rows:
@@ -134,11 +143,15 @@ async def get_public_pricing_tiers(
                 # Get features if requested
                 if include_features:
                     features_rows = await conn.fetch("""
-                        SELECT f.feature_name, f.description
+                        SELECT
+                          COALESCE(tfd.feature_name, ao.name, tf.feature_key) AS feature_name,
+                          COALESCE(tfd.description, ao.description) AS description
                         FROM tier_features tf
-                        JOIN features f ON tf.feature_key = f.feature_key
-                        WHERE tf.tier_code = $1 AND tf.is_enabled = true
-                        ORDER BY f.display_order
+                        JOIN subscription_tiers st ON st.id = tf.tier_id
+                        LEFT JOIN tier_feature_definitions tfd ON tfd.feature_key = tf.feature_key
+                        LEFT JOIN add_ons ao ON ao.feature_key = tf.feature_key
+                        WHERE st.tier_code = $1 AND tf.enabled = true
+                        ORDER BY COALESCE(ao.sort_order, 999), feature_name
                     """, tier_row['tier_code'])
 
                     tier_dict['features'] = [
@@ -154,13 +167,9 @@ async def get_public_pricing_tiers(
             logger.info(f"Retrieved {len(tiers)} public pricing tiers")
             return tiers
 
-    except asyncpg.PostgresError as e:
-        logger.error(f"Database error retrieving pricing tiers: {e}")
-        # Return default tiers instead of failing
-        return get_default_pricing_tiers()
     except Exception as e:
         logger.error(f"Error retrieving pricing tiers: {e}")
-        return get_default_pricing_tiers()
+        raise HTTPException(status_code=503, detail="Pricing is temporarily unavailable")
 
 
 @router.get("/packages", response_model=List[CreditPackagePublic])

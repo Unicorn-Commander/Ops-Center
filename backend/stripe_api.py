@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 import os
 import stripe
+import asyncpg
 
 from stripe_integration import stripe_integration
 from keycloak_integration import get_user_by_email, get_user_tier_info
@@ -125,14 +126,34 @@ async def create_checkout_session(
         Checkout session URL
     """
     try:
-        # Validate tier
-        plan = subscription_manager.get_plan(request.tier_id)
-        if not plan:
-            raise HTTPException(status_code=400, detail=f"Invalid tier: {request.tier_id}")
-
         # Validate billing cycle
         if request.billing_cycle not in ["monthly", "yearly"]:
             raise HTTPException(status_code=400, detail="Invalid billing cycle")
+
+        conn = await asyncpg.connect(
+            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "unicorn"),
+            password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+            database=os.getenv("POSTGRES_DB", "unicorn_db"),
+        )
+        try:
+            plan = await conn.fetchrow(
+                """
+                SELECT tier_code, tier_name, price_monthly, price_yearly,
+                       stripe_price_monthly, stripe_price_yearly
+                FROM subscription_tiers
+                WHERE tier_code = $1 AND is_active = TRUE
+                """,
+                request.tier_id,
+            )
+        finally:
+            await conn.close()
+
+        if not plan:
+            raise HTTPException(status_code=400, detail=f"Invalid tier: {request.tier_id}")
+        if plan["price_monthly"] == 0:
+            raise HTTPException(status_code=400, detail="The free tier does not require checkout")
 
         # Get or create Stripe customer
         customer = await stripe_integration.get_customer_by_email(user_email)
@@ -156,19 +177,13 @@ async def create_checkout_session(
 
         # Get the appropriate price ID based on billing cycle
         if request.billing_cycle == "yearly":
-            price_id = plan.stripe_annual_price_id
+            price_id = plan["stripe_price_yearly"]
             if not price_id:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Annual Stripe price ID not configured for tier: {request.tier_id}"
-                )
+                raise HTTPException(status_code=409, detail="Annual billing is not available for this tier")
         else:
-            price_id = plan.stripe_price_id
+            price_id = plan["stripe_price_monthly"]
             if not price_id:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Monthly Stripe price ID not configured for tier: {request.tier_id}"
-                )
+                raise HTTPException(status_code=409, detail="Checkout is not available for this tier yet")
 
         # Create checkout session
         checkout_url = await stripe_integration.create_checkout_session(
@@ -458,7 +473,6 @@ async def upgrade_subscription(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/webhooks/stripe", response_model=WebhookResponse)
 async def stripe_webhook(
     request: Request,
     stripe_signature: str = Header(None, alias="stripe-signature")
@@ -506,7 +520,6 @@ async def stripe_webhook(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/webhooks/stripe/checkout", response_model=WebhookResponse)
 async def stripe_checkout_webhook(request: Request):
     """
     Handle Stripe checkout.session.completed webhook
