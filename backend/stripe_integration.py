@@ -27,6 +27,12 @@ STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "https://unicorncommander.ai/
 LAGO_API_URL = os.getenv("LAGO_API_URL", "http://lago-api:3000")
 LAGO_API_KEY = get_credential("LAGO_API_KEY")
 
+# Suite marker — the Stripe account is SHARED across suites and Stripe fans every
+# event out to all webhooks. The ops-center webhook (webhooks.py) ONLY acts on events
+# carrying this marker, so every checkout session MUST set it or provisioning silently
+# ignores the purchase ("other suite"). Mirror of webhooks.OPS_CENTER_SUITE.
+OPS_CENTER_STRIPE_SUITE = os.getenv("OPS_CENTER_STRIPE_SUITE", "unicorn-commander")
+
 # Configure Stripe
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -120,6 +126,7 @@ class StripeIntegration:
                 success_url=f"{STRIPE_SUCCESS_URL}?session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=STRIPE_CANCEL_URL,
                 metadata={
+                    'suite': OPS_CENTER_STRIPE_SUITE,  # REQUIRED: webhook ignores events without this
                     'customer_email': customer_email,
                     'user_email': customer_email,  # Duplicate for webhook compatibility
                     'tier_id': tier_name,  # Use tier_id for consistency
@@ -128,6 +135,7 @@ class StripeIntegration:
                 },
                 subscription_data={
                     'metadata': {
+                        'suite': OPS_CENTER_STRIPE_SUITE,
                         'tier_id': tier_name,
                         'tier_name': tier_name,
                         'billing_cycle': billing_cycle
