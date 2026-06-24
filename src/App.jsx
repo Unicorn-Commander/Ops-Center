@@ -39,6 +39,8 @@ import RootRedirect from './components/RootRedirect';
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
 const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
+const MarketplaceLanding = lazy(() => import('./pages/public/MarketplaceLanding'));
+const CheckoutContinue = lazy(() => import('./pages/public/CheckoutContinue'));
 
 // Apps Marketplace pages (user-facing) - lazy loaded
 const AppsLauncher = lazy(() => import('./pages/AppsLauncher'));
@@ -322,6 +324,8 @@ function AppRoutes() {
         <Routes>
           {/* Root Route - Smart redirect based on auth status and landing page mode */}
           <Route path="/" element={<RootRedirect />} />
+          <Route path="/pricing" element={<MarketplaceLanding />} />
+          <Route path="/checkout/continue" element={<CheckoutContinue />} />
 
           {/* User Landing Page - Authenticated users (search bar, apps, user dropdown) */}
           <Route path="/dashboard" element={
