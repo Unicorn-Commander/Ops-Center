@@ -49,3 +49,10 @@ UPDATE subscription_tiers
        updated_by       = 'system',
        updated_at       = NOW()
  WHERE tier_code = 'managed';
+
+-- ── Stripe LIVE monthly price IDs (created 2026-06-24 on acct_1QwxFKDzk9HqAZnH). ──
+-- Price IDs are not secret (used client-side in Stripe Checkout). Annual prices not yet
+-- created → yearly checkout stays disabled in the UI. Free tier has no Stripe price.
+UPDATE subscription_tiers SET stripe_price_monthly = 'price_1TllOZDzk9HqAZnHU5ijAlmP' WHERE tier_code = 'app';
+UPDATE subscription_tiers SET stripe_price_monthly = 'price_1TllOaDzk9HqAZnHCkH7E20k' WHERE tier_code = 'byok';
+UPDATE subscription_tiers SET stripe_price_monthly = 'price_1TllObDzk9HqAZnHw8mrzhou' WHERE tier_code = 'managed';
