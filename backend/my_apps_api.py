@@ -10,7 +10,7 @@ User sees an app IF: (tier includes feature) OR (org has explicit grant for feat
 
 import os
 import sys
-from typing import List, Optional
+from typing import Any, List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 import asyncpg
@@ -34,6 +34,9 @@ class AppResponse(BaseModel):
     category: str
     feature_key: Optional[str]
     access_type: str  # 'tier_included', 'org_granted', 'premium_purchased', 'upgrade_required'
+    features: Optional[Any] = None
+    price: Optional[float] = None
+    billing_type: Optional[str] = None
 
 
 # =============================================================================
@@ -106,7 +109,7 @@ async def get_current_user_tier(request: Request) -> str:
         # If tier not set or invalid, try database fallback
         # Valid tiers: All tiers from subscription_tiers table
         valid_tiers = [
-            'free',  # first-class free tier (client-side / zero-cost apps only)
+            'free', 'app',
             'vip_founder', 'byok', 'managed', 'founder_friend', 'founder-friend',
             'trial', 'starter', 'professional', 'enterprise',
             'nda-autopilot', 'partnerpulse', 'm10_partner',
@@ -313,7 +316,7 @@ async def get_user_tier_features(user_tier: str, conn) -> set:
     """Get all app keys enabled for user's tier"""
     # Validate tier before database query - include all tiers from subscription_tiers table
     valid_tiers = [
-        'free',  # first-class free tier (client-side / zero-cost apps only)
+        'free', 'app',
         'trial', 'starter', 'professional', 'enterprise',
         'vip_founder', 'founder_friend', 'founder-friend', 'byok', 'managed',
         'nda-autopilot', 'partnerpulse', 'm10_partner',

@@ -39,32 +39,6 @@ export default function MyApps() {
   const [loading, setLoading] = useState(true);
   const [activeServices, setActiveServices] = useState([]);
 
-  // Mock active apps - will be replaced with API call
-  const MOCK_ACTIVE_SERVICES = [
-    {
-      id: 'chat',
-      name: 'AI Chat (Open-WebUI)',
-      description: 'Advanced conversational AI interface',
-      status: 'Active',
-      access_url: 'https://chat.unicorncommander.ai',
-      icon_url: null,
-      gradient: 'from-blue-500 to-cyan-500',
-      last_used: '2 hours ago',
-      usage_this_month: '1,240 requests'
-    },
-    {
-      id: 'search',
-      name: 'AI Search (Magic Unicorn)',
-      description: 'Privacy-focused AI metasearch',
-      status: 'Active',
-      access_url: 'https://search.unicorncommander.ai',
-      icon_url: null,
-      gradient: 'from-purple-500 to-pink-500',
-      last_used: '1 day ago',
-      usage_this_month: '3 searches'
-    }
-  ];
-
   useEffect(() => {
     loadActiveServices();
   }, []);
@@ -72,17 +46,21 @@ export default function MyApps() {
   const loadActiveServices = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/user/apps/active', { credentials: 'include' });
-      // const data = await response.json();
-      // setActiveServices(data.services);
-
-      // Mock data for now
-      setActiveServices(MOCK_ACTIVE_SERVICES);
+      const response = await fetch('/api/v1/my-apps/authorized', { credentials: 'include' });
+      const data = await response.json().catch(() => []);
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to load active apps');
+      }
+      setActiveServices(data.map((app, index) => ({
+        ...app,
+        status: 'Active',
+        access_url: app.launch_url,
+        gradient: index % 2 === 0 ? 'from-blue-500 to-cyan-500' : 'from-purple-500 to-pink-500'
+      })));
     } catch (error) {
       console.error('Failed to load active apps:', error);
       toast.error('Failed to load your services');
-      setActiveServices(MOCK_ACTIVE_SERVICES); // Fallback
+      setActiveServices([]);
     } finally {
       setLoading(false);
     }
@@ -189,19 +167,10 @@ export default function MyApps() {
                   {service.description}
                 </p>
 
-                {/* Usage Stats */}
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div className={`${glassStyles.card} rounded-lg p-3`}>
-                    <div className={`text-xs ${theme.text.secondary} mb-1`}>Last Used</div>
-                    <div className={`text-sm font-bold ${theme.text.primary}`}>
-                      {service.last_used}
-                    </div>
-                  </div>
-                  <div className={`${glassStyles.card} rounded-lg p-3`}>
-                    <div className={`text-xs ${theme.text.secondary} mb-1`}>This Month</div>
-                    <div className={`text-sm font-bold ${theme.text.primary}`}>
-                      {service.usage_this_month}
-                    </div>
+                <div className={`${glassStyles.card} rounded-lg p-3 mb-6`}>
+                  <div className={`text-xs ${theme.text.secondary} mb-1`}>Access</div>
+                  <div className={`text-sm font-bold ${theme.text.primary}`}>
+                    {service.access_type === 'org_granted' ? 'Purchased add-on' : 'Included with plan'}
                   </div>
                 </div>
 

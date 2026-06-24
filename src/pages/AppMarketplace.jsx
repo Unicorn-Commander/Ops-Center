@@ -40,6 +40,7 @@ const AppMarketplace = () => {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [purchasing, setPurchasing] = useState(null);
 
   useEffect(() => {
     fetchMarketplaceApps();
@@ -75,10 +76,38 @@ const AppMarketplace = () => {
     }
   };
 
-  const handlePurchase = (app) => {
-    // TODO: Implement purchase flow
-    console.log('Purchase app:', app);
-    alert(`Purchase flow for ${app.name} - Coming soon!`);
+  const handlePurchase = async (app) => {
+    setPurchasing(app.id);
+    setError(null);
+    try {
+      const cartResponse = await fetch(
+        `/api/v1/cart/add?addon_id=${encodeURIComponent(app.id)}&quantity=1`,
+        { method: 'POST', credentials: 'include' }
+      );
+      const cartData = await cartResponse.json().catch(() => ({}));
+      if (!cartResponse.ok) {
+        throw new Error(cartData.detail || 'Failed to add the app to your cart');
+      }
+
+      const checkoutResponse = await fetch('/api/v1/extensions/checkout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success_url: `${window.location.origin}/admin/apps/my?purchase=success`,
+          cancel_url: `${window.location.origin}/admin/apps/marketplace?purchase=cancelled`
+        })
+      });
+      const checkout = await checkoutResponse.json().catch(() => ({}));
+      if (!checkoutResponse.ok || !checkout.checkout_url) {
+        throw new Error(checkout.detail || 'Failed to start checkout');
+      }
+      window.location.href = checkout.checkout_url;
+    } catch (err) {
+      console.error('Purchase failed:', err);
+      setError(err.message);
+      setPurchasing(null);
+    }
   };
 
   const handleUpgrade = (app) => {
@@ -235,8 +264,9 @@ const AppMarketplace = () => {
                       fullWidth
                       startIcon={<ShoppingCartIcon />}
                       onClick={() => handlePurchase(app)}
+                      disabled={purchasing === app.id}
                     >
-                      Purchase
+                      {purchasing === app.id ? 'Starting checkout…' : 'Purchase'}
                     </Button>
                   )}
                   {requiresUpgrade && (

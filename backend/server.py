@@ -646,7 +646,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         try:
             from keycloak_integration import update_user_attributes
             await update_user_attributes(email, {
-                "subscription_tier": ["trial"],
+                "subscription_tier": ["free"],
                 "subscription_status": ["active"],
                 "org_id": [org_id],
                 "org_name": [org_name],
@@ -689,7 +689,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         await credit_manager.initialize()
         await credit_manager.create_user_credits(
             user_id=email or user_id,
-            tier="trial"
+            tier="free"
         )
     except Exception as credit_error:
         logger.error(f"Failed to create credit account during auto-provision for {email}: {credit_error}")
@@ -698,7 +698,8 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
     return {
         "org_id": org_id,
         "org_name": org_name,
-        "org_role": "owner"
+        "org_role": "owner",
+        "subscription_tier": "free",
     }
 
 
@@ -5975,11 +5976,11 @@ async def direct_login(request: Request, credentials: dict):
 # OAuth endpoints
 @app.get("/auth/login")
 async def oauth_login(request: Request):
-    """Redirect to Authentik OAuth authorization"""
+    """Redirect to Keycloak, preserving the requested post-login destination."""
     state = secrets.token_urlsafe(32)
-    # Capture return_url for post-login redirect
     return_url = request.query_params.get("return_url")
-    sessions[state] = {"created": time.time(), "return_url": return_url}
+    signup = request.query_params.get("signup") == "1"
+    sessions[state] = {"created": time.time(), "return_url": return_url, "signup": signup}
     
     # Build redirect URI based on the request host
     if "yoda.unicorncommander.ai" in str(request.url):
@@ -6003,6 +6004,8 @@ async def oauth_login(request: Request):
         f"&scope=openid%20profile%20email"
         f"&state={state}"
     )
+    if signup:
+        auth_url += "&prompt=create"
     return RedirectResponse(url=auth_url)
 
 # SSO Login Initiation Endpoints
@@ -6281,10 +6284,16 @@ async def oauth_callback(request: Request, code: str, state: str = None):
                         print(f"User has no organization, redirecting to signup flow")
                         redirect_url = "/signup-flow.html"
 
-                    # Override with stored return_url if valid (external subdomain)
-                    if stored_return_url and redirect_url != "/signup-flow.html":
-                        # Validate return_url is a safe subdomain
-                        if stored_return_url.startswith(f"https://") and EXTERNAL_HOST in stored_return_url:
+                    # A storefront-selected return URL takes precedence over the
+                    # legacy signup-flow redirect. Accept same-site relative paths
+                    # and HTTPS URLs on this deployment's host only.
+                    if stored_return_url:
+                        safe_relative = stored_return_url.startswith("/") and not stored_return_url.startswith("//")
+                        safe_absolute = (
+                            stored_return_url.startswith("https://")
+                            and EXTERNAL_HOST in stored_return_url
+                        )
+                        if safe_relative or safe_absolute:
                             print(f"Redirecting to return_url: {stored_return_url}")
                             redirect_url = stored_return_url
                         else:
