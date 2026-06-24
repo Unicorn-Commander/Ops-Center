@@ -530,11 +530,14 @@ async def get_marketplace_apps(request: Request, user_tier: str = Depends(get_cu
         enabled_features = await get_combined_features(user_tier, org_id, conn)
 
         # Get all active apps
+        # is_public IS NOT FALSE keeps legacy rows (NULL) visible while hiding
+        # explicitly admin-only apps (e.g. Brigade) from the retail marketplace.
         apps_query = """
             SELECT id, name, slug, description, icon_url, launch_url,
                    category, feature_key, base_price, billing_type
             FROM add_ons
             WHERE is_active = TRUE
+              AND is_public IS NOT FALSE
             ORDER BY base_price DESC, name
         """
         app_rows = await conn.fetch(apps_query)
