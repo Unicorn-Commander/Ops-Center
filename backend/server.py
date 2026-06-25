@@ -169,6 +169,7 @@ from alert_triggers_api import router as alert_triggers_router
 # Extensions Marketplace API - Phase 1 MVP (NEW)
 from extensions_catalog_api import router as extensions_catalog_router
 from my_apps_api import router as my_apps_router
+from entitlements_api import router as entitlements_router
 from extensions_cart_api import router as extensions_cart_router
 from extensions_purchase_api import router as extensions_purchase_router
 from extensions_admin_api import router as extensions_admin_api_router
@@ -1202,6 +1203,7 @@ logger.info("Extensions Catalog API endpoints registered at /api/v1/extensions (
 
 # My Apps API - Tier-filtered apps for authenticated users
 app.include_router(my_apps_router)
+app.include_router(entitlements_router)
 logger.info("My Apps API endpoints registered at /api/v1/my-apps (RBAC-filtered)")
 
 # Advanced Log Search API (Epic 2.5)
