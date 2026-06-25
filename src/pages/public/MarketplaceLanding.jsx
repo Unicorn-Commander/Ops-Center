@@ -90,7 +90,7 @@ export default function MarketplaceLanding() {
           <p className="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-purple-300">AI operations suite</p>
           <h1 className="text-4xl font-bold sm:text-6xl">Choose the setup that fits your work</h1>
           <p className="mt-6 text-lg text-slate-300">
-            Start free, buy the focused apps, bring your own model keys, or use the fully managed suite.
+            Start free with on-device meeting AI, or unlock Meeting-Ops for full server-side processing. More Ops apps rolling out soon.
           </p>
         </section>
 
