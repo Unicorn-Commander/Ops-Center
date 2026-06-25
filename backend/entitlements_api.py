@@ -76,21 +76,24 @@ def _verify_bearer(token: str) -> dict:
         raise HTTPException(status_code=401, detail=f"Token verification failed: {exc}")
 
 
-async def _resolve_org_id(claims: dict, conn, requested_org_id: Optional[str] = None) -> Optional[str]:
-    """Resolve the caller's active org from their Keycloak sub via organization_members.
+async def _resolve_membership(claims: dict, conn, requested_org_id: Optional[str] = None):
+    """Resolve the caller's active org + org-role from their Keycloak sub.
+
+    Returns (org_id, org_role) or (None, None). The org_role is the Ops-Center
+    organization membership role (owner/admin/billing_admin/member) — apps can seed their
+    own in-app role from it (e.g. owner→ADMIN, else→STAFF) and refine in-app.
 
     Active-workspace support: if `requested_org_id` is given (the active workspace the app
     resolved from the bearer), we return it ONLY after verifying the caller is a member —
     so a per-user token can never read another org's grants (no IDOR). With no
-    requested_org_id we fall back to the user's primary org. Returns None when the user
-    has no org (→ empty entitlements, fail-closed)."""
+    requested_org_id we fall back to the user's primary org."""
     sub = claims.get("sub")
     if not sub:
-        return None
+        return None, None
     if requested_org_id:
         row = await conn.fetchrow(
             """
-            SELECT om.org_id
+            SELECT om.org_id, om.role
             FROM users u
             JOIN organization_members om ON u.id::text = om.user_id
             WHERE u.zitadel_id = $1 AND om.org_id::text = $2
@@ -100,10 +103,10 @@ async def _resolve_org_id(claims: dict, conn, requested_org_id: Optional[str] = 
         )
         if not row:
             raise HTTPException(status_code=403, detail="Not a member of the requested org")
-        return str(row["org_id"])
+        return str(row["org_id"]), row["role"]
     row = await conn.fetchrow(
         """
-        SELECT om.org_id
+        SELECT om.org_id, om.role
         FROM users u
         JOIN organization_members om ON u.id::text = om.user_id
         WHERE u.zitadel_id = $1
@@ -111,7 +114,7 @@ async def _resolve_org_id(claims: dict, conn, requested_org_id: Optional[str] = 
         """,
         str(sub),
     )
-    return str(row["org_id"]) if row else None
+    return (str(row["org_id"]), row["role"]) if row else (None, None)
 
 
 @router.get("")
@@ -132,9 +135,9 @@ async def get_entitlements(
 
     conn = await get_db_connection()
     try:
-        resolved_org = await _resolve_org_id(claims, conn, requested_org_id=org_id)
+        resolved_org, org_role = await _resolve_membership(claims, conn, requested_org_id=org_id)
         if not resolved_org:
-            result = {"org_id": None, "tier": None, "entitlements": []}
+            result = {"org_id": None, "tier": None, "role": None, "entitlements": []}
         else:
             tier_row = await conn.fetchrow(
                 "SELECT plan_tier FROM organizations WHERE id = $1", resolved_org
@@ -145,7 +148,12 @@ async def get_entitlements(
             except HTTPException:
                 # Unknown/invalid tier → no entitlements (fail-closed), don't 400 the caller.
                 features = set()
-            result = {"org_id": resolved_org, "tier": tier, "entitlements": sorted(features)}
+            result = {
+                "org_id": resolved_org,
+                "tier": tier,
+                "role": org_role,
+                "entitlements": sorted(features),
+            }
     finally:
         await conn.close()
 
