@@ -125,8 +125,8 @@ async def get_public_pricing_tiers(
                       ELSE NULL
                     END AS annual_discount_pct,
                     api_calls_limit,
-                    tier_code = 'managed' AS is_popular,
-                    CASE WHEN tier_code = 'managed' THEN 'Most Popular' ELSE NULL END AS badge_text,
+                    tier_code = 'app' AS is_popular,
+                    CASE WHEN tier_code = 'app' THEN 'Most Popular' ELSE NULL END AS badge_text,
                     sort_order,
                     stripe_price_monthly IS NOT NULL AS stripe_price_monthly_configured,
                     stripe_price_yearly IS NOT NULL AS stripe_price_yearly_configured
@@ -134,7 +134,7 @@ async def get_public_pricing_tiers(
                 WHERE is_active = true
                   AND tier_code = ANY($1::text[])
                 ORDER BY sort_order, price_monthly
-            """, ['free', 'app', 'byok', 'managed'])
+            """, ['free', 'app'])  # Meeting-Ops standalone launch: Free + $15 only; suite ($49/$65) deferred
 
             tiers = []
             for tier_row in tiers_rows:
