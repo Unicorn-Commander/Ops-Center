@@ -36,6 +36,14 @@ ALLOWED_ISSUERS = set(_DEFAULT_ISSUERS) | {
     i.strip() for i in os.getenv("KEYCLOAK_EXTRA_ISSUERS", "").split(",") if i.strip()
 }
 
+# The realm hosts (auth.*.dev / .ai) sit behind Cloudflare, which 403s bare Python
+# (urllib) User-Agents via bot-management — so the JWKS fetch must send a browser-like UA
+# (same fix already in the sister apps' auth clients). Overridable via env.
+_JWKS_UA = os.getenv(
+    "ENTITLEMENTS_JWKS_UA",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+)
+
 _jwks_clients: dict = {}
 
 
@@ -45,6 +53,7 @@ def _jwks_for(issuer: str) -> PyJWKClient:
         client = PyJWKClient(
             f"{issuer}/protocol/openid-connect/certs",
             cache_keys=True, lifespan=3600, timeout=10,
+            headers={"User-Agent": _JWKS_UA},
         )
         _jwks_clients[issuer] = client
     return client
@@ -59,9 +68,11 @@ def _verify_bearer(token: str) -> dict:
     """
     try:
         issuer = jwt.decode(token, options={"verify_signature": False}).get("iss")
-    except Exception:
+    except Exception as exc:
+        logger.warning("entitlements: malformed token (%s)", exc)
         raise HTTPException(status_code=401, detail="Malformed token")
     if issuer not in ALLOWED_ISSUERS:
+        logger.warning("entitlements: untrusted issuer %r", issuer)
         raise HTTPException(status_code=401, detail="Untrusted token issuer")
     try:
         signing_key = _jwks_for(issuer).get_signing_key_from_jwt(token)
@@ -73,6 +84,7 @@ def _verify_bearer(token: str) -> dict:
             options={"require": ["exp", "iss"], "verify_aud": False},
         )
     except jwt.PyJWTError as exc:
+        logger.warning("entitlements: token verification failed (iss=%s): %s", issuer, exc)
         raise HTTPException(status_code=401, detail=f"Token verification failed: {exc}")
 
 
