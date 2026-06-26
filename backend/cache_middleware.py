@@ -112,9 +112,18 @@ class CacheHeaderMiddleware(BaseHTTPMiddleware):
         if path.startswith('/api/v1/admin/') or path.startswith('/api/v1/account/'):
             return 'private, max-age=60, must-revalidate'  # 1 minute
 
-        # API - General endpoints (short cache)
+        # API - Per-user app/entitlement lists: never shared-cache, always fresh.
+        # These are user-specific; public-caching would let a shared cache serve one
+        # user's app list to another, and a stale browser copy is the "have to refresh
+        # to see my apps" symptom on the dashboard.
+        if path.startswith('/api/v1/my-apps/') or path.startswith('/api/v1/entitlements'):
+            return 'private, no-store'
+
+        # API - General endpoints: default to PRIVATE. Most API data is user-scoped, so
+        # public (shared-cacheable) is the wrong default; genuinely-public endpoints are
+        # explicitly allowlisted as 'public' above.
         if path.startswith('/api/'):
-            return 'public, max-age=60, must-revalidate'  # 1 minute
+            return 'private, max-age=60, must-revalidate'  # 1 minute
 
         # HTML pages - No cache (always revalidate)
         if path.endswith('.html') or content_type == 'text/html':
