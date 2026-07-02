@@ -14,7 +14,7 @@ export default function LogsViewer({ containerName, isOpen, onClose }) {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/monitoring/logs/${containerName}?lines=${lines}`, {
+      const response = await fetch(`/api/v1/services/${encodeURIComponent(containerName)}/logs?lines=${lines}`, {
         credentials: 'include'
       });
       if (response.ok) {

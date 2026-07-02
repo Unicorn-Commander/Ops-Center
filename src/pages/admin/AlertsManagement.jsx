@@ -14,6 +14,7 @@
  * - GET /api/v1/monitoring/alerts/rules - Get alert rules configuration
  * - PUT /api/v1/monitoring/alerts/rules - Update alert rules
  * - POST /api/v1/monitoring/alerts/{id}/acknowledge - Acknowledge an alert
+ * - GET /api/v1/system/alerts/history - Alert history (plain array, client-side pagination)
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -219,44 +220,39 @@ const AlertsManagement = () => {
 
   const fetchAlertHistory = useCallback(async () => {
     try {
-      const response = await fetch(
-        `/api/v1/monitoring/alerts/history?page=${historyPage}&limit=${historyRowsPerPage}`,
-        {
-          credentials: 'include',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-          }
+      const response = await fetch('/api/v1/system/alerts/history?limit=500', {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         }
-      );
+      });
 
       if (!response.ok) throw new Error('Failed to fetch history');
       const data = await response.json();
-      setAlertHistory(data.alerts || []);
-      setHistoryTotal(data.total || 0);
+      // /api/v1/system/alerts/history returns a plain array of
+      // { id, type, severity, message, details, timestamp, dismissible, dismissed }
+      const items = (Array.isArray(data) ? data : []).map((alert) => ({
+        id: alert.id,
+        name:
+          alert.name ||
+          (alert.type
+            ? alert.type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+            : 'System Alert'),
+        severity: alert.severity,
+        message: alert.message,
+        created_at: alert.timestamp || alert.created_at || null,
+        resolved_at: alert.resolved_at || null
+      }));
+      setAlertHistory(items);
+      setHistoryTotal(items.length);
     } catch {
-      // Mock history when API is not available
-      const mockHistory = [
-        {
-          id: 1,
-          name: 'High Memory Usage',
-          severity: 'warning',
-          message: 'Memory usage exceeded 85%',
-          resolved_at: new Date(Date.now() - 86400000).toISOString(),
-          created_at: new Date(Date.now() - 90000000).toISOString()
-        },
-        {
-          id: 2,
-          name: 'Service Down',
-          severity: 'critical',
-          message: 'PostgreSQL was unreachable',
-          resolved_at: new Date(Date.now() - 172800000).toISOString(),
-          created_at: new Date(Date.now() - 176400000).toISOString()
-        }
-      ];
-      setAlertHistory(mockHistory);
-      setHistoryTotal(mockHistory.length);
+      // Honest empty state: no mock data when the API is unavailable
+      setAlertHistory([]);
+      setHistoryTotal(0);
+      setError('Failed to load alert history');
+      setTimeout(() => setError(null), 5000);
     }
-  }, [historyPage, historyRowsPerPage]);
+  }, []);
 
   const saveAlertRules = async () => {
     setSavingRules(true);
@@ -286,7 +282,7 @@ const AlertsManagement = () => {
     if (!selectedAlert) return;
 
     try {
-      await fetch(`/api/v1/monitoring/alerts/${selectedAlert.id}/acknowledge`, {
+      const response = await fetch(`/api/v1/monitoring/alerts/${selectedAlert.id}/acknowledge`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -295,19 +291,32 @@ const AlertsManagement = () => {
         },
         body: JSON.stringify({ note: acknowledgeNote })
       });
-    } catch {
-      // Fallback to local update if API fails
-    }
 
-    // Update local state
-    setActiveAlerts(prev =>
-      prev.map(a => (a.id === selectedAlert.id ? { ...a, acknowledged: true } : a))
-    );
-    setSuccess('Alert acknowledged');
-    setAcknowledgeDialogOpen(false);
-    setSelectedAlert(null);
-    setAcknowledgeNote('');
-    setTimeout(() => setSuccess(null), 3000);
+      if (!response.ok) {
+        let detail = '';
+        try {
+          const errBody = await response.json();
+          detail = errBody.detail || '';
+        } catch {
+          // Ignore unparseable error bodies
+        }
+        throw new Error(detail || `Failed to acknowledge alert (HTTP ${response.status})`);
+      }
+
+      // Only mark acknowledged after the API confirms it
+      setActiveAlerts(prev =>
+        prev.map(a => (a.id === selectedAlert.id ? { ...a, acknowledged: true } : a))
+      );
+      setSuccess('Alert acknowledged');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.message || 'Failed to acknowledge alert');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setAcknowledgeDialogOpen(false);
+      setSelectedAlert(null);
+      setAcknowledgeNote('');
+    }
   };
 
   // ============================================
@@ -336,6 +345,7 @@ const AlertsManagement = () => {
   const getSeverityIcon = (severity) => {
     const icons = {
       critical: <ErrorIcon sx={{ color: '#f44336' }} />,
+      error: <ErrorIcon sx={{ color: '#ff5722' }} />,
       warning: <WarningIcon sx={{ color: '#ff9800' }} />,
       info: <InfoIcon sx={{ color: '#2196f3' }} />
     };
@@ -345,6 +355,7 @@ const AlertsManagement = () => {
   const getSeverityChip = (severity) => {
     const config = {
       critical: { color: 'error', label: 'Critical' },
+      error: { color: 'error', label: 'Error' },
       warning: { color: 'warning', label: 'Warning' },
       info: { color: 'info', label: 'Info' }
     };
@@ -729,7 +740,12 @@ const AlertsManagement = () => {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    alertHistory.map((alert) => {
+                    alertHistory
+                      .slice(
+                        historyPage * historyRowsPerPage,
+                        historyPage * historyRowsPerPage + historyRowsPerPage
+                      )
+                      .map((alert) => {
                       const duration =
                         alert.resolved_at && alert.created_at
                           ? Math.floor((new Date(alert.resolved_at) - new Date(alert.created_at)) / 1000)

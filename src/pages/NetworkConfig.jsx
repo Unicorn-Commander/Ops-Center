@@ -139,9 +139,7 @@ export default function NetworkConfig() {
   const [networkConfig, setNetworkConfig] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [testResults, setTestResults] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [notification, setNotification] = useState(null);
 
@@ -185,34 +183,6 @@ export default function NetworkConfig() {
       showNotification('Failed to load network configuration', 'error');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const testConnectivity = async () => {
-    setTesting(true);
-    setTestResults(null);
-
-    try {
-      const response = await fetch('/api/v1/system/network/test', {
-        credentials: 'include',
-        method: 'POST'
-      });
-
-      if (!response.ok) throw new Error('Connectivity test failed');
-      const data = await response.json();
-      setTestResults(data);
-
-      if (data.success) {
-        showNotification('Connectivity test passed', 'success');
-      } else {
-        showNotification('Connectivity test failed', 'error');
-      }
-    } catch (error) {
-      console.error('Connectivity test error:', error);
-      setTestResults({ success: false, error: error.message });
-      showNotification('Failed to run connectivity test', 'error');
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -323,24 +293,21 @@ export default function NetworkConfig() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={testConnectivity}
-              disabled={testing}
-              className={`
-                px-4 py-2 rounded-xl font-medium text-sm
-                bg-gradient-to-r from-blue-600 to-cyan-600
-                text-white shadow-lg
-                hover:from-blue-700 hover:to-cyan-700
-                disabled:opacity-50 disabled:cursor-not-allowed
-                transition-all duration-200
-                flex items-center gap-2
-              `}
-            >
-              <ChartBarIcon className={`h-4 w-4 ${testing ? 'animate-spin' : ''}`} />
-              {testing ? 'Testing...' : 'Test Connectivity'}
-            </motion.button>
+            {/* Connectivity testing is not supported by the backend on this deployment */}
+            <span title="Not available yet — connectivity testing is not supported on this deployment.">
+              <button
+                disabled
+                className={`
+                  px-4 py-2 rounded-xl font-medium text-sm
+                  bg-gray-700 text-gray-400
+                  cursor-not-allowed
+                  flex items-center gap-2
+                `}
+              >
+                <ChartBarIcon className="h-4 w-4" />
+                Test Connectivity
+              </button>
+            </span>
 
             {!editMode ? (
               <motion.button
@@ -628,93 +595,6 @@ export default function NetworkConfig() {
           </div>
         )}
       </motion.div>
-
-      {/* Connectivity Test Results */}
-      {testResults && (
-        <motion.div
-          variants={itemVariants}
-          className={`
-            p-6 rounded-2xl
-            bg-gradient-to-br from-gray-800/40 to-gray-900/40
-            border border-gray-700/50 backdrop-blur-xl
-          `}
-        >
-          <h2 className={`text-xl font-bold ${theme.text.primary} mb-6 flex items-center gap-2`}>
-            <ChartBarIcon className="h-6 w-6" />
-            Connectivity Test Results
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className={`
-              p-4 rounded-xl border
-              ${testResults.gateway_ping
-                ? 'bg-green-500/10 border-green-500/20'
-                : 'bg-red-500/10 border-red-500/20'
-              }
-            `}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-sm font-medium ${theme.text.secondary}`}>Gateway Ping</span>
-                {testResults.gateway_ping ? (
-                  <CheckCircleIconSolid className="h-5 w-5 text-green-400" />
-                ) : (
-                  <XCircleIcon className="h-5 w-5 text-red-400" />
-                )}
-              </div>
-              <p className={`text-xs ${testResults.gateway_ping ? 'text-green-300' : 'text-red-300'}`}>
-                {testResults.gateway_ping ? 'Gateway reachable' : 'Gateway unreachable'}
-              </p>
-            </div>
-
-            <div className={`
-              p-4 rounded-xl border
-              ${testResults.dns_resolution
-                ? 'bg-green-500/10 border-green-500/20'
-                : 'bg-red-500/10 border-red-500/20'
-              }
-            `}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-sm font-medium ${theme.text.secondary}`}>DNS Resolution</span>
-                {testResults.dns_resolution ? (
-                  <CheckCircleIconSolid className="h-5 w-5 text-green-400" />
-                ) : (
-                  <XCircleIcon className="h-5 w-5 text-red-400" />
-                )}
-              </div>
-              <p className={`text-xs ${testResults.dns_resolution ? 'text-green-300' : 'text-red-300'}`}>
-                {testResults.dns_resolution ? 'DNS working' : 'DNS not working'}
-              </p>
-            </div>
-
-            <div className={`
-              p-4 rounded-xl border
-              ${testResults.internet_connectivity
-                ? 'bg-green-500/10 border-green-500/20'
-                : 'bg-red-500/10 border-red-500/20'
-              }
-            `}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-sm font-medium ${theme.text.secondary}`}>Internet</span>
-                {testResults.internet_connectivity ? (
-                  <CheckCircleIconSolid className="h-5 w-5 text-green-400" />
-                ) : (
-                  <XCircleIcon className="h-5 w-5 text-red-400" />
-                )}
-              </div>
-              <p className={`text-xs ${testResults.internet_connectivity ? 'text-green-300' : 'text-red-300'}`}>
-                {testResults.internet_connectivity ? 'Internet accessible' : 'No internet access'}
-              </p>
-            </div>
-          </div>
-
-          {testResults.details && (
-            <div className="mt-4 p-4 rounded-xl bg-gray-800/50 border border-gray-700/30">
-              <pre className={`text-xs ${theme.text.secondary} font-mono overflow-x-auto`}>
-                {JSON.stringify(testResults.details, null, 2)}
-              </pre>
-            </div>
-          )}
-        </motion.div>
-      )}
 
       {/* Confirmation Modal */}
       <AnimatePresence>

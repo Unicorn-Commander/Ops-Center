@@ -544,49 +544,9 @@ export default function AccountAPIKeys() {
     return byokKeys.find(k => k.provider === providerId);
   };
 
-  const handleRegenerateUcKey = async (keyId) => {
-    try {
-      const response = await fetch(`/api/v1/account/uc-api-keys/${keyId}/regenerate`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.api_key) {
-          setNewlyGeneratedKey(data.api_key);
-        }
-        showToast('success', 'API key regenerated successfully');
-        await loadUcApiKeys();
-      } else {
-        showToast('error', 'Failed to regenerate API key');
-      }
-    } catch (error) {
-      console.error('Error regenerating UC API key:', error);
-      showToast('error', 'Network error. Please try again.');
-    }
-  };
-
   const handleCopyToClipboard = (text, label = 'API key') => {
     navigator.clipboard.writeText(text);
     showToast('success', `${label} copied to clipboard!`);
-  };
-
-  const handleTestPlatformKey = async (keyType) => {
-    try {
-      const response = await fetch(`/api/v1/admin/platform-keys/${keyType}/test`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      const result = await response.json();
-      if (response.ok && result.valid) {
-        showToast('success', `${keyType} key is valid!`);
-      } else {
-        showToast('error', result.message || 'Key validation failed');
-      }
-    } catch (error) {
-      console.error('Error testing platform key:', error);
-      showToast('error', 'Network error during test');
-    }
   };
 
   const getCodeSnippet = (apiKey) => {
@@ -797,20 +757,17 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => handleCopyToClipboard(key.key || 'uc_sk_example', 'API key')}
-                      className={`p-2 rounded-lg ${themeClasses.button} text-sm`}
-                      title="Copy API key"
-                    >
-                      <ClipboardDocumentIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleRegenerateUcKey(key.id)}
-                      className="p-2 rounded-lg border border-orange-500/50 text-orange-400 hover:bg-orange-500/10 text-sm"
-                      title="Regenerate key"
-                    >
-                      <ArrowPathIcon className="h-4 w-4" />
-                    </button>
+                    {/* Full key material is only available right after generation
+                        (keys are stored hashed), so copying an existing key or
+                        regenerating it in place is not possible. */}
+                    <span title="Key regeneration is not available yet. Generate a new key instead.">
+                      <button
+                        disabled
+                        className="p-2 rounded-lg border border-gray-500/50 text-gray-500 cursor-not-allowed text-sm"
+                      >
+                        <ArrowPathIcon className="h-4 w-4" />
+                      </button>
+                    </span>
                   </div>
                 </div>
 

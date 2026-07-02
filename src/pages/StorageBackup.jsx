@@ -25,7 +25,6 @@ import { getTooltip } from '../data/tooltipContent';
 import HelpTooltip from '../components/HelpTooltip';
 import CronBuilder from '../components/CronBuilder';
 import BackupRestoreModal from '../components/BackupRestoreModal';
-import CloudBackupSetup from '../components/CloudBackupSetup';
 import BackupVerification from '../components/BackupVerification';
 import StorageOptimizer from '../components/StorageOptimizer';
 
@@ -61,7 +60,6 @@ export default function StorageBackup() {
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [selectedBackup, setSelectedBackup] = useState(null);
-  const [cloudConfig, setCloudConfig] = useState(null);
   const [backupConfig, setBackupConfig] = useState({
     schedule: '0 2 * * *',
     retention_days: 7,
@@ -74,7 +72,7 @@ export default function StorageBackup() {
   }, []);
 
   const loadData = async () => {
-    await Promise.all([loadStorageData(), loadBackupData(), loadCloudConfig()]);
+    await Promise.all([loadStorageData(), loadBackupData()]);
   };
 
   const loadStorageData = async () => {
@@ -119,18 +117,6 @@ export default function StorageBackup() {
         retention_days: 7,
         backups: []
       });
-    }
-  };
-
-  const loadCloudConfig = async () => {
-    try {
-      const response = await fetch('/api/v1/backups/cloud-config', { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        setCloudConfig(data);
-      }
-    } catch (error) {
-      console.error('Failed to load cloud config:', error);
     }
   };
 
@@ -231,46 +217,9 @@ export default function StorageBackup() {
     }
   };
 
-  const handleSaveCloudConfig = async (config) => {
-    try {
-      const response = await fetch('/api/v1/backups/cloud-config', {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-
-      if (response.ok) {
-        await loadCloudConfig();
-        alert('Cloud backup configuration saved successfully!');
-      } else {
-        throw new Error('Failed to save cloud configuration');
-      }
-    } catch (error) {
-      console.error('Error saving cloud config:', error);
-      alert('Failed to save cloud configuration: ' + error.message);
-    }
-  };
-
-  const handleTestCloudConnection = async (config) => {
-    try {
-      const response = await fetch('/api/v1/backups/cloud-config/test', {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-
-      const result = await response.json();
-      return result;
-    } catch (error) {
-      return { success: false, message: error.message };
-    }
-  };
-
   const handleVerifyBackup = async (backupId) => {
     try {
-      const response = await fetch(`/api/v1/backups/${backupId}/verify`, {
+      const response = await fetch(`/api/v1/backups/verify/${backupId}`, {
         credentials: 'include',
         method: 'POST',
       });
@@ -792,11 +741,15 @@ export default function StorageBackup() {
       {/* Cloud Backup Tab */}
       {activeTab === 'cloud' && (
         <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <CloudBackupSetup
-            existingConfig={cloudConfig}
-            onSave={handleSaveCloudConfig}
-            onTest={handleTestCloudConnection}
-          />
+          <div className="text-center py-12">
+            <CloudIcon className="h-16 w-16 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Cloud Backup
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+              Cloud backup configuration is not available on this deployment yet.
+            </p>
+          </div>
         </motion.div>
       )}
 
