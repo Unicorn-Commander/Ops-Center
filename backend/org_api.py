@@ -116,6 +116,11 @@ class OrganizationCreate(BaseModel):
     plan_tier: str = "free"
 
 
+class OrganizationStatusUpdate(BaseModel):
+    """Request model for suspending/activating an organization"""
+    status: str  # 'active' | 'suspended'
+
+
 # ==================== Helper Functions ====================
 
 async def get_current_user(request: Request) -> Dict:
@@ -543,6 +548,147 @@ async def create_organization(
     except Exception as e:
         logger.error(f"Error creating organization: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create organization: {str(e)}")
+    finally:
+        await conn.close()
+
+
+@router.put("/{org_id}/status")
+async def update_organization_status(
+    org_id: str,
+    status_data: OrganizationStatusUpdate,
+    request: Request
+):
+    """
+    Suspend or activate an organization (admin only).
+
+    Args:
+        org_id: Organization ID
+        status_data: {"status": "active" | "suspended"}
+
+    Returns:
+        Updated organization status
+
+    Example:
+        PUT /api/v1/org/org_12345/status
+        Body: {"status": "suspended"}
+        Response: {"success": true, "id": "org_12345", "name": "Acme", "status": "suspended"}
+    """
+    # Require platform admin (same guard as the admin organizations list)
+    admin = await require_admin(request)
+
+    new_status = (status_data.status or "").strip().lower()
+    # 'deleted' is reserved for the delete flow; the toggle only moves between
+    # active and suspended (organizations.status CHECK allows all three).
+    if new_status not in ("active", "suspended"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid status. Must be 'active' or 'suspended'."
+        )
+
+    conn = await get_db_connection()
+    try:
+        row = await conn.fetchrow(
+            """
+            UPDATE organizations
+            SET status = $2
+            WHERE id::text = $1
+            RETURNING id::text AS id, name, status
+            """,
+            org_id,
+            new_status,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        logger.info(
+            f"Org {org_id} ({row['name']}) status set to '{new_status}' "
+            f"by admin {admin.get('email') or admin.get('user_id')}"
+        )
+
+        return {
+            "success": True,
+            "id": row["id"],
+            "name": row["name"],
+            "status": row["status"],
+        }
+
+    except HTTPException:
+        raise
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error updating status for org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error updating status for org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update status: {str(e)}")
+    finally:
+        await conn.close()
+
+
+@router.delete("/{org_id}")
+async def delete_organization(
+    org_id: str,
+    request: Request,
+    confirm: bool = False
+):
+    """
+    Permanently delete an organization (admin only).
+
+    Requires `?confirm=true` (sent by the frontend after its confirmation
+    dialog). This is a hard delete: organization_members / quotas /
+    invitations / settings / audit rows are removed via ON DELETE CASCADE.
+
+    Example:
+        DELETE /api/v1/org/org_12345?confirm=true
+        Response: {"success": true, "id": "org_12345", "name": "Acme", "members_removed": 3}
+    """
+    # Require platform admin (same guard as the admin organizations list)
+    admin = await require_admin(request)
+
+    conn = await get_db_connection()
+    try:
+        org = await _get_org_row(conn, org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        if not confirm:
+            raise HTTPException(
+                status_code=400,
+                detail="Organization deletion requires confirm=true. "
+                       "This permanently removes the organization and all its memberships."
+            )
+
+        member_count_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS n FROM organization_members WHERE org_id::text = $1",
+            org_id,
+        )
+        member_count = member_count_row["n"] if member_count_row else 0
+
+        # Hard delete; membership/quota/invitation/settings/audit rows cascade
+        # (organization_* tables declare ON DELETE CASCADE on org_id).
+        await conn.execute("DELETE FROM organizations WHERE id::text = $1", org_id)
+
+        logger.info(
+            f"Org {org_id} ({org['name']}) DELETED by admin "
+            f"{admin.get('email') or admin.get('user_id')} "
+            f"({member_count} membership rows cascaded)"
+        )
+
+        return {
+            "success": True,
+            "message": f"Organization '{org['name']}' deleted",
+            "id": org_id,
+            "name": org["name"],
+            "members_removed": member_count,
+        }
+
+    except HTTPException:
+        raise
+    except asyncpg.PostgresError as e:
+        logger.error(f"Database error deleting org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete organization: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error deleting org {org_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete organization: {str(e)}")
     finally:
         await conn.close()
 

@@ -3,7 +3,7 @@ Billing API Endpoints
 Provides invoice history, billing cycle info, and payment management
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
@@ -18,7 +18,9 @@ from lago_integration import (
     get_subscription_by_email,
     get_subscription_for,
     get_invoices_for,
-    get_customer
+    get_customer,
+    get_invoice as lago_get_invoice,
+    download_invoice_pdf as lago_download_invoice_pdf,
 )
 
 logger = logging.getLogger(__name__)
@@ -263,6 +265,66 @@ async def get_billing_cycle(request: Request):
             "message": f"Error: {str(e)}"
         }
 
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def get_invoice_pdf(invoice_id: str, request: Request):
+    """
+    Download an invoice's PDF (proxied from Lago).
+
+    Access: the invoice must belong to the caller's org/email (same scoping as
+    the invoice list), OR the caller must be an admin (Revenue Dashboard).
+    The PDF bytes are proxied because Lago's file_url points at the internal
+    Lago host, which the browser cannot reach.
+    """
+    session_data = _load_session(request)
+    user = session_data.get("user", {}) or {}
+    is_admin = bool(user.get("is_admin")) or user.get("role") == "admin"
+    org_id = session_data.get("org_id")
+    email = user.get("email") or session_data.get("email")
+
+    if not is_admin and not org_id and not email:
+        raise HTTPException(status_code=400, detail="No billing identity on session")
+
+    # Ownership check: find the invoice among the caller's invoices
+    # (canonical org_id key first, legacy email fallback — same as the list endpoint)
+    target_invoice = None
+    if org_id or email:
+        try:
+            invoices = await get_invoices_for(org_id, email, limit=200)
+            for invoice in invoices:
+                if invoice.get("lago_id") == invoice_id:
+                    target_invoice = invoice
+                    break
+        except Exception as e:
+            logger.error(f"Error scoping invoice {invoice_id} to caller: {e}", exc_info=True)
+
+    # Admins may fetch any invoice directly (Revenue Dashboard)
+    if not target_invoice and is_admin:
+        target_invoice = await lago_get_invoice(invoice_id)
+
+    if not target_invoice:
+        # Deliberately identical for "doesn't exist" and "not yours"
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    pdf_bytes = await lago_download_invoice_pdf(
+        invoice_id, file_url=target_invoice.get("file_url")
+    )
+    if not pdf_bytes:
+        raise HTTPException(
+            status_code=404,
+            detail="Invoice PDF is not available yet. Lago generates PDFs for "
+                   "finalized invoices only — draft invoices have no PDF."
+        )
+
+    invoice_number = target_invoice.get("number") or invoice_id
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="invoice-{invoice_number}.pdf"'
+        },
+    )
 
 
 @router.post("/download-invoice/{invoice_id}")

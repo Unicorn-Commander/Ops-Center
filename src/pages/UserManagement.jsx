@@ -445,10 +445,9 @@ const UserManagement = () => {
   // Add role to user
   const handleAddRole = async (role) => {
     try {
-      const response = await fetch(`/api/v1/admin/users/${currentUser.id}/roles`, {
+      // Backend expects the role as a query parameter on the /roles/assign endpoint
+      const response = await fetch(`/api/v1/admin/users/${currentUser.id}/roles/assign?role=${encodeURIComponent(role)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
         credentials: 'include',
       });
 
@@ -465,7 +464,7 @@ const UserManagement = () => {
   // Remove role from user
   const handleRemoveRole = async (role) => {
     try {
-      const response = await fetch(`/api/v1/admin/users/${currentUser.id}/roles/${role}`, {
+      const response = await fetch(`/api/v1/admin/users/${currentUser.id}/roles/${encodeURIComponent(role)}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -1314,7 +1313,7 @@ const UserManagement = () => {
         <CreateUserModal
           open={createEditModalOpen}
           onClose={() => setCreateEditModalOpen(false)}
-          onSuccess={() => {
+          onUserCreated={() => {
             setCreateEditModalOpen(false);
             fetchUsers();
             fetchStats();

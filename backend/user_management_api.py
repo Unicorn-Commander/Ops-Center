@@ -18,6 +18,7 @@ import asyncio
 import csv
 import io
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from fastapi import APIRouter, HTTPException, Query, Depends, Request, UploadFile, File, Response
@@ -33,6 +34,7 @@ from keycloak_integration import (
     get_all_users,
     get_user_by_id,
     get_user_by_email,
+    get_user_by_username,
     create_user as keycloak_create_user,
     update_user_attributes as keycloak_update_user,
     delete_user as keycloak_delete_user,
@@ -96,6 +98,62 @@ class ImpersonationRequest(BaseModel):
     """User impersonation request"""
     duration_hours: int = Field(default=24, ge=1, le=72)
 
+class UserCreateRequest(BaseModel):
+    """Basic single-user creation request (POST /api/v1/admin/users)"""
+    email: str
+    username: Optional[str] = None          # defaults to email when omitted
+    firstName: Optional[str] = ""
+    lastName: Optional[str] = ""
+    password: Optional[str] = None          # optional; omit to provision without password
+    temporary_password: bool = False        # True => Keycloak forces UPDATE_PASSWORD on first login
+    enabled: bool = True
+    emailVerified: bool = False
+    subscription_tier: str = "trial"
+    send_onboarding_email: bool = False     # email a set-password/verify link instead of a password
+
+class ComprehensiveUserCreate(BaseModel):
+    """Payload sent by the admin CreateUserModal (POST /api/v1/admin/users/comprehensive).
+
+    Field names intentionally mirror the frontend modal's formData keys
+    (camelCase). Unknown extra keys (e.g. confirmPassword) are ignored.
+    """
+    # Tab 1: Basic information
+    email: str
+    username: Optional[str] = None
+    firstName: Optional[str] = ""
+    lastName: Optional[str] = ""
+    password: Optional[str] = None
+    enabled: bool = True
+    emailVerified: bool = False
+    sendWelcomeEmail: bool = True
+    # Tab 2: Organization & roles
+    organizationId: Optional[str] = ""
+    brigadeRoles: List[Any] = []
+    keycloakRoles: List[Any] = []
+    # Tab 3: Subscription & billing
+    subscriptionTier: str = "free"
+    billingStartDate: Optional[str] = None
+    paymentMethod: Optional[str] = "skip"
+    apiCallLimitOverride: Optional[int] = None
+    initialCredits: Optional[int] = 0
+    # Tab 4: Access & permissions
+    serviceAccess: Dict[str, Any] = {}
+    featureFlags: Dict[str, Any] = {}
+    rateLimits: Dict[str, Any] = {}
+    # Tab 5: Metadata
+    tags: List[str] = []
+    internalNotes: Optional[str] = ""
+    accountSource: Optional[str] = "admin-created"
+
+# Default daily API-call limits per tier (mirrors the CreateUserModal tier table)
+TIER_API_CALL_LIMITS = {
+    "free": 100,
+    "trial": 700,
+    "starter": 1000,
+    "professional": 10000,
+    "enterprise": 999999,
+}
+
 # ============================================================================
 # DEPENDENCY: REQUIRE ADMIN
 # ============================================================================
@@ -137,7 +195,9 @@ async def require_admin(request: Request):
     if not user.get("is_admin") and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    return True
+    # Return the session user dict (truthy, so existing `admin: bool = Depends(...)`
+    # call sites keep working) so newer endpoints can audit the acting admin.
+    return user
 
 # ============================================================================
 # ROLE HELPERS
@@ -165,6 +225,216 @@ async def _fetch_realm_roles(user_id: str) -> List[str]:
     except Exception as e:
         logger.warning(f"Error fetching realm roles for {user_id}: {e}")
     return []
+
+
+async def _set_user_enabled(user_id: str, enabled: bool) -> bool:
+    """Set the Keycloak `enabled` flag on a user (admin REST PUT /users/{id})."""
+    try:
+        token = await get_admin_token()
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.put(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={"enabled": enabled},
+                timeout=10.0,
+            )
+            if response.status_code == 204:
+                return True
+            logger.error(f"Failed to set enabled={enabled} for {user_id}: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Error setting enabled flag for {user_id}: {e}")
+    return False
+
+
+async def _get_realm_role(role_name: str) -> Optional[Dict[str, Any]]:
+    """Fetch a realm role representation by name (None if it doesn't exist)."""
+    try:
+        token = await get_admin_token()
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.get(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/roles/{role_name}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                return response.json()
+            if response.status_code != 404:
+                logger.warning(f"Failed to fetch realm role '{role_name}': {response.status_code}")
+    except Exception as e:
+        logger.warning(f"Error fetching realm role '{role_name}': {e}")
+    return None
+
+
+def _normalize_role_names(values: List[Any]) -> List[str]:
+    """Accept role names as plain strings or {name: ...} objects (frontend sends either)."""
+    names = []
+    for v in values or []:
+        if isinstance(v, str) and v.strip():
+            names.append(v.strip())
+        elif isinstance(v, dict) and v.get("name"):
+            names.append(str(v["name"]).strip())
+    # De-dupe, preserve order
+    seen = set()
+    return [n for n in names if not (n in seen or seen.add(n))]
+
+
+async def _assign_realm_roles(user_id: str, role_names: List[str]) -> Dict[str, List]:
+    """
+    Assign realm roles to a user via the Keycloak admin REST API.
+
+    Returns {"assigned": [names], "failed": [{"role", "error"}]} — unknown roles
+    are reported per-role instead of failing the whole call.
+    """
+    results = {"assigned": [], "failed": []}
+    if not role_names:
+        return results
+
+    role_reps = []
+    for name in role_names:
+        rep = await _get_realm_role(name)
+        if rep:
+            role_reps.append(rep)
+        else:
+            results["failed"].append({"role": name, "error": "Realm role not found"})
+
+    if not role_reps:
+        return results
+
+    try:
+        token = await get_admin_token()
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.post(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/role-mappings/realm",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=role_reps,
+                timeout=10.0,
+            )
+            if response.status_code == 204:
+                results["assigned"] = [r.get("name") for r in role_reps]
+            else:
+                logger.error(f"Failed to assign roles to {user_id}: {response.status_code} - {response.text}")
+                for r in role_reps:
+                    results["failed"].append({"role": r.get("name"), "error": f"Keycloak returned {response.status_code}"})
+    except Exception as e:
+        logger.error(f"Error assigning roles to {user_id}: {e}")
+        for r in role_reps:
+            results["failed"].append({"role": r.get("name"), "error": str(e)})
+
+    return results
+
+
+async def _remove_realm_role(user_id: str, role_name: str) -> bool:
+    """Remove a realm role mapping from a user."""
+    rep = await _get_realm_role(role_name)
+    if not rep:
+        return False
+    try:
+        token = await get_admin_token()
+        async with httpx.AsyncClient(verify=False) as client:
+            # httpx .delete() does not accept a JSON body; use .request()
+            response = await client.request(
+                "DELETE",
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/role-mappings/realm",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=[rep],
+                timeout=10.0,
+            )
+            return response.status_code == 204
+    except Exception as e:
+        logger.error(f"Error removing role '{role_name}' from {user_id}: {e}")
+        return False
+
+
+async def _add_user_to_organization(user_id: str, org_id: str, role: str = "member") -> Dict[str, Any]:
+    """
+    Add a user to an organization in Postgres (same organization_members insert
+    used by org_api.add_organization_member). Returns org info on success;
+    raises ValueError with a human-readable reason on failure.
+    """
+    import asyncpg  # lazy import: only needed on the org path
+
+    conn = await asyncpg.connect(
+        host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "unicorn"),
+        password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+        database=os.getenv("POSTGRES_DB", "unicorn_db"),
+    )
+    try:
+        org = await conn.fetchrow(
+            "SELECT id::text AS id, name FROM organizations WHERE id::text = $1",
+            org_id,
+        )
+        if not org:
+            raise ValueError(f"Organization {org_id} not found")
+
+        existing = await conn.fetchrow(
+            "SELECT 1 FROM organization_members WHERE org_id::text = $1 AND user_id = $2",
+            org_id,
+            user_id,
+        )
+        if not existing:
+            await conn.execute(
+                """
+                INSERT INTO organization_members (org_id, user_id, role)
+                VALUES ($1::uuid, $2, $3)
+                """,
+                org_id,
+                user_id,
+                role,
+            )
+        return {"id": org["id"], "name": org["name"], "role": role}
+    finally:
+        await conn.close()
+
+
+def _shape_user_response(user: Dict[str, Any], roles: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Shape a Keycloak user record like the items returned by GET /api/v1/admin/users."""
+    attrs = user.get("attributes", {}) or {}
+    return {
+        "id": user.get("id"),
+        "username": user.get("username"),
+        "email": user.get("email"),
+        "firstName": user.get("firstName", ""),
+        "lastName": user.get("lastName", ""),
+        "enabled": user.get("enabled", True),
+        "emailVerified": user.get("emailVerified", False),
+        "createdTimestamp": user.get("createdTimestamp"),
+        "roles": roles if roles is not None else (user.get("realmRoles") or []),
+        "subscription_tier": _get_attr_value(attrs, "subscription_tier", "trial"),
+        "subscription_status": _get_attr_value(attrs, "subscription_status", "active"),
+        "api_calls_limit": _get_attr_value(attrs, "api_calls_limit", "1000"),
+        "api_calls_used": _get_attr_value(attrs, "api_calls_used", "0"),
+        "org_id": _get_attr_value(attrs, "org_id"),
+        "org_name": _get_attr_value(attrs, "org_name"),
+        "byok_enabled": _get_attr_value(attrs, "byok_enabled", "false") == "true",
+    }
+
+
+async def _reject_duplicate_user(email: str, username: str):
+    """Raise 409 when the email or username is already taken in Keycloak."""
+    existing = await get_user_by_email(email)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A user with email '{email}' already exists",
+        )
+    if username and username.lower() != email.lower():
+        existing = await get_user_by_username(username)
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A user with username '{username}' already exists",
+            )
 
 
 # ============================================================================
@@ -311,6 +581,236 @@ async def list_users(
     except Exception as e:
         logger.error(f"Error listing users: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# USER CREATION
+# ============================================================================
+
+@router.post("", status_code=201)
+async def create_user_basic(
+    payload: UserCreateRequest,
+    request: Request,
+    admin: Dict[str, Any] = Depends(require_admin),
+):
+    """
+    Create a single Keycloak user (basic).
+
+    - Duplicate email/username -> 409.
+    - Optional password; `temporary_password=true` forces a password reset at
+      first login (Keycloak UPDATE_PASSWORD required action).
+    - `send_onboarding_email=true` (when no password is set) emails the user a
+      secure set-password + verify-email link instead.
+    - Sets subscription_tier/status attributes so the user renders correctly
+      in the admin list immediately.
+    """
+    email = payload.email.strip().lower()
+    username = (payload.username or email).strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+
+    await _reject_duplicate_user(email, username)
+
+    tier = payload.subscription_tier or "trial"
+    api_calls_limit = TIER_API_CALL_LIMITS.get(tier, 1000)
+    attributes = {
+        "subscription_tier": [tier],
+        "subscription_status": ["active"],
+        "api_calls_limit": [str(api_calls_limit)],
+        "api_calls_used": ["0"],
+    }
+
+    user_id = await keycloak_create_user(
+        email=email,
+        username=username,
+        first_name=payload.firstName or "",
+        last_name=payload.lastName or "",
+        attributes=attributes,
+        email_verified=payload.emailVerified,
+    )
+    if not user_id:
+        raise HTTPException(status_code=502, detail="Keycloak rejected the user creation request")
+
+    warnings = []
+
+    if not payload.enabled:
+        if not await _set_user_enabled(user_id, False):
+            warnings.append("Failed to disable the account after creation")
+
+    if payload.password:
+        if not await set_user_password(user_id, payload.password, temporary=payload.temporary_password):
+            warnings.append("User created but setting the password failed")
+    elif payload.send_onboarding_email:
+        result = await send_account_action_email(
+            user_id, ["UPDATE_PASSWORD", "VERIFY_EMAIL"], lifespan=604800
+        )
+        if not result.get("success"):
+            warnings.append(f"Onboarding email failed: {result.get('message', 'unknown error')}")
+
+    # Best-effort audit (never blocks the response)
+    try:
+        await audit_logger.log(
+            action="admin.user.create",
+            result="success",
+            user_id=admin.get("user_id") or admin.get("sub") if isinstance(admin, dict) else None,
+            username=admin.get("email") if isinstance(admin, dict) else None,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+            resource_type="user",
+            resource_id=user_id,
+            metadata={"email": email, "username": username, "tier": tier},
+        )
+    except Exception as e:
+        logger.warning(f"Audit log failed for user create: {e}")
+
+    created = await get_user_by_id(user_id)
+    response = _shape_user_response(created or {"id": user_id, "email": email, "username": username})
+    if warnings:
+        response["warnings"] = warnings
+    logger.info(f"Admin created user {email} ({user_id})")
+    return response
+
+
+@router.post("/comprehensive", status_code=201)
+async def create_user_comprehensive(
+    payload: ComprehensiveUserCreate,
+    request: Request,
+    admin: Dict[str, Any] = Depends(require_admin),
+):
+    """
+    Create a user from the admin Create User modal (all tabs).
+
+    Creates the Keycloak user, sets the password, assigns realm roles
+    (Keycloak + Brigade role names), sets tier/limit/feature attributes,
+    optionally adds the user to an organization, and optionally sends the
+    onboarding/welcome email. Returns the created user shaped like the
+    GET /api/v1/admin/users list items (plus provisioning details).
+    """
+    email = payload.email.strip().lower()
+    username = (payload.username or email).strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+
+    await _reject_duplicate_user(email, username)
+
+    tier = payload.subscriptionTier or "free"
+    api_calls_limit = payload.apiCallLimitOverride or TIER_API_CALL_LIMITS.get(tier, 1000)
+
+    attributes = {
+        "subscription_tier": [tier],
+        "subscription_status": ["active"],
+        "api_calls_limit": [str(api_calls_limit)],
+        "api_calls_used": ["0"],
+        "byok_enabled": ["true" if (payload.featureFlags or {}).get("byokEnabled") else "false"],
+        "account_source": [payload.accountSource or "admin-created"],
+    }
+    if payload.billingStartDate:
+        attributes["billing_start_date"] = [payload.billingStartDate]
+    if payload.tags:
+        attributes["tags"] = [str(t) for t in payload.tags if str(t).strip()]
+    if payload.internalNotes:
+        attributes["internal_notes"] = [payload.internalNotes]
+
+    user_id = await keycloak_create_user(
+        email=email,
+        username=username,
+        first_name=payload.firstName or "",
+        last_name=payload.lastName or "",
+        attributes=attributes,
+        email_verified=payload.emailVerified,
+    )
+    if not user_id:
+        raise HTTPException(status_code=502, detail="Keycloak rejected the user creation request")
+
+    warnings = []
+
+    # Enabled flag (create_user always creates enabled=True)
+    if not payload.enabled:
+        if not await _set_user_enabled(user_id, False):
+            warnings.append("Failed to disable the account after creation")
+
+    # Password (the modal always collects one; API callers may omit it)
+    if payload.password:
+        if not await set_user_password(user_id, payload.password, temporary=False):
+            warnings.append("User created but setting the password failed")
+
+    # Realm roles: Keycloak roles + Brigade roles are both realm-role names
+    role_names = _normalize_role_names(list(payload.keycloakRoles or []) + list(payload.brigadeRoles or []))
+    role_result = await _assign_realm_roles(user_id, role_names) if role_names else {"assigned": [], "failed": []}
+
+    # Organization membership (same organization_members insert as org_api)
+    organization = None
+    if payload.organizationId:
+        try:
+            organization = await _add_user_to_organization(user_id, payload.organizationId, role="member")
+            # Mirror org onto Keycloak attributes so the users list shows it
+            await keycloak_update_user(email, {
+                "org_id": [organization["id"]],
+                "org_name": [organization["name"]],
+            })
+        except ValueError as e:
+            warnings.append(str(e))
+        except Exception as e:
+            logger.error(f"Failed to add user {user_id} to org {payload.organizationId}: {e}")
+            warnings.append(f"Failed to add user to organization: {e}")
+
+    # Welcome / onboarding email (best-effort)
+    welcome_email_sent = False
+    if payload.sendWelcomeEmail:
+        actions = []
+        if not payload.password:
+            actions.append("UPDATE_PASSWORD")
+        if not payload.emailVerified:
+            actions.append("VERIFY_EMAIL")
+        if actions:
+            result = await send_account_action_email(user_id, actions, lifespan=604800)
+            welcome_email_sent = bool(result.get("success"))
+            if not welcome_email_sent:
+                warnings.append(f"Welcome email failed: {result.get('message', 'unknown error')}")
+        else:
+            # Nothing for Keycloak to ask of the user (password set + email verified)
+            warnings.append("Welcome email skipped: no pending account actions (password set and email already verified)")
+
+    # Best-effort audit (never blocks the response)
+    try:
+        await audit_logger.log(
+            action="admin.user.create_comprehensive",
+            result="success",
+            user_id=admin.get("user_id") or admin.get("sub") if isinstance(admin, dict) else None,
+            username=admin.get("email") if isinstance(admin, dict) else None,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+            resource_type="user",
+            resource_id=user_id,
+            metadata={
+                "email": email,
+                "username": username,
+                "tier": tier,
+                "roles": role_result.get("assigned", []),
+                "org_id": payload.organizationId or None,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Audit log failed for comprehensive user create: {e}")
+
+    created = await get_user_by_id(user_id)
+    response = _shape_user_response(
+        created or {"id": user_id, "email": email, "username": username},
+        roles=role_result.get("assigned", []),
+    )
+    response.update({
+        "roles_assigned": role_result.get("assigned", []),
+        "roles_failed": role_result.get("failed", []),
+        "organization": organization,
+        "welcome_email_sent": welcome_email_sent,
+    })
+    if warnings:
+        response["warnings"] = warnings
+
+    logger.info(
+        f"Admin created user {email} ({user_id}) via comprehensive create "
+        f"(tier={tier}, roles={role_result.get('assigned', [])}, org={payload.organizationId or None})"
+    )
+    return response
 
 # ============================================================================
 # USER ANALYTICS
@@ -532,10 +1032,14 @@ async def assign_role(
     role: str,
     admin: bool = Depends(require_admin)
 ):
-    """Assign a role to user"""
+    """Assign a realm role to a user (Keycloak role-mappings API)"""
     try:
-        # TODO: Implement role assignment in Keycloak
-        return {"message": f"Role '{role}' assigned successfully (not yet implemented)"}
+        result = await _assign_realm_roles(user_id, [role])
+        if result["assigned"]:
+            return {"message": f"Role '{role}' assigned successfully", "assigned": result["assigned"]}
+        error = (result["failed"][0].get("error") if result["failed"] else "Unknown error")
+        status = 404 if "not found" in str(error).lower() else 502
+        raise HTTPException(status_code=status, detail=f"Failed to assign role '{role}': {error}")
     except HTTPException:
         raise
     except Exception as e:
@@ -548,10 +1052,12 @@ async def remove_role(
     role: str,
     admin: bool = Depends(require_admin)
 ):
-    """Remove a role from user"""
+    """Remove a realm role from a user (Keycloak role-mappings API)"""
     try:
-        # TODO: Implement role removal in Keycloak
-        return {"message": f"Role '{role}' removed successfully (not yet implemented)"}
+        removed = await _remove_realm_role(user_id, role)
+        if not removed:
+            raise HTTPException(status_code=404, detail=f"Role '{role}' not found or not removable")
+        return {"message": f"Role '{role}' removed successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -734,24 +1240,23 @@ async def import_users_csv(
 
         for row in reader:
             try:
-                # Create user in Keycloak
-                user_data = {
-                    "username": row.get("username"),
-                    "email": row.get("email"),
-                    "firstName": row.get("firstName", ""),
-                    "lastName": row.get("lastName", ""),
-                    "enabled": row.get("enabled", "true").lower() == "true",
-                    "emailVerified": row.get("emailVerified", "false").lower() == "true",
-                    "attributes": {
+                # Create user in Keycloak (create_user takes kwargs, not a dict)
+                user_id = await keycloak_create_user(
+                    email=row.get("email"),
+                    username=row.get("username") or row.get("email"),
+                    first_name=row.get("firstName", ""),
+                    last_name=row.get("lastName", ""),
+                    attributes={
                         "subscription_tier": [row.get("subscription_tier", "trial")],
                         "subscription_status": [row.get("subscription_status", "active")],
                         "api_calls_limit": [row.get("api_calls_limit", "1000")],
-                        "api_calls_used": ["0"]
-                    }
-                }
-
-                user_id = await keycloak_create_user(user_data)
+                        "api_calls_used": ["0"],
+                    },
+                    email_verified=(row.get("emailVerified", "false") or "false").lower() == "true",
+                )
                 if user_id:
+                    if (row.get("enabled", "true") or "true").lower() != "true":
+                        await _set_user_enabled(user_id, False)
                     results["success"].append(row.get("email"))
                 else:
                     results["failed"].append({"email": row.get("email"), "error": "Failed to create user"})
