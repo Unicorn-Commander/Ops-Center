@@ -94,8 +94,10 @@ const WhiteLabelBuilder = () => {
       });
       if (!response.ok) throw new Error('Failed to fetch white-label configuration');
       const data = await response.json();
-      setConfig(data);
-      setLogoPreview(data.logoUrl);
+      // Backend returns { source, config } — unwrap; tolerate a flat legacy shape
+      const cfg = data?.config && typeof data.config === 'object' ? data.config : data;
+      setConfig(prev => ({ ...prev, ...cfg }));
+      setLogoPreview(cfg.logoUrl || cfg.logo_url || null);
     } catch (err) {
       setError(err.message);
       console.error('Error fetching config:', err);
@@ -111,7 +113,8 @@ const WhiteLabelBuilder = () => {
       });
       if (!response.ok) throw new Error('Failed to fetch templates');
       const data = await response.json();
-      setTemplates(data);
+      // Backend returns { templates: [...] }; keep state an array either way
+      setTemplates(Array.isArray(data) ? data : (Array.isArray(data?.templates) ? data.templates : []));
     } catch (err) {
       console.error('Error fetching templates:', err);
     }
@@ -124,7 +127,8 @@ const WhiteLabelBuilder = () => {
       });
       if (!response.ok) throw new Error('Failed to fetch color presets');
       const data = await response.json();
-      setColorPresets(data);
+      // Backend returns { presets: [...] }; keep state an array either way
+      setColorPresets(Array.isArray(data) ? data : (Array.isArray(data?.presets) ? data.presets : []));
     } catch (err) {
       console.error('Error fetching color presets:', err);
     }
