@@ -198,7 +198,9 @@ const OrganizationsList = () => {
     if (!selectedOrg) return;
 
     try {
-      const response = await fetch(`/api/v1/org/${selectedOrg.id}`, {
+      // confirm=true is required by the backend as a second safety latch
+      // (the user has already confirmed via this dialog).
+      const response = await fetch(`/api/v1/org/${selectedOrg.id}?confirm=true`, {
         method: 'DELETE',
         credentials: 'include',
       });

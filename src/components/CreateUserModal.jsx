@@ -121,12 +121,13 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create organization');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || 'Failed to create organization');
       }
 
-      const newOrg = await response.json();
-      onCreated(newOrg);
+      // POST /api/v1/org returns {success, organization: {...}}
+      const body = await response.json();
+      onCreated(body.organization || body);
       setOrgData({ name: '', description: '', domain: '' });
     } catch (err) {
       setError(err.message);
@@ -423,12 +424,13 @@ export default function CreateUserModal({ open, onClose, onUserCreated }) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create user');
+        const errorData = await response.json().catch(() => ({}));
+        // FastAPI errors use `detail` (e.g. 409 duplicate email)
+        throw new Error(errorData.detail || errorData.message || 'Failed to create user');
       }
 
       const newUser = await response.json();
-      onUserCreated(newUser);
+      if (onUserCreated) onUserCreated(newUser);
       handleClose();
     } catch (err) {
       setError(err.message);
@@ -742,30 +744,35 @@ export default function CreateUserModal({ open, onClose, onUserCreated }) {
                   Keycloak Roles
                 </Typography>
                 <FormGroup>
-                  {availableRoles.map((role) => (
-                    <FormControlLabel
-                      key={role}
-                      control={
-                        <Checkbox
-                          checked={formData.keycloakRoles.includes(role)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData({
-                                ...formData,
-                                keycloakRoles: [...formData.keycloakRoles, role],
-                              });
-                            } else {
-                              setFormData({
-                                ...formData,
-                                keycloakRoles: formData.keycloakRoles.filter((r) => r !== role),
-                              });
-                            }
-                          }}
-                        />
-                      }
-                      label={role}
-                    />
-                  ))}
+                  {availableRoles.map((role) => {
+                    // /roles/available returns objects {name, description, level}
+                    const roleName = typeof role === 'string' ? role : role.name;
+                    const roleDescription = typeof role === 'object' ? role.description : null;
+                    return (
+                      <FormControlLabel
+                        key={roleName}
+                        control={
+                          <Checkbox
+                            checked={formData.keycloakRoles.includes(roleName)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData,
+                                  keycloakRoles: [...formData.keycloakRoles, roleName],
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  keycloakRoles: formData.keycloakRoles.filter((r) => r !== roleName),
+                                });
+                              }
+                            }}
+                          />
+                        }
+                        label={roleDescription ? `${roleName} — ${roleDescription}` : roleName}
+                      />
+                    );
+                  })}
                 </FormGroup>
               </Grid>
             </Grid>

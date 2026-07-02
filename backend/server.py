@@ -109,6 +109,7 @@ from user_management_api import router as user_management_router
 # from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
 from redis_session import redis_session_manager
 from account_management_api import router as account_management_router
+from system_settings_api import router as system_settings_admin_router
 from notification_preferences_api import router as notification_preferences_router
 from metered_compute_api import router as metered_compute_router
 from internal_llm_preflight_api import router as internal_llm_preflight_router
@@ -978,6 +979,20 @@ async def startup_event():
         await initialize_api_key_manager(db_pool)
         logger.info("API Key Manager initialized successfully")
 
+        # Initialize System Settings manager (admin CRUD at /api/v1/admin/system-settings).
+        # ensure_tables() self-heals admin_system_settings(+_audit) on hosts that
+        # never ran a migration for them (CREATE TABLE IF NOT EXISTS, idempotent).
+        try:
+            from system_settings_manager import SystemSettingsManager
+            from system_settings_api import set_settings_manager
+            _settings_mgr = SystemSettingsManager(db_pool, redis_client)
+            await _settings_mgr.ensure_tables()
+            set_settings_manager(_settings_mgr)
+            logger.info("System Settings manager initialized (admin_system_settings tables ensured)")
+        except Exception as e:
+            # Non-fatal: only the settings CRUD endpoints 500, not the whole API
+            logger.error(f"Failed to initialize System Settings manager: {e}")
+
         # Initialize Landing Page Settings API (Phase 2)
         # TODO: Re-enable when landing_page_settings_api module is implemented
         # from landing_page_settings_api import init_landing_settings
@@ -1293,6 +1308,10 @@ logger.info("User Management API endpoints registered at /api/v1/admin/users")
 app.include_router(account_management_router)
 logger.info("Account & System Management API endpoints registered")
 
+# System Settings admin CRUD (encrypted, audited; manager wired in startup_event)
+app.include_router(system_settings_admin_router)
+logger.info("System Settings admin CRUD registered at /api/v1/admin/system-settings")
+
 # Notification Preferences API (real, persisted — replaces the mock GET above)
 app.include_router(notification_preferences_router)
 logger.info("Notification Preferences API endpoints registered")
@@ -1495,15 +1514,18 @@ app.include_router(prometheus_router)
 logger.info("Prometheus Monitoring API endpoints registered at /api/v1/monitoring/prometheus")
 
 # Supplementary Analytics & Metering (November 2025) - REGISTERED FIRST for priority
-# Priority registration ensures mock data endpoints override old database-dependent endpoints
+# NOTE: these supplementary endpoints have no real data source yet. They now return
+# honest empty payloads (same JSON shape, zeroed values, "no_data": true) instead of
+# the fabricated random numbers they used to serve. Registration order is unchanged
+# so response shapes stay stable for existing consumers.
 app.include_router(analytics_revenue_router)
-app.include_router(analytics_users_router)  # PRIORITY: Mock endpoints (cohorts, growth) override old DB endpoints
+app.include_router(analytics_users_router)  # PRIORITY: overrides old DB endpoints (cohorts, growth) with stable-shape no_data payloads
 app.include_router(analytics_services_router)
 app.include_router(analytics_metrics_router)
 app.include_router(analytics_performance_router)
 app.include_router(analytics_main_router)
 app.include_router(metering_router)
-logger.info("Supplementary Analytics endpoints registered (PRIORITY - mock data):")
+logger.info("Supplementary Analytics endpoints registered (PRIORITY - honest no_data payloads until real queries land):")
 logger.info("  - Revenue: /api/v1/analytics/revenue/* (mrr, arr, growth, churn, forecast, by-tier)")
 logger.info("  - Users: /api/v1/analytics/users/* (ltv, churn, acquisition, cohorts, growth)")
 logger.info("  - Services: /api/v1/analytics/services/* (popularity, cost-per-user, adoption, performance, uptime, latency, errors)")

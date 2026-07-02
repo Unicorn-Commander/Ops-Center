@@ -551,76 +551,10 @@ async def get_services_status():
 
 
 # ============================================================================
-# 9. GET /api/v1/admin/system-settings - System settings
+# 9. GET /api/v1/admin/system-settings — MOVED to system_settings_api.py
+#    (real, persisted, encrypted CRUD at the same path; this hardcoded mock
+#    was removed 2026-07-02 so it can't shadow the real list endpoint)
 # ============================================================================
-
-@router.get("/api/v1/admin/system-settings", response_model=Dict[str, List[SystemSetting]])
-async def get_system_settings(
-    admin: Dict = Depends(require_admin_user)
-):
-    """
-    Get system configuration settings (admin only).
-
-    Returns settings organized by category:
-    - General (site name, URL, contact info)
-    - Security (2FA, session timeout, password policy)
-    - Billing (Stripe keys, Lago config)
-    - Services (LiteLLM, Keycloak, database)
-    """
-    try:
-        # TODO: Query platform_settings table
-        # For now, return common settings structure
-        settings = [
-            {
-                "key": "site_name",
-                "value": "Unicorn Commander",
-                "description": "Site name displayed in UI",
-                "category": "general",
-                "is_editable": True
-            },
-            {
-                "key": "site_url",
-                "value": os.getenv("EXTERNAL_URL", "https://unicorncommander.ai"),
-                "description": "External site URL",
-                "category": "general",
-                "is_editable": True
-            },
-            {
-                "key": "session_timeout",
-                "value": 86400,
-                "description": "Session timeout in seconds (24 hours)",
-                "category": "security",
-                "is_editable": True
-            },
-            {
-                "key": "require_email_verification",
-                "value": True,
-                "description": "Require email verification for new users",
-                "category": "security",
-                "is_editable": True
-            },
-            {
-                "key": "stripe_enabled",
-                "value": bool(os.getenv("STRIPE_SECRET_KEY")),
-                "description": "Stripe payment processing enabled",
-                "category": "billing",
-                "is_editable": False
-            },
-            {
-                "key": "litellm_enabled",
-                "value": True,
-                "description": "LiteLLM proxy enabled",
-                "category": "services",
-                "is_editable": True
-            }
-        ]
-
-        logger.info(f"Admin {admin.get('email')} retrieved {len(settings)} system settings")
-        return {"settings": settings}
-
-    except Exception as e:
-        logger.error(f"Error fetching system settings: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
 
 # ============================================================================
