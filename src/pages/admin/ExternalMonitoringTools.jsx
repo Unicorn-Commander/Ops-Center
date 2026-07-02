@@ -34,31 +34,29 @@ export default function ExternalMonitoringTools() {
 
   const checkServices = async () => {
     setLoading(true);
-    const checks = {};
 
-    // Check Grafana
-    try {
-      const res = await fetch('/api/v1/monitoring/grafana/health', { credentials: 'include' });
-      checks.grafana = res.ok ? 'connected' : 'unreachable';
-    } catch {
-      checks.grafana = 'not_configured';
-    }
+    // Probe all three in PARALLEL with a client-side timeout. These health
+    // endpoints proxy to external services and can hang for many seconds;
+    // done sequentially the page sat on a blank spinner long enough to look
+    // broken before anything rendered.
+    const probe = async (url) => {
+      try {
+        const res = await fetch(url, {
+          credentials: 'include',
+          signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined
+        });
+        return res.ok ? 'connected' : 'unreachable';
+      } catch {
+        return 'not_configured';
+      }
+    };
 
-    // Check Prometheus
-    try {
-      const res = await fetch('/api/v1/monitoring/prometheus/health', { credentials: 'include' });
-      checks.prometheus = res.ok ? 'connected' : 'unreachable';
-    } catch {
-      checks.prometheus = 'not_configured';
-    }
-
-    // Check Umami
-    try {
-      const res = await fetch('/api/v1/monitoring/umami/health', { credentials: 'include' });
-      checks.umami = res.ok ? 'connected' : 'unreachable';
-    } catch {
-      checks.umami = 'not_configured';
-    }
+    const [grafana, prometheus, umami] = await Promise.all([
+      probe('/api/v1/monitoring/grafana/health'),
+      probe('/api/v1/monitoring/prometheus/health'),
+      probe('/api/v1/monitoring/umami/health')
+    ]);
+    const checks = { grafana, prometheus, umami };
 
     setServiceStatus(checks);
     setLoading(false);
