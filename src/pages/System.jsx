@@ -25,7 +25,7 @@ import { useToast } from '../components/Toast';
 import MuiTooltip from '@mui/material/Tooltip';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { isCriticalProcess, getCriticalProcessWarning } from '../utils/validation';
+import { isCriticalProcess } from '../utils/validation';
 
 // Format utilities
 const formatBytes = (bytes) => {
@@ -90,126 +90,9 @@ const TemperatureGauge = ({ temperature, maxTemp = 100, theme }) => {
   );
 };
 
-// Critical Process Warning Modal
-const CriticalProcessModal = ({ isOpen, onClose, onConfirm, processName, pid, theme }) => {
-  const [confirmText, setConfirmText] = useState('');
-  const warning = getCriticalProcessWarning(processName, pid);
-
-  if (!isOpen) return null;
-
-  const isConfirmed = confirmText === warning.confirmationText;
-
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-red-500/50"
-        >
-          {/* Header */}
-          <div className="flex items-center gap-3 p-6 border-b border-gray-700">
-            <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
-            <div>
-              <h2 className={`text-xl font-bold ${theme.text.primary}`}>
-                {warning.title}
-              </h2>
-              <p className={`text-sm ${theme.text.secondary}`}>
-                This is a CRITICAL system process
-              </p>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="p-6 space-y-4">
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-              <div className={`font-semibold mb-2 ${theme.text.primary}`}>
-                Process: <span className="font-mono text-red-400">{processName}</span>
-              </div>
-              <div className={`text-sm ${theme.text.secondary}`}>
-                PID: <span className="font-mono">{pid}</span>
-              </div>
-            </div>
-
-            <div>
-              <h3 className={`font-semibold mb-2 ${theme.text.primary}`}>
-                Killing this process may cause:
-              </h3>
-              <ul className="space-y-2">
-                {warning.impacts.map((impact, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <ShieldExclamationIcon className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                    <span className={theme.text.secondary}>{impact}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-              <p className={`text-sm ${theme.text.secondary} mb-3`}>
-                To confirm, type the process name: <span className="font-mono font-bold text-yellow-400">{warning.confirmationText}</span>
-              </p>
-              <input
-                type="text"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder="Type process name here"
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
-              />
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-700">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                if (isConfirmed) {
-                  onConfirm();
-                  onClose();
-                  setConfirmText('');
-                }
-              }}
-              disabled={!isConfirmed}
-              className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                isConfirmed
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              Yes, Kill Process
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
-};
-
 // Process row component
-const ProcessRow = ({ process, onKill, theme }) => {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [showCriticalModal, setShowCriticalModal] = useState(false);
+const ProcessRow = ({ process, theme }) => {
   const isCritical = isCriticalProcess(process.name);
-
-  const handleKillClick = () => {
-    if (isCritical) {
-      setShowCriticalModal(true);
-    } else {
-      setShowConfirm(true);
-    }
-  };
-
-  const handleConfirmKill = () => {
-    onKill(process.pid);
-    setShowConfirm(false);
-  };
 
   return (
     <>
@@ -258,44 +141,17 @@ const ProcessRow = ({ process, onKill, theme }) => {
           </span>
         </td>
         <td className="px-4 py-3 text-sm">
-          {showConfirm && !isCritical ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleConfirmKill}
-                className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 transition-colors"
-              >
-                Confirm
-              </button>
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
+          {/* Killing processes is not supported by the backend on this deployment */}
+          <span title="Not available yet — killing processes is not supported on this deployment.">
             <button
-              onClick={handleKillClick}
-              className={`p-1 hover:bg-red-500/10 rounded transition-colors ${
-                isCritical ? 'text-red-500 hover:text-red-400' : 'text-red-400 hover:text-red-300'
-              }`}
-              title={isCritical ? "Kill Critical Process (Requires Confirmation)" : "Kill Process"}
+              disabled
+              className="p-1 rounded text-gray-500 cursor-not-allowed"
             >
               <StopIcon className="h-4 w-4" />
             </button>
-          )}
+          </span>
         </td>
       </motion.tr>
-
-      {/* Critical Process Warning Modal */}
-      <CriticalProcessModal
-        isOpen={showCriticalModal}
-        onClose={() => setShowCriticalModal(false)}
-        onConfirm={() => onKill(process.pid)}
-        processName={process.name}
-        pid={process.pid}
-        theme={theme}
-      />
     </>
   );
 };
@@ -479,43 +335,11 @@ export default function System() {
     setHistoricalData(newData);
   };
 
-  const handleKillProcess = async (pid) => {
-    try {
-      const response = await fetch(`/api/v1/system/process/${pid}`, {
-        credentials: 'include',
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        fetchSystemStatus();
-      } else {
-        console.error('Failed to kill process');
-      }
-    } catch (error) {
-      console.error('Error killing process:', error);
-    }
-  };
-
   const handleRestartService = async (serviceName) => {
     try {
       await controlService(serviceName, 'restart');
     } catch (error) {
       console.error('Error restarting service:', error);
-    }
-  };
-
-  const handleClearCache = async () => {
-    try {
-      const response = await fetch('/api/v1/system/cache', {
-        credentials: 'include',
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        toast.success('Cache cleared successfully');
-      }
-    } catch (error) {
-      console.error('Error clearing cache:', error);
     }
   };
 
@@ -575,13 +399,16 @@ export default function System() {
             {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
           </button>
 
-          <button
-            onClick={handleClearCache}
-            className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 flex items-center gap-2"
-          >
-            <TrashIcon className="h-5 w-5" />
-            Clear Cache
-          </button>
+          {/* Cache clearing is not supported by the backend on this deployment */}
+          <span title="Not available yet — cache clearing is not supported on this deployment.">
+            <button
+              disabled
+              className="px-4 py-2 rounded-lg bg-gray-700 text-gray-400 cursor-not-allowed flex items-center gap-2"
+            >
+              <TrashIcon className="h-5 w-5" />
+              Clear Cache
+            </button>
+          </span>
         </div>
       </div>
 
@@ -1009,7 +836,6 @@ export default function System() {
                   <ProcessRow
                     key={process.pid}
                     process={process}
-                    onKill={handleKillProcess}
                     theme={theme}
                   />
                 ))}

@@ -55,8 +55,6 @@ import {
   Error as ErrorIcon,
   Code as CodeIcon,
   Close as CloseIcon,
-  SaveAlt as SaveAltIcon,
-  Restore as RestoreIcon,
   Download as DownloadIcon,
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
@@ -79,7 +77,7 @@ const TraefikConfig = () => {
       if (activeTab === 1) fetchRoutes();
       if (activeTab === 2) fetchServicesTab();
       if (activeTab === 3) fetchMiddleware();
-      if (activeTab === 4) fetchConfig();
+      if (activeTab === 4) fetchConfigSummary();
     }, 60000);
 
     return () => clearInterval(interval);
@@ -96,10 +94,6 @@ const TraefikConfig = () => {
   const [certificates, setCertificates] = useState([]);
   const [certPage, setCertPage] = useState(0);
   const [certRowsPerPage, setCertRowsPerPage] = useState(10);
-  const [certDialogOpen, setCertDialogOpen] = useState(false);
-  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
-  const [selectedCert, setSelectedCert] = useState(null);
-  const [newCert, setNewCert] = useState({ domain: '', email: '' });
   const [acmeStatus, setAcmeStatus] = useState(null);
 
   useEffect(() => {
@@ -142,53 +136,6 @@ const TraefikConfig = () => {
     } catch (err) {
       console.error('Failed to fetch ACME status:', err);
       setAcmeStatus(null);
-    }
-  };
-
-  const handleRequestCertificate = async () => {
-    try {
-      const response = await fetch('/api/v1/traefik/certificates', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        credentials: 'include',
-        body: JSON.stringify(newCert),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to request certificate');
-      }
-
-      showToast('Certificate requested successfully');
-      setCertDialogOpen(false);
-      setNewCert({ domain: '', email: '' });
-      fetchCertificates();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const handleRevokeCertificate = async () => {
-    if (!selectedCert) return;
-
-    try {
-      const response = await fetch(`/api/v1/traefik/certificates/${selectedCert.domain}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to revoke certificate');
-
-      showToast('Certificate revoked successfully');
-      setRevokeDialogOpen(false);
-      setSelectedCert(null);
-      fetchCertificates();
-    } catch (err) {
-      showToast(err.message, 'error');
     }
   };
 
@@ -565,67 +512,47 @@ const TraefikConfig = () => {
   // ============================================================
   // CONFIGURATION TAB STATE & HANDLERS
   // ============================================================
+  // Raw config editing, backups, and restore are not supported by the
+  // backend on this deployment. The tab shows the live config summary
+  // and offers validate/reload, which are supported.
 
-  const [config, setConfig] = useState('');
-  const [configEditing, setConfigEditing] = useState(false);
-  const [editedConfig, setEditedConfig] = useState('');
-  const [backups, setBackups] = useState([]);
-  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
-  const [selectedBackup, setSelectedBackup] = useState('');
+  const [configSummary, setConfigSummary] = useState(null);
+  const [validating, setValidating] = useState(false);
 
   useEffect(() => {
     if (activeTab === 4) {
-      fetchConfig();
-      fetchBackups();
+      fetchConfigSummary();
     }
   }, [activeTab]);
 
-  const fetchConfig = async () => {
+  const fetchConfigSummary = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/v1/traefik/config', {
+      const response = await fetch('/api/v1/traefik/config/summary', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
         credentials: 'include',
       });
 
-      if (!response.ok) throw new Error('Failed to fetch config');
+      if (!response.ok) throw new Error('Failed to fetch configuration summary');
 
       const data = await response.json();
-      setConfig(data.config || '');
-      setEditedConfig(data.config || '');
+      setConfigSummary(data);
     } catch (err) {
       showToast(err.message, 'error');
+      setConfigSummary(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchBackups = async () => {
-    try {
-      const response = await fetch('/api/v1/traefik/backups', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch backups');
-
-      const data = await response.json();
-      setBackups(data.backups || []);
-    } catch (err) {
-      console.error('Failed to fetch backups:', err);
-    }
-  };
-
   const handleValidateConfig = async () => {
+    setValidating(true);
     try {
+      // Validates the server-side configuration (no request body)
       const response = await fetch('/api/v1/traefik/config/validate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
         credentials: 'include',
-        body: JSON.stringify({ config: editedConfig }),
       });
 
       if (!response.ok) {
@@ -633,73 +560,16 @@ const TraefikConfig = () => {
         throw new Error(error.detail || 'Configuration validation failed');
       }
 
-      showToast('Configuration is valid');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const handleSaveConfig = async () => {
-    try {
-      const response = await fetch('/api/v1/traefik/config', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        credentials: 'include',
-        body: JSON.stringify({ config: editedConfig }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to save config');
+      const result = await response.json();
+      if (result.valid) {
+        showToast(result.message || 'Configuration is valid');
+      } else {
+        showToast(result.message || 'Configuration is invalid', 'error');
       }
-
-      showToast('Configuration saved successfully');
-      setConfig(editedConfig);
-      setConfigEditing(false);
-      fetchConfig();
     } catch (err) {
       showToast(err.message, 'error');
-    }
-  };
-
-  const handleBackupConfig = async () => {
-    try {
-      const response = await fetch('/api/v1/traefik/config/backup', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to create backup');
-
-      showToast('Backup created successfully');
-      fetchBackups();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const handleRestoreBackup = async () => {
-    if (!selectedBackup) return;
-
-    try {
-      const response = await fetch(`/api/v1/traefik/config/restore/${selectedBackup}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to restore backup');
-
-      showToast('Configuration restored successfully');
-      setRestoreDialogOpen(false);
-      setSelectedBackup('');
-      fetchConfig();
-    } catch (err) {
-      showToast(err.message, 'error');
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -750,17 +620,22 @@ const TraefikConfig = () => {
             </Box>
 
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => setCertDialogOpen(true)}
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
-                }}
-              >
-                Request Certificate
-              </Button>
+              {/* Requesting certificates is not supported by the backend on this deployment */}
+              <Tooltip title="Not available yet — requesting certificates is not supported on this deployment. Certificates are issued automatically via ACME.">
+                <span>
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    disabled
+                    sx={{
+                      bgcolor: 'rgba(255,255,255,0.2)',
+                      color: 'rgba(255,255,255,0.5) !important'
+                    }}
+                  >
+                    Request Certificate
+                  </Button>
+                </span>
+              </Tooltip>
               <IconButton
                 onClick={fetchCertificates}
                 sx={{ color: 'white' }}
@@ -829,17 +704,17 @@ const TraefikConfig = () => {
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
-                          <Tooltip title="Revoke Certificate">
-                            <IconButton
-                              color="error"
-                              size="small"
-                              onClick={() => {
-                                setSelectedCert(cert);
-                                setRevokeDialogOpen(true);
-                              }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
+                          {/* Revoking certificates is not supported by the backend on this deployment */}
+                          <Tooltip title="Not available yet — revoking certificates is not supported on this deployment.">
+                            <span>
+                              <IconButton
+                                color="error"
+                                size="small"
+                                disabled
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </span>
                           </Tooltip>
                         </TableCell>
                       </TableRow>
@@ -1339,155 +1214,87 @@ const TraefikConfig = () => {
       {/* Actions Bar */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          {configEditing ? (
-            <>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<SaveAltIcon />}
-                onClick={handleSaveConfig}
-              >
-                Save
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={handleValidateConfig}
-              >
-                Validate
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  setEditedConfig(config);
-                  setConfigEditing(false);
-                }}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="contained"
-                startIcon={<EditIcon />}
-                onClick={() => setConfigEditing(true)}
-                sx={{
-                  background: currentTheme === 'unicorn'
-                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                    : 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
-                }}
-              >
-                Edit Config
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<BackupIcon />}
-                onClick={handleBackupConfig}
-              >
-                Backup
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<RestoreIcon />}
-                onClick={() => setRestoreDialogOpen(true)}
-                disabled={backups.length === 0}
-              >
-                Restore
-              </Button>
-              <Button
-                variant="outlined"
-                color="warning"
-                startIcon={<RefreshIcon />}
-                onClick={handleReloadTraefik}
-              >
-                Reload Traefik
-              </Button>
-            </>
-          )}
+          <Button
+            variant="outlined"
+            startIcon={validating ? <CircularProgress size={16} /> : <CheckCircleIcon />}
+            onClick={handleValidateConfig}
+            disabled={validating}
+          >
+            {validating ? 'Validating...' : 'Validate'}
+          </Button>
+          <Button
+            variant="outlined"
+            color="warning"
+            startIcon={<RefreshIcon />}
+            onClick={handleReloadTraefik}
+          >
+            Reload Traefik
+          </Button>
+          <IconButton onClick={fetchConfigSummary}>
+            <RefreshIcon />
+          </IconButton>
         </Box>
       </Box>
 
-      {/* Config Display */}
+      {/* Honest notice: raw editing/backups are not supported by the backend */}
+      <Alert severity="info" sx={{ mb: 3 }}>
+        Raw configuration editing, backups, and restore are not available on this
+        deployment yet. Use the Routes, Services, and Middleware tabs to manage the
+        configuration.
+      </Alert>
+
+      {/* Config Summary */}
       <Card>
         <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Configuration Summary
+          </Typography>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
               <CircularProgress />
             </Box>
-          ) : configEditing ? (
-            <TextField
-              fullWidth
-              multiline
-              rows={20}
-              value={editedConfig}
-              onChange={(e) => setEditedConfig(e.target.value)}
-              variant="outlined"
-              sx={{
-                '& .MuiInputBase-input': {
-                  fontFamily: 'monospace',
-                  fontSize: '0.9rem',
-                }
-              }}
-            />
+          ) : configSummary ? (
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={4}>
+                <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Routes
+                  </Typography>
+                  <Typography variant="h5">
+                    {configSummary.summary?.routes ?? 0}
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Certificates
+                  </Typography>
+                  <Typography variant="h5">
+                    {configSummary.summary?.certificates ?? 0}
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Last Updated
+                  </Typography>
+                  <Typography variant="body1" sx={{ mt: 1 }}>
+                    {configSummary.timestamp
+                      ? new Date(configSummary.timestamp).toLocaleString()
+                      : 'N/A'}
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
           ) : (
-            <Paper
-              sx={{
-                p: 2,
-                bgcolor: 'grey.900',
-                color: 'grey.100',
-                fontFamily: 'monospace',
-                fontSize: '0.9rem',
-                whiteSpace: 'pre-wrap',
-                overflowX: 'auto',
-                maxHeight: '600px',
-                overflowY: 'auto'
-              }}
-            >
-              {config || 'No configuration available'}
-            </Paper>
+            <Typography color="text.secondary">
+              Configuration summary unavailable
+            </Typography>
           )}
         </CardContent>
       </Card>
-
-      {/* Recent Backups */}
-      {!configEditing && backups.length > 0 && (
-        <Card sx={{ mt: 3 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Recent Backups
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {backups.slice(0, 5).map((backup, index) => (
-                <Box
-                  key={index}
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    p: 1,
-                    bgcolor: 'action.hover',
-                    borderRadius: 1
-                  }}
-                >
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {backup}
-                  </Typography>
-                  <Button
-                    size="small"
-                    startIcon={<RestoreIcon />}
-                    onClick={() => {
-                      setSelectedBackup(backup);
-                      setRestoreDialogOpen(true);
-                    }}
-                  >
-                    Restore
-                  </Button>
-                </Box>
-              ))}
-            </Box>
-          </CardContent>
-        </Card>
-      )}
     </Box>
   );
 
@@ -1559,79 +1366,6 @@ const TraefikConfig = () => {
       {/* ============================================================ */}
       {/* DIALOGS */}
       {/* ============================================================ */}
-
-      {/* Request Certificate Dialog */}
-      <Dialog
-        open={certDialogOpen}
-        onClose={() => setCertDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Request SSL Certificate</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-            <TextField
-              label="Domain"
-              value={newCert.domain}
-              onChange={(e) => setNewCert({ ...newCert, domain: e.target.value })}
-              placeholder="example.com"
-              fullWidth
-              required
-              helperText="Domain name for the certificate"
-            />
-            <TextField
-              label="Email"
-              type="email"
-              value={newCert.email}
-              onChange={(e) => setNewCert({ ...newCert, email: e.target.value })}
-              placeholder="admin@example.com"
-              fullWidth
-              required
-              helperText="Contact email for certificate renewal notifications"
-            />
-            <Alert severity="info">
-              Certificate will be requested from Let's Encrypt. Make sure the domain DNS is properly configured.
-            </Alert>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCertDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleRequestCertificate}
-            variant="contained"
-            disabled={!newCert.domain || !newCert.email}
-          >
-            Request Certificate
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Revoke Certificate Dialog */}
-      <Dialog
-        open={revokeDialogOpen}
-        onClose={() => setRevokeDialogOpen(false)}
-        maxWidth="xs"
-      >
-        <DialogTitle>Revoke Certificate</DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            This action cannot be undone!
-          </Alert>
-          <Typography>
-            Are you sure you want to revoke the certificate for <strong>{selectedCert?.domain}</strong>?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRevokeDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleRevokeCertificate}
-            variant="contained"
-            color="error"
-          >
-            Revoke
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Add/Edit Route Dialog */}
       <Dialog
@@ -1896,47 +1630,6 @@ const TraefikConfig = () => {
             color="error"
           >
             Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Restore Backup Dialog */}
-      <Dialog
-        open={restoreDialogOpen}
-        onClose={() => setRestoreDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Restore Configuration Backup</DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 3 }}>
-            This will replace the current configuration!
-          </Alert>
-
-          <FormControl fullWidth>
-            <InputLabel>Select Backup</InputLabel>
-            <Select
-              value={selectedBackup}
-              onChange={(e) => setSelectedBackup(e.target.value)}
-              label="Select Backup"
-            >
-              {backups.map(backup => (
-                <MenuItem key={backup} value={backup}>
-                  {backup}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRestoreDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleRestoreBackup}
-            variant="contained"
-            color="warning"
-            disabled={!selectedBackup}
-          >
-            Restore
           </Button>
         </DialogActions>
       </Dialog>

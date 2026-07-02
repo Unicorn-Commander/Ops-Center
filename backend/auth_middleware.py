@@ -48,6 +48,9 @@ PUBLIC_EXACT = {
     "/api/v1/billing/events",         # m2m agent-key metering INGEST (POST, bare path only;
                                       # the GET /events/summary|by-property|markup-revenue
                                       # dashboards are NOT exact matches -> stay session-gated)
+    "/api/v1/website-monitor/public-status",  # /status page data — handler is sanitized for
+                                      # anonymous use (name/url/status/uptime only); the rest
+                                      # of /website-monitor/* stays session-gated
 }
 
 # Public path PREFIXES (startswith match)

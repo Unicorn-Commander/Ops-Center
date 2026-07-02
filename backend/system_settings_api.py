@@ -1,20 +1,27 @@
 """
 System Settings API
 
-REST API endpoints for managing system configuration settings via GUI.
+REST API endpoints for managing encrypted admin configuration settings via GUI.
 Admin-only access with comprehensive audit logging.
 
+Mounted at /api/v1/admin/system-settings (the path the SystemSettings admin
+page calls). NOTE: /api/v1/system/settings is a DIFFERENT, public endpoint
+(landing-page mode/branding, consumed by RootRedirect) and is intentionally
+left untouched.
+
 Endpoints:
-- GET    /api/v1/system/settings                 - List all settings
-- GET    /api/v1/system/settings/{key}           - Get specific setting
-- POST   /api/v1/system/settings                 - Create/update setting
-- DELETE /api/v1/system/settings/{key}           - Delete setting
-- GET    /api/v1/system/settings/audit           - Get audit log
-- GET    /api/v1/system/settings/categories      - List categories
-- POST   /api/v1/system/settings/bulk            - Bulk update settings
+- GET    /api/v1/admin/system-settings                 - List all settings
+- GET    /api/v1/admin/system-settings/categories      - List categories
+- GET    /api/v1/admin/system-settings/{key}           - Get specific setting
+- POST   /api/v1/admin/system-settings                 - Create/update setting
+- PUT    /api/v1/admin/system-settings/{key}           - Update setting
+- DELETE /api/v1/admin/system-settings/{key}           - Delete setting
+- POST   /api/v1/admin/system-settings/{key}/test      - Connectivity/format test
+- GET    /api/v1/admin/system-settings/audit/log       - Get audit log
+- POST   /api/v1/admin/system-settings/bulk            - Bulk update settings
 
 Author: Backend API Developer
-Date: October 20, 2025
+Date: October 20, 2025 (rewired + mounted 2026-07-02)
 """
 
 import logging
@@ -37,8 +44,10 @@ from system_settings_manager import (
 
 logger = logging.getLogger(__name__)
 
-# Create router
-router = APIRouter(prefix="/api/v1/system/settings", tags=["System Settings"])
+# Create router — mounted at the path the SystemSettings admin page calls.
+# (Do NOT use /api/v1/system/settings: that path belongs to the public
+# landing-page settings endpoint consumed by RootRedirect.)
+router = APIRouter(prefix="/api/v1/admin/system-settings", tags=["System Settings"])
 
 
 # Dependency to get settings manager (will be injected by server.py)
@@ -62,60 +71,58 @@ def set_settings_manager(manager: SystemSettingsManager):
     logger.info("System settings manager initialized in API router")
 
 
-# Dependency to check admin role (simplified - should use actual auth)
+# Dependency to check admin role — uses the same Redis-session admin guard as
+# the sibling admin routers (auth_dependencies.require_admin_user).
 async def check_admin_role(request: Request) -> str:
     """
-    Check if user has admin role
+    Require an authenticated admin session (401/403 otherwise).
 
     Returns:
-        User ID if admin, raises HTTPException otherwise
+        The acting admin's email/user-id (used for audit attribution).
     """
-    # TODO: Replace with actual authentication check
-    # For now, check session or use keycloak integration
+    from auth_dependencies import require_admin_user
 
-    # Try to get user from session
-    user_email = request.session.get("user_email")
-    user_roles = request.session.get("user_roles", [])
-
-    if not user_email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
-        )
-
-    # Check if user has admin or moderator role
-    if "admin" not in user_roles and "moderator" not in user_roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required to manage system settings"
-        )
-
-    return user_email
+    user = await require_admin_user(request)
+    return user.get("email") or user.get("user_id") or "admin"
 
 
 # Request/Response models
 class SettingCreateRequest(BaseModel):
-    """Request to create new setting"""
+    """Request to create new setting.
+
+    The EditSettingModal frontend sends `sensitive` (not `is_sensitive`);
+    both spellings are accepted, `sensitive` wins when provided.
+    """
     key: str = Field(..., min_length=1, max_length=255)
     value: str
     category: SettingCategory
     description: Optional[str] = None
     is_sensitive: bool = False
+    sensitive: Optional[bool] = None  # frontend alias for is_sensitive
     value_type: ValueType = ValueType.STRING
     is_required: bool = False
     is_editable: bool = True
     default_value: Optional[str] = None
 
+    @property
+    def resolved_sensitive(self) -> bool:
+        return self.sensitive if self.sensitive is not None else self.is_sensitive
+
 
 class SettingUpdateRequest(BaseModel):
-    """Request to update setting"""
+    """Request to update setting (accepts the frontend `sensitive` alias)."""
     value: str
     description: Optional[str] = None
     is_sensitive: Optional[bool] = None
+    sensitive: Optional[bool] = None  # frontend alias for is_sensitive
     value_type: Optional[ValueType] = None
     is_required: Optional[bool] = None
     is_editable: Optional[bool] = None
     default_value: Optional[str] = None
+
+    @property
+    def resolved_sensitive(self) -> Optional[bool]:
+        return self.sensitive if self.sensitive is not None else self.is_sensitive
 
 
 class BulkUpdateRequest(BaseModel):
@@ -287,7 +294,7 @@ async def create_or_update_setting(
             user_id=user_id,
             category=request_data.category,
             description=request_data.description,
-            is_sensitive=request_data.is_sensitive,
+            is_sensitive=request_data.resolved_sensitive,
             value_type=request_data.value_type,
             is_required=request_data.is_required,
             is_editable=request_data.is_editable,
@@ -341,7 +348,7 @@ async def update_setting(
             value=request_data.value,
             user_id=user_id,
             description=request_data.description,
-            is_sensitive=request_data.is_sensitive,
+            is_sensitive=request_data.resolved_sensitive,
             value_type=request_data.value_type,
             is_required=request_data.is_required,
             is_editable=request_data.is_editable,
@@ -403,6 +410,69 @@ async def delete_setting(
             status_code=500,
             detail=f"Failed to delete setting: {str(e)}"
         )
+
+
+@router.post("/{key}/test")
+async def test_setting(
+    key: str,
+    manager: SystemSettingsManager = Depends(get_settings_manager),
+    user_id: str = Depends(check_admin_role)
+):
+    """
+    Best-effort connectivity/format test for a setting.
+
+    - URL-shaped values (http/https) get a live reachability check.
+    - Everything else gets a presence + decryption check (we cannot generically
+      validate arbitrary API keys without calling the third-party service).
+    """
+    import httpx
+
+    try:
+        setting = await manager.get_setting(key=key, decrypt=True, mask_sensitive=False)
+        if not setting:
+            raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
+
+        value = (setting.value or "").strip()
+        if not value:
+            raise HTTPException(status_code=400, detail=f"Setting '{key}' has an empty value")
+
+        # Live reachability test for URL-shaped values
+        if value.lower().startswith(("http://", "https://")):
+            try:
+                async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
+                    response = await client.get(value, timeout=8.0)
+                reachable = response.status_code < 500
+                if not reachable:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"URL responded with HTTP {response.status_code}"
+                    )
+                return {
+                    "success": True,
+                    "test": "url_reachability",
+                    "message": f"URL is reachable (HTTP {response.status_code})",
+                    "status_code": response.status_code,
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"URL is not reachable: {e}")
+
+        # Non-URL values: presence + decryption is all we can verify generically
+        return {
+            "success": True,
+            "test": "presence",
+            "message": (
+                "Value is present and decrypts correctly. No live connection test "
+                "is available for this key type."
+            ),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to test setting {key}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to test setting: {str(e)}")
 
 
 @router.get("/audit/log", response_model=AuditLogResponse)

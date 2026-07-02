@@ -39,36 +39,12 @@ export default function OrganizationBilling() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Billing data
-  const [billing, setBilling] = useState({
-    subscription: {
-      plan: 'Professional',
-      status: 'active',
-      seats: 5,
-      seatsUsed: 3,
-      amount: 49.00,
-      currency: 'USD',
-      interval: 'month',
-      nextBillingDate: '2025-11-13',
-      cancelAtPeriodEnd: false
-    },
-    usage: {
-      apiCalls: 8547,
-      apiCallsLimit: 10000,
-      storage: 2.4,
-      storageLimit: 100,
-      bandwidth: 45.6,
-      bandwidthLimit: 1000
-    },
-    invoices: [],
-    paymentMethod: {
-      type: 'card',
-      last4: '4242',
-      brand: 'Visa',
-      expiryMonth: '12',
-      expiryYear: '2026'
-    }
-  });
+  // Billing data - starts empty; only ever populated from the real API.
+  // (The old fabricated "Professional $49 / Visa •••• 4242" defaults are gone.)
+  const [billing, setBilling] = useState(null);
+  const [memberCount, setMemberCount] = useState(null);
+  const [error, setError] = useState(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   // Toast notification
   const [toast, setToast] = useState({
@@ -100,19 +76,55 @@ export default function OrganizationBilling() {
     if (!currentOrg) return;
 
     setLoading(true);
+    setError(null);
     try {
-      // Note: Organization billing endpoint might not exist yet in backend
-      // This will need to be created or map to subscription API
-      const response = await fetch(`/api/v1/org/${currentOrg.id}/billing`, { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch billing data');
+      // Real endpoint shape: { plan_tier, lago_customer_id, stripe_customer_id, status, created_at }
+      const [billingRes, membersRes] = await Promise.all([
+        fetch(`/api/v1/org/${currentOrg.id}/billing`, { credentials: 'include' }),
+        fetch(`/api/v1/org/${currentOrg.id}/members?limit=1`, { credentials: 'include' })
+      ]);
 
-      const data = await response.json();
-      setBilling({ ...billing, ...data });
+      if (!billingRes.ok) throw new Error('Failed to fetch billing data');
+      const data = await billingRes.json();
+      setBilling({
+        planTier: data.plan_tier || null,
+        status: data.status || null,
+        stripeCustomerId: data.stripe_customer_id || null,
+        createdAt: data.created_at || null,
+        invoices: Array.isArray(data.invoices) ? data.invoices : []
+      });
+
+      if (membersRes.ok) {
+        const membersData = await membersRes.json();
+        setMemberCount(membersData.total ?? (membersData.members ? membersData.members.length : null));
+      }
     } catch (error) {
       console.error('Failed to fetch billing:', error);
-      showToast('Failed to load billing information', 'error');
+      setError('Failed to load billing information');
+      setBilling(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Opens the real Stripe customer portal for payment management
+  const handleUpdatePayment = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await fetch('/api/v1/billing/portal/create', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.portal_url) {
+        throw new Error(data.detail || 'No billing portal available yet');
+      }
+      window.location.href = data.portal_url;
+    } catch (err) {
+      console.error('Failed to open billing portal:', err);
+      showToast(err.message || 'Failed to open billing portal', 'error');
+    } finally {
+      setPortalLoading(false);
     }
   };
 
@@ -134,16 +146,6 @@ export default function OrganizationBilling() {
       month: 'long',
       day: 'numeric'
     });
-  };
-
-  const getUsagePercentage = (used, limit) => {
-    return (used / limit) * 100;
-  };
-
-  const getUsageColor = (percentage) => {
-    if (percentage >= 90) return 'text-red-400';
-    if (percentage >= 70) return 'text-yellow-400';
-    return 'text-green-400';
   };
 
   const isOwner = currentUser?.org_role === 'owner';
@@ -201,6 +203,20 @@ export default function OrganizationBilling() {
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
+      ) : error ? (
+        <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-8 text-center border border-red-500/20`}>
+          <ExclamationTriangleIcon className="h-10 w-10 text-red-400 mx-auto mb-3" />
+          <p className={`${theme.text.primary} font-medium mb-1`}>{error}</p>
+          <p className={`text-sm ${theme.text.secondary} mb-4`}>Billing details could not be loaded for this organization.</p>
+          <button onClick={fetchBillingData} className={`px-6 py-2 ${theme.button} rounded-lg transition-colors`}>
+            Try Again
+          </button>
+        </motion.div>
+      ) : !billing ? (
+        <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-8 text-center`}>
+          <CreditCardIcon className="h-10 w-10 text-gray-500 mx-auto mb-3" />
+          <p className={`${theme.text.secondary}`}>No billing information available for this organization yet.</p>
+        </motion.div>
       ) : (
         <>
           {/* Subscription Overview */}
@@ -209,20 +225,22 @@ export default function OrganizationBilling() {
             <div className={`${theme.card} rounded-xl p-6 border border-blue-500/20`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Current Plan</h3>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  billing.subscription.status === 'active'
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                }`}>
-                  {billing.subscription.status}
-                </span>
+                {billing.status && (
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    billing.status === 'active'
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                  }`}>
+                    {billing.status}
+                  </span>
+                )}
               </div>
-              <div className={`text-3xl font-bold ${theme.text.primary} mb-2`}>
-                {billing.subscription.plan}
+              <div className={`text-3xl font-bold ${theme.text.primary} mb-2 capitalize`}>
+                {billing.planTier || '—'}
               </div>
-              <div className={`text-2xl font-semibold ${theme.text.accent} mb-4`}>
-                {formatCurrency(billing.subscription.amount)}
-                <span className={`text-sm ${theme.text.secondary}`}>/{billing.subscription.interval}</span>
+              <div className={`text-sm ${theme.text.secondary} mb-4`}>
+                {/* Pricing is not exposed by the org billing API - never invent it */}
+                Plan pricing is managed in the billing portal
               </div>
               <button onClick={() => navigate('/admin/subscription/plan')} className={`w-full px-4 py-2 ${theme.button} rounded-lg transition-colors`}>
                 Change Plan
@@ -233,24 +251,25 @@ export default function OrganizationBilling() {
             <div className={`${theme.card} rounded-xl p-6 border border-purple-500/20`}>
               <div className="flex items-center gap-3 mb-4">
                 <UserGroupIcon className="h-6 w-6 text-purple-500" />
-                <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Team Seats</h3>
+                <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Team Members</h3>
               </div>
               <div className="mb-4">
                 <div className="flex justify-between mb-2">
-                  <span className={`text-sm ${theme.text.secondary}`}>Seats Used</span>
+                  <span className={`text-sm ${theme.text.secondary}`}>Members</span>
                   <span className={`text-sm font-semibold ${theme.text.primary}`}>
-                    {billing.subscription.seatsUsed} / {billing.subscription.seats}
+                    {memberCount != null ? memberCount : '—'}
                   </span>
                 </div>
-                <div className="w-full bg-gray-700/30 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500"
-                    style={{ width: `${(billing.subscription.seatsUsed / billing.subscription.seats) * 100}%` }}
-                  ></div>
-                </div>
+                <p className={`text-xs ${theme.text.secondary}`}>
+                  Seat limits are not configured for this plan.
+                </p>
               </div>
-              <button className="w-full px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors">
-                Add Seats
+              <button
+                disabled
+                title="Not available yet"
+                className="w-full px-4 py-2 bg-gray-600/30 text-gray-500 rounded-lg cursor-not-allowed"
+              >
+                Add Seats (not available yet)
               </button>
             </div>
 
@@ -260,116 +279,40 @@ export default function OrganizationBilling() {
                 <CalendarIcon className="h-6 w-6 text-green-500" />
                 <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Next Billing Date</h3>
               </div>
-              <div className={`text-2xl font-bold ${theme.text.primary} mb-2`}>
-                {formatDate(billing.subscription.nextBillingDate)}
-              </div>
+              <div className={`text-2xl font-bold ${theme.text.primary} mb-2`}>—</div>
               <div className={`text-sm ${theme.text.secondary} mb-4`}>
-                You will be charged {formatCurrency(billing.subscription.amount)}
+                No billing date available. Upcoming charges appear once invoicing is active.
               </div>
-              {billing.subscription.cancelAtPeriodEnd && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm">
-                  <ExclamationTriangleIcon className="h-4 w-4" />
-                  Subscription will cancel on this date
-                </div>
-              )}
             </div>
           </motion.div>
 
-          {/* Usage Statistics */}
+          {/* Usage Statistics - no per-org usage endpoint is wired yet */}
           <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
             <div className="flex items-center gap-3 mb-6">
               <ChartBarIcon className="h-6 w-6 text-blue-500" />
               <h2 className={`text-xl font-semibold ${theme.text.primary}`}>Usage Statistics</h2>
               <span className={`ml-auto text-sm ${theme.text.secondary}`}>Current billing period</span>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* API Calls */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className={`text-sm ${theme.text.secondary}`}>API Calls</span>
-                  <span className={`text-sm font-semibold ${getUsageColor(getUsagePercentage(billing.usage.apiCalls, billing.usage.apiCallsLimit))}`}>
-                    {billing.usage.apiCalls.toLocaleString()} / {billing.usage.apiCallsLimit.toLocaleString()}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700/30 rounded-full h-3">
-                  <div
-                    className={`h-3 rounded-full ${
-                      getUsagePercentage(billing.usage.apiCalls, billing.usage.apiCallsLimit) >= 90
-                        ? 'bg-gradient-to-r from-red-500 to-red-600'
-                        : getUsagePercentage(billing.usage.apiCalls, billing.usage.apiCallsLimit) >= 70
-                        ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                        : 'bg-gradient-to-r from-green-500 to-emerald-500'
-                    }`}
-                    style={{ width: `${getUsagePercentage(billing.usage.apiCalls, billing.usage.apiCallsLimit)}%` }}
-                  ></div>
-                </div>
-                <div className={`text-xs ${theme.text.secondary} mt-1`}>
-                  {(100 - getUsagePercentage(billing.usage.apiCalls, billing.usage.apiCallsLimit)).toFixed(1)}% remaining
-                </div>
-              </div>
-
-              {/* Storage */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className={`text-sm ${theme.text.secondary}`}>Storage</span>
-                  <span className={`text-sm font-semibold ${getUsageColor(getUsagePercentage(billing.usage.storage, billing.usage.storageLimit))}`}>
-                    {billing.usage.storage} GB / {billing.usage.storageLimit} GB
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700/30 rounded-full h-3">
-                  <div
-                    className={`h-3 rounded-full ${
-                      getUsagePercentage(billing.usage.storage, billing.usage.storageLimit) >= 90
-                        ? 'bg-gradient-to-r from-red-500 to-red-600'
-                        : getUsagePercentage(billing.usage.storage, billing.usage.storageLimit) >= 70
-                        ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                        : 'bg-gradient-to-r from-blue-500 to-cyan-500'
-                    }`}
-                    style={{ width: `${getUsagePercentage(billing.usage.storage, billing.usage.storageLimit)}%` }}
-                  ></div>
-                </div>
-                <div className={`text-xs ${theme.text.secondary} mt-1`}>
-                  {(billing.usage.storageLimit - billing.usage.storage).toFixed(1)} GB remaining
-                </div>
-              </div>
-
-              {/* Bandwidth */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className={`text-sm ${theme.text.secondary}`}>Bandwidth</span>
-                  <span className={`text-sm font-semibold ${getUsageColor(getUsagePercentage(billing.usage.bandwidth, billing.usage.bandwidthLimit))}`}>
-                    {billing.usage.bandwidth} GB / {billing.usage.bandwidthLimit} GB
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700/30 rounded-full h-3">
-                  <div
-                    className={`h-3 rounded-full ${
-                      getUsagePercentage(billing.usage.bandwidth, billing.usage.bandwidthLimit) >= 90
-                        ? 'bg-gradient-to-r from-red-500 to-red-600'
-                        : getUsagePercentage(billing.usage.bandwidth, billing.usage.bandwidthLimit) >= 70
-                        ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                        : 'bg-gradient-to-r from-purple-500 to-indigo-500'
-                    }`}
-                    style={{ width: `${getUsagePercentage(billing.usage.bandwidth, billing.usage.bandwidthLimit)}%` }}
-                  ></div>
-                </div>
-                <div className={`text-xs ${theme.text.secondary} mt-1`}>
-                  {(billing.usage.bandwidthLimit - billing.usage.bandwidth).toFixed(1)} GB remaining
-                </div>
-              </div>
+            <div className="py-8 text-center">
+              <p className={`text-sm ${theme.text.secondary}`}>
+                No usage data is available for this organization yet.
+              </p>
             </div>
           </motion.div>
 
-          {/* Payment Method */}
+          {/* Payment Method - managed via the Stripe billing portal */}
           <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <BanknotesIcon className="h-6 w-6 text-green-500" />
                 <h2 className={`text-xl font-semibold ${theme.text.primary}`}>Payment Method</h2>
               </div>
-              <button className={`px-4 py-2 ${theme.button} rounded-lg transition-colors`}>
-                Update Payment
+              <button
+                onClick={handleUpdatePayment}
+                disabled={portalLoading}
+                className={`px-4 py-2 ${theme.button} rounded-lg transition-colors disabled:opacity-50`}
+              >
+                {portalLoading ? 'Opening portal…' : 'Update Payment'}
               </button>
             </div>
 
@@ -379,10 +322,12 @@ export default function OrganizationBilling() {
               </div>
               <div className="flex-1">
                 <div className={`font-semibold ${theme.text.primary}`}>
-                  {billing.paymentMethod.brand} •••• {billing.paymentMethod.last4}
+                  {billing.stripeCustomerId ? 'Card on file with Stripe' : 'No payment method on file'}
                 </div>
                 <div className={`text-sm ${theme.text.secondary}`}>
-                  Expires {billing.paymentMethod.expiryMonth}/{billing.paymentMethod.expiryYear}
+                  {billing.stripeCustomerId
+                    ? 'View or change card details in the billing portal.'
+                    : 'Add one via "Update Payment" once billing is set up.'}
                 </div>
               </div>
             </div>
@@ -437,9 +382,18 @@ export default function OrganizationBilling() {
                           {invoice.status}
                         </span>
                       </div>
-                      <button className="px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors text-sm">
-                        Download
-                      </button>
+                      {invoice.pdf_url ? (
+                        <a
+                          href={invoice.pdf_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors text-sm"
+                        >
+                          Download
+                        </a>
+                      ) : (
+                        <span className={`text-sm ${theme.text.secondary}`}>—</span>
+                      )}
                     </div>
                   </div>
                 ))}

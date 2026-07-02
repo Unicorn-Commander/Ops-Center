@@ -73,27 +73,47 @@ export default function SubscriptionUsage() {
       }
       const result = await response.json();
 
-      // Extract data from new API response format
+      // Extract data from the API response - only fields the API actually
+      // provides. Estimated/derived figures (credit conversions, per-service
+      // splits, projections) were fabrications and have been removed.
       const data = result.success && result.data ? {
-        // Map new API format to component state
         api_calls_used: result.data.usage?.used || 0,
-        api_calls_limit: result.data.usage?.limit || -1,
-        credits_used: result.data.usage?.used * 0.01 || 0,  // Rough credit calculation
-        credits_remaining: Math.max(0, (result.data.usage?.limit || 0) - (result.data.usage?.used || 0)) * 0.01,
+        api_calls_limit: result.data.usage?.limit ?? -1,
         reset_date: result.data.reset?.date,
-        services: {
-          chat: result.data.usage?.used * 0.7 || 0,  // Estimate breakdown
-          search: result.data.usage?.used * 0.2 || 0,
-          tts: result.data.usage?.used * 0.05 || 0,
-          stt: result.data.usage?.used * 0.05 || 0
-        },
-        peak_usage: result.data.daily?.used || 0,
-        peak_date: new Date().toISOString(),
+        used_today: result.data.daily?.used ?? null,
         subscription: {
           tier: result.data.tier,
           status: result.data.status
         }
       } : result;
+
+      // Real per-user credit balance (separate endpoint); the credits section
+      // stays hidden if this call fails.
+      try {
+        const creditsRes = await fetch('/api/v1/credits/balance', { credentials: 'include' });
+        if (creditsRes.ok) {
+          const credits = await creditsRes.json();
+          if (credits && credits.balance != null) {
+            data.credits_remaining = Number(credits.balance);
+            data.credits_allocated = Number(credits.allocated_monthly ?? 0);
+          }
+        }
+      } catch (creditsError) {
+        console.debug('Credits balance not available:', creditsError.message);
+      }
+
+      // Real per-service usage breakdown (list of { service, event_count, total_cost, ... })
+      try {
+        const byServiceRes = await fetch('/api/v1/credits/usage/by-service', { credentials: 'include' });
+        if (byServiceRes.ok) {
+          const byService = await byServiceRes.json();
+          if (Array.isArray(byService)) {
+            data.service_breakdown = byService;
+          }
+        }
+      } catch (breakdownError) {
+        console.debug('Usage-by-service not available:', breakdownError.message);
+      }
 
       setUsage(data);
       setErrors(prev => ({ ...prev, current: null }));
@@ -235,18 +255,25 @@ export default function SubscriptionUsage() {
     ? 0
     : Math.min((usage?.api_calls_used / usage?.api_calls_limit) * 100, 100);
 
-  const creditsPercentage = Math.min(
-    (usage?.credits_remaining / (usage?.credits_used + usage?.credits_remaining)) * 100,
-    100
-  );
+  const creditsPercentage = (usage?.credits_allocated || 0) > 0
+    ? Math.min((usage.credits_remaining / usage.credits_allocated) * 100, 100)
+    : 0;
 
-  // Service usage breakdown
-  const serviceUsage = [
-    { name: 'Chat', value: usage?.services?.chat || 0, color: '#8b5cf6' },
-    { name: 'Search', value: usage?.services?.search || 0, color: '#ec4899' },
-    { name: 'TTS', value: usage?.services?.tts || 0, color: '#10b981' },
-    { name: 'STT', value: usage?.services?.stt || 0, color: '#f59e0b' }
-  ];
+  // Real per-service usage breakdown from /api/v1/credits/usage/by-service
+  const SERVICE_COLORS = ['#8b5cf6', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#06b6d4'];
+  const serviceUsage = (usage?.service_breakdown || []).map((item, index) => ({
+    name: item.service,
+    value: item.event_count || 0,
+    color: SERVICE_COLORS[index % SERVICE_COLORS.length]
+  }));
+
+  // Stats derived from the real usage history series (no projections)
+  const avgDailyUsage = usageHistory.length > 0
+    ? Math.round(usageHistory.reduce((sum, d) => sum + (d.api_calls || 0), 0) / usageHistory.length)
+    : null;
+  const peakDay = usageHistory.length > 0
+    ? usageHistory.reduce((max, d) => ((d.api_calls || 0) > (max.api_calls || 0) ? d : max), usageHistory[0])
+    : null;
 
   return (
     <div className="space-y-6">
@@ -404,47 +431,58 @@ export default function SubscriptionUsage() {
                 />
               </div>
               <p className={`text-xs ${theme.text.secondary} mt-2`}>
-                {usage.credits_used.toLocaleString()} credits used this month
+                {(usage.credits_allocated || 0) > 0
+                  ? `of ${usage.credits_allocated.toLocaleString()} monthly credits`
+                  : 'No monthly credit allocation'}
               </p>
             </div>
           )}
         </div>
       </motion.div>
 
-      {/* Service Usage Breakdown */}
+      {/* Service Usage Breakdown - real data from /api/v1/credits/usage/by-service */}
       <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
         <h4 className={`text-md font-semibold ${theme.text.primary} mb-4`}>Service Usage Breakdown</h4>
 
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={serviceUsage}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" stroke="#9ca3af" />
-            <YAxis stroke="#9ca3af" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '0.5rem'
-              }}
-            />
-            <Bar dataKey="value" fill="#8b5cf6" />
-          </BarChart>
-        </ResponsiveContainer>
+        {serviceUsage.length > 0 ? (
+          <>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={serviceUsage}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="name" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '0.5rem'
+                  }}
+                />
+                <Bar dataKey="value" fill="#8b5cf6" />
+              </BarChart>
+            </ResponsiveContainer>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-          {serviceUsage.map((service) => (
-            <div key={service.name} className="text-center">
-              <div
-                className="w-3 h-3 rounded-full mx-auto mb-2"
-                style={{ backgroundColor: service.color }}
-              />
-              <p className={`text-xs ${theme.text.secondary}`}>{service.name}</p>
-              <p className={`text-lg font-bold ${theme.text.primary}`}>
-                {service.value.toLocaleString()}
-              </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+              {serviceUsage.map((service) => (
+                <div key={service.name} className="text-center">
+                  <div
+                    className="w-3 h-3 rounded-full mx-auto mb-2"
+                    style={{ backgroundColor: service.color }}
+                  />
+                  <p className={`text-xs ${theme.text.secondary}`}>{service.name}</p>
+                  <p className={`text-lg font-bold ${theme.text.primary}`}>
+                    {service.value.toLocaleString()}
+                  </p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        ) : (
+          <div className="py-12 text-center">
+            <ChartBarIcon className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <p className={`${theme.text.secondary} text-sm`}>No per-service usage recorded yet</p>
+          </div>
+        )}
       </motion.div>
 
       {/* Usage History Graph */}
@@ -503,32 +541,34 @@ export default function SubscriptionUsage() {
         </motion.div>
       )}
 
-      {/* Usage Stats Grid */}
+      {/* Usage Stats Grid - values derived from real usage history/today only */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-4`}>
           <p className={`text-sm ${theme.text.secondary} mb-1`}>Average Daily Usage</p>
           <p className={`text-2xl font-bold ${theme.text.primary}`}>
-            {Math.round((usage?.api_calls_used || 0) / 30).toLocaleString()}
+            {avgDailyUsage != null ? avgDailyUsage.toLocaleString() : '—'}
           </p>
-          <p className={`text-xs ${theme.text.secondary} mt-1`}>API calls per day</p>
+          <p className={`text-xs ${theme.text.secondary} mt-1`}>
+            {avgDailyUsage != null ? 'API calls per day (from history)' : 'No usage history yet'}
+          </p>
         </motion.div>
 
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-4`}>
           <p className={`text-sm ${theme.text.secondary} mb-1`}>Peak Usage Day</p>
           <p className={`text-2xl font-bold ${theme.text.primary}`}>
-            {usage?.peak_usage?.toLocaleString() || 0}
+            {peakDay ? (peakDay.api_calls || 0).toLocaleString() : '—'}
           </p>
           <p className={`text-xs ${theme.text.secondary} mt-1`}>
-            {usage?.peak_date ? formatDate(usage.peak_date) : 'No data'}
+            {peakDay?.date ? formatDate(peakDay.date) : 'No usage history yet'}
           </p>
         </motion.div>
 
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-4`}>
-          <p className={`text-sm ${theme.text.secondary} mb-1`}>Projected Monthly</p>
+          <p className={`text-sm ${theme.text.secondary} mb-1`}>Used Today</p>
           <p className={`text-2xl font-bold ${theme.text.primary}`}>
-            {Math.round((usage?.api_calls_used || 0) * 1.2).toLocaleString()}
+            {usage?.used_today != null ? usage.used_today.toLocaleString() : '—'}
           </p>
-          <p className={`text-xs ${theme.text.secondary} mt-1`}>Estimated end of month</p>
+          <p className={`text-xs ${theme.text.secondary} mt-1`}>API calls today</p>
         </motion.div>
       </div>
     </div>

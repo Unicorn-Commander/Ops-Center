@@ -714,6 +714,102 @@ async def get_invoices(org_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         return []
 
 
+async def get_invoice(invoice_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get a single invoice by its Lago ID.
+
+    Args:
+        invoice_id: Lago invoice ID (lago_id)
+
+    Returns:
+        Invoice data dict, or None if not found / Lago unavailable
+    """
+    if not LAGO_API_KEY:
+        logger.error("LAGO_API_KEY not configured")
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{LAGO_API_URL}/api/v1/invoices/{invoice_id}",
+                headers={"Authorization": f"Bearer {LAGO_API_KEY}"},
+                timeout=API_TIMEOUT
+            )
+            if response.status_code == 200:
+                return response.json().get("invoice")
+            if response.status_code != 404:
+                logger.error(f"Failed to get invoice {invoice_id}: {response.status_code} - {response.text}")
+    except httpx.RequestError as e:
+        logger.error(f"Network error getting invoice {invoice_id}: {e}")
+    return None
+
+
+async def download_invoice_pdf(invoice_id: str, file_url: Optional[str] = None) -> Optional[bytes]:
+    """
+    Fetch the PDF bytes for an invoice.
+
+    Lago exposes the PDF via the invoice's `file_url`. When the PDF hasn't been
+    generated yet, POST /api/v1/invoices/{id}/download asks Lago to (re)generate
+    it and returns the invoice with a populated file_url.
+
+    Args:
+        invoice_id: Lago invoice ID (lago_id)
+        file_url: Known file_url (skips the lookup when provided)
+
+    Returns:
+        Raw PDF bytes, or None when no PDF is available
+    """
+    if not LAGO_API_KEY:
+        logger.error("LAGO_API_KEY not configured")
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Resolve the file_url if the caller didn't supply one
+            if not file_url:
+                invoice = await get_invoice(invoice_id)
+                if invoice:
+                    file_url = invoice.get("file_url")
+
+            # No PDF yet -> ask Lago to generate it
+            if not file_url:
+                response = await client.post(
+                    f"{LAGO_API_URL}/api/v1/invoices/{invoice_id}/download",
+                    headers={"Authorization": f"Bearer {LAGO_API_KEY}"},
+                    timeout=API_TIMEOUT
+                )
+                if response.status_code == 200:
+                    body = response.json() or {}
+                    file_url = (body.get("invoice") or {}).get("file_url")
+                else:
+                    logger.warning(
+                        f"Lago download request for invoice {invoice_id} returned "
+                        f"{response.status_code} - {response.text[:200]}"
+                    )
+
+            if not file_url:
+                return None
+
+            # Fetch the actual PDF bytes (file_url may be internal to the
+            # deployment, which is why we proxy instead of redirecting the browser)
+            pdf_response = await client.get(
+                file_url,
+                headers={"Authorization": f"Bearer {LAGO_API_KEY}"},
+                timeout=API_TIMEOUT,
+                follow_redirects=True
+            )
+            if pdf_response.status_code == 200 and pdf_response.content:
+                return pdf_response.content
+            logger.error(
+                f"Failed to fetch invoice PDF from {file_url}: {pdf_response.status_code}"
+            )
+
+    except httpx.RequestError as e:
+        logger.error(f"Network error downloading invoice PDF {invoice_id}: {e}")
+
+    return None
+
+
 async def get_current_usage(org_id: str) -> Dict[str, Any]:
     """
     Get current billing period usage for an organization.

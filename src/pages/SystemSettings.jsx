@@ -83,7 +83,11 @@ const SystemSettings = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/v1/admin/system-settings', {
+      // show_values=true: fetch decrypted values (admin-only endpoint).
+      // SystemSettingCard masks sensitive values in the UI; fetching masked
+      // values here would corrupt them on edit (the edit modal pre-fills
+      // the fetched value and saves it back).
+      const response = await fetch('/api/v1/admin/system-settings?show_values=true', {
         credentials: 'include',
       });
 

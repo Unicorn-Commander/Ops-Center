@@ -19,7 +19,7 @@
  * - All authenticated users → Personal sections
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   HomeIcon,
@@ -321,6 +321,12 @@ export default function Layout({ children }) {
   const currentRoute = getRouteByPath(location.pathname);
   const currentTitle = currentRoute?.name || branding?.company_name || 'Ops-Center';
 
+  // Keep the browser-tab title in sync with the current page
+  useEffect(() => {
+    const brand = branding?.company_name || 'Ops-Center';
+    document.title = currentRoute?.name ? `${currentRoute.name} · ${brand}` : brand;
+  }, [currentRoute?.name, branding?.company_name]);
+
   return (
     <div className={themeClasses.background}>
       {/* Mobile Navigation - Hamburger menu and drawer */}
@@ -453,12 +459,13 @@ export default function Layout({ children }) {
                 )}
               </nav>
               
-              {/* Help Button */}
+              {/* Help Button — opens the in-app Help panel (App.jsx listens for this event).
+                  Used to open http://<host>:8086, a legacy appliance docs port that is dead
+                  on cloud deployments. */}
               <div className="px-2 mb-4">
                 <button
                   onClick={() => {
-                    const currentHost = window.location.hostname;
-                    window.open(`http://${currentHost}:8086`, '_blank');
+                    window.dispatchEvent(new CustomEvent('uc:open-help'));
                   }}
                   className={`w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                     currentTheme === 'unicorn'

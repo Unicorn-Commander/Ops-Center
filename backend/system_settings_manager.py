@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 import asyncpg
-import aioredis
+import redis.asyncio as aioredis  # the standalone `aioredis` package is not installed
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, validator
@@ -163,6 +163,58 @@ class SystemSettingsManager:
             logger.error(f"Failed to initialize encryption: {e}")
             raise ValueError("Invalid encryption key")
 
+    async def ensure_tables(self):
+        """
+        Self-heal the backing tables (idempotent, called on startup).
+
+        NOTE: the table is named admin_system_settings — NOT system_settings —
+        because migrations/008_system_settings_schema.sql already owns the
+        `system_settings` name with an incompatible landing-page schema
+        (plaintext value/label/is_public columns). This manager stores
+        encrypted admin config and must not collide with it.
+        """
+        async with self.db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_system_settings (
+                    key VARCHAR(255) PRIMARY KEY,
+                    encrypted_value TEXT NOT NULL,
+                    category VARCHAR(50) NOT NULL,
+                    description TEXT,
+                    is_sensitive BOOLEAN DEFAULT FALSE,
+                    value_type VARCHAR(20) DEFAULT 'string',
+                    is_required BOOLEAN DEFAULT FALSE,
+                    is_editable BOOLEAN DEFAULT TRUE,
+                    default_value TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_by VARCHAR(255)
+                )
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_system_settings_category ON admin_system_settings(category)"
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_system_settings_audit (
+                    id SERIAL PRIMARY KEY,
+                    setting_key VARCHAR(255) NOT NULL,
+                    action VARCHAR(20) NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    changed_by VARCHAR(255) NOT NULL,
+                    changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    ip_address VARCHAR(64),
+                    user_agent TEXT
+                )
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_system_settings_audit_key ON admin_system_settings_audit(setting_key)"
+            )
+        logger.info("admin_system_settings tables ensured")
+
     def _encrypt_value(self, value: str) -> str:
         """Encrypt setting value"""
         try:
@@ -239,7 +291,7 @@ class SystemSettingsManager:
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO system_settings_audit (
+                    INSERT INTO admin_system_settings_audit (
                         setting_key, action, old_value, new_value,
                         changed_by, ip_address, user_agent
                     )
@@ -293,7 +345,7 @@ class SystemSettingsManager:
                     SELECT key, encrypted_value, category, description,
                            is_sensitive, value_type, is_required, is_editable,
                            default_value, created_at, updated_at, updated_by
-                    FROM system_settings
+                    FROM admin_system_settings
                     WHERE key = $1
                     """,
                     key
@@ -380,7 +432,7 @@ class SystemSettingsManager:
                         SELECT key, encrypted_value, category, description,
                                is_sensitive, value_type, is_required, is_editable,
                                default_value, created_at, updated_at, updated_by
-                        FROM system_settings
+                        FROM admin_system_settings
                         WHERE category = $1
                         ORDER BY key
                     """
@@ -390,7 +442,7 @@ class SystemSettingsManager:
                         SELECT key, encrypted_value, category, description,
                                is_sensitive, value_type, is_required, is_editable,
                                default_value, created_at, updated_at, updated_by
-                        FROM system_settings
+                        FROM admin_system_settings
                         ORDER BY category, key
                     """
                     rows = await conn.fetch(query)
@@ -485,7 +537,7 @@ class SystemSettingsManager:
             async with self.db_pool.acquire() as conn:
                 # Check if setting exists
                 existing = await conn.fetchrow(
-                    "SELECT encrypted_value, is_editable FROM system_settings WHERE key = $1",
+                    "SELECT encrypted_value, is_editable FROM admin_system_settings WHERE key = $1",
                     key
                 )
 
@@ -502,7 +554,7 @@ class SystemSettingsManager:
 
                     row = await conn.fetchrow(
                         """
-                        UPDATE system_settings
+                        UPDATE admin_system_settings
                         SET encrypted_value = $1,
                             description = COALESCE($2, description),
                             is_sensitive = COALESCE($3, is_sensitive),
@@ -538,7 +590,7 @@ class SystemSettingsManager:
 
                     row = await conn.fetchrow(
                         """
-                        INSERT INTO system_settings (
+                        INSERT INTO admin_system_settings (
                             key, encrypted_value, category, description,
                             is_sensitive, value_type, is_required, is_editable,
                             default_value, updated_by
@@ -615,7 +667,7 @@ class SystemSettingsManager:
             async with self.db_pool.acquire() as conn:
                 # Check if setting exists and is editable
                 existing = await conn.fetchrow(
-                    "SELECT encrypted_value, is_editable, is_required FROM system_settings WHERE key = $1",
+                    "SELECT encrypted_value, is_editable, is_required FROM admin_system_settings WHERE key = $1",
                     key
                 )
 
@@ -636,7 +688,7 @@ class SystemSettingsManager:
 
                 # Delete the setting
                 await conn.execute(
-                    "DELETE FROM system_settings WHERE key = $1",
+                    "DELETE FROM admin_system_settings WHERE key = $1",
                     key
                 )
 
@@ -684,7 +736,7 @@ class SystemSettingsManager:
                     query = """
                         SELECT id, setting_key, action, old_value, new_value,
                                changed_by, changed_at, ip_address, user_agent
-                        FROM system_settings_audit
+                        FROM admin_system_settings_audit
                         WHERE setting_key = $1
                         ORDER BY changed_at DESC
                         LIMIT $2 OFFSET $3
@@ -694,7 +746,7 @@ class SystemSettingsManager:
                     query = """
                         SELECT id, setting_key, action, old_value, new_value,
                                changed_by, changed_at, ip_address, user_agent
-                        FROM system_settings_audit
+                        FROM admin_system_settings_audit
                         ORDER BY changed_at DESC
                         LIMIT $1 OFFSET $2
                     """

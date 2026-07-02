@@ -31,8 +31,16 @@ export default function Login() {
   const upstreamName = branding?.federation_upstream_name || 'Unicorn Commander';
   const upstreamLogo = branding?.federation_upstream_logo || '/logos/The_Colonel.webp';
 
+  // Post-login destination (set by ProtectedRoute when an expired session
+  // bounces the user here). Only relative paths are honored — the backend
+  // callback applies the same guard against open redirects.
+  const nextParam = new URLSearchParams(window.location.search).get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
+
   const handleSSOLogin = () => {
-    window.location.href = '/auth/login';
+    window.location.href = safeNext
+      ? `/auth/login?return_url=${encodeURIComponent(safeNext)}`
+      : '/auth/login';
   };
 
   const handleSubmit = async (e) => {
@@ -58,7 +66,7 @@ export default function Login() {
           tokenType: data.token_type,
           expiresIn: data.expires_in
         }));
-        navigate('/admin/');
+        navigate(safeNext || '/admin/');
       } else {
         const errorData = await response.json();
         setError(errorData.detail || 'Login failed');

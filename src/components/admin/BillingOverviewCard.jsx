@@ -71,10 +71,13 @@ export default function BillingOverviewCard({
   const normalizeData = useCallback((data, endpoint) => {
     // Handle different response structures based on endpoint
     if (endpoint.includes('dashboard')) {
+      // Real shape from /api/v1/billing/analytics/dashboard:
+      // { mrr, arr, active_subscriptions: {...}, credit_usage: { total_allocated, total_used, ... } }
       return {
-        totalCredits: data.total_credits || data.totalCredits || data.balance || data.platform_balance || 0,
-        usedCredits: data.used_credits || data.usedCredits || data.used || data.period_used || 0,
-        tier: data.subscription_tier || data.tier || data.subscriptionTier || data.platform_tier || 'unknown',
+        totalCredits: data.credit_usage?.total_allocated ?? data.total_credits ?? data.totalCredits ?? data.balance ?? 0,
+        usedCredits: data.credit_usage?.total_used ?? data.used_credits ?? data.usedCredits ?? data.used ?? 0,
+        // This endpoint has no tier concept - show "N/A" rather than inventing one
+        tier: data.subscription_tier || data.tier || data.subscriptionTier || data.platform_tier || 'N/A',
         periodStart: data.period_start || data.periodStart || null,
         periodEnd: data.period_end || data.periodEnd || null
       };
@@ -110,6 +113,8 @@ export default function BillingOverviewCard({
       '/api/v1/credits/balance'
     ];
 
+    let sawUnauthorized = false;
+
     for (const endpoint of endpoints) {
       try {
         const response = await fetch(endpoint, {
@@ -129,22 +134,20 @@ export default function BillingOverviewCard({
           setLoading(false);
           return;
         }
+        if (response.status === 401) {
+          sawUnauthorized = true;
+        }
       } catch (err) {
         // Continue to next endpoint
         console.log(`Endpoint ${endpoint} failed:`, err.message);
       }
     }
 
-    // All endpoints failed - show N/A state with graceful fallback
-    console.debug('All billing endpoints unavailable - showing N/A state');
-    setBillingData({
-      totalCredits: 0,
-      usedCredits: 0,
-      tier: 'N/A',
-      periodStart: null,
-      periodEnd: null
-    });
-    setError(null); // Don't show error, just show N/A values
+    // All endpoints failed - show an honest error state, never placeholder
+    // numbers rendered as if they were real.
+    console.debug('All billing endpoints unavailable - showing error state');
+    setBillingData(null);
+    setError(sawUnauthorized ? 'Session expired — sign in again' : 'Billing data unavailable');
     setLoading(false);
   }, [normalizeData]);
 
@@ -223,7 +226,9 @@ export default function BillingOverviewCard({
           <CreditCardIcon className="h-10 w-10 mx-auto mb-2 text-gray-500 opacity-50" />
           <p className="text-sm text-gray-400">{error}</p>
           <p className="text-xs text-gray-500 mt-1">
-            Check billing service connection
+            {error === 'Session expired — sign in again'
+              ? 'Refresh the page or sign in to reload billing data'
+              : 'Check billing service connection'}
           </p>
         </div>
       )}
