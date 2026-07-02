@@ -51,7 +51,7 @@ class ModelListResponse(BaseModel):
     name: str
     slug: str
     description: Optional[str]
-    app_identifier: str
+    app_identifier: Optional[str] = None  # global lists have no app binding
     is_default: bool
     is_active: bool
     model_count: int
