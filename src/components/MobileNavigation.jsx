@@ -74,6 +74,7 @@ import {
 } from '@mui/icons-material';
 import { useTheme as useAppTheme } from '../contexts/ThemeContext';
 import { useSwipeDrawer } from '../hooks/useSwipeGestures';
+import { getNavigationStructure } from '../config/routes';
 
 export default function MobileNavigation({ user, currentPath }) {
   const theme = useTheme();
@@ -212,7 +213,42 @@ export default function MobileNavigation({ user, currentPath }) {
 
   const colors = getThemeColors();
 
-  // Navigation items configuration
+  // Navigation is DERIVED from src/config/routes.js (same source as the desktop
+  // sidebar) so mobile can never drift out of sync with the real menu again.
+  // Section-level icons are mapped here; child items reuse a small default set.
+  const navStructure = getNavigationStructure();
+  const userOrgRole = user?.org_role || null;
+
+  const sectionChildren = (sectionCfg, defaultIcon) =>
+    Object.values(sectionCfg?.children || {})
+      .filter(r => r.path && r.nav !== false)
+      .map(r => ({
+        label: r.name,
+        path: r.path,
+        icon: defaultIcon,
+        external: r.external === true
+      }));
+
+  const adminSectionIcons = {
+    peopleAccess: <PeopleIcon />,
+    billingPlans: <PaymentIcon />,
+    aiModels: <AutoAwesomeIcon />,
+    infrastructure: <ComputerIcon />,
+    monitoring: <AnalyticsIcon />,
+    integrations: <SettingsIcon />,
+    platform: <AutoAwesomeIcon />
+  };
+
+  const adminChildIcons = {
+    peopleAccess: <PeopleIcon />,
+    billingPlans: <CreditCardIcon />,
+    aiModels: <AutoAwesomeIcon />,
+    infrastructure: <ServerIcon />,
+    monitoring: <BarChartIcon />,
+    integrations: <KeyIcon />,
+    platform: <LanguageIcon />
+  };
+
   const navigationConfig = [
     {
       id: 'dashboard',
@@ -223,128 +259,39 @@ export default function MobileNavigation({ user, currentPath }) {
       visible: true
     },
     {
-      id: 'infrastructure',
-      label: 'Infrastructure',
-      icon: <ComputerIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'Services', path: '/admin/infra/services', icon: <ServerIcon /> },
-        { label: 'Resources', path: '/admin/infra/resources', icon: <ComputerIcon /> },
-        { label: 'Hardware', path: '/admin/infra/hardware', icon: <BuildIcon /> },
-        { label: 'Network', path: '/admin/infra/network', icon: <LanguageIcon /> },
-        { label: 'Storage & Backup', path: '/admin/infra/storage', icon: <ServerIcon /> },
-        { label: 'Reverse Proxy', path: '/admin/infra/traefik', icon: <LanguageIcon /> },
-        { label: 'Federation', path: '/admin/infra/federation', icon: <CloudIcon /> },
-        { label: 'Federation Contracts', path: '/admin/infra/federation/contracts', icon: <SecurityIcon /> }
-      ]
-    },
-    {
-      id: 'usersOrgs',
-      label: 'People & Access',
-      icon: <PeopleIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'Users', path: '/admin/people/users', icon: <PeopleIcon /> },
-        { label: 'Organizations', path: '/admin/people/organizations', icon: <BusinessIcon /> },
-        { label: 'Invite Codes', path: '/admin/people/invite-codes', icon: <ReceiptIcon /> },
-        { label: 'Authentication', path: '/admin/people/authentication', icon: <KeyIcon /> }
-      ]
-    },
-    {
-      id: 'billingUsage',
-      label: 'Billing & Plans',
-      icon: <PaymentIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'Subscription Tiers', path: '/admin/billing/tiers', icon: <CreditCardIcon /> },
-        { label: 'App Entitlements', path: '/admin/billing/apps', icon: <SettingsIcon /> },
-        { label: 'Pricing Rules', path: '/admin/billing/pricing', icon: <AttachMoneyIcon /> },
-        { label: 'Revenue Dashboard', path: '/admin/billing/revenue', icon: <AnalyticsIcon /> },
-        { label: 'Credit Management', path: '/admin/billing/credits', icon: <PieChartIcon /> }
-      ]
-    },
-    {
-      id: 'aiModels',
-      label: 'AI & Models',
-      icon: <AutoAwesomeIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'AI Hub', path: '/admin/ai', icon: <AutoAwesomeIcon /> },
-        { label: 'Model Catalog', path: '/admin/ai/models', icon: <ViewListIcon /> },
-        { label: 'Model Lists', path: '/admin/ai/model-lists', icon: <ViewListIcon /> },
-        { label: 'The Colonel', path: '/admin/ai/colonel', icon: <AutoAwesomeIcon /> },
-        { label: 'Local Models', path: '/admin/ai/local-models', icon: <ComputerIcon /> },
-        { label: 'GPU Services', path: '/admin/ai/gpu-services', icon: <BuildIcon /> },
-        { label: 'RAG Services', path: '/admin/ai/rag-services', icon: <CloudIcon /> }
-      ]
-    },
-    {
-      id: 'monitoring',
-      label: 'Monitoring',
-      icon: <AnalyticsIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'Analytics', path: '/admin/monitoring/analytics', icon: <AnalyticsIcon /> },
-        { label: 'System Logs', path: '/admin/monitoring/logs', icon: <DescriptionIcon /> },
-        { label: 'Alerts', path: '/admin/monitoring/alerts', icon: <SecurityIcon /> },
-        { label: 'Audit Log', path: '/admin/monitoring/audit', icon: <KeyIcon /> },
-        { label: 'Uptime Monitor', path: '/admin/monitoring/website-monitor', icon: <BarChartIcon /> },
-        { label: 'External Tools', path: '/admin/monitoring/tools', icon: <LanguageIcon /> }
-      ]
-    },
-    {
-      id: 'integrations',
-      label: 'Integrations',
-      icon: <SettingsIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'API Credentials', path: '/admin/integrations/credentials', icon: <KeyIcon /> },
-        { label: 'Email Providers', path: '/admin/integrations/email', icon: <EmailIcon /> },
-        { label: 'Cloudflare DNS', path: '/admin/integrations/cloudflare', icon: <LanguageIcon /> },
-        { label: 'Webhooks', path: '/admin/integrations/webhooks', icon: <CloudIcon /> }
-      ]
-    },
-    {
-      id: 'platform',
-      label: 'Platform',
-      icon: <AutoAwesomeIcon />,
-      visible: userRole === 'admin',
-      children: [
-        { label: 'Center-Deep Search', path: 'https://search.unicorncommander.ai', icon: <SearchIcon />, external: true },
-        { label: 'Landing Page', path: '/admin/platform/landing', icon: <LanguageIcon /> },
-        { label: 'White Label', path: '/admin/platform/white-label', icon: <SettingsIcon /> },
-        { label: 'System Settings', path: '/admin/system/settings', icon: <SettingsIcon /> },
-        { label: 'Extensions', path: '/admin/platform/extensions', icon: <AutoAwesomeIcon /> }
-      ]
-    },
-    {
       id: 'account',
-      label: 'My Account',
+      label: navStructure.personal.account?.section || 'Account',
       icon: <AccountCircleIcon />,
       visible: true,
-      children: [
-        { label: 'Profile & Preferences', path: '/admin/account/profile', icon: <AccountCircleIcon /> },
-        { label: 'Security & Sessions', path: '/admin/account/security', icon: <SecurityIcon /> },
-        { label: 'API Keys (BYOK)', path: '/admin/account/api-keys', icon: <KeyIcon /> }
-      ]
+      children: sectionChildren(navStructure.personal.account, <AccountCircleIcon />)
     },
     {
       id: 'subscription',
-      label: 'Subscription & Credits',
+      label: navStructure.personal.subscription?.section || 'Subscription & Credits',
       icon: <CreditCardIcon />,
       visible: true,
-      children: [
-        { label: 'Current Plan', path: '/admin/subscription/plan', icon: <DescriptionIcon /> },
-        { label: 'Usage & Limits', path: '/admin/subscription/usage', icon: <BarChartIcon /> },
-        { label: 'Billing History', path: '/admin/subscription/billing', icon: <ReceiptIcon /> },
-        { label: 'Payment Methods', path: '/admin/subscription/payment', icon: <CreditCardIcon /> },
-        { label: 'Credits & Tiers', path: '/admin/billing/tiers/compare', icon: <PieChartIcon /> }
-      ]
-    }
+      children: sectionChildren(navStructure.personal.subscription, <CreditCardIcon />)
+    },
+    {
+      id: 'organization',
+      label: navStructure.organization?.section || 'My Organization',
+      icon: <BusinessIcon />,
+      visible: userOrgRole === 'admin' || userOrgRole === 'owner',
+      children: sectionChildren(navStructure.organization, <BusinessIcon />)
+    },
+    ...Object.entries(navStructure.system?.children || {}).map(([key, sectionCfg]) => ({
+      id: key,
+      label: sectionCfg.section || key,
+      icon: adminSectionIcons[key] || <SettingsIcon />,
+      visible: userRole === 'admin',
+      children: sectionChildren(sectionCfg, adminChildIcons[key] || <SettingsIcon />)
+    }))
   ];
 
   // Filter visible items
-  const visibleItems = navigationConfig.filter(item => item.visible !== false);
+  const visibleItems = navigationConfig.filter(
+    item => item.visible !== false && (item.path || (item.children && item.children.length > 0))
+  );
 
   // Get tier badge display
   const getTierDisplay = (tier) => {
