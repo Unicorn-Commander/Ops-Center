@@ -18,12 +18,27 @@ import MetricCard from '../../../components/analytics/MetricCard';
 import DateRangeSelector from '../../../components/analytics/DateRangeSelector';
 import { useTheme } from '../../../contexts/ThemeContext';
 
+// Format an audit-log timestamp as a relative time string
+const formatActivityTime = (timestamp) => {
+  if (!timestamp) return '';
+  try {
+    const diffSec = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
+    if (diffSec < 60) return `${diffSec}s ago`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  } catch (e) {
+    return '';
+  }
+};
+
 const OverviewTab = ({ dateRange, setDateRange }) => {
   const { currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [services, setServices] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchOverviewData();
@@ -31,52 +46,56 @@ const OverviewTab = ({ dateRange, setDateRange }) => {
 
   const fetchOverviewData = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // Fetch from multiple endpoints in parallel
-      const [usersRes, billingRes, servicesRes, analyticsRes] = await Promise.all([
+      // Fetch from multiple real endpoints in parallel
+      const [usersRes, billingRes, servicesRes, usageRes, auditRes] = await Promise.all([
         fetch('/api/v1/admin/users/analytics/summary', { credentials: 'include' }),
-        fetch('/api/v1/billing/analytics/summary', { credentials: 'include' }),
+        // Real DB-backed billing metrics (the old /billing/analytics/summary route served hardcoded data)
+        fetch('/api/v1/billing/analytics/dashboard?days=30', { credentials: 'include' }),
         fetch('/api/v1/services/status', { credentials: 'include' }),
-        fetch('/api/v1/analytics/usage/overview?range=' + dateRange, { credentials: 'include' })
+        // Real log-derived API usage; days=1 matches the "API Calls (24h)" card
+        fetch('/api/v1/analytics/usage/overview?days=1', { credentials: 'include' }),
+        // Real audit log for the activity feed
+        fetch('/api/v1/audit/recent?limit=5', { credentials: 'include' })
       ]);
 
-      const usersData = await usersRes.json();
-      const billingData = await billingRes.json();
-      const servicesData = await servicesRes.json();
-      const analyticsData = await analyticsRes.json();
+      const usersData = usersRes.ok ? await usersRes.json() : null;
+      const billingData = billingRes.ok ? await billingRes.json() : null;
+      const servicesData = servicesRes.ok ? await servicesRes.json() : null;
+      const usageData = usageRes.ok ? await usageRes.json() : null;
+      const auditData = auditRes.ok ? await auditRes.json() : null;
+
+      const serviceList = servicesData?.services || [];
 
       setOverview({
-        totalUsers: usersData.total_users || 0,
-        activeUsers: usersData.active_users || 0,
-        activeSubscriptions: billingData.active_subscriptions || 0,
-        apiCalls24h: analyticsData.api_calls_24h || 0,
-        revenue30d: billingData.revenue_30d || 0,
-        servicesHealthy: servicesData.healthy_count || 0,
-        servicesTotal: servicesData.total_count || 12,
+        totalUsers: usersData ? (usersData.total_users ?? 0) : null,
+        activeUsers: usersData ? (usersData.active_users ?? 0) : null,
+        activeSubscriptions: billingData ? (billingData.active_subscriptions?.total ?? 0) : null,
+        apiCalls24h: usageData ? (usageData.total_api_calls ?? 0) : null,
+        mrr: billingData ? (billingData.mrr ?? 0) : null,
+        servicesHealthy: serviceList.filter(s => s.status === 'healthy').length,
+        servicesTotal: serviceList.length,
       });
 
-      setServices(servicesData.services || []);
-      setRecentActivity(analyticsData.recent_activity || []);
+      setServices(serviceList);
+      setRecentActivity((auditData?.logs || []).map(log => ({
+        message: log.details || log.action || 'System event',
+        time: formatActivityTime(log.timestamp),
+        category: log.category || 'system'
+      })));
+
+      if (!usersRes.ok && !billingRes.ok && !servicesRes.ok && !usageRes.ok) {
+        setError('Analytics data is unavailable right now.');
+        setOverview(null);
+      }
     } catch (error) {
       console.error('Error fetching overview data:', error);
-      // Set mock data for demonstration
-      setOverview({
-        totalUsers: 156,
-        activeUsers: 42,
-        activeSubscriptions: 38,
-        apiCalls24h: 12453,
-        revenue30d: 1840,
-        servicesHealthy: 11,
-        servicesTotal: 12,
-      });
-      setServices([
-        { name: 'Keycloak', status: 'healthy' },
-        { name: 'PostgreSQL', status: 'healthy' },
-        { name: 'Redis', status: 'healthy' },
-        { name: 'LiteLLM', status: 'healthy' },
-        { name: 'Ops-Center', status: 'healthy' },
-        { name: 'Brigade', status: 'degraded' },
-      ]);
+      // Honest failure state - never demo numbers
+      setOverview(null);
+      setServices([]);
+      setRecentActivity([]);
+      setError('Analytics data is unavailable right now.');
     } finally {
       setLoading(false);
     }
@@ -99,41 +118,43 @@ const OverviewTab = ({ dateRange, setDateRange }) => {
         <DateRangeSelector value={dateRange} onChange={setDateRange} />
       </div>
 
-      {/* Key Metrics Cards */}
+      {/* Error banner */}
+      {error && !loading && (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/30">
+          <ExclamationTriangleIcon className="w-5 h-5 text-red-400 flex-shrink-0" />
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
+      )}
+
+      {/* Key Metrics Cards - real values only; "—" when a source is unavailable */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           icon={UsersIcon}
           label="Total Users"
-          value={overview?.totalUsers || 0}
+          value={overview?.totalUsers != null ? overview.totalUsers : '—'}
           color="purple"
           loading={loading}
-          trend="up"
-          trendValue="+12%"
         />
         <MetricCard
           icon={CurrencyDollarIcon}
           label="Active Subscriptions"
-          value={overview?.activeSubscriptions || 0}
+          value={overview?.activeSubscriptions != null ? overview.activeSubscriptions : '—'}
           color="green"
           loading={loading}
-          trend="up"
-          trendValue="+5%"
         />
         <MetricCard
           icon={ChartBarIcon}
           label="API Calls (24h)"
-          value={(overview?.apiCalls24h || 0).toLocaleString()}
+          value={overview?.apiCalls24h != null ? overview.apiCalls24h.toLocaleString() : '—'}
           color="blue"
           loading={loading}
         />
         <MetricCard
           icon={CurrencyDollarIcon}
-          label="Revenue (30d)"
-          value={`$${(overview?.revenue30d || 0).toLocaleString()}`}
+          label="MRR"
+          value={overview?.mrr != null ? `$${overview.mrr.toLocaleString()}` : '—'}
           color="pink"
           loading={loading}
-          trend="up"
-          trendValue="+18%"
         />
       </div>
 
@@ -144,11 +165,14 @@ const OverviewTab = ({ dateRange, setDateRange }) => {
           <div className="flex items-center gap-2">
             <CheckCircleIcon className="w-5 h-5 text-green-400" />
             <span className={textClass}>
-              {overview?.servicesHealthy}/{overview?.servicesTotal} Healthy
+              {overview ? `${overview.servicesHealthy}/${overview.servicesTotal} Healthy` : '—'}
             </span>
           </div>
         </div>
 
+        {services.length === 0 && !loading && (
+          <p className={`text-sm ${subtextClass}`}>No service status available</p>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {services.slice(0, 12).map((service, index) => (
             <div
@@ -178,28 +202,27 @@ const OverviewTab = ({ dateRange, setDateRange }) => {
         </div>
       </div>
 
-      {/* Recent Activity Timeline */}
+      {/* Recent Activity Timeline - real audit-log entries */}
       <div className={`${bgClass} rounded-xl p-6`}>
         <h3 className={`text-lg font-semibold ${textClass} mb-4`}>Recent Activity</h3>
-        <div className="space-y-3">
-          {[
-            { type: 'user', message: '3 new users registered', time: '5 min ago', icon: UsersIcon },
-            { type: 'payment', message: '2 subscription payments received', time: '15 min ago', icon: CurrencyDollarIcon },
-            { type: 'api', message: '1,245 API calls processed', time: '1 hour ago', icon: ChartBarIcon },
-            { type: 'service', message: 'LiteLLM service restarted', time: '2 hours ago', icon: ServerIcon },
-          ].map((activity, index) => (
-            <div key={index} className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/30">
-              <activity.icon className="w-5 h-5 text-purple-400" />
-              <div className="flex-1">
-                <p className={textClass}>{activity.message}</p>
+        {recentActivity.length === 0 ? (
+          <p className={`text-sm ${subtextClass}`}>No recent activity recorded yet</p>
+        ) : (
+          <div className="space-y-3">
+            {recentActivity.map((activity, index) => (
+              <div key={index} className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/30">
+                <ServerIcon className="w-5 h-5 text-purple-400" />
+                <div className="flex-1">
+                  <p className={textClass}>{activity.message}</p>
+                </div>
+                <span className={`text-sm ${subtextClass}`}>
+                  <ClockIcon className="w-4 h-4 inline mr-1" />
+                  {activity.time}
+                </span>
               </div>
-              <span className={`text-sm ${subtextClass}`}>
-                <ClockIcon className="w-4 h-4 inline mr-1" />
-                {activity.time}
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Quick Actions */}

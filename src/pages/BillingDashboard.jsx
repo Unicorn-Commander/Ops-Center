@@ -267,17 +267,57 @@ const UserView = ({ theme }) => {
   const loadUserBillingData = async () => {
     setLoading(true);
     try {
-      const [subRes, invRes, pmRes, usageRes] = await Promise.all([
-        fetch('/api/v1/billing/summary', { credentials: 'include' }), // Fixed: subscription → summary
+      const [subRes, invRes, pmRes, usageRes, creditsRes] = await Promise.all([
+        fetch('/api/v1/billing/subscription-status', { credentials: 'include' }), // Real: Stripe-backed tier/price/period
         fetch('/api/v1/billing/invoices?limit=10', { credentials: 'include' }),
         fetch('/api/v1/billing/payment-methods', { credentials: 'include' }),
-        fetch('/api/v1/analytics/usage/overview', { credentials: 'include' }) // Fixed: billing/usage → analytics/usage/overview
+        fetch('/api/v1/usage/current', { credentials: 'include' }), // Real: per-user API call usage
+        fetch('/api/v1/credits/balance', { credentials: 'include' }) // Real: per-user credit balance
       ]);
 
-      if (subRes.ok) setSubscription(await subRes.json());
-      if (invRes.ok) setInvoices(await invRes.json());
-      if (pmRes.ok) setPaymentMethods(await pmRes.json());
-      if (usageRes.ok) setUsage(await usageRes.json());
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        const activeSub = subData.subscriptions?.[0];
+        // Only render a subscription when one actually exists - otherwise the
+        // honest "No Active Subscription" empty state shows.
+        setSubscription(subData.has_subscription && activeSub ? {
+          tier: (activeSub.tier_name && activeSub.tier_name !== 'unknown')
+            ? activeSub.tier_name
+            : subData.current_tier,
+          price: activeSub.amount,
+          status: activeSub.status || subData.status,
+          next_billing_date: activeSub.current_period_end
+        } : null);
+      }
+      if (invRes.ok) {
+        const invData = await invRes.json();
+        setInvoices(Array.isArray(invData) ? invData : (invData.invoices || []));
+      }
+      if (pmRes.ok) {
+        const pmData = await pmRes.json();
+        setPaymentMethods(Array.isArray(pmData) ? pmData : (pmData.payment_methods || []));
+      }
+
+      // Build usage from real per-user endpoints; leave fields unset (section
+      // hidden / "0 of limit") rather than estimating anything.
+      const usageData = {};
+      if (usageRes.ok) {
+        const result = await usageRes.json();
+        const u = result?.data?.usage;
+        if (u) {
+          usageData.api_calls_used = u.used ?? 0;
+          usageData.api_calls_limit = u.limit ?? 0;
+        }
+        if (result?.data?.reset?.date) usageData.reset_date = result.data.reset.date;
+      }
+      if (creditsRes.ok) {
+        const credits = await creditsRes.json();
+        if (credits && credits.balance != null) {
+          usageData.credits_remaining = Number(credits.balance);
+          usageData.credits_allocated = Number(credits.allocated_monthly ?? 0);
+        }
+      }
+      setUsage(Object.keys(usageData).length > 0 ? usageData : null);
     } catch (error) {
       console.error('Error loading billing data:', error);
     } finally {
@@ -415,29 +455,33 @@ const UserView = ({ theme }) => {
               </p>
             </div>
 
-            {/* Credits */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-sm ${theme.text.secondary}`}>
-                  Credits
-                  <MuiTooltip title="Your prepaid usage pool (1 credit roughly equals $0.001 of API usage); metered services like LLM and image generation draw down this balance." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
-                </span>
-                <span className={`text-sm font-medium ${theme.text.primary}`}>
-                  {(usage?.credits_remaining ?? 0).toLocaleString()} remaining
-                </span>
+            {/* Credits - only rendered when the credits API returned a real balance */}
+            {usage?.credits_remaining !== undefined && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-sm ${theme.text.secondary}`}>
+                    Credits
+                    <MuiTooltip title="Your prepaid usage pool (1 credit roughly equals $0.001 of API usage); metered services like LLM and image generation draw down this balance." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+                  </span>
+                  <span className={`text-sm font-medium ${theme.text.primary}`}>
+                    {(usage?.credits_remaining ?? 0).toLocaleString()} remaining
+                  </span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div
+                    className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(((usage?.credits_remaining ?? 0) / ((usage?.credits_allocated || 0) > 0 ? usage.credits_allocated : ((usage?.credits_remaining ?? 0) || 1))) * 100, 100)}%`
+                    }}
+                  />
+                </div>
+                <p className={`text-xs ${theme.text.secondary} mt-1`}>
+                  {(usage?.credits_allocated ?? 0) > 0
+                    ? `of ${usage.credits_allocated.toLocaleString()} monthly credits`
+                    : 'No monthly credit allocation'}
+                </p>
               </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
-                <div
-                  className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(((usage?.credits_remaining ?? 0) / ((usage?.credits_used ?? 0) + (usage?.credits_remaining ?? 0) || 1)) * 100, 100)}%`
-                  }}
-                />
-              </div>
-              <p className={`text-xs ${theme.text.secondary} mt-1`}>
-                {(usage?.credits_used ?? 0).toLocaleString()} credits used this month
-              </p>
-            </div>
+            )}
           </div>
         </motion.div>
       )}
@@ -464,7 +508,7 @@ const UserView = ({ theme }) => {
                 {invoices.map((invoice) => (
                   <tr key={invoice.id} className="border-b border-slate-800 hover:bg-slate-700/30 transition-colors">
                     <td className={`py-3 px-4 text-sm ${theme.text.primary}`}>
-                      {formatDate(invoice.date)}
+                      {formatDate(invoice.issued_date || invoice.date)}
                     </td>
                     <td className={`py-3 px-4 text-sm font-medium ${theme.text.primary}`}>
                       {formatCurrency(invoice.amount)}
@@ -473,10 +517,19 @@ const UserView = ({ theme }) => {
                       <StatusBadge status={invoice.status} />
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <button className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
-                        <DocumentArrowDownIcon className="w-4 h-4 inline mr-1" />
-                        Download PDF
-                      </button>
+                      {invoice.pdf_url ? (
+                        <a
+                          href={invoice.pdf_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors"
+                        >
+                          <DocumentArrowDownIcon className="w-4 h-4 inline mr-1" />
+                          Download PDF
+                        </a>
+                      ) : (
+                        <span className={`text-sm ${theme.text.secondary}`}>—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -587,69 +640,68 @@ const AdminView = ({ theme }) => {
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, tierRes, paymentsRes, failedRes, renewalsRes] = await Promise.all([
-        fetch('/api/v1/billing/summary', { credentials: 'include' }), // Fixed: dashboard/summary → summary
-        fetch('/api/v1/analytics/users/segments', { credentials: 'include' }), // Fixed: billing/analytics/tier-distribution → analytics/users/segments
-        fetch('/api/v1/billing/invoices?limit=20', { credentials: 'include' }), // Fixed: payments/recent → invoices
-        fetch('/api/v1/billing/invoices?limit=20&status=failed', { credentials: 'include' }), // Fixed: payments/failed → invoices with filter
-        fetch('/api/v1/billing/invoices?upcoming=true&days=30', { credentials: 'include' }) // Fixed: invoices/upcoming path
+      const [summaryRes, usersRes, paymentsRes] = await Promise.all([
+        // Real admin metrics: MRR/ARR/growth/churn/active subs from the DB
+        fetch('/api/v1/billing/analytics/dashboard?days=30', { credentials: 'include' }),
+        // Real tier distribution + trial-user count from Keycloak
+        fetch('/api/v1/admin/users/analytics/summary', { credentials: 'include' }),
+        // Real invoice list (Lago); failed payments are derived from it below
+        fetch('/api/v1/billing/invoices?limit=20', { credentials: 'include' })
       ]);
 
       if (summaryRes.ok) {
         const data = await summaryRes.json();
-        setStats(data);
+        setStats(prev => ({
+          ...(prev || {}),
+          mrr: data.mrr,
+          arr: data.arr,
+          active_subscriptions: data.active_subscriptions?.total ?? 0,
+          growth_rate: data.growth_rate,
+          churn_rate: data.churn_rate
+        }));
+      } else {
+        console.error('Billing analytics request failed:', summaryRes.status);
       }
 
-      if (tierRes.ok) {
-        const data = await tierRes.json();
-        console.log('Tier distribution data:', data);
-
-        // Backend returns: { distribution: [{ tier, user_count, percentage, mrr_contribution }] }
-        // Transform to chart format
-        const tierMap = {};
-        // Guard: this endpoint can legitimately return an empty/alternate shape
-        // (no subscriptions yet, or a segments-shaped payload). Treat missing
-        // data as "no data", never as a hard failure.
-        (data.distribution || []).forEach(item => {
-          tierMap[item.tier] = item.user_count;
-        });
-
+      if (usersRes.ok) {
+        const data = await usersRes.json();
+        // Real shape: { total_users, active_users, tier_distribution: {trial, starter, professional, enterprise} }
+        const tiers = data.tier_distribution || {};
         setTierDistribution([
-          { name: 'Trial', value: tierMap.trial || 0, color: '#3b82f6' },
-          { name: 'Starter', value: tierMap.starter || 0, color: '#10b981' },
-          { name: 'Professional', value: tierMap.professional || 0, color: '#8b5cf6' },
-          { name: 'Enterprise', value: tierMap.enterprise || 0, color: '#f59e0b' }
+          { name: 'Trial', value: tiers.trial || 0, color: '#3b82f6' },
+          { name: 'Starter', value: tiers.starter || 0, color: '#10b981' },
+          { name: 'Professional', value: tiers.professional || 0, color: '#8b5cf6' },
+          { name: 'Enterprise', value: tiers.enterprise || 0, color: '#f59e0b' }
         ]);
+        setStats(prev => ({ ...(prev || {}), trial_users: tiers.trial ?? null }));
       } else {
-        console.error('Tier distribution request failed:', tierRes.status);
+        console.error('User analytics request failed:', usersRes.status);
       }
 
       if (paymentsRes.ok) {
         const data = await paymentsRes.json();
-        console.log('Payments data:', data);
-        // Backend returns: { payments: [...], total }
-        setRecentPayments(data.payments || []);
+        // Backend returns a bare array of invoices:
+        // { id, invoice_number, amount, status, issued_date, pdf_url, ... }
+        const invoiceList = Array.isArray(data) ? data : (data.payments || data.invoices || []);
+        const payments = invoiceList.map(inv => ({
+          invoice_id: inv.invoice_number || String(inv.id ?? ''),
+          date: inv.issued_date || inv.date,
+          customer_email: inv.customer_email || null,
+          plan_name: inv.plan_name || null,
+          amount: inv.amount,
+          status: inv.status,
+          pdf_url: inv.pdf_url || null
+        }));
+        setRecentPayments(payments);
+        // Derived from real data (the API has no ?status=failed filter)
+        setFailedPayments(payments.filter(p => p.status === 'failed'));
       } else {
         console.error('Payments request failed:', paymentsRes.status);
       }
 
-      if (failedRes.ok) {
-        const data = await failedRes.json();
-        console.log('Failed payments data:', data);
-        // Backend returns: { failed_payments: [...], total, period_days }
-        setFailedPayments(data.failed_payments || []);
-      } else {
-        console.error('Failed payments request failed:', failedRes.status);
-      }
-
-      if (renewalsRes.ok) {
-        const data = await renewalsRes.json();
-        console.log('Upcoming renewals data:', data);
-        // Backend returns: { upcoming_invoices: [...], total, next_days }
-        setUpcomingRenewals(data.upcoming_invoices || []);
-      } else {
-        console.error('Renewals request failed:', renewalsRes.status);
-      }
+      // No real "upcoming renewals" endpoint exists yet; the section stays
+      // hidden rather than showing invented renewals.
+      setUpcomingRenewals([]);
     } catch (error) {
       console.error('Error loading admin data:', error);
       setError('Failed to load billing data. Please try again.');
@@ -660,29 +712,34 @@ const AdminView = ({ theme }) => {
 
   const loadChartData = async () => {
     try {
-      const [revenueRes, growthRes] = await Promise.all([
-        fetch(`/api/v1/analytics/revenue/trends?period=${chartPeriod}`, { credentials: 'include' }), // Fixed: billing/analytics/revenue-chart → analytics/revenue/trends
-        fetch(`/api/v1/analytics/users/growth?period=${chartPeriod}`, { credentials: 'include' }) // Fixed: billing/analytics/user-growth → analytics/users/growth
-      ]);
+      // Real DB-backed revenue trends (the old /api/v1/analytics/revenue/trends
+      // and /api/v1/analytics/users/growth routes served fabricated data).
+      const periodMap = { daily: 'day', weekly: 'week', monthly: 'month' };
+      const period = periodMap[chartPeriod] || 'month';
+      const revenueRes = await fetch(
+        `/api/v1/billing/analytics/revenue/trends?period=${period}&limit=12`,
+        { credentials: 'include' }
+      );
 
       if (revenueRes.ok) {
         const data = await revenueRes.json();
-        setRevenueChartData((data.data || []).map((item, index) => ({
-          name: data.labels?.[index],
-          revenue: item
+        // Real shape: { period, data: [{ period, new_subscriptions, revenue }] }
+        setRevenueChartData((data.data || []).map(item => ({
+          name: String(item.period || '').slice(0, 10),
+          revenue: item.revenue ?? 0
         })));
+      } else {
+        setRevenueChartData([]);
       }
 
-      if (growthRes.ok) {
-        const data = await growthRes.json();
-        setUserGrowthData((data.labels || []).map((label, index) => ({
-          name: label,
-          signups: data.signups?.[index],
-          cancellations: data.cancellations?.[index]
-        })));
-      }
+      // There is no real signups-vs-cancellations time series endpoint yet, so
+      // the User Growth & Churn chart shows an honest "Not enough data yet"
+      // placeholder instead of an invented series.
+      setUserGrowthData([]);
     } catch (error) {
       console.error('Error loading chart data:', error);
+      setRevenueChartData([]);
+      setUserGrowthData([]);
     }
   };
 
@@ -1172,19 +1229,17 @@ const AdminView = ({ theme }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className={`text-sm ${theme.text.secondary}`}>
-                Total Revenue
-                <MuiTooltip title="All revenue collected to date across every customer and plan; the cumulative top-line for the business." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
+                Monthly Recurring Revenue
+                <MuiTooltip title="Monthly Recurring Revenue: the predictable subscription revenue normalized to a monthly amount; the core SaaS growth metric." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
               </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
-                {formatCurrency(stats?.total_revenue || 0)}
+                {stats?.mrr != null ? formatCurrency(stats.mrr) : '—'}
               </p>
               <div className="flex items-center gap-1 mt-2 text-sm">
                 <p className={`text-xs ${theme.text.secondary}`}>
-                  MRR
-                  <MuiTooltip title="Monthly Recurring Revenue: the predictable subscription revenue normalized to a monthly amount; the core SaaS growth metric." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
-                  : {formatCurrency(stats?.mrr || 0)} | ARR
+                  ARR
                   <MuiTooltip title="Annual Recurring Revenue: MRR projected over a year (roughly MRR x 12); shows the run-rate value of active subscriptions." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
-                  : {formatCurrency(stats?.arr || 0)}
+                  : {stats?.arr != null ? formatCurrency(stats.arr) : '—'}
                 </p>
               </div>
             </div>
@@ -1200,21 +1255,24 @@ const AdminView = ({ theme }) => {
                 <MuiTooltip title="Count of paying customers with a live subscription right now; the base that generates recurring revenue." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
               </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
-                {stats?.active_subscriptions || 0}
+                {stats?.active_subscriptions ?? '—'}
               </p>
-              <div className="flex items-center gap-1 mt-2 text-sm">
-                {stats?.revenue_growth >= 0 ? (
-                  <span className="text-green-400 flex items-center gap-1">
-                    <ArrowUpIcon className="w-4 h-4" />
-                    +{stats?.revenue_growth?.toFixed(1) || 0}% growth
-                  </span>
-                ) : (
-                  <span className="text-red-400 flex items-center gap-1">
-                    <ArrowDownIcon className="w-4 h-4" />
-                    {stats?.revenue_growth?.toFixed(1) || 0}% growth
-                  </span>
-                )}
-              </div>
+              {/* Growth badge only when the API reports it - never an invented delta */}
+              {stats?.growth_rate != null && (
+                <div className="flex items-center gap-1 mt-2 text-sm">
+                  {stats.growth_rate >= 0 ? (
+                    <span className="text-green-400 flex items-center gap-1">
+                      <ArrowUpIcon className="w-4 h-4" />
+                      +{stats.growth_rate.toFixed(1)}% growth (30d)
+                    </span>
+                  ) : (
+                    <span className="text-red-400 flex items-center gap-1">
+                      <ArrowDownIcon className="w-4 h-4" />
+                      {stats.growth_rate.toFixed(1)}% growth (30d)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <CheckCircleIcon className="w-12 h-12 text-green-400 opacity-20" />
           </div>
@@ -1228,21 +1286,24 @@ const AdminView = ({ theme }) => {
                 <MuiTooltip title="People currently on a free or trial plan who haven't paid yet; your pipeline of potential conversions to paid tiers." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
               </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
-                {stats?.trial_users || 0}
+                {stats?.trial_users ?? '—'}
               </p>
-              <div className="flex items-center gap-1 mt-2 text-sm">
-                {stats?.user_growth >= 0 ? (
-                  <span className="text-blue-400 flex items-center gap-1">
-                    <ArrowUpIcon className="w-4 h-4" />
-                    +{stats?.user_growth?.toFixed(1) || 0}% growth
-                  </span>
-                ) : (
-                  <span className="text-red-400 flex items-center gap-1">
-                    <ArrowDownIcon className="w-4 h-4" />
-                    {stats?.user_growth?.toFixed(1) || 0}% growth
-                  </span>
-                )}
-              </div>
+              {/* No user-growth time series exists yet; show nothing rather than a fake delta */}
+              {stats?.user_growth != null && (
+                <div className="flex items-center gap-1 mt-2 text-sm">
+                  {stats.user_growth >= 0 ? (
+                    <span className="text-blue-400 flex items-center gap-1">
+                      <ArrowUpIcon className="w-4 h-4" />
+                      +{stats.user_growth.toFixed(1)}% growth
+                    </span>
+                  ) : (
+                    <span className="text-red-400 flex items-center gap-1">
+                      <ArrowDownIcon className="w-4 h-4" />
+                      {stats.user_growth.toFixed(1)}% growth
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <ClockIcon className="w-12 h-12 text-yellow-400 opacity-20" />
           </div>
@@ -1256,21 +1317,23 @@ const AdminView = ({ theme }) => {
                 <MuiTooltip title="Share of customers who cancel in a given period; lower is better since churn directly erodes recurring revenue (under ~5% is healthy)." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
               </p>
               <p className={`text-3xl font-bold ${theme.text.primary} mt-2`}>
-                {stats?.churn_rate?.toFixed(1) || 0}%
+                {stats?.churn_rate != null ? `${stats.churn_rate.toFixed(1)}%` : '—'}
               </p>
-              <div className="flex items-center gap-1 mt-2 text-sm">
-                {stats?.churn_rate <= 5 ? (
-                  <span className="text-green-400 flex items-center gap-1">
-                    <CheckCircleIcon className="w-4 h-4" />
-                    Healthy
-                  </span>
-                ) : (
-                  <span className="text-yellow-400 flex items-center gap-1">
-                    <ExclamationTriangleIcon className="w-4 h-4" />
-                    Monitor
-                  </span>
-                )}
-              </div>
+              {stats?.churn_rate != null && (
+                <div className="flex items-center gap-1 mt-2 text-sm">
+                  {stats.churn_rate <= 5 ? (
+                    <span className="text-green-400 flex items-center gap-1">
+                      <CheckCircleIcon className="w-4 h-4" />
+                      Healthy
+                    </span>
+                  ) : (
+                    <span className="text-yellow-400 flex items-center gap-1">
+                      <ExclamationTriangleIcon className="w-4 h-4" />
+                      Monitor
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <UsersIcon className="w-12 h-12 text-blue-400 opacity-20" />
           </div>
@@ -1285,53 +1348,65 @@ const AdminView = ({ theme }) => {
             Subscription Tier Distribution
             <MuiTooltip title="How your customers are split across plan tiers (Trial, Starter, Professional, Enterprise); shows where revenue and upgrade potential concentrate." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={tierDistribution}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {tierDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
-                  borderRadius: '0.5rem'
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          {tierDistribution.some(t => t.value > 0) ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={tierDistribution}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {tierDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '0.5rem'
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center">
+              <p className={`text-sm ${theme.text.secondary}`}>No tier data yet</p>
+            </div>
+          )}
         </motion.div>
 
         {/* Revenue Chart */}
         <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6`}>
-          <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4`}>Revenue Over Time</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={revenueChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="name" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
-                  borderRadius: '0.5rem'
-                }}
-                formatter={(value) => formatCurrency(value)}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#8b5cf6" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <h3 className={`text-lg font-semibold ${theme.text.primary} mb-4`}>New-Subscription Revenue Over Time</h3>
+          {revenueChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={revenueChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="name" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '0.5rem'
+                  }}
+                  formatter={(value) => formatCurrency(value)}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="revenue" stroke="#8b5cf6" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center">
+              <p className={`text-sm ${theme.text.secondary}`}>Not enough data yet</p>
+            </div>
+          )}
         </motion.div>
       </div>
 
@@ -1341,23 +1416,29 @@ const AdminView = ({ theme }) => {
           User Growth & Churn
           <MuiTooltip title="New signups versus cancellations over time; when signups outpace cancellations the customer base (and recurring revenue) grows." arrow><InfoOutlinedIcon sx={{ fontSize: 14, ml: 0.5, opacity: 0.6, verticalAlign: 'middle', cursor: 'help' }} /></MuiTooltip>
         </h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={userGrowthData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" stroke="#9ca3af" />
-            <YAxis stroke="#9ca3af" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #334155',
-                borderRadius: '0.5rem'
-              }}
-            />
-            <Legend />
-            <Bar dataKey="signups" fill="#10b981" name="New Signups" />
-            <Bar dataKey="cancellations" fill="#ef4444" name="Cancellations" />
-          </BarChart>
-        </ResponsiveContainer>
+        {userGrowthData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={userGrowthData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="name" stroke="#9ca3af" />
+              <YAxis stroke="#9ca3af" />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '0.5rem'
+                }}
+              />
+              <Legend />
+              <Bar dataKey="signups" fill="#10b981" name="New Signups" />
+              <Bar dataKey="cancellations" fill="#ef4444" name="Cancellations" />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-[300px] flex items-center justify-center">
+            <p className={`text-sm ${theme.text.secondary}`}>Not enough data yet — signup and cancellation history is not tracked</p>
+          </div>
+        )}
       </motion.div>
 
       {/* Recent Payments with Management */}
@@ -1426,10 +1507,10 @@ const AdminView = ({ theme }) => {
                       {formatDate(payment.date)}
                     </td>
                     <td className={`py-3 px-4 text-sm ${theme.text.primary}`}>
-                      {payment.customer_email}
+                      {payment.customer_email || '—'}
                     </td>
                     <td className={`py-3 px-4 text-sm ${theme.text.primary}`}>
-                      <TierBadge tier={payment.plan_name?.toLowerCase() || 'starter'} />
+                      {payment.plan_name ? <TierBadge tier={payment.plan_name.toLowerCase()} /> : '—'}
                     </td>
                     <td className={`py-3 px-4 text-sm font-medium ${theme.text.primary}`}>
                       {formatCurrency(payment.amount)}
@@ -1532,10 +1613,10 @@ const AdminView = ({ theme }) => {
                       {formatDate(payment.date)}
                     </td>
                     <td className={`py-3 px-4 text-sm ${theme.text.primary}`}>
-                      {payment.customer_email}
+                      {payment.customer_email || '—'}
                     </td>
                     <td className={`py-3 px-4 text-sm ${theme.text.primary}`}>
-                      {payment.plan_name}
+                      {payment.plan_name || '—'}
                     </td>
                     <td className={`py-3 px-4 text-sm font-medium ${theme.text.primary}`}>
                       {formatCurrency(payment.amount)}

@@ -96,16 +96,26 @@ const AnalyticsChart = ({
 
   if (error) {
     return (
-      <div style={{ height }} className="flex items-center justify-center">
-        <p className="text-red-400">{error}</p>
+      <div>
+        {title && (
+          <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
+        )}
+        <div style={{ height }} className="flex items-center justify-center">
+          <p className="text-red-400">{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div style={{ height }} className="flex items-center justify-center">
-        <p className="text-gray-400">No data available</p>
+      <div>
+        {title && (
+          <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
+        )}
+        <div style={{ height }} className="flex items-center justify-center">
+          <p className="text-gray-400">No data available yet</p>
+        </div>
       </div>
     );
   }

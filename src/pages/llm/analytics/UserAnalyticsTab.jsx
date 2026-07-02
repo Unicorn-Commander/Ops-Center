@@ -58,37 +58,26 @@ const UserAnalyticsTab = ({ dateRange, setDateRange }) => {
   const fetchUserAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/admin/users/analytics/summary?range=' + dateRange, { credentials: 'include' });
+      const response = await fetch('/api/v1/admin/users/analytics/summary', { credentials: 'include' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
 
       setUserMetrics({
-        totalUsers: data.total_users || 0,
-        newUsers30d: data.new_users_30d || 0,
-        activeUsers: data.active_users || 0,
-        avgSessionTime: data.avg_session_time || '0m',
+        totalUsers: data.total_users ?? 0,
+        activeUsers: data.active_users ?? 0,
+        // Not provided by any real endpoint yet - rendered as "—", never invented
+        newUsers30d: null,
+        avgSessionTime: null,
       });
 
-      // Mock user growth data (replace with actual API data)
-      setGrowthData({
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-        datasets: [
-          {
-            label: 'New Users',
-            data: [12, 19, 15, 25, 22, 30, 28],
-            borderColor: 'rgb(139, 92, 246)',
-            backgroundColor: 'rgba(139, 92, 246, 0.1)',
-            tension: 0.4,
-            fill: true,
-          },
-        ],
-      });
-
-      // Mock tier distribution data
-      setTierData({
+      // Real tier distribution from Keycloak
+      const tiers = data.tier_distribution || {};
+      const tierValues = [tiers.trial || 0, tiers.starter || 0, tiers.professional || 0, tiers.enterprise || 0];
+      setTierData(tierValues.some(v => v > 0) ? {
         labels: ['Trial', 'Starter', 'Professional', 'Enterprise'],
         datasets: [
           {
-            data: [45, 62, 38, 11],
+            data: tierValues,
             backgroundColor: [
               'rgba(59, 130, 246, 0.8)',
               'rgba(34, 197, 94, 0.8)',
@@ -99,29 +88,20 @@ const UserAnalyticsTab = ({ dateRange, setDateRange }) => {
             borderColor: currentTheme === 'light' ? '#ffffff' : '#1f2937',
           },
         ],
-      });
+      } : null);
 
-      // Mock activity by hour data
-      setActivityData({
-        labels: Array.from({ length: 24 }, (_, i) => `${i}:00`),
-        datasets: [
-          {
-            label: 'Active Users',
-            data: [5, 3, 2, 1, 2, 4, 8, 15, 22, 28, 32, 35, 38, 40, 42, 38, 35, 30, 25, 20, 15, 12, 8, 6],
-            backgroundColor: 'rgba(236, 72, 153, 0.8)',
-            borderRadius: 4,
-          },
-        ],
-      });
+      // No real signup-history or per-hour-activity endpoints exist yet.
+      // Leave these charts empty ("No data available yet") instead of
+      // rendering an invented series.
+      setGrowthData(null);
+      setActivityData(null);
     } catch (error) {
       console.error('Error fetching user analytics:', error);
-      // Set fallback data
-      setUserMetrics({
-        totalUsers: 156,
-        newUsers30d: 28,
-        activeUsers: 42,
-        avgSessionTime: '24m',
-      });
+      // Honest failure state - never demo numbers
+      setUserMetrics(null);
+      setGrowthData(null);
+      setTierData(null);
+      setActivityData(null);
     } finally {
       setLoading(false);
     }
@@ -143,35 +123,33 @@ const UserAnalyticsTab = ({ dateRange, setDateRange }) => {
         <DateRangeSelector value={dateRange} onChange={setDateRange} />
       </div>
 
-      {/* Metric Cards */}
+      {/* Metric Cards - real values only; "—" when a metric is not tracked yet */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           icon={UsersIcon}
           label="Total Users"
-          value={userMetrics?.totalUsers || 0}
+          value={userMetrics?.totalUsers != null ? userMetrics.totalUsers : '—'}
           color="purple"
           loading={loading}
         />
         <MetricCard
           icon={UserPlusIcon}
           label="New Users (30d)"
-          value={userMetrics?.newUsers30d || 0}
+          value={userMetrics?.newUsers30d != null ? userMetrics.newUsers30d : '—'}
           color="green"
           loading={loading}
-          trend="up"
-          trendValue="+12%"
         />
         <MetricCard
           icon={UserGroupIcon}
           label="Active Users"
-          value={userMetrics?.activeUsers || 0}
+          value={userMetrics?.activeUsers != null ? userMetrics.activeUsers : '—'}
           color="blue"
           loading={loading}
         />
         <MetricCard
           icon={ClockIcon}
           label="Avg Session Time"
-          value={userMetrics?.avgSessionTime || '0m'}
+          value={userMetrics?.avgSessionTime != null ? userMetrics.avgSessionTime : '—'}
           color="pink"
           loading={loading}
         />
@@ -213,40 +191,22 @@ const UserAnalyticsTab = ({ dateRange, setDateRange }) => {
         />
       </div>
 
-      {/* User Engagement Metrics */}
+      {/* User Engagement Metrics - DAU/WAU/MAU are not tracked yet, so show an
+          honest empty state instead of invented figures */}
       <div className={`${bgClass} rounded-xl p-6`}>
         <h3 className={`text-lg font-semibold ${textClass} mb-4`}>Engagement Metrics</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <p className="text-gray-400 text-sm mb-2">Daily Active Users (DAU)</p>
-            <p className={`text-2xl font-bold ${textClass}`}>42</p>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-purple-500" style={{ width: '27%' }} />
-              </div>
-              <span className="text-sm text-gray-400">27%</span>
+          {[
+            'Daily Active Users (DAU)',
+            'Weekly Active Users (WAU)',
+            'Monthly Active Users (MAU)'
+          ].map((label) => (
+            <div key={label}>
+              <p className="text-gray-400 text-sm mb-2">{label}</p>
+              <p className={`text-2xl font-bold ${textClass}`}>—</p>
+              <p className="text-xs text-gray-500 mt-2">Not tracked yet</p>
             </div>
-          </div>
-          <div>
-            <p className="text-gray-400 text-sm mb-2">Weekly Active Users (WAU)</p>
-            <p className={`text-2xl font-bold ${textClass}`}>98</p>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-green-500" style={{ width: '63%' }} />
-              </div>
-              <span className="text-sm text-gray-400">63%</span>
-            </div>
-          </div>
-          <div>
-            <p className="text-gray-400 text-sm mb-2">Monthly Active Users (MAU)</p>
-            <p className={`text-2xl font-bold ${textClass}`}>134</p>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500" style={{ width: '86%' }} />
-              </div>
-              <span className="text-sm text-gray-400">86%</span>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

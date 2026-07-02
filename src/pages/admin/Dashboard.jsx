@@ -192,33 +192,27 @@ export default function AdminDashboard() {
       });
       if (response.ok) {
         const data = await response.json();
+        // Real response shape: { mrr, arr, active_subscriptions: {total,...},
+        // credit_usage: { total_allocated, total_used, ... }, ... }
+        const allocated = data.credit_usage?.total_allocated ?? 0;
+        const used = data.credit_usage?.total_used ?? 0;
         setBillingData({
-          balance: data.total_credits || 10000,
-          used: data.credits_used || 0,
-          limit: data.credits_limit || 10000,
-          tier: data.tier || 'professional',
+          balance: allocated - used,
+          used,
+          limit: allocated,
+          tier: null, // Not provided by this endpoint - never invent one
           mrr: data.mrr,
-          activeSubscriptions: data.active_subscriptions
+          activeSubscriptions: data.active_subscriptions?.total
         });
       } else {
-        // API returned error (403, 500, etc.) - use fallback
+        // API returned error (401, 403, 500, etc.) - show an honest error state,
+        // never fabricated numbers.
         console.debug('Billing API returned', response.status);
-        setBillingData({
-          balance: 10000,
-          used: 0,
-          limit: 10000,
-          tier: 'professional'
-        });
+        setBillingData(null);
       }
     } catch (error) {
       console.debug('Billing data not available:', error.message);
-      // Set fallback data
-      setBillingData({
-        balance: 10000,
-        used: 0,
-        limit: 10000,
-        tier: 'professional'
-      });
+      setBillingData(null);
     } finally {
       setBillingLoading(false);
     }

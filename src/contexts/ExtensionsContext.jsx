@@ -25,6 +25,13 @@ export const ExtensionsProvider = ({ children }) => {
     activeAddons: false
   });
 
+  // The cart endpoints return the CartResponse object directly
+  // ({ items, subtotal, discount, total, item_count }); some older callers
+  // wrapped it in { cart: ... }. Accept both.
+  const normalizeCart = (data) =>
+    (data && (data.cart || (Array.isArray(data.items) ? data : null))) ||
+    { items: [], total: 0, promo_code: null, discount: 0 };
+
   /**
    * Load cart from backend
    */
@@ -32,7 +39,7 @@ export const ExtensionsProvider = ({ children }) => {
     try {
       setLoading(prev => ({ ...prev, cart: true }));
       const data = await extensionsApi.getCart();
-      setCart(data.cart || { items: [], total: 0, promo_code: null, discount: 0 });
+      setCart(normalizeCart(data));
     } catch (error) {
       console.error('Failed to load cart:', error);
       // Initialize empty cart on error
@@ -66,7 +73,8 @@ export const ExtensionsProvider = ({ children }) => {
     try {
       setLoading(prev => ({ ...prev, activeAddons: true }));
       const data = await extensionsApi.getActiveAddons();
-      setActiveAddons(data.addons || []);
+      // Backend returns { active_addons: [...], total_count }
+      setActiveAddons(data.active_addons || data.addons || []);
     } catch (error) {
       console.error('Failed to load active add-ons:', error);
       setActiveAddons([]);
@@ -81,9 +89,10 @@ export const ExtensionsProvider = ({ children }) => {
   const addToCart = useCallback(async (addon_id, quantity = 1) => {
     try {
       const data = await extensionsApi.addToCart(addon_id, quantity);
-      setCart(data.cart);
+      const nextCart = normalizeCart(data);
+      setCart(nextCart);
       toast.success('Added to cart');
-      return { success: true, cart: data.cart };
+      return { success: true, cart: nextCart };
     } catch (error) {
       console.error('Failed to add to cart:', error);
       toast.error(error.message || 'Failed to add to cart');
@@ -97,9 +106,10 @@ export const ExtensionsProvider = ({ children }) => {
   const removeFromCart = useCallback(async (item_id) => {
     try {
       const data = await extensionsApi.removeFromCart(item_id);
-      setCart(data.cart);
+      const nextCart = normalizeCart(data);
+      setCart(nextCart);
       toast.success('Removed from cart');
-      return { success: true, cart: data.cart };
+      return { success: true, cart: nextCart };
     } catch (error) {
       console.error('Failed to remove from cart:', error);
       toast.error(error.message || 'Failed to remove from cart');
@@ -113,8 +123,9 @@ export const ExtensionsProvider = ({ children }) => {
   const updateCartItemQuantity = useCallback(async (item_id, quantity) => {
     try {
       const data = await extensionsApi.updateCartItem(item_id, quantity);
-      setCart(data.cart);
-      return { success: true, cart: data.cart };
+      const nextCart = normalizeCart(data);
+      setCart(nextCart);
+      return { success: true, cart: nextCart };
     } catch (error) {
       console.error('Failed to update cart item:', error);
       toast.error(error.message || 'Failed to update quantity');
