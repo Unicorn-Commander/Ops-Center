@@ -212,6 +212,7 @@ import RootRedirect from './components/RootRedirect';
 const PublicLanding = lazy(() => import('./pages/PublicLanding'));
 const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 const MarketplaceLanding = lazy(() => import('./pages/public/MarketplaceLanding'));
 const CheckoutContinue = lazy(() => import('./pages/public/CheckoutContinue'));
 
@@ -375,16 +376,10 @@ function ProtectedRoute({ children }) {
   const [authenticated, setAuthenticated] = useState(false);
   
   useEffect(() => {
-    // First check if we have a token
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      setAuthenticated(true);
-      setChecking(false);
-      return;
-    }
-    
-    // If no token, check for OAuth session
-    fetch('/api/v1/auth/session')
+    // ALWAYS verify the server session — a cached localStorage token may be
+    // expired, which used to render every admin page as a sea of 401s with
+    // stale user data instead of sending the user back to login.
+    fetch('/api/v1/auth/session', { credentials: 'include' })
       .then(res => {
         if (res.ok) {
           return res.json();
@@ -392,15 +387,24 @@ function ProtectedRoute({ children }) {
         throw new Error('Not authenticated');
       })
       .then(data => {
-        if (data.authenticated && data.token) {
-          // Store the token for future use
-          localStorage.setItem('authToken', data.token);
-          // Use 'userInfo' key to match Layout.jsx
-          localStorage.setItem('userInfo', JSON.stringify(data.user));
+        if (data.authenticated) {
+          if (data.token) {
+            localStorage.setItem('authToken', data.token);
+          }
+          if (data.user) {
+            // Use 'userInfo' key to match Layout.jsx; refresh so role/tier are current
+            localStorage.setItem('userInfo', JSON.stringify(data.user));
+          }
           setAuthenticated(true);
+        } else {
+          throw new Error('Not authenticated');
         }
       })
       .catch(() => {
+        // Clear stale client-side auth state so the UI can't half-render as a
+        // logged-in user whose session is actually dead.
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userInfo');
         setAuthenticated(false);
       })
       .finally(() => {
@@ -503,6 +507,13 @@ function AppRoutes() {
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [showHelp, location.pathname, isAdminShellRoute]);
+
+  // Sidebar "Help & Documentation" (Layout.jsx) opens the same panel via this event
+  useEffect(() => {
+    const openHelp = () => { if (isAdminShellRoute) setShowHelp(true); };
+    window.addEventListener('uc:open-help', openHelp);
+    return () => window.removeEventListener('uc:open-help', openHelp);
+  }, [isAdminShellRoute]);
   
   const getCurrentPage = () => {
     const path = location.pathname.slice(1);
@@ -713,6 +724,9 @@ function AppRoutes() {
                   <Route path="system/analytics" element={<Navigate to="/admin/monitoring/analytics/advanced" replace />} />
                   <Route path="system/usage-analytics" element={<Navigate to="/admin/monitoring/usage-analytics" replace />} />
                   <Route path="system/billing" element={<Navigate to="/admin/billing/system" replace />} />
+                  <Route path="system/users" element={<Navigate to="/admin/people/users" replace />} />
+                  <Route path="system/users/:userId" element={<ParamRedirect to="/admin/people/users/:userId" />} />
+                  <Route path="billing/dashboard" element={<Navigate to="/admin/billing/revenue" replace />} />
                   <Route path="system/subscription-management" element={<Navigate to="/admin/billing/tiers" replace />} />
                   <Route path="system/app-management" element={<Navigate to="/admin/billing/apps" replace />} />
                   <Route path="system/pricing-management" element={<Navigate to="/admin/billing/pricing" replace />} />
@@ -825,11 +839,17 @@ function AppRoutes() {
                   {/* Billing routes - redirect to new subscription/* namespace */}
                   <Route path="billing" element={<Navigate to="/admin/subscription/plan" replace />} />
 
+                  {/* Catch-all: unknown /admin/* URLs get a real 404 inside the shell */}
+                  <Route path="*" element={<NotFound admin />} />
+
                 </Routes>
               </Layout>
             </AdminContent>
           </ProtectedRoute>
         } />
+
+        {/* Catch-all: unknown public URLs get a real 404 instead of a blank page */}
+        <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
 

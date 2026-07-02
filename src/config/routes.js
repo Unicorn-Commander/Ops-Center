@@ -31,11 +31,18 @@ export const routes = {
   personal: {
     dashboard: {
       path: '/admin/',
-      component: 'AppsLauncher',
+      component: 'AdminRedirect', // role-based: admins → /admin/dashboard, users → /admin/my-dashboard
       roles: ['admin', 'power_user', 'user', 'viewer'],
       name: 'Dashboard',
       icon: 'HomeIcon',
       description: 'Main dashboard with quick stats and service status'
+    },
+    adminDashboard: {
+      path: '/admin/dashboard',
+      component: 'AdminInfraDashboard',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'Admin Dashboard',
+      nav: false
     },
     myDashboard: {
       path: '/admin/my-dashboard',
@@ -44,6 +51,41 @@ export const routes = {
       name: 'My Dashboard',
       icon: 'ChartBarSquareIcon',
       description: 'Personal credits, usage, and subscription overview'
+    },
+    appsLauncher: {
+      path: '/admin/apps',
+      component: 'AppsLauncher',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'My Apps',
+      nav: false
+    },
+    myApps: {
+      path: '/admin/apps/my',
+      component: 'MyApps',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'My Apps',
+      nav: false
+    },
+    creditDashboard: {
+      path: '/admin/credits',
+      component: 'CreditDashboard',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'Credits',
+      nav: false
+    },
+    upgrade: {
+      path: '/admin/upgrade',
+      component: 'UpgradeFlow',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'Upgrade',
+      nav: false
+    },
+    comparePlans: {
+      path: '/admin/plans',
+      component: 'TierComparison',
+      roles: ['admin', 'power_user', 'user', 'viewer'],
+      name: 'Compare Plans',
+      nav: false
     },
     login: {
       path: '/admin/login',
@@ -127,7 +169,29 @@ export const routes = {
           path: '/admin/billing/tiers/compare',
           component: 'TierComparison',
           roles: ['admin', 'power_user', 'user', 'viewer'],
-          name: 'Credits & Tiers'
+          name: 'Plans & Pricing'
+        },
+        // Dedicated change-plan flows (linked from Current Plan; hidden from nav)
+        subscriptionUpgrade: {
+          path: '/admin/subscription/upgrade',
+          component: 'SubscriptionUpgrade',
+          roles: ['admin', 'power_user', 'user', 'viewer'],
+          name: 'Upgrade Plan',
+          nav: false
+        },
+        subscriptionDowngrade: {
+          path: '/admin/subscription/downgrade',
+          component: 'SubscriptionDowngrade',
+          roles: ['admin', 'power_user', 'user', 'viewer'],
+          name: 'Downgrade Plan',
+          nav: false
+        },
+        subscriptionCancel: {
+          path: '/admin/subscription/cancel',
+          component: 'SubscriptionCancel',
+          roles: ['admin', 'power_user', 'user', 'viewer'],
+          name: 'Cancel Subscription',
+          nav: false
         }
       }
     }
@@ -244,7 +308,7 @@ export const routes = {
             path: '/admin/billing/apps',
             component: 'AppManagement',
             roles: ['admin'],
-            name: 'App Entitlements'
+            name: 'App Catalog' // app-definition CRUD; tier↔app entitlements live on Subscription Tiers
           },
           pricing: {
             path: '/admin/billing/pricing',
@@ -265,16 +329,19 @@ export const routes = {
             name: 'Revenue Dashboard'
           },
           creditManagement: {
+            // This is the user-facing Buy Credits checkout, not an admin credit console —
+            // demoted from the admin nav (Credit Packs is the admin surface for packs).
             path: '/admin/billing/credits',
             component: 'CreditPurchase',
             roles: ['admin'],
-            name: 'Credit Management'
+            name: 'Buy Credits',
+            nav: false
           },
           inferencePolicy: {
             path: '/admin/billing/inference-policy',
             component: 'AppModelPolicy',
             roles: ['admin'],
-            name: 'Inference Pricing'
+            name: 'Inference Policy' // included-vs-metered matrix; prices live on Rates & Margin
           },
           creditPacks: {
             path: '/admin/billing/credit-packs',
@@ -362,13 +429,13 @@ export const routes = {
             path: '/admin/ai/local-models',
             component: 'LocalModelsManagement',
             roles: ['admin'],
-            name: 'Local Models'
+            name: 'Model Servers' // read-only monitor of federated LLM services across the mesh
           },
           gpuServices: {
             path: '/admin/ai/gpu-services',
             component: 'GPUServicesManagement',
             roles: ['admin'],
-            name: 'GPU Services'
+            name: 'GPU Nodes' // read-only GPU compute-fabric inventory
           },
           ragServices: {
             path: '/admin/ai/rag-services',
@@ -732,6 +799,20 @@ export const routes = {
         icon: 'SparklesIcon',
         roles: ['admin'],
         children: {
+          brigade: {
+            path: '/admin/brigade',
+            component: 'Brigade',
+            roles: ['admin'],
+            name: 'Unicorn Brigade',
+            icon: 'CubeIcon'
+          },
+          apiDocs: {
+            path: '/admin/platform/api-docs',
+            component: 'ApiDocumentation',
+            roles: ['admin'],
+            name: 'API Documentation',
+            icon: 'CodeBracketIcon'
+          },
           centerDeep: {
             path: 'https://search.unicorncommander.ai',
             component: 'External',
@@ -771,6 +852,20 @@ export const routes = {
             roles: ['admin'],
             name: 'Purchase History',
             nav: false
+          },
+          serviceCredentials: {
+            path: '/admin/platform/credentials',
+            component: 'CredentialsManagement',
+            roles: ['admin'],
+            name: 'Service Credentials',
+            nav: false
+          },
+          performance: {
+            path: '/admin/platform/performance',
+            component: 'PerformanceMonitor',
+            roles: ['admin'],
+            name: 'Performance Monitor',
+            nav: false
           }
         }
       }
@@ -779,6 +874,8 @@ export const routes = {
 
   // ==========================================================================
   // REDIRECTS - Backwards compatibility for old routes
+  // NOTE: this table is documentation — the implementation is the <Navigate>
+  // routes in App.jsx. Keep both in sync when adding/removing a redirect.
   // ==========================================================================
   redirects: [
     // Top-level legacy paths (commonly linked from external sources)
@@ -797,10 +894,10 @@ export const routes = {
     { from: '/admin/system/subscription-management', to: '/admin/billing/tiers', type: 'permanent' },
     { from: '/admin/system/app-management', to: '/admin/billing/apps', type: 'permanent' },
     { from: '/admin/system/pricing-management', to: '/admin/billing/pricing', type: 'permanent' },
-    { from: '/admin/system/billing', to: '/admin/billing/revenue', type: 'permanent' },
+    { from: '/admin/system/billing', to: '/admin/billing/system', type: 'permanent' },
     { from: '/admin/billing/dashboard', to: '/admin/billing/revenue', type: 'permanent' },
-    { from: '/admin/credits', to: '/admin/billing/credits', type: 'permanent' },
-    { from: '/admin/credits/purchase', to: '/admin/billing/credits', type: 'permanent' },
+    // NOTE: /admin/credits is a real page (CreditDashboard), not a redirect
+    { from: '/admin/credits/purchase', to: '/admin/billing/credits/purchase', type: 'permanent' },
     { from: '/admin/credits/tiers', to: '/admin/billing/tiers/compare', type: 'permanent' },
 
     // AI & Models
@@ -834,9 +931,9 @@ export const routes = {
 
     // Monitoring — old paths redirect to consolidated destinations
     { from: '/admin/analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
-    { from: '/admin/system/analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
-    { from: '/admin/system/usage-analytics', to: '/admin/monitoring/analytics', type: 'permanent' },
-    { from: '/admin/system/usage-metrics', to: '/admin/monitoring/analytics', type: 'permanent' },
+    { from: '/admin/system/analytics', to: '/admin/monitoring/analytics/advanced', type: 'permanent' },
+    { from: '/admin/system/usage-analytics', to: '/admin/monitoring/usage-analytics', type: 'permanent' },
+    { from: '/admin/system/usage-metrics', to: '/admin/monitoring/usage-metrics', type: 'permanent' },
 
     // Integrations
     { from: '/admin/platform/settings', to: '/admin/integrations/credentials', type: 'permanent' },
