@@ -47,6 +47,7 @@ const BillingAnalyticsTab = ({ dateRange, setDateRange }) => {
   const [revenueData, setRevenueData] = useState(null);
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [mrr, setMrr] = useState(null);
+  const [topCustomer, setTopCustomer] = useState(null);
 
   useEffect(() => {
     fetchBillingAnalytics();
@@ -55,72 +56,84 @@ const BillingAnalyticsTab = ({ dateRange, setDateRange }) => {
   const fetchBillingAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/billing/analytics/summary?range=' + dateRange, { credentials: 'include' });
-      const data = await response.json();
+      // Real DB-backed endpoints (the old /billing/analytics/summary route
+      // served hardcoded numbers)
+      const [dashRes, trendsRes, topRes] = await Promise.all([
+        fetch('/api/v1/billing/analytics/dashboard?days=30', { credentials: 'include' }),
+        fetch('/api/v1/billing/analytics/revenue/trends?period=month&limit=12', { credentials: 'include' }),
+        fetch('/api/v1/billing/analytics/customers/top?limit=1&metric=spend', { credentials: 'include' })
+      ]);
 
-      setBillingMetrics({
-        totalRevenue: data.total_revenue || 0,
-        activeSubscriptions: data.active_subscriptions || 0,
-        mrr: data.mrr || 0,
-        paymentSuccessRate: data.payment_success_rate || 0,
-      });
+      if (dashRes.ok) {
+        const data = await dashRes.json();
+        setBillingMetrics({
+          mrr: data.mrr ?? 0,
+          arr: data.arr ?? 0,
+          activeSubscriptions: data.active_subscriptions?.total ?? 0,
+          churnRate: data.churn_rate,
+        });
 
-      // Mock revenue trend data
-      setRevenueData({
-        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-        datasets: [
-          {
-            label: 'Revenue',
-            data: [1200, 1450, 1680, 1840],
-            borderColor: 'rgb(34, 197, 94)',
-            backgroundColor: 'rgba(34, 197, 94, 0.1)',
-            tension: 0.4,
-            fill: true,
-          },
-        ],
-      });
+        // Real subscription plan breakdown (platform / BYOK / hybrid)
+        const subs = data.active_subscriptions || {};
+        const planValues = [subs.platform || 0, subs.byok || 0, subs.hybrid || 0];
+        setSubscriptionData(planValues.some(v => v > 0) ? {
+          labels: ['Platform', 'BYOK', 'Hybrid'],
+          datasets: [
+            {
+              data: planValues,
+              backgroundColor: [
+                'rgba(59, 130, 246, 0.8)',
+                'rgba(168, 85, 247, 0.8)',
+                'rgba(251, 191, 36, 0.8)',
+              ],
+              borderWidth: 2,
+              borderColor: currentTheme === 'light' ? '#ffffff' : '#1f2937',
+            },
+          ],
+        } : null);
+      } else {
+        setBillingMetrics(null);
+        setSubscriptionData(null);
+      }
 
-      // Mock subscription breakdown
-      setSubscriptionData({
-        labels: ['Trial', 'Starter', 'Professional', 'Enterprise'],
-        datasets: [
-          {
-            data: [8, 52, 38, 14],
-            backgroundColor: [
-              'rgba(59, 130, 246, 0.8)',
-              'rgba(34, 197, 94, 0.8)',
-              'rgba(168, 85, 247, 0.8)',
-              'rgba(251, 191, 36, 0.8)',
-            ],
-            borderWidth: 2,
-            borderColor: currentTheme === 'light' ? '#ffffff' : '#1f2937',
-          },
-        ],
-      });
+      if (trendsRes.ok) {
+        const trends = await trendsRes.json();
+        const points = trends.data || [];
+        setRevenueData(points.length > 0 ? {
+          labels: points.map(p => String(p.period || '').slice(0, 7)),
+          datasets: [
+            {
+              label: 'New-subscription revenue',
+              data: points.map(p => p.revenue ?? 0),
+              borderColor: 'rgb(34, 197, 94)',
+              backgroundColor: 'rgba(34, 197, 94, 0.1)',
+              tension: 0.4,
+              fill: true,
+            },
+          ],
+        } : null);
+      } else {
+        setRevenueData(null);
+      }
 
-      // Mock MRR growth
-      setMrr({
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-        datasets: [
-          {
-            label: 'Monthly Recurring Revenue',
-            data: [3200, 3650, 4100, 4400, 4850, 5240],
-            borderColor: 'rgb(251, 191, 36)',
-            backgroundColor: 'rgba(251, 191, 36, 0.1)',
-            tension: 0.4,
-            fill: true,
-          },
-        ],
-      });
+      if (topRes.ok) {
+        const top = await topRes.json();
+        setTopCustomer(top.customers?.[0] || null);
+      } else {
+        setTopCustomer(null);
+      }
+
+      // Historical MRR is not tracked yet - show "No data available yet"
+      // instead of an invented growth curve.
+      setMrr(null);
     } catch (error) {
       console.error('Error fetching billing analytics:', error);
-      // Set fallback data
-      setBillingMetrics({
-        totalRevenue: 5240,
-        activeSubscriptions: 38,
-        mrr: 5240,
-        paymentSuccessRate: 98.5,
-      });
+      // Honest failure state - never demo numbers
+      setBillingMetrics(null);
+      setRevenueData(null);
+      setSubscriptionData(null);
+      setMrr(null);
+      setTopCustomer(null);
     } finally {
       setLoading(false);
     }
@@ -143,37 +156,33 @@ const BillingAnalyticsTab = ({ dateRange, setDateRange }) => {
         <DateRangeSelector value={dateRange} onChange={setDateRange} />
       </div>
 
-      {/* Metric Cards */}
+      {/* Metric Cards - real values only; "—" when a source is unavailable */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          icon={CurrencyDollarIcon}
-          label="Total Revenue"
-          value={`$${(billingMetrics?.totalRevenue || 0).toLocaleString()}`}
-          color="green"
-          loading={loading}
-          trend="up"
-          trendValue="+18%"
-        />
         <MetricCard
           icon={ArrowTrendingUpIcon}
           label="Monthly Recurring Revenue"
-          value={`$${(billingMetrics?.mrr || 0).toLocaleString()}`}
+          value={billingMetrics?.mrr != null ? `$${billingMetrics.mrr.toLocaleString()}` : '—'}
           color="yellow"
           loading={loading}
-          trend="up"
-          trendValue="+8%"
+        />
+        <MetricCard
+          icon={CurrencyDollarIcon}
+          label="Annual Recurring Revenue"
+          value={billingMetrics?.arr != null ? `$${billingMetrics.arr.toLocaleString()}` : '—'}
+          color="green"
+          loading={loading}
         />
         <MetricCard
           icon={ChartPieIcon}
           label="Active Subscriptions"
-          value={billingMetrics?.activeSubscriptions || 0}
+          value={billingMetrics?.activeSubscriptions != null ? billingMetrics.activeSubscriptions : '—'}
           color="purple"
           loading={loading}
         />
         <MetricCard
           icon={CreditCardIcon}
-          label="Payment Success Rate"
-          value={`${(billingMetrics?.paymentSuccessRate || 0)}%`}
+          label="Churn Rate (30d)"
+          value={billingMetrics?.churnRate != null ? `${billingMetrics.churnRate}%` : '—'}
           color="blue"
           loading={loading}
         />
@@ -196,7 +205,7 @@ const BillingAnalyticsTab = ({ dateRange, setDateRange }) => {
         <div className={`${bgClass} rounded-xl p-6`}>
           <AnalyticsChart
             type="pie"
-            title="Subscription Tier Distribution"
+            title="Subscription Plan Distribution"
             data={subscriptionData}
             loading={loading}
             height="300px"
@@ -215,63 +224,43 @@ const BillingAnalyticsTab = ({ dateRange, setDateRange }) => {
         />
       </div>
 
-      {/* Key Metrics Table */}
+      {/* Key Metrics Table - no per-tier revenue endpoint exists yet */}
       <div className={`${bgClass} rounded-xl p-6`}>
         <h3 className={`text-lg font-semibold ${textClass} mb-4`}>Revenue Breakdown</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className={`text-left py-3 px-4 ${subtextClass} font-medium`}>Tier</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Subscribers</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Price</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>MRR</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>ARR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { tier: 'Trial', subs: 8, price: 1, mrr: 8, arr: 96 },
-                { tier: 'Starter', subs: 52, price: 19, mrr: 988, arr: 11856 },
-                { tier: 'Professional', subs: 38, price: 49, mrr: 1862, arr: 22344 },
-                { tier: 'Enterprise', subs: 14, price: 99, mrr: 1386, arr: 16632 },
-              ].map((row, index) => (
-                <tr key={index} className="border-b border-gray-800 hover:bg-gray-800/30">
-                  <td className={`py-3 px-4 ${textClass} font-medium`}>{row.tier}</td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>{row.subs}</td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>${row.price}</td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>${row.mrr.toLocaleString()}</td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>${row.arr.toLocaleString()}</td>
-                </tr>
-              ))}
-              <tr className="font-bold">
-                <td className={`py-3 px-4 ${textClass}`}>Total</td>
-                <td className={`py-3 px-4 text-right ${textClass}`}>112</td>
-                <td className={`py-3 px-4 text-right ${textClass}`}>-</td>
-                <td className={`py-3 px-4 text-right ${textClass}`}>$4,244</td>
-                <td className={`py-3 px-4 text-right ${textClass}`}>$50,928</td>
-              </tr>
-            </tbody>
-          </table>
+        <div className="py-8 text-center">
+          <p className={`text-sm ${subtextClass}`}>
+            Per-tier revenue breakdown is not available yet.
+          </p>
         </div>
       </div>
 
-      {/* Churn Analysis */}
+      {/* Churn Analysis - real values or an explicit "—" */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className={`${bgClass} rounded-xl p-6`}>
-          <h4 className={`text-sm ${subtextClass} mb-2`}>Churn Rate</h4>
-          <p className={`text-3xl font-bold ${textClass}`}>2.8%</p>
-          <p className="text-sm text-red-400 mt-2">↓ 0.5% from last month</p>
+          <h4 className={`text-sm ${subtextClass} mb-2`}>Churn Rate (30d)</h4>
+          <p className={`text-3xl font-bold ${textClass}`}>
+            {billingMetrics?.churnRate != null ? `${billingMetrics.churnRate}%` : '—'}
+          </p>
         </div>
         <div className={`${bgClass} rounded-xl p-6`}>
           <h4 className={`text-sm ${subtextClass} mb-2`}>Avg Customer LTV</h4>
-          <p className={`text-3xl font-bold ${textClass}`}>$1,247</p>
-          <p className="text-sm text-green-400 mt-2">↑ $120 from last month</p>
+          <p className={`text-3xl font-bold ${textClass}`}>—</p>
+          <p className="text-sm text-gray-500 mt-2">Not tracked yet</p>
         </div>
         <div className={`${bgClass} rounded-xl p-6`}>
-          <h4 className={`text-sm ${subtextClass} mb-2`}>Top Customers</h4>
-          <p className={`text-3xl font-bold ${textClass}`}>14</p>
-          <p className="text-sm text-gray-400 mt-2">Enterprise tier users</p>
+          <h4 className={`text-sm ${subtextClass} mb-2`}>Top Customer by Spend</h4>
+          {topCustomer ? (
+            <>
+              <p className={`text-2xl font-bold ${textClass} truncate`} title={topCustomer.org_name}>
+                {topCustomer.org_name || '—'}
+              </p>
+              <p className="text-sm text-gray-400 mt-2">
+                {topCustomer.monthly_spend != null ? `$${Number(topCustomer.monthly_spend).toLocaleString()}/mo` : ''}
+              </p>
+            </>
+          ) : (
+            <p className={`text-3xl font-bold ${textClass}`}>—</p>
+          )}
         </div>
       </div>
     </div>

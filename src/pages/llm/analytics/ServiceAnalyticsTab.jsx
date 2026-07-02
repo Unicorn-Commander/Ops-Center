@@ -44,6 +44,7 @@ const ServiceAnalyticsTab = ({ dateRange, setDateRange }) => {
   const { currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [serviceMetrics, setServiceMetrics] = useState(null);
+  const [services, setServices] = useState([]);
   const [uptimeData, setUptimeData] = useState(null);
   const [resourceData, setResourceData] = useState(null);
   const [responseTimeData, setResponseTimeData] = useState(null);
@@ -55,74 +56,38 @@ const ServiceAnalyticsTab = ({ dateRange, setDateRange }) => {
   const fetchServiceAnalytics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/services/analytics?range=' + dateRange, { credentials: 'include' });
-      const statusResponse = await fetch('/api/v1/system/status', { credentials: 'include' });
+      // NOTE: GET /api/v1/services/analytics does not exist. The only real
+      // source today is the container health endpoint.
+      const statusResponse = await fetch('/api/v1/services/status', { credentials: 'include' });
+      if (!statusResponse.ok) throw new Error(`HTTP ${statusResponse.status}`);
 
-      const data = await response.json();
       const statusData = await statusResponse.json();
+      const serviceList = statusData.services || [];
 
+      setServices(serviceList);
       setServiceMetrics({
-        servicesHealthy: statusData.services_healthy || 11,
-        servicesTotal: statusData.services_total || 12,
-        avgUptime: data.avg_uptime || 99.8,
-        avgResponseTime: data.avg_response_time || 145,
+        servicesHealthy: serviceList.filter(s => s.status === 'healthy').length,
+        servicesTotal: serviceList.length,
+        // Aggregated uptime / response-time / error-rate metrics are not
+        // collected yet - rendered as "—", never invented.
+        avgUptime: null,
+        avgResponseTime: null,
       });
 
-      // Mock uptime data
-      setUptimeData({
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        datasets: [
-          {
-            label: 'Uptime %',
-            data: [99.9, 100, 99.8, 99.9, 100, 99.7, 99.9],
-            borderColor: 'rgb(34, 197, 94)',
-            backgroundColor: 'rgba(34, 197, 94, 0.1)',
-            tension: 0.4,
-            fill: true,
-          },
-        ],
-      });
-
-      // Mock resource utilization
-      setResourceData({
-        labels: ['Keycloak', 'PostgreSQL', 'Redis', 'LiteLLM', 'Ops-Center', 'Brigade'],
-        datasets: [
-          {
-            label: 'CPU %',
-            data: [12, 25, 8, 45, 18, 22],
-            backgroundColor: 'rgba(139, 92, 246, 0.8)',
-          },
-          {
-            label: 'Memory %',
-            data: [28, 62, 15, 78, 35, 42],
-            backgroundColor: 'rgba(236, 72, 153, 0.8)',
-          },
-        ],
-      });
-
-      // Mock response time
-      setResponseTimeData({
-        labels: Array.from({ length: 24 }, (_, i) => `${i}:00`),
-        datasets: [
-          {
-            label: 'Response Time (ms)',
-            data: Array.from({ length: 24 }, () => Math.floor(Math.random() * 100) + 100),
-            borderColor: 'rgb(59, 130, 246)',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            tension: 0.4,
-            fill: true,
-          },
-        ],
-      });
+      // No uptime-history, per-service resource, or response-time-history
+      // endpoints exist yet. Leave the charts empty ("No data available yet")
+      // instead of rendering invented series.
+      setUptimeData(null);
+      setResourceData(null);
+      setResponseTimeData(null);
     } catch (error) {
       console.error('Error fetching service analytics:', error);
-      // Set fallback data
-      setServiceMetrics({
-        servicesHealthy: 11,
-        servicesTotal: 12,
-        avgUptime: 99.8,
-        avgResponseTime: 145,
-      });
+      // Honest failure state - never demo numbers
+      setServiceMetrics(null);
+      setServices([]);
+      setUptimeData(null);
+      setResourceData(null);
+      setResponseTimeData(null);
     } finally {
       setLoading(false);
     }
@@ -145,35 +110,33 @@ const ServiceAnalyticsTab = ({ dateRange, setDateRange }) => {
         <DateRangeSelector value={dateRange} onChange={setDateRange} />
       </div>
 
-      {/* Metric Cards */}
+      {/* Metric Cards - real values only; "—" when a metric is not collected yet */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           icon={CheckCircleIcon}
           label="Services Healthy"
-          value={`${serviceMetrics?.servicesHealthy}/${serviceMetrics?.servicesTotal}`}
+          value={serviceMetrics ? `${serviceMetrics.servicesHealthy}/${serviceMetrics.servicesTotal}` : '—'}
           color="green"
           loading={loading}
         />
         <MetricCard
           icon={ServerIcon}
           label="Avg Uptime"
-          value={`${(serviceMetrics?.avgUptime || 0)}%`}
+          value={serviceMetrics?.avgUptime != null ? `${serviceMetrics.avgUptime}%` : '—'}
           color="blue"
           loading={loading}
-          trend="up"
-          trendValue="+0.2%"
         />
         <MetricCard
           icon={ClockIcon}
           label="Avg Response Time"
-          value={`${serviceMetrics?.avgResponseTime}ms`}
+          value={serviceMetrics?.avgResponseTime != null ? `${serviceMetrics.avgResponseTime}ms` : '—'}
           color="purple"
           loading={loading}
         />
         <MetricCard
           icon={ExclamationTriangleIcon}
           label="Error Rate"
-          value="0.12%"
+          value="—"
           color="yellow"
           loading={loading}
         />
@@ -215,72 +178,72 @@ const ServiceAnalyticsTab = ({ dateRange, setDateRange }) => {
         />
       </div>
 
-      {/* Service Status Table */}
+      {/* Service Status Table - real container health; request/error counters
+          are not collected yet, so those columns show "—" */}
       <div className={`${bgClass} rounded-xl p-6`}>
         <h3 className={`text-lg font-semibold ${textClass} mb-4`}>Service Status Details</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className={`text-left py-3 px-4 ${subtextClass} font-medium`}>Service</th>
-                <th className={`text-center py-3 px-4 ${subtextClass} font-medium`}>Status</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Uptime</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Requests</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Errors</th>
-                <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Avg Response</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { name: 'Keycloak', status: 'healthy', uptime: 99.9, requests: 15234, errors: 12, response: 125 },
-                { name: 'PostgreSQL', status: 'healthy', uptime: 100, requests: 42156, errors: 8, response: 45 },
-                { name: 'Redis', status: 'healthy', uptime: 99.8, requests: 98234, errors: 156, response: 12 },
-                { name: 'LiteLLM', status: 'healthy', uptime: 99.7, requests: 8945, errors: 24, response: 342 },
-                { name: 'Ops-Center', status: 'healthy', uptime: 99.9, requests: 5234, errors: 3, response: 98 },
-                { name: 'Brigade', status: 'degraded', uptime: 98.5, requests: 1234, errors: 45, response: 456 },
-              ].map((service, index) => (
-                <tr key={index} className="border-b border-gray-800 hover:bg-gray-800/30">
-                  <td className={`py-3 px-4 ${textClass} font-medium`}>{service.name}</td>
-                  <td className="py-3 px-4 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                      service.status === 'healthy'
-                        ? 'bg-green-500/20 text-green-400'
-                        : service.status === 'degraded'
-                        ? 'bg-yellow-500/20 text-yellow-400'
-                        : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {service.status}
-                    </span>
-                  </td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>{service.uptime}%</td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>{service.requests.toLocaleString()}</td>
-                  <td className={`py-3 px-4 text-right ${service.errors > 30 ? 'text-red-400' : textClass}`}>
-                    {service.errors}
-                  </td>
-                  <td className={`py-3 px-4 text-right ${textClass}`}>{service.response}ms</td>
+        {services.length === 0 ? (
+          <p className={`text-sm ${subtextClass} py-6 text-center`}>No service status available</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className={`text-left py-3 px-4 ${subtextClass} font-medium`}>Service</th>
+                  <th className={`text-center py-3 px-4 ${subtextClass} font-medium`}>Status</th>
+                  <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Uptime</th>
+                  <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Requests</th>
+                  <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Errors</th>
+                  <th className={`text-right py-3 px-4 ${subtextClass} font-medium`}>Avg Response</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {services.map((service, index) => (
+                  <tr key={index} className="border-b border-gray-800 hover:bg-gray-800/30">
+                    <td className={`py-3 px-4 ${textClass} font-medium`}>{service.name}</td>
+                    <td className="py-3 px-4 text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        service.status === 'healthy'
+                          ? 'bg-green-500/20 text-green-400'
+                          : service.status === 'degraded'
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {service.status}
+                      </span>
+                    </td>
+                    <td className={`py-3 px-4 text-right ${textClass}`}>
+                      {service.uptime_percentage != null ? `${service.uptime_percentage}%` : '—'}
+                    </td>
+                    <td className={`py-3 px-4 text-right ${textClass}`}>—</td>
+                    <td className={`py-3 px-4 text-right ${textClass}`}>—</td>
+                    <td className={`py-3 px-4 text-right ${textClass}`}>
+                      {service.response_time_ms != null ? `${service.response_time_ms}ms` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Error Summary */}
+      {/* Error Summary - error metrics are not collected yet */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className={`${bgClass} rounded-xl p-6`}>
           <h4 className={`text-sm ${subtextClass} mb-2`}>Total Errors (24h)</h4>
-          <p className={`text-3xl font-bold ${textClass}`}>248</p>
-          <p className="text-sm text-green-400 mt-2">↓ 15% from yesterday</p>
+          <p className={`text-3xl font-bold ${textClass}`}>—</p>
+          <p className="text-sm text-gray-500 mt-2">Not tracked yet</p>
         </div>
         <div className={`${bgClass} rounded-xl p-6`}>
           <h4 className={`text-sm ${subtextClass} mb-2`}>Avg Error Rate</h4>
-          <p className={`text-3xl font-bold ${textClass}`}>0.12%</p>
-          <p className="text-sm text-green-400 mt-2">Below 0.5% threshold</p>
+          <p className={`text-3xl font-bold ${textClass}`}>—</p>
+          <p className="text-sm text-gray-500 mt-2">Not tracked yet</p>
         </div>
         <div className={`${bgClass} rounded-xl p-6`}>
           <h4 className={`text-sm ${subtextClass} mb-2`}>Critical Incidents</h4>
-          <p className={`text-3xl font-bold ${textClass}`}>0</p>
-          <p className="text-sm text-gray-400 mt-2">No incidents this week</p>
+          <p className={`text-3xl font-bold ${textClass}`}>—</p>
+          <p className="text-sm text-gray-500 mt-2">Not tracked yet</p>
         </div>
       </div>
     </div>

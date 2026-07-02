@@ -236,12 +236,15 @@ export default function SystemBillingOverview() {
             <CurrencyDollarIcon className="h-5 w-5 text-green-500" />
           </div>
           <div className={`text-3xl font-bold ${theme.text.primary}`}>
-            {formatCurrency(systemData?.mrr || calculateMRR())}
+            {formatCurrency(systemData?.mrr ?? calculateMRR())}
           </div>
-          <div className="flex items-center gap-1 mt-2 text-green-400 text-sm">
-            <ArrowTrendingUpIcon className="h-4 w-4" />
-            {systemData?.mrr_growth || '+15'}%
-          </div>
+          {/* Only show growth when the API actually reports it - never invent a delta */}
+          {systemData?.mrr_growth != null && (
+            <div className="flex items-center gap-1 mt-2 text-green-400 text-sm">
+              <ArrowTrendingUpIcon className="h-4 w-4" />
+              {systemData.mrr_growth}%
+            </div>
+          )}
         </div>
 
         <div className={`${theme.card} rounded-xl p-6 border border-blue-500/20`}>
@@ -250,12 +253,14 @@ export default function SystemBillingOverview() {
             <CurrencyDollarIcon className="h-5 w-5 text-blue-500" />
           </div>
           <div className={`text-3xl font-bold ${theme.text.primary}`}>
-            {formatCurrency(systemData?.arr || calculateARR())}
+            {formatCurrency(systemData?.arr ?? calculateARR())}
           </div>
-          <div className="flex items-center gap-1 mt-2 text-blue-400 text-sm">
-            <ArrowTrendingUpIcon className="h-4 w-4" />
-            {systemData?.arr_growth || '+15'}%
-          </div>
+          {systemData?.arr_growth != null && (
+            <div className="flex items-center gap-1 mt-2 text-blue-400 text-sm">
+              <ArrowTrendingUpIcon className="h-4 w-4" />
+              {systemData.arr_growth}%
+            </div>
+          )}
         </div>
 
         <div className={`${theme.card} rounded-xl p-6 border border-purple-500/20`}>
@@ -264,12 +269,14 @@ export default function SystemBillingOverview() {
             <BuildingOfficeIcon className="h-5 w-5 text-purple-500" />
           </div>
           <div className={`text-3xl font-bold ${theme.text.primary}`}>
-            {systemData?.active_orgs || organizations.length}
+            {systemData?.active_orgs ?? organizations.length}
           </div>
-          <div className="flex items-center gap-1 mt-2 text-purple-400 text-sm">
-            <ArrowTrendingUpIcon className="h-4 w-4" />
-            {systemData?.org_growth || '+3'} this month
-          </div>
+          {systemData?.org_growth != null && (
+            <div className="flex items-center gap-1 mt-2 text-purple-400 text-sm">
+              <ArrowTrendingUpIcon className="h-4 w-4" />
+              {systemData.org_growth} this month
+            </div>
+          )}
         </div>
 
         <div className={`${theme.card} rounded-xl p-6 border border-yellow-500/20`}>
@@ -278,10 +285,10 @@ export default function SystemBillingOverview() {
             <BanknotesIcon className="h-5 w-5 text-yellow-500" />
           </div>
           <div className={`text-3xl font-bold ${theme.text.primary}`}>
-            {formatLargeNumber(systemData?.total_credits || 2300000)}
+            {systemData?.total_credits != null ? formatLargeNumber(systemData.total_credits) : '—'}
           </div>
           <div className="flex items-center gap-1 mt-2 text-yellow-400 text-sm">
-            outstanding
+            {systemData?.total_credits != null ? 'outstanding' : 'no data'}
           </div>
         </div>
       </motion.div>

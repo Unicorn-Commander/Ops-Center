@@ -136,7 +136,10 @@ export default function CriticalServicesCard({
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        // Give session expiry a human-readable message instead of raw "HTTP 401"
+        throw new Error(response.status === 401
+          ? 'Session expired — sign in again'
+          : `HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -267,7 +270,7 @@ export default function CriticalServicesCard({
       {/* Error message */}
       {error && (
         <p className="text-xs text-red-400 mt-2">
-          Failed to fetch: {error}
+          {error.startsWith('Session expired') ? error : `Failed to fetch: ${error}`}
         </p>
       )}
 

@@ -76,11 +76,11 @@ export const extensionsApi = {
     return apiCall('/cart');
   },
 
-  // Add item to cart
+  // Add item to cart (backend expects query parameters, not a JSON body)
   addToCart: async (addon_id, quantity = 1) => {
-    return apiCall('/cart/add', {
-      method: 'POST',
-      body: JSON.stringify({ addon_id, quantity })
+    const params = new URLSearchParams({ addon_id: String(addon_id), quantity: String(quantity) });
+    return apiCall(`/cart/add?${params.toString()}`, {
+      method: 'POST'
     });
   },
 
@@ -91,10 +91,10 @@ export const extensionsApi = {
     });
   },
 
-  // Update cart item quantity
+  // Update cart item quantity (backend route is PUT)
   updateCartItem: async (item_id, quantity) => {
     return apiCall(`/cart/${item_id}`, {
-      method: 'PATCH',
+      method: 'PUT',
       body: JSON.stringify({ quantity })
     });
   },
@@ -154,9 +154,9 @@ export const extensionsApi = {
    * PROMO CODE ENDPOINTS
    */
 
-  // Validate and apply promo code
+  // Validate and apply promo code (real route lives under /extensions)
   validatePromoCode: async (code) => {
-    return apiCall('/cart/apply-promo', {
+    return apiCall('/extensions/apply-promo', {
       method: 'POST',
       body: JSON.stringify({ code })
     });

@@ -4,25 +4,24 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ShoppingCartIcon,
   CheckCircleIcon,
-  LockClosedIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
   SparklesIcon,
   ServerIcon,
-  MicrophoneIcon,
-  SpeakerWaveIcon,
   UsersIcon,
   CodeBracketIcon,
   ChartBarIcon,
-  BoltIcon,
   CreditCardIcon,
   XMarkIcon,
   ArrowRightIcon,
+  ArrowPathIcon,
+  ExclamationTriangleIcon,
   TagIcon
 } from '@heroicons/react/24/outline';
 import { getGlassmorphismStyles } from '../styles/glassmorphism';
 import { useTheme } from '../contexts/ThemeContext';
-import { useToast } from '../components/Toast';
+import { useExtensions } from '../contexts/ExtensionsContext';
+import extensionsApi from '../api/extensionsApi';
 
 // Animation variants
 const containerVariants = {
@@ -44,200 +43,37 @@ const itemVariants = {
   }
 };
 
-// Add-on categories
-const CATEGORIES = [
-  { id: 'all', label: 'All Extensions', icon: SparklesIcon },
-  { id: 'services', label: 'Services', icon: ServerIcon },
-  { id: 'tools', label: 'Development Tools', icon: CodeBracketIcon },
-  { id: 'analytics', label: 'Analytics', icon: ChartBarIcon },
-  { id: 'enterprise', label: 'Enterprise', icon: UsersIcon }
-];
-
 // Sort options
 const SORT_OPTIONS = [
-  { id: 'popular', label: 'Most Popular' },
+  { id: 'name', label: 'Name (A-Z)' },
   { id: 'price-low', label: 'Price: Low to High' },
-  { id: 'price-high', label: 'Price: High to Low' },
-  { id: 'name', label: 'Name (A-Z)' }
+  { id: 'price-high', label: 'Price: High to Low' }
 ];
 
-// Mock add-ons data (will be replaced with API call)
-const ADDONS_DATA = [
-  {
-    id: 'tts',
-    name: 'Text-to-Speech Service',
-    category: 'services',
-    price: 5.00,
-    period: 'month',
-    icon: SpeakerWaveIcon,
-    iconColor: 'from-pink-500 to-rose-500',
-    description: 'Professional-grade voice synthesis with 20+ voices and emotion control',
-    features: [
-      'OpenAI-compatible API',
-      '20+ natural voices',
-      'Emotion and speed control',
-      'SSML support',
-      'Multiple languages',
-      'High-quality audio output'
-    ],
-    popular: true,
-    status: 'available' // available, purchased, locked
-  },
-  {
-    id: 'stt',
-    name: 'Speech-to-Text Service',
-    category: 'services',
-    price: 5.00,
-    period: 'month',
-    icon: MicrophoneIcon,
-    iconColor: 'from-blue-500 to-cyan-500',
-    description: 'Advanced speech recognition with speaker diarization and 100+ languages',
-    features: [
-      'OpenAI-compatible API',
-      'Speaker diarization',
-      '100+ languages',
-      'Word-level timestamps',
-      'Web interface included',
-      'Real-time transcription'
-    ],
-    popular: true,
-    status: 'available'
-  },
-  {
-    id: 'brigade',
-    name: 'Brigade Agent Platform',
-    category: 'tools',
-    price: 10.00,
-    period: 'month',
-    icon: UsersIcon,
-    iconColor: 'from-purple-500 to-indigo-500',
-    description: 'Build and manage AI agents with The General orchestrator and 47+ pre-built specialists',
-    features: [
-      '47+ pre-built agents',
-      'The General orchestrator',
-      'Gunny conversational builder',
-      'A2A protocol support',
-      'Multi-provider LLM support',
-      'Built-in monitoring'
-    ],
-    popular: true,
-    status: 'available'
-  },
-  {
-    id: 'bolt',
-    name: 'Bolt.DIY Development',
-    category: 'tools',
-    price: 15.00,
-    period: 'month',
-    icon: CodeBracketIcon,
-    iconColor: 'from-green-500 to-emerald-500',
-    description: 'AI-powered development environment with deep SSO integration',
-    features: [
-      'AI coding assistant',
-      'Full IDE capabilities',
-      'Keycloak SSO integration',
-      'Real-time collaboration',
-      'Version control',
-      'Code templates'
-    ],
-    status: 'available'
-  },
-  {
-    id: 'presenton',
-    name: 'Presenton AI Presentations',
-    category: 'tools',
-    price: 12.00,
-    period: 'month',
-    icon: SparklesIcon,
-    iconColor: 'from-amber-500 to-orange-500',
-    description: 'Generate professional presentations with AI, templates, and web grounding',
-    features: [
-      'AI slide generation',
-      'Professional templates',
-      'Web content grounding',
-      'PPTX/PDF export',
-      'Image integration',
-      'Custom branding'
-    ],
-    status: 'available'
-  },
-  {
-    id: 'analytics-advanced',
-    name: 'Advanced Analytics',
-    category: 'analytics',
-    price: 20.00,
-    period: 'month',
-    icon: ChartBarIcon,
-    iconColor: 'from-violet-500 to-purple-500',
-    description: 'Comprehensive usage analytics, cost tracking, and performance monitoring',
-    features: [
-      'Real-time dashboards',
-      'Cost optimization insights',
-      'Custom reports',
-      'Data export (CSV/JSON)',
-      'API usage tracking',
-      'Performance metrics'
-    ],
-    status: 'available'
-  },
-  {
-    id: 'grafana-monitoring',
-    name: 'Grafana Monitoring',
-    category: 'analytics',
-    price: 8.00,
-    period: 'month',
-    icon: ChartBarIcon,
-    iconColor: 'from-orange-500 to-red-500',
-    description: 'Professional monitoring with Grafana dashboards and Prometheus metrics',
-    features: [
-      'Pre-built dashboards',
-      'Prometheus integration',
-      'Alert management',
-      'Custom visualizations',
-      'Metric aggregation',
-      'Historical data retention'
-    ],
-    status: 'available'
-  },
-  {
-    id: 'team-management',
-    name: 'Team Management',
-    category: 'enterprise',
-    price: 25.00,
-    period: 'month',
-    icon: UsersIcon,
-    iconColor: 'from-cyan-500 to-blue-500',
-    description: 'Advanced team collaboration with 10 seats, role management, and audit logs',
-    features: [
-      'Up to 10 team members',
-      'Role-based access control',
-      'Audit logging',
-      'Team workspaces',
-      'Resource sharing',
-      'Activity monitoring'
-    ],
-    status: 'available'
-  },
-  {
-    id: 'enterprise-support',
-    name: 'Enterprise Support',
-    category: 'enterprise',
-    price: 50.00,
-    period: 'month',
-    icon: BoltIcon,
-    iconColor: 'from-yellow-500 to-amber-500',
-    description: 'Priority support with 24/7 availability, dedicated account manager, and SLA',
-    features: [
-      '24/7 priority support',
-      'Dedicated account manager',
-      '99.9% SLA guarantee',
-      'Priority bug fixes',
-      'Custom integrations',
-      'Onboarding assistance'
-    ],
-    status: 'available'
+// Purely presentational icon/color per category (data itself comes from the API)
+const CATEGORY_STYLES = {
+  'ai-services': { icon: SparklesIcon, color: 'from-pink-500 to-rose-500' },
+  services: { icon: ServerIcon, color: 'from-blue-500 to-cyan-500' },
+  infrastructure: { icon: ServerIcon, color: 'from-green-500 to-emerald-500' },
+  tools: { icon: CodeBracketIcon, color: 'from-purple-500 to-indigo-500' },
+  analytics: { icon: ChartBarIcon, color: 'from-violet-500 to-purple-500' },
+  enterprise: { icon: UsersIcon, color: 'from-cyan-500 to-blue-500' }
+};
+
+const getCategoryStyle = (category) =>
+  CATEGORY_STYLES[(category || '').toLowerCase()] || { icon: SparklesIcon, color: 'from-blue-500 to-cyan-500' };
+
+// Normalize the JSONB features column into a display list of strings
+const normalizeFeatures = (features) => {
+  if (!features) return [];
+  if (Array.isArray(features)) return features.map(String);
+  if (typeof features === 'object') {
+    return Object.entries(features).map(([key, value]) =>
+      value === true ? key : `${key}: ${value}`
+    );
   }
-];
+  return [String(features)];
+};
 
 // Format currency
 const formatCurrency = (amount) => {
@@ -247,11 +83,16 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
+const formatBillingPeriod = (billingType) => {
+  if (!billingType) return 'month';
+  return billingType === 'one_time' ? 'one-time' : billingType.replace(/_/g, ' ');
+};
+
 // Add-on card component
-const AddonCard = ({ addon, onAddToCart, onPurchased, highlighted, theme }) => {
+const AddonCard = ({ addon, onAddToCart, inCart, highlighted, theme }) => {
   const glassStyles = getGlassmorphismStyles(theme.currentTheme);
   const isPurchased = addon.status === 'purchased';
-  const isLocked = addon.status === 'locked';
+  const { icon: Icon, color } = getCategoryStyle(addon.category);
 
   return (
     <motion.div
@@ -261,16 +102,9 @@ const AddonCard = ({ addon, onAddToCart, onPurchased, highlighted, theme }) => {
         highlighted ? 'ring-2 ring-yellow-500 ring-offset-2 ring-offset-gray-900' : ''
       } ${isPurchased ? 'opacity-75' : ''}`}
     >
-      {/* Popular badge */}
-      {addon.popular && !isPurchased && (
-        <div className="absolute -top-3 -right-3 bg-gradient-to-r from-yellow-500 to-amber-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-          🔥 Popular
-        </div>
-      )}
-
       {/* Icon */}
-      <div className={`w-16 h-16 bg-gradient-to-br ${addon.iconColor} rounded-2xl flex items-center justify-center shadow-2xl mb-4`}>
-        <addon.icon className="h-8 w-8 text-white" />
+      <div className={`w-16 h-16 bg-gradient-to-br ${color} rounded-2xl flex items-center justify-center shadow-2xl mb-4`}>
+        <Icon className="h-8 w-8 text-white" />
       </div>
 
       {/* Title & Price */}
@@ -294,19 +128,21 @@ const AddonCard = ({ addon, onAddToCart, onPurchased, highlighted, theme }) => {
       </p>
 
       {/* Features list */}
-      <ul className="space-y-2 mb-6">
-        {addon.features.slice(0, 4).map((feature, index) => (
-          <li key={index} className={`flex items-start gap-2 text-sm ${theme.text.secondary}`}>
-            <CheckCircleIcon className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
-            <span>{feature}</span>
-          </li>
-        ))}
-        {addon.features.length > 4 && (
-          <li className={`text-xs ${theme.text.accent} italic`}>
-            +{addon.features.length - 4} more features
-          </li>
-        )}
-      </ul>
+      {addon.features.length > 0 && (
+        <ul className="space-y-2 mb-6">
+          {addon.features.slice(0, 4).map((feature, index) => (
+            <li key={index} className={`flex items-start gap-2 text-sm ${theme.text.secondary}`}>
+              <CheckCircleIcon className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
+              <span>{feature}</span>
+            </li>
+          ))}
+          {addon.features.length > 4 && (
+            <li className={`text-xs ${theme.text.accent} italic`}>
+              +{addon.features.length - 4} more features
+            </li>
+          )}
+        </ul>
+      )}
 
       {/* Action button */}
       {isPurchased ? (
@@ -317,13 +153,13 @@ const AddonCard = ({ addon, onAddToCart, onPurchased, highlighted, theme }) => {
           <CheckCircleIcon className="h-5 w-5" />
           Purchased
         </button>
-      ) : isLocked ? (
+      ) : inCart ? (
         <button
           disabled
-          className="w-full py-3 px-4 bg-gray-500/20 text-gray-400 rounded-lg font-semibold flex items-center justify-center gap-2 cursor-not-allowed"
+          className="w-full py-3 px-4 bg-blue-500/20 text-blue-400 rounded-lg font-semibold flex items-center justify-center gap-2 cursor-not-allowed"
         >
-          <LockClosedIcon className="h-5 w-5" />
-          Upgrade Required
+          <ShoppingCartIcon className="h-5 w-5" />
+          In Cart
         </button>
       ) : (
         <button
@@ -338,12 +174,12 @@ const AddonCard = ({ addon, onAddToCart, onPurchased, highlighted, theme }) => {
   );
 };
 
-// Shopping cart sidebar
+// Shopping cart sidebar - driven by the server-side cart
 const ShoppingCart = ({ cart, onRemove, onCheckout, onClose, theme }) => {
   const glassStyles = getGlassmorphismStyles(theme.currentTheme);
-  const subtotal = cart.reduce((sum, item) => sum + item.price, 0);
+  const items = cart.items || [];
 
-  if (cart.length === 0) {
+  if (items.length === 0) {
     return null;
   }
 
@@ -369,36 +205,40 @@ const ShoppingCart = ({ cart, onRemove, onCheckout, onClose, theme }) => {
           </button>
         </div>
         <p className={`text-sm ${theme.text.secondary}`}>
-          {cart.length} {cart.length === 1 ? 'item' : 'items'}
+          {items.length} {items.length === 1 ? 'item' : 'items'}
         </p>
       </div>
 
       {/* Cart items */}
       <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
-        {cart.map((item) => (
-          <div
-            key={item.id}
-            className={`${glassStyles.card} rounded-lg p-4 flex items-start gap-3`}
-          >
-            <div className={`w-10 h-10 bg-gradient-to-br ${item.iconColor} rounded-lg flex items-center justify-center flex-shrink-0`}>
-              <item.icon className="h-5 w-5 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className={`text-sm font-semibold ${theme.text.primary} truncate`}>
-                {item.name}
-              </h4>
-              <p className={`text-xs ${theme.text.secondary}`}>
-                {formatCurrency(item.price)}/{item.period}
-              </p>
-            </div>
-            <button
-              onClick={() => onRemove(item.id)}
-              className="p-1 hover:bg-red-500/20 rounded transition-colors"
+        {items.map((item) => {
+          const { icon: ItemIcon, color } = getCategoryStyle(item.category);
+          return (
+            <div
+              key={item.cart_item_id}
+              className={`${glassStyles.card} rounded-lg p-4 flex items-start gap-3`}
             >
-              <XMarkIcon className="h-5 w-5 text-red-400" />
-            </button>
-          </div>
-        ))}
+              <div className={`w-10 h-10 bg-gradient-to-br ${color} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                <ItemIcon className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className={`text-sm font-semibold ${theme.text.primary} truncate`}>
+                  {item.name}
+                </h4>
+                <p className={`text-xs ${theme.text.secondary}`}>
+                  {formatCurrency(Number(item.base_price))}
+                  {item.quantity > 1 ? ` × ${item.quantity}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => onRemove(item.cart_item_id)}
+                className="p-1 hover:bg-red-500/20 rounded transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5 text-red-400" />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Subtotal */}
@@ -408,12 +248,9 @@ const ShoppingCart = ({ cart, onRemove, onCheckout, onClose, theme }) => {
             Subtotal
           </span>
           <span className={`text-2xl font-bold ${theme.text.primary}`}>
-            {formatCurrency(subtotal)}
+            {formatCurrency(Number(cart.subtotal ?? cart.total ?? 0))}
           </span>
         </div>
-        <p className={`text-xs ${theme.text.secondary}`}>
-          Billed monthly. Cancel anytime.
-        </p>
 
         {/* Checkout button */}
         <button
@@ -433,22 +270,26 @@ export default function ExtensionsMarketplace() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { theme, currentTheme } = useTheme();
-  const toast = useToast();
   const glassStyles = getGlassmorphismStyles(currentTheme);
 
+  // Server-backed cart + active add-ons (shared with the checkout page)
+  const { cart, addToCart, removeFromCart, activeAddons, loadActiveAddons, loadCart } = useExtensions();
+
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [addons, setAddons] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [cart, setCart] = useState([]);
   const [showCart, setShowCart] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('popular');
+  const [sortBy, setSortBy] = useState('name');
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedAddon, setHighlightedAddon] = useState(null);
 
   useEffect(() => {
     loadAddons();
     loadCurrentUser();
+    loadCart();
+    loadActiveAddons();
 
     // Check if redirected from locked service
     const highlight = searchParams.get('highlight');
@@ -467,17 +308,25 @@ export default function ExtensionsMarketplace() {
   const loadAddons = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/addons', { credentials: 'include' });
-      // const data = await response.json();
-      // setAddons(data.addons);
-
-      // Mock data for now
-      setAddons(ADDONS_DATA);
+      setLoadError(null);
+      // Real catalog: GET /api/v1/extensions/catalog returns a list of
+      // { id, name, description, category, base_price, billing_type, features }
+      const data = await extensionsApi.getCatalog({ limit: 100 });
+      const list = Array.isArray(data) ? data : (data.addons || []);
+      setAddons(list.map((addon) => ({
+        id: addon.id,
+        name: addon.name,
+        category: addon.category || 'other',
+        price: Number(addon.base_price ?? 0),
+        period: formatBillingPeriod(addon.billing_type),
+        description: addon.description || '',
+        features: normalizeFeatures(addon.features)
+      })));
     } catch (error) {
       console.error('Failed to load add-ons:', error);
-      toast.error('Failed to load extensions');
-      setAddons(ADDONS_DATA); // Fallback to mock data
+      // Honest error state - no fake catalog
+      setAddons([]);
+      setLoadError('Unable to load the extensions catalog right now.');
     } finally {
       setLoading(false);
     }
@@ -495,30 +344,45 @@ export default function ExtensionsMarketplace() {
     }
   };
 
-  const handleAddToCart = (addon) => {
-    if (!cart.find(item => item.id === addon.id)) {
-      setCart([...cart, addon]);
+  const handleAddToCart = async (addon) => {
+    const result = await addToCart(addon.id, 1);
+    if (result.success) {
       setShowCart(true);
-      toast.success(`${addon.name} added to cart`);
-    } else {
-      toast.info('Item already in cart');
     }
   };
 
-  const handleRemoveFromCart = (addonId) => {
-    setCart(cart.filter(item => item.id !== addonId));
-    if (cart.length === 1) {
+  const handleRemoveFromCart = async (cartItemId) => {
+    const result = await removeFromCart(cartItemId);
+    if (result.success && (result.cart?.items || []).length === 0) {
       setShowCart(false);
     }
   };
 
   const handleCheckout = () => {
-    // Navigate to checkout page
+    // The checkout page drives the same server cart through Stripe
     navigate('/admin/extensions/checkout');
   };
 
+  // Purchased add-on ids (real /api/v1/extensions/active data)
+  const purchasedIds = new Set((activeAddons || []).map(a => String(a.addon_id ?? a.id)));
+  const cartAddonIds = new Set((cart.items || []).map(i => String(i.addon_id)));
+
+  // Categories derived from the real catalog
+  const categoryIds = Array.from(new Set(addons.map(a => a.category))).sort();
+  const categories = [
+    { id: 'all', label: 'All Extensions' },
+    ...categoryIds.map(id => ({
+      id,
+      label: id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    }))
+  ];
+
   // Filter and sort add-ons
   const filteredAddons = addons
+    .map(addon => ({
+      ...addon,
+      status: purchasedIds.has(String(addon.id)) ? 'purchased' : 'available'
+    }))
     .filter(addon => {
       // Category filter
       if (selectedCategory !== 'all' && addon.category !== selectedCategory) {
@@ -542,10 +406,8 @@ export default function ExtensionsMarketplace() {
         case 'price-high':
           return b.price - a.price;
         case 'name':
-          return a.name.localeCompare(b.name);
-        case 'popular':
         default:
-          return (b.popular ? 1 : 0) - (a.popular ? 1 : 0);
+          return a.name.localeCompare(b.name);
       }
     });
 
@@ -584,12 +446,12 @@ export default function ExtensionsMarketplace() {
             </p>
           </div>
 
-          {/* Current tier badge */}
-          {currentUser && (
+          {/* Current tier badge - only when the API reports a tier */}
+          {currentUser?.subscription_tier && (
             <div className={`${glassStyles.card} rounded-xl px-4 py-3`}>
               <div className={`text-sm ${theme.text.secondary} mb-1`}>Current Tier</div>
               <div className={`text-lg font-bold ${theme.text.primary} capitalize`}>
-                {currentUser.subscription_tier || 'Free'}
+                {currentUser.subscription_tier}
               </div>
             </div>
           )}
@@ -619,7 +481,7 @@ export default function ExtensionsMarketplace() {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className={`w-full pl-10 pr-4 py-2 ${glassStyles.card} rounded-lg ${theme.text.primary} focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none cursor-pointer`}
             >
-              {CATEGORIES.map(cat => (
+              {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.label}</option>
               ))}
             </select>
@@ -643,7 +505,32 @@ export default function ExtensionsMarketplace() {
 
       {/* Add-ons Grid */}
       <motion.div variants={itemVariants}>
-        {filteredAddons.length === 0 ? (
+        {loadError ? (
+          <div className={`${glassStyles.card} rounded-2xl p-12 text-center`}>
+            <ExclamationTriangleIcon className="h-16 w-16 text-red-400 mx-auto mb-4 opacity-70" />
+            <h3 className={`text-xl font-bold ${theme.text.primary} mb-2`}>
+              Couldn't load extensions
+            </h3>
+            <p className={`${theme.text.secondary} mb-4`}>{loadError}</p>
+            <button
+              onClick={loadAddons}
+              className="inline-flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+            >
+              <ArrowPathIcon className="h-4 w-4" />
+              Try Again
+            </button>
+          </div>
+        ) : addons.length === 0 ? (
+          <div className={`${glassStyles.card} rounded-2xl p-12 text-center`}>
+            <SparklesIcon className={`h-16 w-16 ${theme.text.secondary} mx-auto mb-4 opacity-50`} />
+            <h3 className={`text-xl font-bold ${theme.text.primary} mb-2`}>
+              No extensions published yet
+            </h3>
+            <p className={theme.text.secondary}>
+              Check back soon — new add-ons will appear here as they are released.
+            </p>
+          </div>
+        ) : filteredAddons.length === 0 ? (
           <div className={`${glassStyles.card} rounded-2xl p-12 text-center`}>
             <SparklesIcon className={`h-16 w-16 ${theme.text.secondary} mx-auto mb-4 opacity-50`} />
             <h3 className={`text-xl font-bold ${theme.text.primary} mb-2`}>
@@ -663,7 +550,8 @@ export default function ExtensionsMarketplace() {
                 <AddonCard
                   addon={addon}
                   onAddToCart={handleAddToCart}
-                  highlighted={highlightedAddon === addon.id}
+                  inCart={cartAddonIds.has(String(addon.id))}
+                  highlighted={highlightedAddon != null && String(addon.id) === String(highlightedAddon)}
                   theme={theme}
                 />
               </div>
@@ -684,7 +572,7 @@ export default function ExtensionsMarketplace() {
       )}
 
       {/* Floating cart button */}
-      {cart.length > 0 && !showCart && (
+      {(cart.items || []).length > 0 && !showCart && (
         <motion.button
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -694,7 +582,7 @@ export default function ExtensionsMarketplace() {
         >
           <ShoppingCartIcon className="h-7 w-7 text-white" />
           <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs font-bold flex items-center justify-center">
-            {cart.length}
+            {(cart.items || []).length}
           </span>
         </motion.button>
       )}

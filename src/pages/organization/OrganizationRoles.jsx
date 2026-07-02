@@ -5,8 +5,6 @@ import { useOrganization } from '../../contexts/OrganizationContext';
 import {
   ShieldCheckIcon,
   PlusIcon,
-  PencilIcon,
-  TrashIcon,
   CheckCircleIcon,
   XMarkIcon,
   LockClosedIcon,
@@ -76,11 +74,13 @@ const defaultPermissions = {
 
 export default function OrganizationRoles() {
   const { theme, currentTheme } = useTheme();
-  const [roles, setRoles] = useState(defaultPermissions);
+  const { currentOrg, loading: orgLoading } = useOrganization();
+  const [roles] = useState(defaultPermissions);
   const [loading, setLoading] = useState(true);
   const [selectedRole, setSelectedRole] = useState(null);
-  const [customRoles, setCustomRoles] = useState([]);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  // Real per-role member counts derived from the org members API
+  // (null = counts unavailable, rendered as "—")
+  const [roleCounts, setRoleCounts] = useState(null);
 
   // Toast notification
   const [toast, setToast] = useState({
@@ -90,22 +90,38 @@ export default function OrganizationRoles() {
   });
 
   useEffect(() => {
-    fetchRoles();
-  }, []);
+    if (orgLoading) return;
+    if (currentOrg) {
+      fetchRoleCounts();
+    } else {
+      setLoading(false);
+    }
+  }, [currentOrg, orgLoading]);
 
-  const fetchRoles = async () => {
+  const fetchRoleCounts = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/org/roles', { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch roles');
+      // Same data access pattern as OrganizationTeam: count members by org_role
+      const response = await fetch(`/api/v1/org/${currentOrg.id}/members?limit=1000`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch members');
 
       const data = await response.json();
-      // Merge with default roles
-      setRoles({ ...defaultPermissions, ...data.customRoles });
-      setCustomRoles(data.customRoles || []);
+      const counts = { owner: 0, admin: 0, member: 0 };
+      (data.members || []).forEach((m) => {
+        const role = (m.org_role || m.role || 'member').toLowerCase();
+        if (counts[role] !== undefined) {
+          counts[role] += 1;
+        } else {
+          counts.member += 1;
+        }
+      });
+      setRoleCounts(counts);
     } catch (error) {
-      console.error('Failed to fetch roles:', error);
-      showToast('Using default roles', 'error');
+      console.error('Failed to fetch member counts:', error);
+      setRoleCounts(null);
+      showToast('Could not load member counts', 'error');
     } finally {
       setLoading(false);
     }
@@ -125,16 +141,6 @@ export default function OrganizationRoles() {
       orange: 'from-orange-500 to-red-600 border-orange-500/30'
     };
     return colors[color] || colors.gray;
-  };
-
-  const getRoleStats = (roleKey) => {
-    // Mock stats - in production, fetch from API
-    const stats = {
-      owner: 1,
-      admin: 3,
-      member: 12
-    };
-    return stats[roleKey] || 0;
   };
 
   return (
@@ -157,13 +163,12 @@ export default function OrganizationRoles() {
             <p className={`${theme.text.secondary} mt-1 ml-13`}>Define roles and permissions for your organization</p>
           </div>
           <button
-            onClick={() => setCreateModalOpen(true)}
             disabled={true}
             className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-gray-400 rounded-lg cursor-not-allowed"
-            title="Custom roles coming soon"
+            title="Custom roles are not available yet"
           >
             <PlusIcon className="h-4 w-4" />
-            Create Custom Role
+            Create Custom Role (not available yet)
           </button>
         </div>
       </motion.div>
@@ -219,11 +224,13 @@ export default function OrganizationRoles() {
               <h3 className={`text-xl font-bold ${theme.text.primary} mb-2`}>{role.name}</h3>
               <p className={`text-sm ${theme.text.secondary} mb-4`}>{role.description}</p>
 
-              {/* Member Count */}
+              {/* Member Count - real count from the org members API, "—" if unavailable */}
               <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-700/50">
                 <UserGroupIcon className="h-4 w-4 text-gray-400" />
                 <span className={`text-sm ${theme.text.secondary}`}>
-                  {getRoleStats(roleKey)} {getRoleStats(roleKey) === 1 ? 'member' : 'members'}
+                  {roleCounts
+                    ? `${roleCounts[roleKey] ?? 0} ${(roleCounts[roleKey] ?? 0) === 1 ? 'member' : 'members'}`
+                    : '— members'}
                 </span>
               </div>
 
@@ -240,19 +247,6 @@ export default function OrganizationRoles() {
                 </ul>
               </div>
 
-              {/* Actions */}
-              {role.editable && (
-                <div className="flex gap-2 mt-6 pt-4 border-t border-gray-700/50">
-                  <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors">
-                    <PencilIcon className="h-4 w-4" />
-                    Edit
-                  </button>
-                  <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">
-                    <TrashIcon className="h-4 w-4" />
-                    Delete
-                  </button>
-                </div>
-              )}
             </motion.div>
           ))}
         </motion.div>
@@ -311,25 +305,17 @@ export default function OrganizationRoles() {
         </div>
       </motion.div>
 
-      {/* Coming Soon Banner */}
+      {/* Custom roles notice */}
       <motion.div variants={itemVariants} className={`${theme.card} rounded-xl p-6 border border-yellow-500/20`}>
         <div className="flex items-start gap-3">
           <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-lg flex items-center justify-center shadow-lg">
             <PlusIcon className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Custom Roles Coming Soon</h3>
+            <h3 className={`text-lg font-semibold ${theme.text.primary}`}>Custom Roles (not available yet)</h3>
             <p className={`text-sm ${theme.text.secondary} mt-2`}>
-              Create custom roles tailored to your organization's needs with granular permission controls. This feature will be available in an upcoming release.
+              Organizations currently use the three built-in roles above. Custom roles with granular permissions are not available yet.
             </p>
-            <div className="flex gap-3 mt-4">
-              <button className="px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors text-sm">
-                Learn More
-              </button>
-              <button className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm">
-                Request Early Access
-              </button>
-            </div>
           </div>
         </div>
       </motion.div>

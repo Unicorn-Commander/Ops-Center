@@ -181,7 +181,7 @@ const AppManagement = () => {
       setSuccess('App deleted successfully');
       setDeleteDialogOpen(false);
       fetchApps();
-      setSelectedFeature(null);
+      setSelectedApp(null);
     } catch (err) {
       setError(err.message);
       console.error('Error deleting app:', err);
@@ -223,7 +223,7 @@ const AppManagement = () => {
   };
 
   const handleEditApp = (feature) => {
-    setSelectedFeature(feature);
+    setSelectedApp(feature);
     setFormData({
       app_key: feature.app_key,
       app_name: feature.app_name,
@@ -236,7 +236,7 @@ const AppManagement = () => {
   };
 
   const handleDeleteApp = (feature) => {
-    setSelectedFeature(feature);
+    setSelectedApp(feature);
     setDeleteDialogOpen(true);
   };
 
