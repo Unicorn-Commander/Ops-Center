@@ -175,3 +175,16 @@ COMMENT ON COLUMN app_model_list_items.tier_professional IS 'Can Professional ti
 COMMENT ON COLUMN app_model_list_items.tier_enterprise IS 'Can Enterprise tier users see this model?';
 COMMENT ON COLUMN app_model_list_items.tier_vip_founder IS 'Can VIP Founder tier users see this model?';
 COMMENT ON COLUMN app_model_list_items.tier_byok IS 'Can BYOK tier users see this model?';
+
+-- ============================================================
+-- Convergence patch (2026-07-02): columns the application code
+-- (model_list_manager.py) actually reads/writes but that older
+-- deployments (and the original CREATE above) lack. Idempotent.
+-- ============================================================
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT FALSE;
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS tier_trial_access BOOLEAN DEFAULT TRUE;
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS tier_starter_access BOOLEAN DEFAULT TRUE;
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS tier_professional_access BOOLEAN DEFAULT TRUE;
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS tier_enterprise_access BOOLEAN DEFAULT TRUE;
+ALTER TABLE app_model_list_items ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
