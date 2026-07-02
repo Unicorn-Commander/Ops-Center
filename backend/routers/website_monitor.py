@@ -578,6 +578,10 @@ async def startup():
         )
         return
     await init_database()
+    # Auto-start the background checker. It previously only ran after a manual
+    # POST /scheduler/start, so every container restart silently stopped uptime
+    # monitoring and the status page served stale/unknown data.
+    await start_scheduler()
 
 
 @router.get("/health")
