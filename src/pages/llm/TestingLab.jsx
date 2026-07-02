@@ -4,7 +4,7 @@
  * Features:
  * - 10 pre-built test templates
  * - Model selector with search/filter
- * - Real-time streaming responses (SSE)
+ * - Model test via POST /api/v1/llm/test (result rendered on completion)
  * - Parameter controls (temperature, max_tokens, top_p)
  * - Response metrics (tokens, cost, latency, tokens/sec)
  * - Test history sidebar
@@ -72,7 +72,7 @@ export default function TestingLab() {
 
   // Refs
   const responseRef = useRef(null);
-  const eventSourceRef = useRef(null);
+  const abortControllerRef = useRef(null);
   const dropdownRef = useRef(null);
 
   // ============================================================================
@@ -200,81 +200,115 @@ export default function TestingLab() {
     setError(null);
 
     const startTime = Date.now();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      // Create EventSource for SSE
-      const params = new URLSearchParams({
-        model_id: selectedModel.name || selectedModel.id,
-        messages: JSON.stringify([{ role: 'user', content: prompt }]),
-        temperature: temperature.toString(),
-        max_tokens: maxTokens.toString(),
-        top_p: topP.toString(),
-        stream: 'true'
+      // POST /api/v1/llm/test (body: ModelTestRequest). The result is rendered
+      // once the request completes - no incremental streaming.
+      const res = await fetch('/api/v1/llm/test', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_id: selectedModel.name || selectedModel.id,
+          messages: [{ role: 'user', content: prompt }],
+          temperature,
+          max_tokens: maxTokens,
+          top_p: topP,
+          stream: false
+        }),
+        signal: controller.signal
       });
 
-      const url = `/api/v1/llm/test/test?${params.toString()}`;
-      const eventSource = new EventSource(url);
-      eventSourceRef.current = eventSource;
-
-      eventSource.onmessage = (event) => {
+      if (!res.ok) {
+        let detail = '';
         try {
-          const data = JSON.parse(event.data);
-
-          if (data.error) {
-            setError(data.error);
-            setIsStreaming(false);
-            eventSource.close();
-            return;
-          }
-
-          if (data.done) {
-            // Final metrics received
-            setMetrics({
-              input_tokens: data.input_tokens,
-              output_tokens: data.output_tokens,
-              total_tokens: data.total_tokens,
-              cost: data.cost,
-              latency_ms: data.latency_ms,
-              tokens_per_sec: data.output_tokens / (data.latency_ms / 1000)
-            });
-            setIsStreaming(false);
-            eventSource.close();
-
-            // Refresh history
-            if (showHistory) {
-              fetchHistory();
-            }
-          } else if (data.content) {
-            // Stream token received
-            setResponse((prev) => prev + data.content);
-
-            // Auto-scroll to bottom
-            if (responseRef.current) {
-              responseRef.current.scrollTop = responseRef.current.scrollHeight;
-            }
-          }
-        } catch (err) {
-          console.error('Error parsing SSE data:', err);
+          const errBody = await res.json();
+          detail = typeof errBody.detail === 'string'
+            ? errBody.detail
+            : errBody.detail?.error || '';
+        } catch {
+          // Ignore unparseable error bodies
         }
-      };
+        throw new Error(detail || `Model test failed (HTTP ${res.status})`);
+      }
 
-      eventSource.onerror = (err) => {
-        console.error('SSE error:', err);
-        setError('Connection error. Please check your authentication and try again.');
-        setIsStreaming(false);
-        eventSource.close();
-      };
+      let fullText = '';
+      let doneEvent = null;
+      const contentType = res.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        // Plain JSON result
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        fullText = data.content || data.response || '';
+        doneEvent = data;
+      } else {
+        // The backend replies in SSE format ("data: {...}" lines) even for a
+        // plain POST; parse the complete body and assemble the result.
+        const raw = await res.text();
+        for (const line of raw.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          let data;
+          try {
+            data = JSON.parse(payload);
+          } catch {
+            continue;
+          }
+          if (data.error) throw new Error(data.error);
+          if (data.done) {
+            doneEvent = data;
+          } else if (data.content) {
+            fullText += data.content;
+          }
+        }
+      }
+
+      if (!fullText && !doneEvent) {
+        throw new Error('No response received from model');
+      }
+
+      setResponse(fullText);
+      if (responseRef.current) {
+        responseRef.current.scrollTop = responseRef.current.scrollHeight;
+      }
+
+      if (doneEvent) {
+        const latencyMs = doneEvent.latency_ms ?? (Date.now() - startTime);
+        const outputTokens = doneEvent.output_tokens ?? 0;
+        setMetrics({
+          input_tokens: doneEvent.input_tokens ?? 0,
+          output_tokens: outputTokens,
+          total_tokens: doneEvent.total_tokens ?? 0,
+          cost: doneEvent.cost ?? 0,
+          latency_ms: latencyMs,
+          tokens_per_sec: latencyMs > 0 ? outputTokens / (latencyMs / 1000) : 0
+        });
+      }
+
+      // Refresh history
+      if (showHistory) {
+        fetchHistory();
+      }
     } catch (err) {
-      console.error('Test error:', err);
-      setError(err.message || 'Failed to test model');
+      if (err.name !== 'AbortError') {
+        console.error('Test error:', err);
+        setError(err.message || 'Failed to test model');
+      }
+    } finally {
+      abortControllerRef.current = null;
       setIsStreaming(false);
     }
   };
 
   const handleStopStreaming = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     setIsStreaming(false);
   };
@@ -592,7 +626,7 @@ export default function TestingLab() {
                 {isStreaming ? (
                   <>
                     <Loader className="w-5 h-5 animate-spin" />
-                    Streaming...
+                    Running...
                   </>
                 ) : (
                   <>

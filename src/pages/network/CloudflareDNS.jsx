@@ -224,11 +224,16 @@ const CloudflareDNS = () => {
 
   const handleCheckStatus = async (zoneId) => {
     try {
-      await axios.post(`/api/v1/cloudflare/zones/${zoneId}/check-status`);
-      showToast('Status updated', 'success');
+      const response = await axios.get(`/api/v1/cloudflare/zones/${zoneId}/status`);
+      const status = response.data?.status;
+      if (status) {
+        showToast(`Zone status: ${status}`, 'success');
+      } else {
+        showToast(response.data?.message || 'Zone status unavailable', 'warning');
+      }
       fetchZones();
     } catch (err) {
-      showToast('Failed to check status', 'error');
+      showToast(err.response?.data?.detail || 'Failed to check status', 'error');
     }
   };
 
@@ -335,13 +340,15 @@ const CloudflareDNS = () => {
 
   const handleToggleProxy = async (record) => {
     try {
-      await axios.post(
-        `/api/v1/cloudflare/zones/${selectedZone.zone_id}/dns/${record.id}/toggle-proxy`
+      // Flip the proxied flag via the DNS record update endpoint (partial update)
+      await axios.put(
+        `/api/v1/cloudflare/zones/${selectedZone.zone_id}/dns/${record.id}`,
+        { proxied: !record.proxied }
       );
       showToast(`Proxy ${record.proxied ? 'disabled' : 'enabled'}`, 'success');
       fetchDnsRecords(selectedZone.zone_id);
     } catch (err) {
-      showToast('Failed to toggle proxy', 'error');
+      showToast(err.response?.data?.detail || 'Failed to toggle proxy', 'error');
     }
   };
 

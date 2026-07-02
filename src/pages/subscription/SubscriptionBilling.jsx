@@ -155,8 +155,9 @@ export default function SubscriptionBilling() {
       const res = await fetch(`/api/v1/billing/invoices/${invoiceId}/pdf`, { credentials: 'include' });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errorText || res.statusText}`);
+        // Graceful failure: the PDF endpoint may not be available on this deployment yet
+        toast.error('Invoice PDF download is not available on this deployment yet.');
+        return;
       }
 
       const blob = await res.blob();
@@ -180,65 +181,9 @@ export default function SubscriptionBilling() {
       }, 100);
 
       toast.success('Invoice downloaded successfully');
-      setRetryCount(prev => ({ ...prev, download: 0 }));
     } catch (error) {
       console.error('Error downloading invoice:', error);
-      const errorMsg = `Failed to download invoice: ${error.message}`;
-
-      // Retry logic for download failures
-      if (retryCount.download < maxRetries) {
-        toast.warning(`Download failed. Retrying... (${retryCount.download + 1}/${maxRetries})`);
-        setTimeout(() => {
-          setRetryCount(prev => ({ ...prev, download: prev.download + 1 }));
-          handleDownloadInvoice(invoiceId);
-        }, 2000 * (retryCount.download + 1));
-      } else {
-        toast.error(errorMsg);
-        setRetryCount(prev => ({ ...prev, download: 0 })); // Reset for next attempt
-      }
-    }
-  };
-
-  const handleRetryPayment = async (invoiceId) => {
-    if (!confirm('Retry payment for this invoice? Your default payment method will be charged.')) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/v1/billing/invoices/${invoiceId}/retry`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || `HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      const result = await res.json();
-
-      // Show success and reload data
-      toast.success('Payment retry initiated successfully');
-      await loadBillingData();
-      setRetryCount(prev => ({ ...prev, retry: 0 }));
-    } catch (error) {
-      console.error('Error retrying payment:', error);
-      const errorMsg = `Failed to retry payment: ${error.message}`;
-
-      // Retry logic for payment failures
-      if (retryCount.retry < maxRetries) {
-        toast.warning(`Payment retry failed. Attempting again... (${retryCount.retry + 1}/${maxRetries})`);
-        setTimeout(() => {
-          setRetryCount(prev => ({ ...prev, retry: prev.retry + 1 }));
-          handleRetryPayment(invoiceId);
-        }, 2000 * (retryCount.retry + 1));
-      } else {
-        toast.error(errorMsg);
-        setRetryCount(prev => ({ ...prev, retry: 0 })); // Reset for next attempt
-      }
+      toast.error(`Failed to download invoice: ${error.message}`);
     }
   };
 
@@ -465,12 +410,15 @@ export default function SubscriptionBilling() {
                           </button>
                         )}
                         {invoice.status === 'failed' && (
-                          <button
-                            onClick={() => handleRetryPayment(invoice.id)}
-                            className="text-green-400 hover:text-green-300 text-sm font-medium transition-colors"
-                          >
-                            Retry
-                          </button>
+                          /* Payment retry is not supported by the backend yet */
+                          <span title="Not available yet — retrying payments is not supported on this deployment.">
+                            <button
+                              disabled
+                              className="text-gray-500 cursor-not-allowed text-sm font-medium"
+                            >
+                              Retry
+                            </button>
+                          </span>
                         )}
                       </div>
                     </td>

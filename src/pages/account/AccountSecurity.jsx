@@ -8,9 +8,9 @@
  * - Recent security activity
  *
  * API Endpoints:
- * - PUT /api/v1/auth/password - Change password
+ * - POST /api/v1/auth/change-password - Change password
  * - GET /api/v1/auth/sessions - List active sessions
- * - DELETE /api/v1/auth/sessions/{session_id} - Revoke session
+ * - DELETE /api/v1/sessions/{session_id} - Revoke session
  */
 
 import React, { useState, useEffect } from 'react';
@@ -128,8 +128,8 @@ export default function AccountSecurity() {
     setMessage(null);
 
     try {
-      const response = await fetch('/api/v1/auth/password', {
-        method: 'PUT',
+      const response = await fetch('/api/v1/auth/change-password', {
+        method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
@@ -168,7 +168,7 @@ export default function AccountSecurity() {
     setRevokingSession(sessionId);
 
     try {
-      const response = await fetch(`/api/v1/auth/sessions/${sessionId}`, {
+      const response = await fetch(`/api/v1/sessions/${sessionId}`, {
         method: 'DELETE',
         credentials: 'include'
       });
