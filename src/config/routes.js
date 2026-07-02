@@ -957,12 +957,19 @@ export const routes = {
 // ==========================================================================
 
 function flattenRoutes(node, acc) {
-  if (!node) return acc;
+  if (!node || typeof node !== 'object') return acc;
   if (node.path) {
     acc.push(node);
   }
   if (node.children) {
     Object.values(node.children).forEach(child => flattenRoutes(child, acc));
+  } else if (!node.path) {
+    // Namespace object (e.g. routes.personal, whose entries are direct
+    // properties rather than a children map) — recurse over its values.
+    // Without this, the whole personal section was invisible to
+    // getAllRoutes()/getRouteByPath(), so personal pages never resolved
+    // their titles or route metadata.
+    Object.values(node).forEach(child => flattenRoutes(child, acc));
   }
   return acc;
 }
