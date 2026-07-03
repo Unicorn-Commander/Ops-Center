@@ -214,21 +214,13 @@ export default defineConfig({
               return 'vendor-redoc'
             }
 
-            // MUI component library (@mui/material, @mui/icons-material, ...).
-            // Its @emotion styling runtime stays in vendor-react so chunk
-            // imports flow one way (mui -> vendor-react, never back).
-            if (id.includes('/@mui/')) {
-              return 'mui'
-            }
-
-            // Charting libraries (chart.js + react-chartjs-2 + recharts)
-            if (
-              id.includes('/chart.js/') ||
-              id.includes('/react-chartjs-2/') ||
-              id.includes('/recharts/')
-            ) {
-              return 'charts'
-            }
+            // NOTE: MUI and charting libs are deliberately NOT split into
+            // their own eager chunks. They read React hooks (e.g. MUI's
+            // useEnhancedEffect -> React.useLayoutEffect) at module-eval time;
+            // in a separate eager chunk React can be undefined when they run,
+            // crashing the whole app before login renders. Keep them together
+            // with React in vendor-react. Only truly lazy-loaded trees
+            // (swagger-ui-react, redoc) are split above.
 
             // Bundle EVERYTHING else with React to ensure correct load order
             // This includes: react, react-dom, react-router-dom, Emotion,
