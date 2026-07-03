@@ -351,6 +351,101 @@ async def revoke_uc_api_key(
         raise HTTPException(status_code=500, detail="Failed to revoke API key")
 
 
+# === T6 ===
+class RegenerateUCAPIKeyRequest(BaseModel):
+    """Optional body for key regeneration"""
+    expires_in_days: Optional[int] = Field(
+        90, description="Days until the regenerated key expires (default: 90)", ge=1, le=3650
+    )
+
+
+@router.post("/{key_id}/regenerate", response_model=UCAPIKeyCreateResponse)
+async def regenerate_uc_api_key(
+    key_id: str,
+    request: Request,
+    key_request: RegenerateUCAPIKeyRequest = RegenerateUCAPIKeyRequest(),
+    current_user: Dict = Depends(get_current_user),
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """
+    Regenerate a UC API key (same creation pathway as POST /uc-api-keys).
+
+    Generates a fresh secret with generate_uc_api_key(), bcrypt-hashes it, and
+    replaces the stored hash + prefix in a single UPDATE on the caller's own
+    row — so the old secret is revoked atomically the moment the new one
+    exists. Name and permissions are preserved; the expiry window restarts.
+
+    **IMPORTANT**: The new full key is shown ONLY ONCE in the response.
+
+    Returns 404 if the key doesn't exist or belongs to another user,
+    409 if the key was revoked (revoked keys stay revoked — create a new one).
+    """
+    try:
+        user_id = current_user.get("user_id")
+
+        try:
+            key_uuid = UUID(key_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid key_id format")
+
+        # Same creation pathway as the create endpoint: random secret + bcrypt
+        api_key, prefix = generate_uc_api_key()
+        key_hash = hash_api_key(api_key)
+        expires_at = datetime.utcnow() + timedelta(days=key_request.expires_in_days)
+
+        async with db_pool.acquire() as conn:
+            # Ownership check first so we can distinguish 404 from 409
+            existing = await conn.fetchrow("""
+                SELECT id, key_name, is_active
+                FROM user_api_keys
+                WHERE id = $1 AND user_id = $2
+            """, key_uuid, user_id)
+
+            if not existing:
+                raise HTTPException(status_code=404, detail="API key not found")
+
+            if not existing["is_active"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Cannot regenerate a revoked key. Generate a new key instead.",
+                )
+
+            # Atomic swap: the old secret stops working the instant this commits
+            result = await conn.fetchrow("""
+                UPDATE user_api_keys
+                SET key_hash = $3, key_prefix = $4, expires_at = $5
+                WHERE id = $1 AND user_id = $2 AND is_active = TRUE
+                RETURNING id, key_name, permissions, created_at
+            """, key_uuid, user_id, key_hash, prefix, expires_at)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="API key not found")
+
+        permissions = result["permissions"]
+        if isinstance(permissions, str):
+            permissions = json.loads(permissions)
+        permissions = list(permissions or [])
+
+        logger.info(f"Regenerated UC API key {key_id} ('{result['key_name']}') for user {user_id}")
+
+        return UCAPIKeyCreateResponse(
+            key_id=str(result["id"]),
+            api_key=api_key,  # NEW FULL KEY - shown only once!
+            key_name=result["key_name"],
+            key_preview=mask_api_key(api_key),
+            permissions=permissions,
+            created_at=result["created_at"].isoformat(),
+            expires_at=expires_at.isoformat(),
+            warning="Key regenerated! Save this new API key now. The old key is now invalid.",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error regenerating UC API key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to regenerate API key")
+
+
 @router.get("/{key_id}", response_model=UCAPIKeyResponse)
 async def get_uc_api_key(
     key_id: str,

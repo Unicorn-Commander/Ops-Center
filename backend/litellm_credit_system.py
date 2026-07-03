@@ -413,6 +413,27 @@ class CreditSystem:
                 # Non-blocking: Don't fail credit deduction if Lago is down
                 logger.warning(f"Failed to record Lago event (non-blocking): {e}")
 
+            # ------------------------------------------------------------------
+            # APPEND-ONLY HOOK (T7): low-credit email notification.
+            # Fires at most once, when this debit made the balance CROSS below
+            # 10% of the user's allocation (dispatcher re-checks prefs + applies
+            # a 1/hour/user rate limit). Fire-and-forget: must NEVER delay or
+            # break the debit path.
+            # ------------------------------------------------------------------
+            try:
+                if user_id and not user_id.startswith('org_'):
+                    from notification_dispatcher import maybe_notify_low_credit
+                    asyncio.create_task(
+                        maybe_notify_low_credit(
+                            user_id=user_id,
+                            previous_balance=float(current_balance),
+                            new_balance=float(new_balance),
+                            db_pool=self.db_pool,
+                        )
+                    )
+            except Exception as notify_exc:
+                logger.warning(f"Low-credit notification hook failed (non-blocking): {notify_exc}")
+
             logger.info(f"Debited {amount} credits from {user_id}. New balance: {new_balance}")
             return new_balance, str(transaction_id)
 

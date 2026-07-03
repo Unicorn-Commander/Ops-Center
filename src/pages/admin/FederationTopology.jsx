@@ -21,6 +21,7 @@ import {
   Circle as CircleIcon
 } from '@mui/icons-material';
 import PageHeader from '../../components/admin/PageHeader';
+import { fetchFederationJson } from '../../utils/federationApi';
 
 const STATUS_BORDER = {
   online: '#4caf50',
@@ -35,9 +36,7 @@ export default function FederationTopology() {
 
   const fetchTopology = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/federation/topology', { credentials: 'include' });
-      if (!res.ok) throw new Error(`Failed to load topology (${res.status})`);
-      const data = await res.json();
+      const data = await fetchFederationJson('/api/v1/federation/topology');
       setTopology({
         nodes: data.nodes || [],
         service_count: data.service_count || 0,

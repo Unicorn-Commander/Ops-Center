@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
--- Provider Health Check Endpoints
+# Provider Health Check Endpoints
 # ============================================================================
 
 PROVIDER_HEALTH_ENDPOINTS = {

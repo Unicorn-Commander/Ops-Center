@@ -66,7 +66,7 @@ async def require_admin(request: Request):
     if not user and session_token:
         redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+        sessions = RedisSessionManager(host=redis_host, port=redis_port)
         if session_token in sessions:
             user = sessions[session_token].get("user", {})
 

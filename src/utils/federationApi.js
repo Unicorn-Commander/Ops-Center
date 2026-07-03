@@ -1,4 +1,4 @@
-export async function fetchFederationJson(url, options = {}) {
+export async function fetchFederationJson(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = localStorage.getItem('authToken');
 
@@ -6,31 +6,31 @@ export async function fetchFederationJson(url, options = {}) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(url, {
+  const response = await fetch(path, {
     credentials: 'include',
     ...options,
     headers,
   });
 
   const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json')
-    ? await response.json()
-    : await response.text();
+  const isJson = contentType.includes('application/json');
+  const payload = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const message = typeof payload === 'string'
-      ? payload
-      : payload?.detail || payload?.message || payload?.error;
-    throw new Error(message || `Request failed (${response.status})`);
+    const detail =
+      typeof payload === 'string'
+        ? payload
+        : payload?.detail || payload?.message || payload?.error;
+    throw new Error(detail || `Request failed (${response.status})`);
   }
 
   return payload;
 }
 
-export function federationTimeAgo(value) {
-  if (!value) return 'Unknown';
+export function federationTimeAgo(dateStr) {
+  if (!dateStr) return 'Unknown';
 
-  const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   if (seconds < 60) return `${seconds}s ago`;
 
   const minutes = Math.floor(seconds / 60);
@@ -39,21 +39,22 @@ export function federationTimeAgo(value) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
 
-  return `${Math.floor(hours / 24)}d ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
-export function endpointWithPath(endpoint, path) {
-  if (!endpoint) return path || '-';
-  if (!path) return endpoint;
+export function endpointWithPath(endpointUrl, endpointPath) {
+  if (!endpointUrl) return endpointPath || '-';
+  if (!endpointPath) return endpointUrl;
 
-  const base = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
-  const suffix = path.startsWith('/') ? path : `/${path}`;
-  return `${base}${suffix}`;
+  const normalizedBase = endpointUrl.endsWith('/') ? endpointUrl.slice(0, -1) : endpointUrl;
+  const normalizedPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+  return `${normalizedBase}${normalizedPath}`;
 }
 
-export function getEndpointHost(endpoint, fallback = 'unknown-host') {
+export function getEndpointHost(endpointUrl, fallback = 'unknown-host') {
   try {
-    return new URL(endpoint).hostname;
+    return new URL(endpointUrl).hostname;
   } catch (_error) {
     return fallback;
   }

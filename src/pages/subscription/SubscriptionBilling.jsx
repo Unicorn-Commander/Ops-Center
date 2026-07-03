@@ -82,6 +82,7 @@ export default function SubscriptionBilling() {
     download: 0,
     retry: 0
   });
+  const [retryingInvoiceId, setRetryingInvoiceId] = useState(null);
   const maxRetries = 3;
 
   useEffect(() => {
@@ -184,6 +185,29 @@ export default function SubscriptionBilling() {
     } catch (error) {
       console.error('Error downloading invoice:', error);
       toast.error(`Failed to download invoice: ${error.message}`);
+    }
+  };
+
+  const handleRetryPayment = async (invoice) => {
+    setRetryingInvoiceId(invoice.id);
+    try {
+      const res = await fetch(`/api/v1/billing/invoices/${invoice.id}/retry`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(data.detail || 'Payment retry requested');
+        await loadBillingData();
+      } else {
+        // Surface the backend's reason (e.g. invoice not in a retryable state)
+        toast.error(data.detail || `Failed to retry payment (HTTP ${res.status})`);
+      }
+    } catch (error) {
+      console.error('Error retrying payment:', error);
+      toast.error('Network error retrying payment');
+    } finally {
+      setRetryingInvoiceId(null);
     }
   };
 
@@ -409,16 +433,20 @@ export default function SubscriptionBilling() {
                             PDF
                           </button>
                         )}
-                        {invoice.status === 'failed' && (
-                          /* Payment retry is not supported by the backend yet */
-                          <span title="Not available yet — retrying payments is not supported on this deployment.">
-                            <button
-                              disabled
-                              className="text-gray-500 cursor-not-allowed text-sm font-medium"
-                            >
-                              Retry
-                            </button>
-                          </span>
+                        {/* Lago reports payment failure via payment_status
+                            (invoice status stays "finalized"); accept either. */}
+                        {(invoice.payment_status || invoice.status) === 'failed' && (
+                          <button
+                            onClick={() => handleRetryPayment(invoice)}
+                            disabled={retryingInvoiceId !== null}
+                            title="Ask the payment provider to retry the charge for this invoice"
+                            className="text-yellow-400 hover:text-yellow-300 disabled:opacity-50 text-sm font-medium transition-colors"
+                          >
+                            <ArrowPathIcon
+                              className={`w-4 h-4 inline mr-1 ${retryingInvoiceId === invoice.id ? 'animate-spin' : ''}`}
+                            />
+                            {retryingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
+                          </button>
                         )}
                       </div>
                     </td>

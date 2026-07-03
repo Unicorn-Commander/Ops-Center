@@ -1121,3 +1121,276 @@ async def get_google_key_decrypted(
     except Exception as e:
         logger.error(f"Error retrieving Google AI key: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve Google AI key")
+
+
+# ============================================================================
+# === T6 === Live key tests: POST /api/v1/admin/platform-keys/{key_type}/test
+# ============================================================================
+#
+# Per-type live checks against the provider's own API. The key is resolved the
+# same way the /decrypted endpoints resolve it (database first, env fallback);
+# stripe/cloudflare resolve via platform_settings/env through get_credential.
+# The response NEVER echoes the key.
+
+import httpx
+from get_credential import get_credential_async
+
+TEST_TIMEOUT_SECONDS = 8.0
+
+# key_type (URL slug, matching the PUT endpoints) -> internal key name
+TESTABLE_KEY_TYPES = {
+    "openrouter": "openrouter_api_key",
+    "openai": "openai_api_key",
+    "anthropic": "anthropic_api_key",
+    "huggingface": "huggingface_api_key",
+    "groq": "groq_api_key",
+    "xai": "xai_api_key",
+    "google": "google_ai_api_key",
+    # Not stored in PLATFORM_KEYS; resolved via get_credential (platform_settings/env)
+    "stripe": "STRIPE_SECRET_KEY",
+    "cloudflare": "CLOUDFLARE_API_TOKEN",
+}
+
+
+async def _resolve_platform_key(db_pool: asyncpg.Pool, key_type: str):
+    """Resolve (api_key, source) for a testable key type; (None, None) if unset."""
+    if key_type in ("stripe", "cloudflare"):
+        credential_name = TESTABLE_KEY_TYPES[key_type]
+        value = await get_credential_async(credential_name, "")
+        if value:
+            # get_credential checks the database first, then the environment
+            return value, "database_or_environment"
+        return None, None
+
+    key_name = TESTABLE_KEY_TYPES[key_type]
+    db_encrypted = await get_platform_key_from_db(db_pool, key_name)
+    if db_encrypted:
+        encryption = get_encryption()
+        return encryption.decrypt_key(db_encrypted), "database"
+
+    env_var = PLATFORM_KEYS[key_name]["env_var"]
+    env_value = os.getenv(env_var)
+    if env_value:
+        return env_value, "environment"
+    return None, None
+
+
+async def _run_key_test(key_type: str, api_key: str):
+    """
+    Perform the provider-specific live check.
+
+    Returns (ok: bool, status_code: int|None, detail: str).
+    A 401/403 from the provider means the key is invalid/unauthorized; other
+    HTTP errors after successful auth are reported but treated as key-valid
+    where the provider semantics make that unambiguous (e.g. Anthropic 400).
+    """
+    async with httpx.AsyncClient(timeout=TEST_TIMEOUT_SECONDS) as client:
+        if key_type == "openrouter":
+            # GET /api/v1/key requires auth and returns key metadata
+            # (GET /models is unauthenticated and would not validate the key)
+            resp = await client.get(
+                "https://openrouter.ai/api/v1/key",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, 200, "OpenRouter accepted the key."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "OpenRouter rejected the key (unauthorized)."
+            return False, resp.status_code, f"OpenRouter returned HTTP {resp.status_code}."
+
+        if key_type == "openai":
+            resp = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, 200, "OpenAI accepted the key (models list OK)."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "OpenAI rejected the key (unauthorized)."
+            return False, resp.status_code, f"OpenAI returned HTTP {resp.status_code}."
+
+        if key_type == "anthropic":
+            # Cheapest possible live ping: 1-token message on the cheapest
+            # current model. 401/403 = bad key. A 400/404/429 means auth
+            # PASSED (invalid keys never get that far), so the key is valid.
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-haiku-4-5",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "ping"}],
+                },
+            )
+            if resp.status_code == 200:
+                return True, 200, "Anthropic accepted the key (1-token ping OK)."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "Anthropic rejected the key (unauthorized)."
+            if resp.status_code in (400, 404, 429):
+                return True, resp.status_code, (
+                    f"Key authenticated (Anthropic returned HTTP {resp.status_code} "
+                    f"after auth — e.g. model/billing/rate-limit, not an auth failure)."
+                )
+            return False, resp.status_code, f"Anthropic returned HTTP {resp.status_code}."
+
+        if key_type == "huggingface":
+            resp = await client.get(
+                "https://huggingface.co/api/whoami-v2",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, 200, "Hugging Face accepted the token (whoami OK)."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "Hugging Face rejected the token (unauthorized)."
+            return False, resp.status_code, f"Hugging Face returned HTTP {resp.status_code}."
+
+        if key_type == "groq":
+            resp = await client.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, 200, "Groq accepted the key (models list OK)."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "Groq rejected the key (unauthorized)."
+            return False, resp.status_code, f"Groq returned HTTP {resp.status_code}."
+
+        if key_type == "xai":
+            resp = await client.get(
+                "https://api.x.ai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, 200, "X.AI accepted the key (models list OK)."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "X.AI rejected the key (unauthorized)."
+            return False, resp.status_code, f"X.AI returned HTTP {resp.status_code}."
+
+        if key_type == "google":
+            resp = await client.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                params={"key": api_key, "pageSize": 1},
+            )
+            if resp.status_code == 200:
+                return True, 200, "Google AI accepted the key (models list OK)."
+            if resp.status_code in (400, 401, 403):
+                return False, resp.status_code, "Google AI rejected the key (unauthorized/invalid)."
+            return False, resp.status_code, f"Google AI returned HTTP {resp.status_code}."
+
+        if key_type == "stripe":
+            resp = await client.get(
+                "https://api.stripe.com/v1/balance",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                return True, 200, "Stripe accepted the key (balance retrieved)."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "Stripe rejected the key (unauthorized)."
+            return False, resp.status_code, f"Stripe returned HTTP {resp.status_code}."
+
+        if key_type == "cloudflare":
+            resp = await client.get(
+                "https://api.cloudflare.com/client/v4/user/tokens/verify",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            if resp.status_code == 200:
+                body = resp.json()
+                token_status = ((body.get("result") or {}).get("status")) or "unknown"
+                if body.get("success") and token_status == "active":
+                    return True, 200, "Cloudflare token verified (status: active)."
+                return False, 200, f"Cloudflare token verify returned status '{token_status}'."
+            if resp.status_code in (401, 403):
+                return False, resp.status_code, "Cloudflare rejected the token (unauthorized)."
+            return False, resp.status_code, f"Cloudflare returned HTTP {resp.status_code}."
+
+    return False, None, "No live test implemented for this key type."
+
+
+@router.post("/{key_type}/test")
+async def test_platform_key(
+    key_type: str,
+    request: Request,
+    current_user: Dict = Depends(require_admin),
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """
+    Live-test a platform API key against its provider (admin only).
+
+    Supported key types: openrouter, openai, anthropic, huggingface, groq,
+    xai, google, stripe, cloudflare. Provisioning/LiteLLM keys have no
+    external verification endpoint and return 400.
+
+    Returns {ok, key_type, source, status_code, latency_ms, detail}.
+    The key itself is never included in the response.
+    """
+    key_type = key_type.lower()
+
+    if key_type in ("provisioning", "litellm"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"No live test available for key type '{key_type}' (no external verification endpoint).",
+        )
+
+    if key_type not in TESTABLE_KEY_TYPES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown key type '{key_type}'. Testable types: {', '.join(sorted(TESTABLE_KEY_TYPES))}",
+        )
+
+    try:
+        api_key, source = await _resolve_platform_key(db_pool, key_type)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resolving {key_type} key for test: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to resolve stored key")
+
+    if not api_key:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {key_type} key configured (checked database and environment).",
+        )
+
+    started = datetime.utcnow()
+    try:
+        ok, status_code, detail = await _run_key_test(key_type, api_key)
+    except httpx.TimeoutException:
+        latency_ms = round((datetime.utcnow() - started).total_seconds() * 1000, 1)
+        return {
+            "ok": False,
+            "key_type": key_type,
+            "source": source,
+            "status_code": None,
+            "latency_ms": latency_ms,
+            "detail": f"Provider did not respond within {TEST_TIMEOUT_SECONDS:.0f}s.",
+        }
+    except httpx.HTTPError as e:
+        latency_ms = round((datetime.utcnow() - started).total_seconds() * 1000, 1)
+        return {
+            "ok": False,
+            "key_type": key_type,
+            "source": source,
+            "status_code": None,
+            "latency_ms": latency_ms,
+            "detail": f"Network error reaching provider: {e.__class__.__name__}: {e}",
+        }
+
+    latency_ms = round((datetime.utcnow() - started).total_seconds() * 1000, 1)
+
+    logger.info(
+        f"Admin {current_user.get('email', 'unknown')} tested platform key "
+        f"'{key_type}' -> ok={ok} status={status_code}"
+    )
+
+    return {
+        "ok": ok,
+        "key_type": key_type,
+        "source": source,
+        "status_code": status_code,
+        "latency_ms": latency_ms,
+        "detail": detail,
+    }

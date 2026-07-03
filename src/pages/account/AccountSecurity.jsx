@@ -28,6 +28,33 @@ import {
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../../contexts/ThemeContext';
 
+// Derive a readable device label from the backend's user_agent string.
+// GET /api/v1/auth/sessions returns snake_case SessionInfo objects:
+// { id, ip_address, user_agent, last_active, created_at, is_current }
+const describeDevice = (userAgent) => {
+  if (!userAgent) return null;
+  const browser = /Edg(e|A|iOS)?\//.test(userAgent) ? 'Edge'
+    : /OPR\//.test(userAgent) ? 'Opera'
+    : /Firefox\//.test(userAgent) ? 'Firefox'
+    : /Chrome\//.test(userAgent) ? 'Chrome'
+    : /Safari\//.test(userAgent) ? 'Safari'
+    : null;
+  const os = /Windows/.test(userAgent) ? 'Windows'
+    : /Android/.test(userAgent) ? 'Android'
+    : /iPhone|iPad|iOS/.test(userAgent) ? 'iOS'
+    : /Mac OS X|Macintosh/.test(userAgent) ? 'macOS'
+    : /Linux/.test(userAgent) ? 'Linux'
+    : null;
+  if (browser && os) return `${browser} on ${os}`;
+  return browser || os || userAgent;
+};
+
+const formatSessionTime = (isoString) => {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+};
+
 export default function AccountSecurity() {
   const { theme, currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -348,12 +375,17 @@ export default function AccountSecurity() {
         </div>
 
         <div className="space-y-3">
+          {sessions.length === 0 && (
+            <p className={`text-sm ${themeClasses.subtext}`}>
+              No active sessions reported.
+            </p>
+          )}
           {sessions.map((session) => (
             <motion.div
               key={session.id}
               whileHover={{ scale: 1.01 }}
               className={`p-4 rounded-lg border ${
-                session.isCurrent
+                session.is_current
                   ? 'border-green-500/30 bg-green-500/5'
                   : currentTheme === 'light'
                   ? 'border-gray-200 bg-gray-50'
@@ -365,8 +397,8 @@ export default function AccountSecurity() {
                   <ComputerDesktopIcon className={`h-5 w-5 ${themeClasses.text} mt-1`} />
                   <div>
                     <p className={`font-medium ${themeClasses.text} flex items-center gap-2`}>
-                      {session.device}
-                      {session.isCurrent && (
+                      {describeDevice(session.user_agent) || '—'}
+                      {session.is_current && (
                         <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full">
                           Current
                         </span>
@@ -375,17 +407,20 @@ export default function AccountSecurity() {
                     <div className={`text-sm ${themeClasses.subtext} mt-1 space-y-1`}>
                       <div className="flex items-center gap-2">
                         <MapPinIcon className="h-4 w-4" />
-                        {session.location} • {session.ip}
+                        {/* Backend does not provide a location — only the IP address */}
+                        {session.ip_address || '—'}
                       </div>
                       <div className="flex items-center gap-2">
                         <ClockIcon className="h-4 w-4" />
-                        {session.lastActive}
+                        {formatSessionTime(session.last_active)
+                          ? `Last active ${formatSessionTime(session.last_active)}`
+                          : '—'}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {!session.isCurrent && (
+                {!session.is_current && (
                   <button
                     onClick={() => handleRevokeSession(session.id)}
                     disabled={revokingSession === session.id}

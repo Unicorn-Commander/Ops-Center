@@ -825,10 +825,11 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
 )
 app.add_middleware(csrf_middleware_factory)
 
-# Default-deny Authentication Middleware (2026-06-08 audit remediation).
-# Gates every /api/* request that isn't on the public/m2m allowlist, requiring a valid
-# session — so a router that forgets its per-endpoint auth dependency fails CLOSED instead
-# of silently serving data unauthenticated. Kill switch: AUTH_MIDDLEWARE_ENABLED=false.
+# Default-deny Authentication Middleware (2026-06-08 audit remediation; customer-node
+# hotfixed 2026-06-09). Gates every /api/* request that isn't on the public/m2m allowlist,
+# requiring a valid session — so a router that forgets its per-endpoint auth dependency
+# fails CLOSED instead of silently serving data unauthenticated.
+# Kill switch: AUTH_MIDDLEWARE_ENABLED=false (then recreate).
 from auth_middleware import create_auth_middleware
 AUTH_MIDDLEWARE_ENABLED = os.getenv("AUTH_MIDDLEWARE_ENABLED", "true").lower() == "true"
 app.add_middleware(create_auth_middleware(enabled=AUTH_MIDDLEWARE_ENABLED))
@@ -944,6 +945,24 @@ async def startup_event():
             schema_drift.log_report(_drift)
         except Exception as e:
             logger.error(f"core_migrations/schema_drift failed (non-fatal, continuing startup): {e}")
+
+        # === migrations runner (Phase 0) ===
+        # Manifest-driven FEATURE-schema convergence (T3, 2026-07-02). Applies the
+        # curated idempotent migrations/*.sql files listed in migrations/manifest.json
+        # (model lists, org features, ...) so feature tables converge on every node
+        # without hand-applied SQL — the layer between the ensure_feature_tables
+        # self-heal above and the versioned core migrations. Statement-tolerant and
+        # NON-FATAL: startup must never crash because of a migration.
+        try:
+            import migrations_runner
+            _mr = await migrations_runner.run_manifest_migrations(db_pool)
+            if _mr.get("applied"):
+                logger.info(f"migrations_runner applied: {[a['name'] for a in _mr['applied']]}")
+            if _mr.get("failed"):
+                logger.error(f"migrations_runner reported failures (non-fatal): {_mr['failed']}")
+        except Exception as e:
+            logger.error(f"migrations_runner failed (non-fatal, continuing startup): {e}")
+        # === end migrations runner (Phase 0) ===
 
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")

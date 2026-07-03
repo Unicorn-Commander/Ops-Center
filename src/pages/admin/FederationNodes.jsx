@@ -35,6 +35,7 @@ import {
   Delete as DeleteIcon
 } from '@mui/icons-material';
 import PageHeader from '../../components/admin/PageHeader';
+import { fetchFederationJson, federationTimeAgo } from '../../utils/federationApi';
 
 const STATUS_COLORS = {
   online: 'success',
@@ -48,18 +49,6 @@ const STATUS_ICONS = {
   offline: '\u{1F534}'
 };
 
-function timeAgo(dateStr) {
-  if (!dateStr) return 'Never';
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 export default function FederationNodes() {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -69,9 +58,7 @@ export default function FederationNodes() {
 
   const fetchNodes = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/federation/nodes', { credentials: 'include' });
-      if (!res.ok) throw new Error(`Failed to fetch nodes (${res.status})`);
-      const data = await res.json();
+      const data = await fetchFederationJson('/api/v1/federation/nodes');
       setNodes(data.nodes || []);
       setError('');
     } catch (err) {
@@ -90,11 +77,9 @@ export default function FederationNodes() {
   const handleDeregister = async () => {
     if (!deregisterTarget) return;
     try {
-      const res = await fetch(`/api/v1/federation/nodes/${deregisterTarget}/deregister`, {
-        method: 'POST',
-        credentials: 'include'
+      await fetchFederationJson(`/api/v1/federation/nodes/${deregisterTarget}`, {
+        method: 'DELETE'
       });
-      if (!res.ok) throw new Error('Deregister failed');
       setDeregisterTarget(null);
       fetchNodes();
     } catch (err) {
@@ -213,7 +198,7 @@ export default function FederationNodes() {
                       </TableCell>
                       <TableCell>
                         <Tooltip title={node.last_heartbeat || 'Never'}>
-                          <Typography variant="body2">{timeAgo(node.last_heartbeat)}</Typography>
+                          <Typography variant="body2">{federationTimeAgo(node.last_heartbeat)}</Typography>
                         </Tooltip>
                       </TableCell>
                       <TableCell>

@@ -15,8 +15,16 @@ import { defineConfig, devices } from '@playwright/test';
  */
 
 export default defineConfig({
-  // Test directory
-  testDir: './tests/e2e',
+  // Test directory — the whole tests/ tree (specs live in tests/e2e/ today;
+  // new suites can be added anywhere under tests/).
+  testDir: './tests',
+
+  // Only *.spec.* files are Playwright suites. tests/mobile/*.test.js are
+  // jest-style scripts (bare `describe`, require('playwright')) that would
+  // crash Playwright collection if picked up by the default testMatch.
+  // .cjs/.mjs included so CommonJS specs can be renamed without a config edit
+  // (package.json is "type":"module", so require() in a .js spec breaks).
+  testMatch: '**/*.spec.{js,cjs,mjs}',
 
   // Maximum time one test can run for
   timeout: 60 * 1000,

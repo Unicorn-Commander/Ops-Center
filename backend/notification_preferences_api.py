@@ -13,13 +13,16 @@ user id (VARCHAR, consistent with usage_tracking / credit tables).
 Endpoints (all session-authenticated):
     GET  /api/v1/notifications/preferences  - load the caller's preferences
     PUT  /api/v1/notifications/preferences  - save the caller's preferences
-    POST /api/v1/notifications/test         - render a preview for one alert type
+    POST /api/v1/notifications/test         - REALLY send a test email to the caller
 
-Email/Slack/SMS delivery is not wired yet; preferences are stored and will apply
-when delivery ships. /test returns a non-sending preview (matches the UI's
-"enabled in a future release" notice). No secrets are logged.
+Email delivery is wired through notification_dispatcher.py (active row in
+email_providers; Microsoft 365 OAuth2 is the tested path). /test performs a
+real send to the caller's notification address and returns {sent, provider}
+or the provider error. Slack/SMS delivery is still not available; those
+preferences are stored only. No secrets are logged.
 
 Created: 2026-06-17
+Updated: 2026-07-02 — /test now sends real email via notification_dispatcher
 """
 
 import inspect
@@ -254,10 +257,15 @@ async def test_notification(
     user: dict = Depends(require_authenticated_user),
 ):
     """
-    Render a preview of one alert type using the caller's current settings.
+    Send a REAL test email for one alert type to the caller.
 
-    Delivery is not yet wired, so this returns a preview rather than sending —
-    matching the UI's "enabled in a future release" notice.
+    Delivers via notification_dispatcher (the active email provider). Because
+    this is an explicit user action, it bypasses the alert-type toggles and the
+    hourly rate limit (force=True) — but the response notes when the caller's
+    saved preferences would suppress real alerts of this type.
+
+    Returns {"sent": true, "provider": ...} on success, or
+    {"sent": false, "provider": ..., "error": ...} with the provider error.
     """
     user_id = _resolve(user)
     ntype = (body.notification_type or "").strip().lower()
@@ -267,7 +275,7 @@ async def test_notification(
             detail=f"notification_type must be one of {sorted(_TEST_TEMPLATES)}",
         )
 
-    # Load current prefs to reflect thresholds / enabled state in the preview
+    # Load current prefs for thresholds, recipient override and honest notes
     stored = None
     try:
         async with _db() as conn:
@@ -291,20 +299,73 @@ async def test_notification(
         hardware_temp_threshold=prefs.hardware_temp_threshold,
     )
 
+    recipient = (prefs.email or user.get("email") or "").strip()
+    if not recipient or "@" not in recipient:
+        raise HTTPException(
+            status_code=400,
+            detail="No email address on your account or in your notification "
+                   "preferences — add one, save, then retry the test.",
+        )
+
+    # Really send (explicit user action → force bypasses gating/rate limit)
+    from notification_dispatcher import send_notification
+
+    subject_line = f"[Test] {subject}"
+    html_fragment = (
+        f"<p style=\"margin:0 0 14px;\">This is a <strong>test "
+        f"{ntype} alert</strong> from your Ops Center notification settings.</p>"
+        f"<p style=\"margin:0 0 14px;\">{message}</p>"
+        f"<p style=\"margin:0 0 14px;\">If you received this, email delivery "
+        f"is working for your account.</p>"
+    )
+    text_fallback = (
+        f"This is a test {ntype} alert from your Ops Center notification "
+        f"settings.\n\n{message}\n\nIf you received this, email delivery is "
+        "working for your account."
+    )
+    result = await send_notification(
+        recipient,
+        f"test_{ntype}",
+        subject_line,
+        html_fragment,
+        text_fallback,
+        user_id=user_id,
+        force=True,
+    )
+
+    # Honest note about what the caller's SAVED prefs mean for real alerts
+    if not prefs.email_enabled:
+        note = ("Note: email notifications are turned OFF in your saved "
+                "preferences, so real alerts will not be emailed. This test "
+                "was sent because you requested it explicitly.")
+    elif not type_enabled:
+        note = (f"Note: {ntype} alerts are turned OFF in your saved "
+                "preferences, so real alerts of this type will not be "
+                "emailed. This test was sent because you requested it "
+                "explicitly.")
+    elif prefs.alert_frequency != "immediate":
+        note = (f"Note: your alert frequency is set to '{prefs.alert_frequency}'. "
+                "Digest delivery is not available yet, so real-time alert "
+                "emails are suppressed until you switch to 'immediate'.")
+    else:
+        note = None
+
+    if result.get("sent"):
+        return {
+            "sent": True,
+            "provider": result.get("provider"),
+            "recipient": result.get("recipient", recipient),
+            "message": f"Test {ntype} email sent to {result.get('recipient', recipient)}",
+            "note": note,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+        }
+
     return {
-        "message": (
-            f"Preview generated for {ntype} alert"
-            if type_enabled
-            else f"{ntype.capitalize()} alerts are currently disabled — this is a preview only"
-        ),
-        "preview": {
-            "enabled": type_enabled and prefs.email_enabled,
-            "subject": subject,
-            "message": message,
-        },
-        "note": (
-            "Email delivery is not active yet; this is a non-sending preview. "
-            "Your saved preferences will apply automatically once delivery ships."
-        ),
+        "sent": False,
+        "provider": result.get("provider"),
+        "recipient": result.get("recipient", recipient),
+        "message": f"Test {ntype} email could not be sent",
+        "error": result.get("error") or result.get("skipped") or "Unknown provider error",
+        "note": note,
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }

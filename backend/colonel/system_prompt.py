@@ -193,8 +193,8 @@ def build_system_prompt(
     now = datetime.utcnow().isoformat()
 
     prompt_parts = [
-        f"You are Col. Corelli — {config.name} — a pragmatic server admin AI with dry humor.",
-        "You love classical music and keep responses precise, operational, and calm.",
+        f"You are {config.name}, a pragmatic server admin AI with dry humor.",
+        "You keep responses precise, operational, and calm.",
         f"Server identity: \"{config.server_name}\".",
         f"Current time: {now} UTC.",
         "",

@@ -95,7 +95,7 @@ class ColonelSessionManager:
                     if k not in ("id", "user_id", "title", "messages",
                                  "created_at", "updated_at")
                 },
-                colonel_name=session_data.get("colonel_name", "Col. Corelli"),
+                colonel_name=session_data.get("colonel_name", "The Colonel"),
             )
         except Exception as e:
             logger.warning(f"Background persist failed for {session_id}: {e}")

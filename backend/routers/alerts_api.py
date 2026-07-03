@@ -304,6 +304,7 @@ async def sync_prometheus_alerts(pool) -> int:
         return 0
 
     synced = 0
+    fired_alerts = []  # T7 hook: newly-fired alerts to email admins about
     async with pool.acquire() as conn:
         for alert in prometheus_alerts:
             labels = alert.get("labels", {})
@@ -335,6 +336,24 @@ async def sync_prometheus_alerts(pool) -> int:
                     labels
                 )
                 synced += 1
+                fired_alerts.append({
+                    "name": alertname,
+                    "severity": severity.value,
+                    "message": message,
+                })
+
+    # ------------------------------------------------------------------
+    # APPEND-ONLY HOOK (T7): email admins when new monitoring alerts fire.
+    # Fire-and-forget via the notification dispatcher (which applies its own
+    # 1/hour/recipient rate limit). Must NEVER break the alert sync path.
+    # ------------------------------------------------------------------
+    if fired_alerts:
+        try:
+            import asyncio
+            from notification_dispatcher import notify_admins_alert_fired
+            asyncio.create_task(notify_admins_alert_fired(fired_alerts))
+        except Exception as notify_exc:
+            logger.warning(f"Alert-fired email hook failed (non-blocking): {notify_exc}")
 
     return synced
 

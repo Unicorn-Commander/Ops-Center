@@ -989,7 +989,7 @@ async def git_commit(repo_path: str, message: str, files: str) -> str:
     commit_cmd = f"""{_git_safe_cmd(repo_path, 'commit -m')} "$(cat <<'COLONEL_EOF'
 {message}
 
-Co-Authored-By: Col. Corelli <colonel@unicorncommander.ai>
+Co-Authored-By: The Colonel <colonel@unicorncommander.ai>
 COLONEL_EOF
 )"
 """
@@ -1071,7 +1071,7 @@ async def brigade_delegate_task(agent_id: str, task: str, context: str = "") -> 
         "task": message,
         "context": {
             "requesting_agent_id": "colonel-corelli",
-            "requesting_agent_name": "Col. Corelli (Ops-Center)",
+            "requesting_agent_name": "The Colonel (Ops-Center)",
         },
         "conversation_history": [],
     }

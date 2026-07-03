@@ -423,3 +423,120 @@ async def get_billing_summary(request: Request):
             "invoice_count": 0,
             "currency": "USD"
         }
+
+
+# ============================================================================
+# === T6 === Invoice payment retry + subscription pause/resume
+# ============================================================================
+
+from lago_integration import retry_invoice_payment as lago_retry_invoice_payment
+
+
+@router.post("/invoices/{invoice_id}/retry")
+async def retry_invoice(invoice_id: str, request: Request):
+    """
+    Retry payment collection for a failed invoice (via Lago retry_payment).
+
+    Access: same scoping as GET /invoices/{id}/pdf — the invoice must belong
+    to the caller's org/email, OR the caller must be an admin.
+    """
+    session_data = _load_session(request)
+    user = session_data.get("user", {}) or {}
+    is_admin = bool(user.get("is_admin")) or user.get("role") == "admin"
+    org_id = session_data.get("org_id")
+    email = user.get("email") or session_data.get("email")
+
+    if not is_admin and not org_id and not email:
+        raise HTTPException(status_code=400, detail="No billing identity on session")
+
+    # Ownership check: find the invoice among the caller's invoices
+    # (canonical org_id key first, legacy email fallback — same as the PDF endpoint)
+    target_invoice = None
+    if org_id or email:
+        try:
+            invoices = await get_invoices_for(org_id, email, limit=200)
+            for invoice in invoices:
+                if invoice.get("lago_id") == invoice_id:
+                    target_invoice = invoice
+                    break
+        except Exception as e:
+            logger.error(f"Error scoping invoice {invoice_id} for retry: {e}", exc_info=True)
+
+    # Admins may retry any invoice directly (Billing Dashboard)
+    if not target_invoice and is_admin:
+        target_invoice = await lago_get_invoice(invoice_id)
+
+    if not target_invoice:
+        # Deliberately identical for "doesn't exist" and "not yours"
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    result = await lago_retry_invoice_payment(invoice_id)
+
+    if not result["ok"]:
+        status_code = result.get("status_code")
+        if status_code == 404:
+            raise HTTPException(status_code=404, detail=result["detail"])
+        # Not-retryable state / provider errors -> 409 with Lago's reason
+        raise HTTPException(status_code=409, detail=result["detail"])
+
+    logger.info(f"Invoice {invoice_id} payment retry requested by {email or org_id}")
+
+    return {
+        "success": True,
+        "invoice_id": invoice_id,
+        "invoice_number": target_invoice.get("number"),
+        "detail": result["detail"],
+        "status": (result.get("invoice") or {}).get("payment_status")
+        or (result.get("invoice") or {}).get("status"),
+    }
+
+
+def _require_admin_session(request: Request) -> dict:
+    """Admin gate matching the PDF endpoint's session-role convention."""
+    session_data = _load_session(request)
+    user = session_data.get("user", {}) or {}
+    is_admin = bool(user.get("is_admin")) or user.get("role") == "admin"
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return session_data
+
+
+@router.post("/subscriptions/{sub_or_org_id}/pause")
+async def pause_subscription(sub_or_org_id: str, request: Request):
+    """
+    Pause a subscription — NOT SUPPORTED on this billing stack (501).
+
+    The deployed Lago version has no native subscription pause. The only
+    approximation (terminate + later re-create) issues a final prorated
+    invoice/credit note on terminate and resets the billing anniversary on
+    re-create — that is a cancellation, not a pause, so we refuse to fake it.
+    The UI keeps this control disabled until Lago ships native pause support.
+    """
+    _require_admin_session(request)
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Subscription pause is not supported: Lago has no native pause API, "
+            "and emulating it via terminate/re-create would issue a final prorated "
+            "invoice and reset the billing anniversary (a cancellation, not a pause). "
+            "Use cancel, or a plan change, instead."
+        ),
+    )
+
+
+@router.post("/subscriptions/{sub_or_org_id}/resume")
+async def resume_subscription(sub_or_org_id: str, request: Request):
+    """
+    Resume a paused subscription — NOT SUPPORTED on this billing stack (501).
+
+    See pause_subscription: there is no clean pause state to resume from.
+    """
+    _require_admin_session(request)
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Subscription resume is not supported: Lago has no native pause/resume "
+            "API on this deployment, so there is no paused state to resume from. "
+            "Re-subscribe via the normal subscription flow instead."
+        ),
+    )
