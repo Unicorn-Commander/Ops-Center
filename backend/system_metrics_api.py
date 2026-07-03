@@ -715,3 +715,374 @@ async def get_alert_summary() -> Dict:
     except Exception as e:
         logger.warning(f"Alert summary unavailable, returning empty: {e}")
         return {"total": 0, "by_severity": {}}
+
+
+# ============================================================================
+# === T6 === Destructive/diagnostic system actions (admin only)
+# Implemented endpoints for the previously-disabled UI controls:
+#   DELETE /api/v1/system/process/{pid}   - terminate a non-critical process
+#   DELETE /api/v1/system/cache           - clear known app-level caches
+#   POST   /api/v1/system/network/test    - DNS/TCP/HTTP connectivity test
+# ============================================================================
+
+import socket
+import time as _time
+from fastapi import Depends, Body
+from pydantic import BaseModel, Field
+
+from auth_dependencies import require_admin_user
+
+
+# Processes that must never be killed from the UI: infrastructure the console
+# itself (or the platform) depends on. Matched case-insensitively against the
+# process name AND its full command line.
+PROTECTED_PROCESS_RE = re.compile(
+    r"(postgres|redis|uvicorn|python.*server|docker|traefik|keycloak)",
+    re.IGNORECASE,
+)
+
+
+@router.delete("/process/{pid}")
+async def terminate_process(
+    pid: int,
+    admin: Dict = Depends(require_admin_user),
+) -> Dict:
+    """
+    Terminate a process by PID (admin only).
+
+    Sends SIGTERM (psutil terminate) — never SIGKILL. Refuses (409) to touch:
+    - PID <= 1 (kernel/init)
+    - the Ops-Center backend's own process or its parent
+    - anything whose name/cmdline matches critical infrastructure
+      (postgres, redis, uvicorn, python …server, docker, traefik, keycloak)
+    """
+    if pid <= 1:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Refusing to terminate PID {pid}: system-critical (init/kernel).",
+        )
+
+    own_pid = os.getpid()
+    protected_pids = {own_pid}
+    try:
+        protected_pids.add(psutil.Process(own_pid).ppid())
+    except psutil.Error:
+        pass
+
+    if pid in protected_pids:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Refusing to terminate PID {pid}: it is the Ops-Center backend itself.",
+        )
+
+    try:
+        proc = psutil.Process(pid)
+        name = proc.name()
+        try:
+            cmdline = " ".join(proc.cmdline())
+        except (psutil.AccessDenied, psutil.ZombieProcess):
+            cmdline = ""
+    except psutil.NoSuchProcess:
+        raise HTTPException(status_code=404, detail=f"No process with PID {pid}")
+    except psutil.AccessDenied:
+        raise HTTPException(status_code=403, detail=f"Access denied inspecting PID {pid}")
+
+    match = PROTECTED_PROCESS_RE.search(name) or PROTECTED_PROCESS_RE.search(cmdline)
+    if match:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Refusing to terminate '{name}' (PID {pid}): matches protected "
+                f"infrastructure pattern '{match.group(0)}'. Critical services "
+                f"cannot be killed from the console."
+            ),
+        )
+
+    try:
+        proc.terminate()  # SIGTERM — graceful; never SIGKILL from the UI
+        gone, _alive = psutil.wait_procs([proc], timeout=3)
+        exited = len(gone) > 0
+    except psutil.NoSuchProcess:
+        exited = True  # died between inspection and signal — that's a success
+    except psutil.AccessDenied:
+        raise HTTPException(status_code=403, detail=f"Access denied terminating PID {pid}")
+
+    logger.info(
+        f"Process terminate: pid={pid} name='{name}' exited={exited} "
+        f"by admin {admin.get('email') or admin.get('username', 'unknown')}"
+    )
+
+    return {
+        "success": True,
+        "pid": pid,
+        "name": name,
+        "signal": "SIGTERM",
+        "exited": exited,
+        "message": (
+            f"Sent SIGTERM to '{name}' (PID {pid}); process exited."
+            if exited
+            else f"Sent SIGTERM to '{name}' (PID {pid}); it has not exited yet "
+                 f"(it may shut down gracefully or ignore the signal)."
+        ),
+    }
+
+
+# App-level Redis cache prefixes that are safe to clear (all are recomputable
+# read-caches; sessions `session:*`, quota state `local_tokens:*`, rate-limit
+# counters etc. are deliberately NOT in this list). Sources:
+#   opscenter:*        redis_cache_manager.py (api/user/org response cache)
+#   ops_center:*       cache/redis_cache.py (namespaced cache layer)
+#   analytics:*        user_analytics.py
+#   revenue:*          revenue_analytics.py
+#   logs:search:*      logs_search_api.py
+#   models:list:*      model_admin_api.py
+#   credits:balance:*  litellm_credit_system.py (balance cache; DB is truth)
+#   system_setting:* / system_settings:*  system_settings_manager.py
+# DB 1: metrics:*      system_metrics_api.py / metrics_collector.py history
+SAFE_CACHE_PATTERNS_DB0 = [
+    "opscenter:*",
+    "ops_center:*",
+    "analytics:*",
+    "revenue:*",
+    "logs:search:*",
+    "models:list:*",
+    "credits:balance:*",
+    "system_setting:*",
+    "system_settings:*",
+]
+SAFE_CACHE_PATTERNS_DB1 = ["metrics:*"]
+
+# App-written scratch artifacts in /tmp that are safe to remove.
+SAFE_TMP_ARTIFACTS = ["/tmp/oauth_debug.log"]
+
+
+def _clear_redis_patterns() -> Dict:
+    """Delete only the enumerated cache patterns (SCAN + DELETE, never FLUSH*)."""
+    cleared: Dict[str, int] = {}
+    errors: List[str] = []
+
+    def _clear_db(db: int, patterns: List[str]):
+        try:
+            client = redis.Redis(
+                host=os.getenv("REDIS_HOST", "unicorn-redis"),
+                port=int(os.getenv("REDIS_PORT", "6379")),
+                db=db,
+                password=os.getenv("REDIS_PASSWORD"),
+                decode_responses=True,
+                socket_timeout=5,
+            )
+            client.ping()
+        except Exception as e:
+            errors.append(f"redis db{db} unavailable: {e}")
+            return
+        for pattern in patterns:
+            count = 0
+            try:
+                batch = []
+                for key in client.scan_iter(match=pattern, count=500):
+                    batch.append(key)
+                    if len(batch) >= 500:
+                        count += client.delete(*batch)
+                        batch = []
+                if batch:
+                    count += client.delete(*batch)
+            except Exception as e:
+                errors.append(f"db{db} {pattern}: {e}")
+            cleared[f"db{db}:{pattern}"] = count
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    _clear_db(0, SAFE_CACHE_PATTERNS_DB0)
+    _clear_db(1, SAFE_CACHE_PATTERNS_DB1)
+    return {"cleared": cleared, "errors": errors}
+
+
+@router.delete("/cache")
+async def clear_app_caches(admin: Dict = Depends(require_admin_user)) -> Dict:
+    """
+    Clear known app-level caches (admin only).
+
+    Deletes ONLY the enumerated cache key patterns via SCAN+DELETE — never
+    FLUSHALL/FLUSHDB — so sessions, quotas, and rate-limit state are untouched.
+    Also removes known app scratch artifacts in /tmp.
+    """
+    result = await asyncio.to_thread(_clear_redis_patterns)
+
+    tmp_removed = []
+    for path in SAFE_TMP_ARTIFACTS:
+        try:
+            if os.path.isfile(path):
+                size = os.path.getsize(path)
+                os.remove(path)
+                tmp_removed.append({"path": path, "bytes": size})
+        except OSError as e:
+            result["errors"].append(f"{path}: {e}")
+
+    total = sum(result["cleared"].values())
+    logger.info(
+        f"App caches cleared ({total} redis keys, {len(tmp_removed)} tmp files) "
+        f"by admin {admin.get('email') or admin.get('username', 'unknown')}"
+    )
+
+    return {
+        "success": True,
+        "cleared": result["cleared"],
+        "total_keys_deleted": total,
+        "tmp_files_removed": tmp_removed,
+        "errors": result["errors"],
+        "note": "Only app-level cache namespaces were cleared; sessions and quota state untouched.",
+    }
+
+
+class NetworkTestRequest(BaseModel):
+    """Optional target for the connectivity test (must be in the allowlist)."""
+    target: Optional[str] = Field(
+        None,
+        max_length=253,
+        description="Host to test. Omit to test the deployment's own external host and 8.8.8.8.",
+    )
+
+
+def _network_test_allowlist() -> List[str]:
+    targets = []
+    external_host = (os.getenv("EXTERNAL_HOST") or "").strip()
+    if external_host:
+        targets.append(external_host)
+    targets.extend(["8.8.8.8", "1.1.1.1", "google.com", "cloudflare.com"])
+    # de-dup, preserve order
+    seen = set()
+    return [t for t in targets if not (t in seen or seen.add(t))]
+
+
+def _is_ip_literal(value: str) -> bool:
+    try:
+        socket.inet_aton(value)
+        return True
+    except OSError:
+        return False
+
+
+def _probe_target_blocking(target: str) -> Dict:
+    """DNS resolve + TCP connect timing for one target. Pure python, 5s timeouts."""
+    result: Dict = {"target": target}
+
+    # DNS resolution (timed even for IP literals — getaddrinfo is a no-op there)
+    start = _time.monotonic()
+    try:
+        infos = socket.getaddrinfo(target, None, proto=socket.IPPROTO_TCP)
+        addresses = sorted({info[4][0] for info in infos})
+        result["dns"] = {
+            "ok": True,
+            "ms": round((_time.monotonic() - start) * 1000, 1),
+            "addresses": addresses[:5],
+        }
+    except OSError as e:
+        result["dns"] = {
+            "ok": False,
+            "ms": round((_time.monotonic() - start) * 1000, 1),
+            "error": str(e),
+        }
+        result["tcp"] = {"ok": False, "error": "skipped (DNS failed)"}
+        return result
+
+    # TCP connect: DNS resolvers get port 53, everything else 443 then 80.
+    ports = [53] if _is_ip_literal(target) and target in ("8.8.8.8", "1.1.1.1") else [443, 80]
+    tcp: Dict = {"ok": False}
+    for port in ports:
+        start = _time.monotonic()
+        try:
+            with socket.create_connection((target, port), timeout=5):
+                tcp = {
+                    "ok": True,
+                    "port": port,
+                    "ms": round((_time.monotonic() - start) * 1000, 1),
+                }
+            break
+        except OSError as e:
+            tcp = {
+                "ok": False,
+                "port": port,
+                "ms": round((_time.monotonic() - start) * 1000, 1),
+                "error": str(e),
+            }
+    result["tcp"] = tcp
+    return result
+
+
+@router.post("/network/test")
+async def test_network_connectivity(
+    admin: Dict = Depends(require_admin_user),
+    body: NetworkTestRequest = Body(default=NetworkTestRequest()),
+) -> Dict:
+    """
+    Run a connectivity test (admin only).
+
+    Pure-python probes (no shell commands): DNS resolve timing, TCP connect
+    timing, and an HTTP(S) HEAD latency check for hostname targets. Targets
+    are restricted to a small allowlist (the deployment's EXTERNAL_HOST plus
+    well-known resolvers) to prevent using the server as a scan proxy.
+    """
+    allowlist = _network_test_allowlist()
+
+    if body.target:
+        target = body.target.strip().lower()
+        if target not in [t.lower() for t in allowlist]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Target not in allowlist. Allowed targets: {', '.join(allowlist)}",
+            )
+        targets = [target]
+    else:
+        # Default: the deployment's own external host (if configured) + 8.8.8.8
+        targets = []
+        external_host = (os.getenv("EXTERNAL_HOST") or "").strip()
+        if external_host:
+            targets.append(external_host)
+        targets.append("8.8.8.8")
+
+    results = []
+    for target in targets:
+        probe = await asyncio.to_thread(_probe_target_blocking, target)
+
+        # HTTP(S) HEAD latency for hostname targets that accepted a TCP connection
+        probe["http"] = None
+        if probe.get("tcp", {}).get("ok") and not _is_ip_literal(target):
+            import httpx
+
+            scheme = "https" if probe["tcp"].get("port") == 443 else "http"
+            url = f"{scheme}://{target}/"
+            start = _time.monotonic()
+            try:
+                async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
+                    response = await client.head(url)
+                probe["http"] = {
+                    "ok": True,
+                    "url": url,
+                    "status": response.status_code,
+                    "ms": round((_time.monotonic() - start) * 1000, 1),
+                }
+            except httpx.HTTPError as e:
+                probe["http"] = {
+                    "ok": False,
+                    "url": url,
+                    "ms": round((_time.monotonic() - start) * 1000, 1),
+                    "error": str(e),
+                }
+
+        probe["reachable"] = bool(probe.get("tcp", {}).get("ok"))
+        results.append(probe)
+
+    logger.info(
+        f"Network connectivity test ({', '.join(targets)}) "
+        f"by admin {admin.get('email') or admin.get('username', 'unknown')}"
+    )
+
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "targets_tested": targets,
+        "allowlist": allowlist,
+        "results": results,
+        "all_reachable": all(r["reachable"] for r in results) if results else False,
+    }

@@ -946,6 +946,24 @@ async def startup_event():
         except Exception as e:
             logger.error(f"core_migrations/schema_drift failed (non-fatal, continuing startup): {e}")
 
+        # === migrations runner (Phase 0) ===
+        # Manifest-driven FEATURE-schema convergence (T3, 2026-07-02). Applies the
+        # curated idempotent migrations/*.sql files listed in migrations/manifest.json
+        # (model lists, org features, ...) so feature tables converge on every node
+        # without hand-applied SQL — the layer between the ensure_feature_tables
+        # self-heal above and the versioned core migrations. Statement-tolerant and
+        # NON-FATAL: startup must never crash because of a migration.
+        try:
+            import migrations_runner
+            _mr = await migrations_runner.run_manifest_migrations(db_pool)
+            if _mr.get("applied"):
+                logger.info(f"migrations_runner applied: {[a['name'] for a in _mr['applied']]}")
+            if _mr.get("failed"):
+                logger.error(f"migrations_runner reported failures (non-fatal): {_mr['failed']}")
+        except Exception as e:
+            logger.error(f"migrations_runner failed (non-fatal, continuing startup): {e}")
+        # === end migrations runner (Phase 0) ===
+
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
         redis_client = aioredis.from_url(

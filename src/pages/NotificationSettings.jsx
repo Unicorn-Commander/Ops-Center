@@ -33,7 +33,6 @@ import {
   CreditCard as CreditCardIcon,
   Security as SecurityIcon,
   Send as SendIcon,
-  Info as InfoIcon,
   Check as CheckIcon,
   Chat as SlackIcon,
   Sms as SmsIcon,
@@ -135,14 +134,15 @@ const NotificationSettings = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send test notification');
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.detail || 'Failed to send test notification');
       }
 
       const data = await response.json();
       setTestResult(data);
 
-      // Clear test result after 5 seconds
-      setTimeout(() => setTestResult(null), 5000);
+      // Clear test result after 10 seconds (leave time to read provider errors)
+      setTimeout(() => setTestResult(null), 10000);
     } catch (err) {
       console.error('Error testing notification:', err);
       setError(err.message);
@@ -193,12 +193,6 @@ const NotificationSettings = () => {
         </Typography>
       </Box>
 
-      {/* Phase 3 Notice */}
-      <Alert severity="info" sx={{ mb: 3 }} icon={<InfoIcon />}>
-        <strong>Email notifications will be enabled in a future release.</strong> Your preferences are
-        being saved and will automatically apply when the feature is activated.
-      </Alert>
-
       {/* Success Message */}
       {success && (
         <Alert severity="success" sx={{ mb: 3 }} icon={<CheckIcon />}>
@@ -215,22 +209,27 @@ const NotificationSettings = () => {
 
       {/* Test Result */}
       {testResult && (
-        <Alert
-          severity={testResult.preview.enabled ? 'success' : 'warning'}
-          sx={{ mb: 3 }}
-        >
+        <Alert severity={testResult.sent ? 'success' : 'error'} sx={{ mb: 3 }}>
           <Typography variant="subtitle2" fontWeight="bold">
             {testResult.message}
           </Typography>
-          <Typography variant="body2" sx={{ mt: 1 }}>
-            <strong>Subject:</strong> {testResult.preview.subject}
-          </Typography>
-          <Typography variant="body2">
-            <strong>Message:</strong> {testResult.preview.message}
-          </Typography>
-          <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic' }}>
-            {testResult.note}
-          </Typography>
+          {testResult.sent && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Delivered to <strong>{testResult.recipient}</strong> via{' '}
+              <strong>{testResult.provider || 'the active email provider'}</strong>.
+              Check your inbox.
+            </Typography>
+          )}
+          {!testResult.sent && testResult.error && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Provider error:</strong> {testResult.error}
+            </Typography>
+          )}
+          {testResult.note && (
+            <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic' }}>
+              {testResult.note}
+            </Typography>
+          )}
         </Alert>
       )}
 
@@ -622,7 +621,8 @@ const NotificationSettings = () => {
               Test Notifications
             </Typography>
             <Typography variant="body2" color="text.secondary" mb={3}>
-              Send a test notification to preview your settings
+              Sends a real email to your notification address via the platform's
+              active email provider
             </Typography>
 
             <Grid container spacing={2}>

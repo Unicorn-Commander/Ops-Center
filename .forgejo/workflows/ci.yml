@@ -1,73 +1,122 @@
+# CI — Ops-Center (Forgejo Actions)
+#
+# Runs on the commander-host runner (docker available). Toolchains are pinned
+# via job containers (node:20 / python:3.10) with plain `run:` steps — the only
+# marketplace action used is actions/checkout, which the pre-existing workflows
+# in this repo already depend on.
+#
+# Jobs:
+#   frontend-build   npm ci && npm run build (vite) + bundle-size guard
+#   backend-checks   py_compile sweep over backend/**/*.py (excluding the
+#                    known-dead server_backup.py / server_complete.py)
+#                    + scripts/ci/backend_smoke.py (static: server.py parses,
+#                    critical routers imported+included, auth-middleware
+#                    public allowlists contain no admin/mutation paths)
+#   nav-consistency  scripts/ci/check_nav_consistency.mjs (routes.js vs
+#                    App.jsx route table, redirects, flattenRoutes guard)
+
 name: CI — Ops-Center
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
+      - staging
+      - 'feat/**'
+      - 'fix/**'
   pull_request:
-    branches: [main]
 
 jobs:
-  syntax-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Verify Python syntax (all backend files)
-        run: |
-          find backend -name "*.py" -not -path "*/node_modules/*" -not -path "*/__pycache__/*" | \
-          xargs python3 -c "
-          import ast, sys, pathlib
-          errors = []
-          for f in sys.argv[1:]:
-              try:
-                  ast.parse(pathlib.Path(f).read_text())
-              except SyntaxError as e:
-                  errors.append(f'{f}:{e.lineno}: {e.msg}')
-          if errors:
-              for e in errors: print(f'FAIL: {e}')
-              sys.exit(1)
-          print(f'OK: {len(sys.argv)-1} files pass syntax check')
-          "
-
-      - name: Check for hardcoded credentials
-        run: |
-          # Fail if any Python file contains hardcoded API keys or passwords
-          FINDINGS=$(grep -rn "sk-[a-zA-Z]*-service-key\|MagicUnicorn2025\|password.*=.*['\"]" backend/*.py backend/**/*.py 2>/dev/null | grep -v "test_\|\.pyc\|CLAUDE\|README\|\.md" | head -20)
-          if [ -n "$FINDINGS" ]; then
-            echo "WARNING: Possible hardcoded credentials found:"
-            echo "$FINDINGS"
-            # Don't fail, just warn (some are env var defaults)
-          fi
-
   frontend-build:
+    name: Frontend build (node 20, vite)
     runs-on: ubuntu-latest
+    container:
+      image: node:20-bookworm
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build frontend
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
         run: npm run build
 
-      - name: Check bundle size
+      - name: Bundle sanity (size guard)
         run: |
+          test -d dist || { echo "FAIL: dist/ missing after build"; exit 1; }
           TOTAL=$(du -sh dist/ | cut -f1)
-          JS_COUNT=$(ls dist/assets/*.js | wc -l)
-          echo "Bundle size: $TOTAL ($JS_COUNT JS files)"
-          # Fail if over 100MB (indicates stale assets accumulation)
+          JS_COUNT=$(find dist/assets -name '*.js' 2>/dev/null | wc -l)
+          echo "Bundle size: ${TOTAL} (${JS_COUNT} JS files)"
           SIZE_MB=$(du -sm dist/ | cut -f1)
           if [ "$SIZE_MB" -gt 100 ]; then
-            echo "FAIL: Bundle size ${SIZE_MB}MB exceeds 100MB limit"
+            echo "FAIL: bundle size ${SIZE_MB}MB exceeds 100MB limit (stale asset accumulation?)"
             exit 1
           fi
+
+  backend-checks:
+    name: Backend checks (python 3.10)
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.10-bookworm
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: py_compile sweep (backend/**/*.py)
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, py_compile, sys
+
+          # Known-dead legacy snapshots, not part of the running app.
+          EXCLUDE = {"server_backup.py", "server_complete.py"}
+
+          files = sorted(
+              f for f in pathlib.Path("backend").rglob("*.py")
+              if "__pycache__" not in f.parts and f.name not in EXCLUDE
+          )
+          fails = []
+          for f in files:
+              try:
+                  py_compile.compile(str(f), doraise=True)
+              except py_compile.PyCompileError as e:
+                  fails.append(str(e).strip())
+
+          print(f"py_compile: {len(files)} files checked, {len(fails)} failed")
+          for e in fails:
+              print(f"FAIL: {e}")
+          sys.exit(1 if fails else 0)
+          PYEOF
+
+      - name: Backend smoke (static import/auth-allowlist gates)
+        run: python3 scripts/ci/backend_smoke.py
+
+      - name: Hardcoded credential scan (warn-only)
+        run: |
+          FINDINGS=$(grep -rnE "sk-[a-zA-Z]*-service-key|MagicUnicorn2025" backend --include='*.py' 2>/dev/null | grep -v "test_" | head -20 || true)
+          if [ -n "$FINDINGS" ]; then
+            echo "WARNING: possible hardcoded credentials found:"
+            echo "$FINDINGS"
+            # Warn-only: some hits are env-var defaults; humans triage.
+          else
+            echo "No hardcoded credential patterns found."
+          fi
+
+  nav-consistency:
+    name: Nav consistency (routes.js vs App.jsx)
+    runs-on: ubuntu-latest
+    container:
+      image: node:20-bookworm
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check nav/route/redirect consistency
+        # Uses node builtins only — no npm install required.
+        run: node scripts/ci/check_nav_consistency.mjs

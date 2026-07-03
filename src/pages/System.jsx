@@ -91,7 +91,7 @@ const TemperatureGauge = ({ temperature, maxTemp = 100, theme }) => {
 };
 
 // Process row component
-const ProcessRow = ({ process, theme }) => {
+const ProcessRow = ({ process, theme, onKill, killing }) => {
   const isCritical = isCriticalProcess(process.name);
 
   return (
@@ -141,15 +141,27 @@ const ProcessRow = ({ process, theme }) => {
           </span>
         </td>
         <td className="px-4 py-3 text-sm">
-          {/* Killing processes is not supported by the backend on this deployment */}
-          <span title="Not available yet — killing processes is not supported on this deployment.">
-            <button
-              disabled
-              className="p-1 rounded text-gray-500 cursor-not-allowed"
-            >
-              <StopIcon className="h-4 w-4" />
-            </button>
-          </span>
+          {isCritical ? (
+            /* Critical infrastructure is not killable — the backend refuses too (409) */
+            <span title="Protected process — critical infrastructure cannot be terminated from the console.">
+              <button
+                disabled
+                className="p-1 rounded text-gray-500 cursor-not-allowed"
+              >
+                <StopIcon className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <span title={`Terminate ${process.name} (PID ${process.pid}) with SIGTERM`}>
+              <button
+                onClick={() => onKill(process)}
+                disabled={killing}
+                className="p-1 rounded text-red-400 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <StopIcon className="h-4 w-4" />
+              </button>
+            </span>
+          )}
         </td>
       </motion.tr>
     </>
@@ -184,6 +196,10 @@ export default function System() {
     diskIo: 0,
     network: 0
   });
+  // Pending destructive action awaiting confirmation:
+  // { type: 'kill', process } | { type: 'cache' }
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const maxDataPoints = 30;
   const maxRetries = 3;
   const dataRef = useRef(historicalData);
@@ -343,6 +359,64 @@ export default function System() {
     }
   };
 
+  const handleKillProcess = async (process) => {
+    setActionBusy(true);
+    try {
+      const response = await fetch(`/api/v1/system/process/${process.pid}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        if (data.exited) {
+          toast.success(data.message || `Terminated ${process.name} (PID ${process.pid})`);
+        } else {
+          toast.warning(data.message || `SIGTERM sent to ${process.name}; it has not exited yet`);
+        }
+        fetchSystemStatus();
+      } else {
+        // 409 = protected process (backend explains why), 404 = already gone, 403 = access denied
+        toast.error(data.detail || `Failed to terminate process (HTTP ${response.status})`);
+      }
+    } catch (error) {
+      console.error('Error terminating process:', error);
+      toast.error('Network error terminating process');
+    } finally {
+      setActionBusy(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const handleClearCache = async () => {
+    setActionBusy(true);
+    try {
+      const response = await fetch('/api/v1/system/cache', {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        const keys = data.total_keys_deleted ?? 0;
+        const tmpFiles = (data.tmp_files_removed || []).length;
+        toast.success(
+          `Cache cleared: ${keys} cache ${keys === 1 ? 'key' : 'keys'} deleted` +
+          (tmpFiles ? `, ${tmpFiles} temp ${tmpFiles === 1 ? 'file' : 'files'} removed` : '')
+        );
+        if ((data.errors || []).length > 0) {
+          toast.warning(`Some cache namespaces could not be cleared: ${data.errors[0]}`);
+        }
+      } else {
+        toast.error(data.detail || `Failed to clear cache (HTTP ${response.status})`);
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      toast.error('Network error clearing cache');
+    } finally {
+      setActionBusy(false);
+      setConfirmAction(null);
+    }
+  };
+
   if (!systemStatus || !systemStatus.cpu) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -399,11 +473,11 @@ export default function System() {
             {autoRefresh ? 'Auto-refresh On' : 'Auto-refresh Off'}
           </button>
 
-          {/* Cache clearing is not supported by the backend on this deployment */}
-          <span title="Not available yet — cache clearing is not supported on this deployment.">
+          <span title="Clear app-level caches (Redis cache namespaces + temp artifacts). Sessions and quotas are untouched.">
             <button
-              disabled
-              className="px-4 py-2 rounded-lg bg-gray-700 text-gray-400 cursor-not-allowed flex items-center gap-2"
+              onClick={() => setConfirmAction({ type: 'cache' })}
+              disabled={actionBusy}
+              className="px-4 py-2 rounded-lg bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 flex items-center gap-2"
             >
               <TrashIcon className="h-5 w-5" />
               Clear Cache
@@ -837,6 +911,8 @@ export default function System() {
                     key={process.pid}
                     process={process}
                     theme={theme}
+                    killing={actionBusy}
+                    onKill={(proc) => setConfirmAction({ type: 'kill', process: proc })}
                   />
                 ))}
               </tbody>
@@ -1039,6 +1115,86 @@ export default function System() {
           </div>
         </div>
       )}
+
+      {/* Confirm destructive actions (kill process / clear cache) */}
+      <AnimatePresence>
+        {confirmAction && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => !actionBusy && setConfirmAction(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gray-800 rounded-2xl border border-gray-700 p-6 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`p-3 rounded-xl ${confirmAction.type === 'kill' ? 'bg-red-500/10' : 'bg-yellow-500/10'}`}>
+                  {confirmAction.type === 'kill' ? (
+                    <StopIcon className="h-6 w-6 text-red-400" />
+                  ) : (
+                    <TrashIcon className="h-6 w-6 text-yellow-400" />
+                  )}
+                </div>
+                <h3 className={`text-xl font-bold ${theme.text.primary}`}>
+                  {confirmAction.type === 'kill' ? 'Terminate Process?' : 'Clear App Caches?'}
+                </h3>
+              </div>
+
+              {confirmAction.type === 'kill' ? (
+                <p className={`${theme.text.secondary} mb-6`}>
+                  Send SIGTERM to{' '}
+                  <span className={`font-mono ${theme.text.primary}`}>
+                    {confirmAction.process?.name}
+                  </span>{' '}
+                  (PID {confirmAction.process?.pid})? The process will be asked to shut
+                  down gracefully. Critical infrastructure processes are refused by the server.
+                </p>
+              ) : (
+                <p className={`${theme.text.secondary} mb-6`}>
+                  This deletes the app-level Redis cache namespaces (API/analytics/settings
+                  caches and metrics history) plus known temp artifacts. Sessions, quotas,
+                  and rate limits are not touched. Cached data will be recomputed on demand.
+                </p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmAction(null)}
+                  disabled={actionBusy}
+                  className="flex-1 px-4 py-2 rounded-xl bg-gray-700 text-white font-medium hover:bg-gray-600 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() =>
+                    confirmAction.type === 'kill'
+                      ? handleKillProcess(confirmAction.process)
+                      : handleClearCache()
+                  }
+                  disabled={actionBusy}
+                  className={`flex-1 px-4 py-2 rounded-xl text-white font-medium transition-colors disabled:opacity-50 ${
+                    confirmAction.type === 'kill'
+                      ? 'bg-red-600 hover:bg-red-500'
+                      : 'bg-yellow-600 hover:bg-yellow-500'
+                  }`}
+                >
+                  {actionBusy
+                    ? 'Working...'
+                    : confirmAction.type === 'kill'
+                    ? 'Terminate'
+                    : 'Clear Cache'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

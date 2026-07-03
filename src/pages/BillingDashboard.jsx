@@ -685,16 +685,21 @@ const AdminView = ({ theme }) => {
         const invoiceList = Array.isArray(data) ? data : (data.payments || data.invoices || []);
         const payments = invoiceList.map(inv => ({
           invoice_id: inv.invoice_number || String(inv.id ?? ''),
+          lago_id: inv.id || null, // Lago's internal invoice id — required by the retry/PDF endpoints
           date: inv.issued_date || inv.date,
           customer_email: inv.customer_email || null,
           plan_name: inv.plan_name || null,
           amount: inv.amount,
           status: inv.status,
+          // Lago separates invoice lifecycle (status: draft/finalized/voided)
+          // from payment state (payment_status: pending/succeeded/failed). Use
+          // payment_status when the API provides it; fall back to status.
+          payment_status: inv.payment_status || null,
           pdf_url: inv.pdf_url || null
         }));
         setRecentPayments(payments);
         // Derived from real data (the API has no ?status=failed filter)
-        setFailedPayments(payments.filter(p => p.status === 'failed'));
+        setFailedPayments(payments.filter(p => (p.payment_status || p.status) === 'failed'));
       } else {
         console.error('Payments request failed:', paymentsRes.status);
       }
@@ -801,9 +806,14 @@ const AdminView = ({ theme }) => {
     });
   };
 
+  // NOTE: subscription pause/resume is NOT offered in the UI. The billing
+  // backend (Lago) has no native pause API — POST /api/v1/billing/
+  // subscriptions/{id}/pause|resume exists but returns 501 with the reason.
+  // These handlers stay unrendered until the billing stack supports a real
+  // pause; wiring a button to a fake pause would be a lie to the admin.
   const handlePauseSubscription = async (subscriptionId) => {
     try {
-      const res = await fetch(`/api/v1/subscriptions/${subscriptionId}/pause`, {
+      const res = await fetch(`/api/v1/billing/subscriptions/${subscriptionId}/pause`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -822,7 +832,7 @@ const AdminView = ({ theme }) => {
 
   const handleResumeSubscription = async (subscriptionId) => {
     try {
-      const res = await fetch(`/api/v1/subscriptions/${subscriptionId}/resume`, {
+      const res = await fetch(`/api/v1/billing/subscriptions/${subscriptionId}/resume`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -909,19 +919,25 @@ const AdminView = ({ theme }) => {
     });
   };
 
-  const handleRetryPayment = async (paymentId) => {
+  const handleRetryPayment = async (payment) => {
+    // The retry endpoint is keyed by Lago's invoice id, not the display number
+    const lagoId = payment.lago_id;
+    if (!lagoId) {
+      showToast('Cannot retry: no Lago invoice id for this payment', 'error');
+      return;
+    }
     try {
-      const res = await fetch(`/api/v1/billing/payments/${paymentId}/retry`, {
+      const res = await fetch(`/api/v1/billing/invoices/${lagoId}/retry`, {
         method: 'POST',
         credentials: 'include'
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        showToast('Payment retry initiated', 'success');
+        showToast(data.detail || 'Payment retry requested', 'success');
         loadAdminData();
       } else {
-        const error = await res.json();
-        showToast(error.detail || 'Failed to retry payment', 'error');
+        showToast(data.detail || 'Failed to retry payment', 'error');
       }
     } catch (error) {
       showToast('Network error retrying payment', 'error');
@@ -1545,10 +1561,11 @@ const AdminView = ({ theme }) => {
                                 icon: EnvelopeIcon,
                                 onClick: () => handleResendInvoice(payment.invoice_id, payment.customer_email)
                               },
-                              payment.status === 'failed' && {
+                              (payment.payment_status || payment.status) === 'failed' && {
                                 label: 'Retry Payment',
                                 icon: ArrowPathIcon,
-                                onClick: () => handleRetryPayment(payment.invoice_id)
+                                disabled: !payment.lago_id,
+                                onClick: () => handleRetryPayment(payment)
                               },
                               payment.status === 'paid' && {
                                 label: 'Issue Refund',

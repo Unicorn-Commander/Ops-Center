@@ -58,12 +58,16 @@ export default function AccountAPIKeys() {
   const [loadingUcKeys, setLoadingUcKeys] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState(false);
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState(null);
+  const [confirmRegenerate, setConfirmRegenerate] = useState(null); // key object pending regeneration
+  const [regeneratingKeyId, setRegeneratingKeyId] = useState(null);
 
   // Platform keys state (admin only)
   const [platformKeys, setPlatformKeys] = useState(null);
   const [loadingPlatformKeys, setLoadingPlatformKeys] = useState(false);
   const [editingPlatformKey, setEditingPlatformKey] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [testingPlatformKey, setTestingPlatformKey] = useState(null); // slug being tested
+  const [platformKeyTestResults, setPlatformKeyTestResults] = useState({}); // slug -> result
 
   // Theme classes
   const themeClasses = {
@@ -407,6 +411,75 @@ export default function AccountAPIKeys() {
     }
   };
 
+  const handleRegenerateUcKey = async (key) => {
+    const keyId = key.key_id || key.id;
+    setConfirmRegenerate(null);
+    setRegeneratingKeyId(keyId);
+    try {
+      const response = await fetch(`/api/v1/account/uc-api-keys/${keyId}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.api_key) {
+        setNewlyGeneratedKey(data.api_key);
+        showToast('success', 'API key regenerated. The old key is now invalid — copy the new one now.');
+        await loadUcApiKeys();
+      } else {
+        showToast('error', data.detail || 'Failed to regenerate API key');
+      }
+    } catch (error) {
+      console.error('Error regenerating UC API key:', error);
+      showToast('error', 'Network error regenerating API key');
+    } finally {
+      setRegeneratingKeyId(null);
+    }
+  };
+
+  // Display-name -> test-endpoint slug for platform keys that have a live test.
+  // Provisioning/LiteLLM keys have no external verification endpoint.
+  const platformKeyTestSlugs = {
+    'OpenRouter API Key': 'openrouter',
+    'OpenAI API Key': 'openai',
+    'Anthropic API Key': 'anthropic',
+    'HuggingFace API Key': 'huggingface',
+    'Groq API Key': 'groq',
+    'X.AI Grok API Key': 'xai',
+    'Google AI API Key': 'google'
+  };
+
+  const handleTestPlatformKey = async (slug) => {
+    setTestingPlatformKey(slug);
+    try {
+      const response = await fetch(`/api/v1/admin/platform-keys/${slug}/test`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setPlatformKeyTestResults(prev => ({ ...prev, [slug]: data }));
+        if (data.ok) {
+          showToast('success', `${slug} key OK (${data.latency_ms} ms): ${data.detail}`);
+        } else {
+          showToast('error', `${slug} key test failed: ${data.detail}`);
+        }
+      } else {
+        setPlatformKeyTestResults(prev => ({
+          ...prev,
+          [slug]: { ok: false, detail: data.detail || `HTTP ${response.status}` }
+        }));
+        showToast('error', data.detail || `Failed to test ${slug} key`);
+      }
+    } catch (error) {
+      console.error('Error testing platform key:', error);
+      showToast('error', `Network error testing ${slug} key`);
+    } finally {
+      setTestingPlatformKey(null);
+    }
+  };
+
   const loadProviders = async () => {
     try {
       const response = await fetch('/api/v1/byok/providers', {
@@ -732,7 +805,7 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
           <div className="space-y-4">
             {/* API Keys List */}
             {ucApiKeys.map((key) => (
-              <div key={key.id} className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'}`}>
+              <div key={key.key_id || key.id} className={`rounded-lg border p-4 ${currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'}`}>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
@@ -757,15 +830,21 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {/* Full key material is only available right after generation
-                        (keys are stored hashed), so copying an existing key or
-                        regenerating it in place is not possible. */}
-                    <span title="Key regeneration is not available yet. Generate a new key instead.">
+                    {/* Regenerate: mints a new secret via the same bcrypt pathway
+                        as key creation and atomically revokes the old one. */}
+                    <span title="Regenerate this key — the current secret stops working immediately.">
                       <button
-                        disabled
-                        className="p-2 rounded-lg border border-gray-500/50 text-gray-500 cursor-not-allowed text-sm"
+                        onClick={() => setConfirmRegenerate(key)}
+                        disabled={regeneratingKeyId === (key.key_id || key.id) || key.status === 'revoked'}
+                        className={`p-2 rounded-lg border text-sm ${
+                          key.status === 'revoked'
+                            ? 'border-gray-500/50 text-gray-500 cursor-not-allowed'
+                            : 'border-purple-500/50 text-purple-400 hover:bg-purple-500/10 disabled:opacity-50'
+                        }`}
                       >
-                        <ArrowPathIcon className="h-4 w-4" />
+                        <ArrowPathIcon
+                          className={`h-4 w-4 ${regeneratingKeyId === (key.key_id || key.id) ? 'animate-spin' : ''}`}
+                        />
                       </button>
                     </span>
                   </div>
@@ -773,14 +852,14 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
 
                 {/* Quick Start Code Snippet */}
                 <button
-                  onClick={() => setShowCodeSnippet(showCodeSnippet === key.id ? null : key.id)}
+                  onClick={() => setShowCodeSnippet(showCodeSnippet === (key.key_id || key.id) ? null : (key.key_id || key.id))}
                   className={`flex items-center gap-2 text-sm ${themeClasses.subtext} hover:${themeClasses.text}`}
                 >
                   <CodeBracketIcon className="h-4 w-4" />
-                  {showCodeSnippet === key.id ? 'Hide' : 'Show'} Quick Start
+                  {showCodeSnippet === (key.key_id || key.id) ? 'Hide' : 'Show'} Quick Start
                 </button>
 
-                {showCodeSnippet === key.id && (
+                {showCodeSnippet === (key.key_id || key.id) && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
@@ -829,6 +908,86 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
           </>
         )}
       </div>
+
+      {/* Platform Keys (admin only): stored system provider keys + live tests */}
+      {isAdmin && platformKeys?.keys?.length > 0 && (
+        <div className={`rounded-xl border p-6 ${themeClasses.card}`}>
+          <div className="mb-4">
+            <h2 className={`text-2xl font-bold ${themeClasses.text} flex items-center gap-2`}>
+              <ShieldCheckIcon className="h-6 w-6" />
+              Platform Keys (Admin)
+            </h2>
+            <p className={`mt-1 ${themeClasses.subtext} text-sm`}>
+              System-level provider keys. Test runs a live call against the provider — the key itself is never shown.
+            </p>
+          </div>
+          {loadingPlatformKeys ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-current mx-auto"></div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {platformKeys.keys.map((pk) => {
+                const slug = platformKeyTestSlugs[pk.key_name];
+                const result = slug ? platformKeyTestResults[slug] : null;
+                return (
+                  <div
+                    key={pk.key_name}
+                    className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${
+                      currentTheme === 'light' ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-medium ${themeClasses.text}`}>{pk.key_name}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs border ${
+                          pk.has_key
+                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                            : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                        }`}>
+                          {pk.has_key ? `set (${pk.source})` : 'not set'}
+                        </span>
+                        {pk.key_preview && (
+                          <code className={`text-xs font-mono ${themeClasses.subtext}`}>{pk.key_preview}</code>
+                        )}
+                      </div>
+                      {result && (
+                        <p className={`text-xs mt-1 ${result.ok ? 'text-green-400' : 'text-red-400'}`}>
+                          {result.ok ? 'OK' : 'Failed'}
+                          {result.latency_ms != null ? ` (${result.latency_ms} ms)` : ''} — {result.detail}
+                        </p>
+                      )}
+                    </div>
+                    {slug && pk.has_key ? (
+                      <button
+                        onClick={() => handleTestPlatformKey(slug)}
+                        disabled={testingPlatformKey !== null}
+                        className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 ${themeClasses.button} disabled:opacity-50`}
+                      >
+                        {testingPlatformKey === slug ? (
+                          <>
+                            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                            Testing...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircleIcon className="h-4 w-4" />
+                            Test
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <span className={`text-xs ${themeClasses.subtext}`}>
+                        {pk.has_key ? 'No live test for this key type' : ''}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Benefits Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1279,6 +1438,57 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
                   className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
                 >
                   Remove Key
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Regenerate Confirmation Modal */}
+      <AnimatePresence>
+        {confirmRegenerate && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className={`rounded-xl border p-6 max-w-md w-full m-4 ${themeClasses.modal}`}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                  <ArrowPathIcon className="h-6 w-6 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className={`text-xl font-bold ${themeClasses.text}`}>Regenerate API Key?</h3>
+                  <p className={`text-sm ${themeClasses.subtext}`}>
+                    {confirmRegenerate.key_name || confirmRegenerate.key_preview}
+                  </p>
+                </div>
+              </div>
+
+              <p className={`${themeClasses.subtext} mb-6`}>
+                A new secret will be generated and the current key will stop working
+                immediately. Anything using the old key will need to be updated with
+                the new one — it is shown only once after regeneration.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmRegenerate(null)}
+                  className={`flex-1 px-4 py-2 rounded-lg border ${
+                    currentTheme === 'light'
+                      ? 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                      : 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRegenerateUcKey(confirmRegenerate)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium"
+                >
+                  Regenerate Key
                 </button>
               </div>
             </motion.div>

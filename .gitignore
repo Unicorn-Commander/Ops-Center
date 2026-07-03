@@ -27,3 +27,11 @@ backend/data/pricing_config.json
 
 # entire per-node runtime data dir (DBs, org JSON, encryption keys) — never sync across nodes
 backend/data/
+
+# repo hygiene — added 2026-07-02 (node_modules/, dist/, .DS_Store, *.backup, *.BACKUP,
+# __pycache__/ were already covered above)
+*.log
+.venv/
+# node_modules may be a SYMLINK in build worktrees (dir-only "node_modules/" pattern
+# does not match symlinks; without this, `git add -A` would commit the link)
+node_modules

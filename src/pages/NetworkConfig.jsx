@@ -142,6 +142,8 @@ export default function NetworkConfig() {
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [testResults, setTestResults] = useState(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -244,6 +246,35 @@ export default function NetworkConfig() {
     setTimeout(() => setNotification(null), 5000);
   };
 
+  const handleTestConnectivity = async () => {
+    setTesting(true);
+    setTestResults(null);
+    try {
+      const response = await fetch('/api/v1/system/network/test', {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || `Connectivity test failed (HTTP ${response.status})`);
+      }
+      setTestResults(data);
+      showNotification(
+        data.all_reachable
+          ? 'Connectivity test passed — all targets reachable'
+          : 'Connectivity test finished — some targets were unreachable',
+        data.all_reachable ? 'success' : 'error'
+      );
+    } catch (error) {
+      console.error('Connectivity test failed:', error);
+      showNotification(error.message || 'Connectivity test failed', 'error');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const cancelEdit = () => {
     setEditMode(false);
     // Reset form to current config
@@ -293,21 +324,27 @@ export default function NetworkConfig() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
-            {/* Connectivity testing is not supported by the backend on this deployment */}
-            <span title="Not available yet — connectivity testing is not supported on this deployment.">
-              <button
-                disabled
-                className={`
-                  px-4 py-2 rounded-xl font-medium text-sm
-                  bg-gray-700 text-gray-400
-                  cursor-not-allowed
-                  flex items-center gap-2
-                `}
-              >
+            <motion.button
+              whileHover={{ scale: testing ? 1 : 1.05 }}
+              whileTap={{ scale: testing ? 1 : 0.95 }}
+              onClick={handleTestConnectivity}
+              disabled={testing}
+              className={`
+                px-4 py-2 rounded-xl font-medium text-sm
+                bg-gradient-to-r from-blue-600 to-cyan-600
+                text-white shadow-lg
+                hover:from-blue-700 hover:to-cyan-700
+                disabled:opacity-50 disabled:cursor-not-allowed
+                flex items-center gap-2
+              `}
+            >
+              {testing ? (
+                <ArrowPathIcon className="h-4 w-4 animate-spin" />
+              ) : (
                 <ChartBarIcon className="h-4 w-4" />
-                Test Connectivity
-              </button>
-            </span>
+              )}
+              {testing ? 'Testing...' : 'Test Connectivity'}
+            </motion.button>
 
             {!editMode ? (
               <motion.button
@@ -386,6 +423,78 @@ export default function NetworkConfig() {
                 <ExclamationTriangleIcon className="h-5 w-5" />
               )}
               <span className="font-medium">{notification.message}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Connectivity Test Results */}
+      <AnimatePresence>
+        {testResults && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className={`
+              p-6 rounded-2xl
+              bg-gradient-to-br from-gray-800/40 to-gray-900/40
+              border border-gray-700/50 backdrop-blur-xl
+            `}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${theme.text.primary} flex items-center gap-2`}>
+                <SignalIcon className="h-5 w-5 text-blue-400" />
+                Connectivity Test Results
+              </h3>
+              <button
+                onClick={() => setTestResults(null)}
+                className={`text-sm ${theme.text.secondary} hover:text-white`}
+              >
+                Dismiss
+              </button>
+            </div>
+            <div className="space-y-3">
+              {(testResults.results || []).map((result) => (
+                <div
+                  key={result.target}
+                  className="p-4 rounded-xl bg-gray-800/40 border border-gray-700/40"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    {result.reachable ? (
+                      <CheckCircleIconSolid className="h-5 w-5 text-green-400" />
+                    ) : (
+                      <XCircleIcon className="h-5 w-5 text-red-400" />
+                    )}
+                    <span className={`font-mono font-medium ${theme.text.primary}`}>{result.target}</span>
+                    <span className={`text-xs ${result.reachable ? 'text-green-400' : 'text-red-400'}`}>
+                      {result.reachable ? 'reachable' : 'unreachable'}
+                    </span>
+                  </div>
+                  <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm ${theme.text.secondary}`}>
+                    <div>
+                      DNS:{' '}
+                      {result.dns?.ok
+                        ? `${result.dns.ms} ms`
+                        : `failed${result.dns?.error ? ` (${result.dns.error})` : ''}`}
+                    </div>
+                    <div>
+                      TCP{result.tcp?.port ? ` :${result.tcp.port}` : ''}:{' '}
+                      {result.tcp?.ok
+                        ? `${result.tcp.ms} ms`
+                        : `failed${result.tcp?.error ? ` (${result.tcp.error})` : ''}`}
+                    </div>
+                    <div>
+                      {result.http
+                        ? `HTTP${result.http.url?.startsWith('https') ? 'S' : ''}: ${
+                            result.http.ok
+                              ? `${result.http.status} in ${result.http.ms} ms`
+                              : `failed${result.http.error ? ` (${result.http.error})` : ''}`
+                          }`
+                        : 'HTTP: n/a'}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </motion.div>
         )}

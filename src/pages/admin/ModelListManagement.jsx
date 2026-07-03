@@ -79,23 +79,74 @@ const categoryColors = {
   image: { bg: 'rgba(233, 30, 99, 0.15)', color: '#e91e63', border: '#e91e63', icon: <ImageIcon fontSize="small" /> }
 };
 
-// Tier definitions
+// Tier definitions — exactly the tiers the backend stores per model item
+// (tier_trial_access / tier_starter_access / tier_professional_access /
+// tier_enterprise_access; the API exposes them as a `tier_access` object)
 const tierOptions = [
   { id: 'trial', name: 'Trial', color: '#9e9e9e' },
   { id: 'starter', name: 'Starter', color: '#2196f3' },
   { id: 'professional', name: 'Professional', color: '#9c27b0' },
-  { id: 'enterprise', name: 'Enterprise', color: '#f44336' },
-  { id: 'vip_founder', name: 'VIP Founder', color: '#FFD700' },
-  { id: 'byok', name: 'BYOK', color: '#4caf50' }
+  { id: 'enterprise', name: 'Enterprise', color: '#f44336' }
 ];
 
-// Default app tabs
+// Default app tabs. `id` is the canonical app_identifier used when creating a
+// list; `match` lists the app_identifier/slug variants that map an existing
+// backend list to this tab (the seeded lists use 'global', 'bolt-diy',
+// 'presenton' and 'open-webui'; very old global lists had a NULL
+// app_identifier and are only recognizable by their slug).
 const defaultApps = [
-  { id: 'global', name: 'Global', description: 'Default models for all apps' },
-  { id: 'bolt', name: 'Bolt.diy', description: 'AI development environment' },
-  { id: 'presenton', name: 'Presenton', description: 'AI presentations' },
-  { id: 'openwebui', name: 'Open-WebUI', description: 'Chat interface' }
+  { id: 'global', name: 'Global', description: 'Default models for all apps', match: ['global'] },
+  { id: 'bolt-diy', name: 'Bolt.diy', description: 'AI development environment', match: ['bolt-diy', 'bolt'] },
+  { id: 'presenton', name: 'Presenton', description: 'AI presentations', match: ['presenton'] },
+  { id: 'open-webui', name: 'Open-WebUI', description: 'Chat interface', match: ['open-webui', 'openwebui'] }
 ];
+
+// Find the backend list that belongs to an app tab. Lists carry
+// `app_identifier` (and a `slug`) — NOT `app_id`, which is why matching on
+// app_id used to leave every tab empty.
+const findListForTab = (app, allLists) => {
+  if (!app || !Array.isArray(allLists)) return null;
+  const candidates = allLists.filter((list) => {
+    const identifier = (list.app_identifier || '').toLowerCase();
+    const slug = (list.slug || '').toLowerCase();
+    return app.match.includes(identifier) || (!identifier && app.match.includes(slug));
+  });
+  if (candidates.length === 0) return null;
+  return (
+    candidates.find((list) => list.is_default && list.is_active !== false) ||
+    candidates.find((list) => list.is_active !== false) ||
+    candidates[0]
+  );
+};
+
+// The API returns tier access as an object ({ trial: bool, starter: bool, ... });
+// normalize to the array of enabled tier ids the UI works with.
+const getModelTiers = (model) => {
+  if (model?.tier_access && typeof model.tier_access === 'object') {
+    return Object.keys(model.tier_access).filter((tier) => model.tier_access[tier]);
+  }
+  return Array.isArray(model?.tiers) ? model.tiers : [];
+};
+
+// Item metadata (description, context_length, is_free…) is stored in a JSONB
+// column; be tolerant of it arriving as a JSON string.
+const getModelMetadata = (model) => {
+  const meta = model?.metadata;
+  if (!meta) return {};
+  if (typeof meta === 'string') {
+    try {
+      return JSON.parse(meta) || {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof meta === 'object' ? meta : {};
+};
+
+// Delay before the single automatic retry when the first fetch fails
+// (e.g. right after a backend restart)
+const RETRY_DELAY_MS = 3000;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ModelListManagement = () => {
   // State management
@@ -140,7 +191,7 @@ const ModelListManagement = () => {
   // Form data
   const [listFormData, setListFormData] = useState({
     name: '',
-    app_id: '',
+    app_identifier: '',
     description: ''
   });
 
@@ -149,7 +200,7 @@ const ModelListManagement = () => {
     display_name: '',
     category: 'general',
     description: '',
-    tiers: ['starter', 'professional', 'enterprise', 'vip_founder', 'byok']
+    tiers: ['starter', 'professional', 'enterprise']
   });
 
   // Toast notification
@@ -163,42 +214,62 @@ const ModelListManagement = () => {
   // API Functions
   // ============================================
 
-  const fetchLists = useCallback(async () => {
+  const fetchLists = useCallback(async ({ autoRetry = true } = {}) => {
     setLoading(true);
     setError(null);
-    try {
-      const response = await fetch('/api/v1/admin/model-lists', { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch model lists');
-      const data = await response.json();
-      setLists(data);
-
-      // Auto-select first list if available
-      if (data.length > 0 && !selectedList) {
-        setSelectedList(data[0]);
+    const maxAttempts = autoRetry ? 2 : 1;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch('/api/v1/admin/model-lists', { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to fetch model lists');
+        const data = await response.json();
+        setLists(Array.isArray(data) ? data : []);
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        // One silent retry (e.g. the backend is still restarting) before
+        // surfacing the error banner
+        if (attempt < maxAttempts) await wait(RETRY_DELAY_MS);
       }
-    } catch (err) {
-      setError(err.message);
-      console.error('Error fetching lists:', err);
-    } finally {
-      setLoading(false);
     }
-  }, [selectedList]);
+    if (lastError) {
+      setError(lastError.message);
+      console.error('Error fetching lists:', lastError);
+    }
+    setLoading(false);
+  }, []);
 
-  const fetchModels = useCallback(async (listId) => {
+  const fetchModels = useCallback(async (listId, { autoRetry = true } = {}) => {
     if (!listId) return;
     setModelsLoading(true);
-    try {
-      const response = await fetch(`/api/v1/admin/model-lists/${listId}/models`, { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch models');
-      const data = await response.json();
-      setModels(data);
-    } catch (err) {
-      setError(err.message);
-      console.error('Error fetching models:', err);
-    } finally {
-      setModelsLoading(false);
+    const maxAttempts = autoRetry ? 2 : 1;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(`/api/v1/admin/model-lists/${listId}/models`, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to fetch models');
+        const data = await response.json();
+        setModels(Array.isArray(data) ? data : []);
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxAttempts) await wait(RETRY_DELAY_MS);
+      }
     }
+    if (lastError) {
+      setError(lastError.message);
+      console.error('Error fetching models:', lastError);
+    }
+    setModelsLoading(false);
   }, []);
+
+  const handleRetryFetch = () => {
+    fetchLists({ autoRetry: false });
+    if (selectedList) fetchModels(selectedList.id, { autoRetry: false });
+  };
 
   const fetchCatalog = async (query) => {
     if (!query || query.length < 2) return;
@@ -223,7 +294,12 @@ const ModelListManagement = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(listFormData)
+        // Backend contract (ModelListCreate) requires `app_identifier`
+        body: JSON.stringify({
+          name: listFormData.name,
+          app_identifier: listFormData.app_identifier,
+          description: listFormData.description || null
+        })
       });
 
       if (!response.ok) {
@@ -261,6 +337,32 @@ const ModelListManagement = () => {
     }
   };
 
+  // Translate the form state into the backend item contract
+  // (ModelItemCreate/ModelItemUpdate use tier_*_access booleans and keep
+  // description/context_length inside the JSONB `metadata` column)
+  const buildModelItemPayload = ({ includeModelId = false } = {}) => {
+    const metadata = { ...(selectedModelForEdit ? getModelMetadata(selectedModelForEdit) : {}) };
+    if (modelFormData.description) {
+      metadata.description = modelFormData.description;
+    } else {
+      delete metadata.description;
+    }
+    if (modelFormData.context_length) {
+      metadata.context_length = modelFormData.context_length;
+    }
+    const payload = {
+      display_name: modelFormData.display_name || null,
+      category: modelFormData.category,
+      tier_trial_access: modelFormData.tiers.includes('trial'),
+      tier_starter_access: modelFormData.tiers.includes('starter'),
+      tier_professional_access: modelFormData.tiers.includes('professional'),
+      tier_enterprise_access: modelFormData.tiers.includes('enterprise'),
+      metadata
+    };
+    if (includeModelId) payload.model_id = modelFormData.model_id;
+    return payload;
+  };
+
   const addModel = async () => {
     if (!selectedList) return;
     try {
@@ -268,7 +370,7 @@ const ModelListManagement = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(modelFormData)
+        body: JSON.stringify(buildModelItemPayload({ includeModelId: true }))
       });
 
       if (!response.ok) {
@@ -293,7 +395,7 @@ const ModelListManagement = () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(modelFormData)
+        body: JSON.stringify(buildModelItemPayload())
       });
 
       if (!response.ok) {
@@ -361,7 +463,10 @@ const ModelListManagement = () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ model_ids: newOrder })
+        // Backend contract (ReorderRequest): items = [{ model_id: <item db id>, sort_order }]
+        body: JSON.stringify({
+          items: newOrder.map((itemId, index) => ({ model_id: itemId, sort_order: index + 1 }))
+        })
       });
 
       if (!response.ok) throw new Error('Failed to reorder models');
@@ -380,15 +485,23 @@ const ModelListManagement = () => {
     const exportData = {
       list: {
         name: selectedList.name,
-        app_id: selectedList.app_id,
+        app_identifier: selectedList.app_identifier,
+        slug: selectedList.slug,
         description: selectedList.description
       },
+      // Exported in the same shape the add-model endpoint accepts, so an
+      // export can be re-imported as-is
       models: models.map(m => ({
         model_id: m.model_id,
         display_name: m.display_name,
         category: m.category,
-        description: m.description,
-        tiers: m.tiers
+        sort_order: m.sort_order,
+        is_featured: m.is_featured,
+        tier_trial_access: getModelTiers(m).includes('trial'),
+        tier_starter_access: getModelTiers(m).includes('starter'),
+        tier_professional_access: getModelTiers(m).includes('professional'),
+        tier_enterprise_access: getModelTiers(m).includes('enterprise'),
+        metadata: getModelMetadata(m)
       }))
     };
 
@@ -396,7 +509,7 @@ const ModelListManagement = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `model-list-${selectedList.app_id || 'custom'}.json`;
+    a.download = `model-list-${selectedList.slug || selectedList.app_identifier || 'custom'}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -444,7 +557,7 @@ const ModelListManagement = () => {
   const resetListForm = () => {
     setListFormData({
       name: '',
-      app_id: '',
+      app_identifier: '',
       description: ''
     });
   };
@@ -455,7 +568,7 @@ const ModelListManagement = () => {
       display_name: '',
       category: 'general',
       description: '',
-      tiers: ['starter', 'professional', 'enterprise', 'vip_founder', 'byok']
+      tiers: ['starter', 'professional', 'enterprise']
     });
     setSelectedModelForEdit(null);
   };
@@ -466,8 +579,8 @@ const ModelListManagement = () => {
       model_id: model.model_id,
       display_name: model.display_name || '',
       category: model.category || 'general',
-      description: model.description || '',
-      tiers: model.tiers || ['starter', 'professional', 'enterprise', 'vip_founder', 'byok']
+      description: getModelMetadata(model).description || model.description || '',
+      tiers: getModelTiers(model)
     });
     setEditModelDialogOpen(true);
   };
@@ -542,11 +655,11 @@ const ModelListManagement = () => {
     }
   }, [selectedList, fetchModels]);
 
-  // Handle tab changes
+  // Handle tab changes — match lists on app_identifier (or slug for legacy
+  // global lists), preferring the active default list
   useEffect(() => {
     if (lists.length > 0) {
-      const appId = defaultApps[tabValue]?.id;
-      const list = lists.find(l => l.app_id === appId);
+      const list = findListForTab(defaultApps[tabValue], lists);
       if (list) {
         setSelectedList(list);
       } else {
@@ -575,10 +688,11 @@ const ModelListManagement = () => {
     return context.toString();
   };
 
-  // Filter models based on preview tier
+  // Filter models based on preview tier (tier access comes back from the API
+  // as a tier_access object)
   const filteredModels = models.filter(model => {
     if (previewTier === 'all') return true;
-    return model.tiers?.includes(previewTier);
+    return getModelTiers(model).includes(previewTier);
   });
 
   // ============================================
@@ -626,7 +740,25 @@ const ModelListManagement = () => {
 
       {/* Alerts */}
       {error && (
-        <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
+        <Alert
+          severity="error"
+          action={(
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Button
+                color="inherit"
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={handleRetryFetch}
+              >
+                Retry
+              </Button>
+              <IconButton color="inherit" size="small" onClick={() => setError(null)}>
+                <CloseIcon fontSize="inherit" />
+              </IconButton>
+            </Box>
+          )}
+          sx={{ mb: 2 }}
+        >
           {error}
         </Alert>
       )}
@@ -872,7 +1004,7 @@ const ModelListManagement = () => {
               onClick={() => {
                 setListFormData({
                   name: `${defaultApps[tabValue]?.name} Models`,
-                  app_id: defaultApps[tabValue]?.id,
+                  app_identifier: defaultApps[tabValue]?.id,
                   description: `Curated models for ${defaultApps[tabValue]?.name}`
                 });
                 setCreateListDialogOpen(true);
@@ -969,7 +1101,7 @@ const ModelListManagement = () => {
                         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
                           {model.model_id}
                         </Typography>
-                        {model.is_free && (
+                        {(model.is_free ?? getModelMetadata(model).is_free) && (
                           <Chip
                             label="FREE"
                             size="small"
@@ -1005,12 +1137,12 @@ const ModelListManagement = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {formatContextLength(model.context_length)}
+                        {formatContextLength(model.context_length ?? getModelMetadata(model).context_length)}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                        {model.tiers?.slice(0, 3).map(tierId => {
+                        {getModelTiers(model).slice(0, 3).map(tierId => {
                           const tier = tierOptions.find(t => t.id === tierId);
                           return tier ? (
                             <Chip
@@ -1027,9 +1159,9 @@ const ModelListManagement = () => {
                             />
                           ) : null;
                         })}
-                        {model.tiers?.length > 3 && (
+                        {getModelTiers(model).length > 3 && (
                           <Chip
-                            label={`+${model.tiers.length - 3}`}
+                            label={`+${getModelTiers(model).length - 3}`}
                             size="small"
                             sx={{ height: 20, fontSize: '0.65rem' }}
                           />
@@ -1088,8 +1220,8 @@ const ModelListManagement = () => {
               <FormControl fullWidth>
                 <InputLabel>App</InputLabel>
                 <Select
-                  value={listFormData.app_id}
-                  onChange={(e) => setListFormData({ ...listFormData, app_id: e.target.value })}
+                  value={listFormData.app_identifier}
+                  onChange={(e) => setListFormData({ ...listFormData, app_identifier: e.target.value })}
                   label="App"
                 >
                   {defaultApps.map(app => (
@@ -1120,7 +1252,7 @@ const ModelListManagement = () => {
           <Button
             onClick={createList}
             variant="contained"
-            disabled={!listFormData.name}
+            disabled={!listFormData.name || !listFormData.app_identifier}
             sx={{
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               borderRadius: 2,

@@ -810,6 +810,82 @@ async def download_invoice_pdf(invoice_id: str, file_url: Optional[str] = None) 
     return None
 
 
+# === T6 ===
+async def retry_invoice_payment(invoice_id: str) -> Dict[str, Any]:
+    """
+    Ask Lago to retry payment collection for a finalized invoice.
+
+    Lago endpoint: POST /api/v1/invoices/{lago_id}/retry_payment
+    (retries the payment provider charge for a failed/pending invoice).
+
+    Args:
+        invoice_id: Lago invoice ID (lago_id)
+
+    Returns:
+        {"ok": bool, "status_code": int|None, "detail": str, "invoice": dict|None}
+        Never raises on provider errors — callers surface `detail` to the UI.
+    """
+    if not LAGO_API_KEY:
+        return {
+            "ok": False,
+            "status_code": None,
+            "detail": "LAGO_API_KEY not configured",
+            "invoice": None,
+        }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{LAGO_API_URL}/api/v1/invoices/{invoice_id}/retry_payment",
+                headers={"Authorization": f"Bearer {LAGO_API_KEY}"},
+                timeout=API_TIMEOUT,
+            )
+
+        if response.status_code in (200, 201):
+            body = {}
+            try:
+                body = response.json() or {}
+            except ValueError:
+                pass
+            logger.info(f"Retried payment for invoice {invoice_id}")
+            return {
+                "ok": True,
+                "status_code": response.status_code,
+                "detail": "Payment retry requested; the payment provider will attempt the charge again.",
+                "invoice": body.get("invoice"),
+            }
+
+        # Extract Lago's error message so the UI can show WHY it can't retry
+        # (e.g. invoice not failed, no payment provider configured, draft invoice)
+        lago_message = ""
+        try:
+            err = response.json() or {}
+            lago_message = err.get("error_details") or err.get("message") or err.get("error") or ""
+            if isinstance(lago_message, dict):
+                lago_message = str(lago_message)
+        except ValueError:
+            lago_message = response.text[:200]
+
+        if response.status_code == 404:
+            detail = "Invoice not found in Lago."
+        elif response.status_code == 405:
+            detail = f"Invoice is not in a retryable state. {lago_message}".strip()
+        else:
+            detail = f"Lago returned HTTP {response.status_code}. {lago_message}".strip()
+
+        logger.warning(f"Invoice {invoice_id} payment retry failed: {detail}")
+        return {"ok": False, "status_code": response.status_code, "detail": detail, "invoice": None}
+
+    except httpx.RequestError as e:
+        logger.error(f"Network error retrying invoice payment {invoice_id}: {e}")
+        return {
+            "ok": False,
+            "status_code": None,
+            "detail": f"Could not reach the billing service: {e.__class__.__name__}",
+            "invoice": None,
+        }
+
+
 async def get_current_usage(org_id: str) -> Dict[str, Any]:
     """
     Get current billing period usage for an organization.

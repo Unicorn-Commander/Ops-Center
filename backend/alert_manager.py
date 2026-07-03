@@ -151,11 +151,37 @@ class AlertManager:
             new_alerts.extend(temp_alerts)
 
             # Add new alerts to active alerts
+            newly_fired = []  # T7 hook: alerts first seen this cycle
             for alert in new_alerts:
                 if alert.id not in self.active_alerts and alert.id not in self.dismissed_alerts:
                     self.active_alerts[alert.id] = alert
                     self.alert_history.append(alert)
                     logger.info(f"New alert: {alert.type.value} - {alert.message}")
+                    newly_fired.append(alert)
+
+            # ------------------------------------------------------------------
+            # APPEND-ONLY HOOK (T7): email admins when alert rules fire in the
+            # background evaluation loop (check_alerts_periodically, every 60s).
+            # Fire-and-forget via the notification dispatcher, which applies a
+            # 1-per-hour-per-recipient rate limit — a persisting condition
+            # (alert ids are re-minted each cycle) cannot spam email. Must
+            # NEVER break the alert check path.
+            # ------------------------------------------------------------------
+            if newly_fired:
+                try:
+                    from notification_dispatcher import notify_admins_alert_fired
+                    asyncio.create_task(notify_admins_alert_fired([
+                        {
+                            "name": a.type.value,
+                            "severity": a.severity.value,
+                            "message": a.message,
+                        }
+                        for a in newly_fired
+                    ]))
+                except Exception as notify_exc:
+                    logger.warning(
+                        f"Alert-fired email hook failed (non-blocking): {notify_exc}"
+                    )
 
             # Cleanup old alerts
             self._cleanup_old_alerts()

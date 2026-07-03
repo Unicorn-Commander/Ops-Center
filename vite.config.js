@@ -198,7 +198,9 @@ export default defineConfig({
           }
           return 'assets/[name]-[hash].js';
         },
-        // Simplified chunk splitting - bundle most things with React to ensure correct load order
+        // Chunk splitting - keep React (and the long tail of React libraries)
+        // in the first-loading vendor-react chunk, but split the two biggest
+        // independent trees (MUI, charting) into their own cacheable chunks.
         manualChunks: (id) => {
           // Node modules vendor chunks
           if (id.includes('node_modules')) {
@@ -212,9 +214,25 @@ export default defineConfig({
               return 'vendor-redoc'
             }
 
+            // MUI component library (@mui/material, @mui/icons-material, ...).
+            // Its @emotion styling runtime stays in vendor-react so chunk
+            // imports flow one way (mui -> vendor-react, never back).
+            if (id.includes('/@mui/')) {
+              return 'mui'
+            }
+
+            // Charting libraries (chart.js + react-chartjs-2 + recharts)
+            if (
+              id.includes('/chart.js/') ||
+              id.includes('/react-chartjs-2/') ||
+              id.includes('/recharts/')
+            ) {
+              return 'charts'
+            }
+
             // Bundle EVERYTHING else with React to ensure correct load order
-            // This includes: React, React-DOM, React-Router, Emotion, MUI,
-            // Framer Motion, all React component libraries, etc.
+            // This includes: react, react-dom, react-router-dom, Emotion,
+            // Framer Motion, all remaining React component libraries, etc.
             return 'vendor-react'
           }
         },
