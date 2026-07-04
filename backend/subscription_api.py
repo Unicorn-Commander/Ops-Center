@@ -396,79 +396,33 @@ async def get_current_subscription(request: Request):
 @router.post("/upgrade")
 async def upgrade_subscription(request: Request):
     """
-    Upgrade subscription to a higher tier.
-    Creates Stripe checkout session and redirects user to payment.
+    Self-service tier upgrade — MUST go through paid Stripe Checkout.
+
+    SECURITY (2026-07-04): this handler previously provisioned a paid tier
+    directly in Lago (and emailed a confirmation) WITHOUT taking payment — the
+    Stripe checkout step was an unfinished ``# TODO``. Because it is registered
+    before the real Stripe-backed ``/upgrade`` handler later in this router, it
+    won runtime dispatch, so ANY authenticated caller could
+    ``POST {"target_tier": "managed"}`` and receive a free upgrade.
+
+    It is now FAIL-CLOSED: it authenticates, then refuses (402) without
+    provisioning anything. Real, paid upgrades go through
+    ``POST /api/v1/billing/subscriptions/checkout`` (stripe_api.py), which opens
+    a Stripe Checkout session and provisions the org only after the webhook
+    confirms payment. The route is retained so callers still get a defined
+    response, but it can no longer grant entitlements.
     """
-    user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    # Authenticate (defense in depth; the global session gate also covers this
+    # path). No subscription is created and no email is sent on any code path.
+    await get_current_user(request)
 
-    # Get request body
-    body = await request.json()
-    target_tier = body.get("target_tier")
-
-    if not target_tier:
-        raise HTTPException(status_code=400, detail="target_tier required")
-
-    logger.info(f"Upgrading org {org_id} to tier: {target_tier}")
-
-    try:
-        # Get target plan details
-        target_plan = subscription_manager.get_plan(target_tier)
-        if not target_plan:
-            raise HTTPException(status_code=404, detail=f"Plan {target_tier} not found")
-
-        # Check if user is actually upgrading (not downgrading)
-        current_subscription = await get_subscription(org_id)
-        if current_subscription:
-            current_tier = current_subscription.get("plan_code", "").split("_")[0]
-            from subscription_api import getTierLevel
-            if getTierLevel(target_tier) <= getTierLevel(current_tier):
-                raise HTTPException(status_code=400, detail="Use /change endpoint for downgrades")
-
-        # Create Stripe checkout session - read credentials from database first, then environment
-        stripe_key = get_credential("STRIPE_SECRET_KEY")
-        if not stripe_key:
-            raise HTTPException(status_code=500, detail="Stripe not configured")
-
-        # TODO: Create Stripe checkout session
-        # For now, create subscription directly in Lago
-        lago_plan_code = f"{target_tier}_monthly"
-
-        # Ensure customer exists in Lago
-        await get_or_create_customer(
-            org_id=org_id,
-            org_name=user.get("org_name", f"{user.get('email')} Org"),
-            email=user.get("email"),
-            user_id=user.get("id")
-        )
-
-        # Create subscription in Lago
-        new_subscription = await create_subscription(org_id, lago_plan_code)
-
-        logger.info(f"Created subscription {new_subscription.get('lago_id')} for org {org_id}")
-
-        # Send tier upgrade email (don't fail if email fails)
-        try:
-            old_tier = current_subscription.get("plan_code", "").split("_")[0] if current_subscription else "trial"
-            await email_service.send_tier_upgrade_notification(
-                user_id=user.get("id"),
-                old_tier=old_tier,
-                new_tier=target_tier
-            )
-            logger.info(f"Tier upgrade email sent to user {user.get('id')}")
-        except Exception as e:
-            logger.error(f"Failed to send tier upgrade email: {e}")
-
-        return {
-            "success": True,
-            "subscription": new_subscription,
-            "message": f"Upgraded to {target_tier}",
-            # TODO: Add checkout_url when Stripe is integrated
-        }
-
-    except Exception as e:
-        logger.error(f"Error upgrading subscription: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to upgrade: {str(e)}")
+    raise HTTPException(
+        status_code=402,
+        detail=(
+            "Self-service upgrades must go through checkout. Start a paid "
+            "Stripe Checkout session via POST /api/v1/billing/subscriptions/checkout."
+        ),
+    )
 
 
 @router.post("/change")
