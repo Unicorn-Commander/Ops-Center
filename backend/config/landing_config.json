@@ -34,12 +34,11 @@
     },
     {
       "id": "search",
-      "name": "Center-Deep Search",
+      "name": "Center Deep Research",
       "icon": "🔍",
       "logo_url": "/center-deep-logo.png",
-      "description": "AI-powered intelligent search platform with advanced tool servers",
-      "url": "auto",
-      "port": 8888,
+      "description": "Sovereign deep research — graded credibility, consensus & verdict-drift monitoring",
+      "url": "https://research.unicorncommander.ai",
       "enabled": true,
       "order": 2
     },
