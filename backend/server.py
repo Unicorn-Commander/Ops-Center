@@ -4644,6 +4644,23 @@ async def update_profile(
                 # is best-effort so a DB hiccup doesn't break the profile update.
                 logger.error(f"Failed to persist avatar_url for {user_email}: {avatar_db_err}")
 
+            # Suite-wide avatar spine: stamp the ABSOLUTE public URL into the
+            # Keycloak user's `picture` attribute. The uchub `profile` client
+            # scope's picture mapper flows it into every suite app's tokens /
+            # userinfo, making this upload the canonical photo suite-wide.
+            # /avatars/* is served unauthenticated at the public edge (verified),
+            # so any app/browser can render the URL without auth.
+            try:
+                from keycloak_integration import set_user_picture
+                public_avatar_url = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}{avatar_url}"
+                if await set_user_picture(user_email, public_avatar_url):
+                    logger.info(f"Stamped Keycloak picture for {user_email}: {public_avatar_url}")
+                else:
+                    logger.warning(f"Keycloak picture stamp FAILED for {user_email} (avatar still saved locally)")
+            except Exception as kc_pic_err:
+                # Non-fatal: the local avatar works; only suite-wide propagation degrades.
+                logger.error(f"Keycloak picture stamp error for {user_email}: {kc_pic_err}")
+
         # Handle name update
         if name:
             updates["name"] = name

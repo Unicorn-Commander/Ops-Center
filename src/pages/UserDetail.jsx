@@ -60,6 +60,7 @@ import {
   AdminPanelSettings as AdminIcon,
   PersonOff as PersonOffIcon,
   NavigateNext as NavigateNextIcon,
+  PhotoCamera as PhotoCameraIcon,
 } from '@mui/icons-material';
 const UserDetail = () => {
   const { userId } = useParams();
@@ -86,7 +87,7 @@ const UserDetail = () => {
       if (!response.ok) throw new Error('Failed to fetch user profile');
 
       const data = await response.json();
-      setProfile(data.profile);
+      setProfile(data.profile || data);
       setEditData({
         first_name: data.profile.first_name,
         last_name: data.profile.last_name,
@@ -107,6 +108,49 @@ const UserDetail = () => {
   // Show toast notification
   const showToast = (message, severity = 'success') => {
     setToast({ open: true, message, severity });
+  };
+
+  // Admin photo management - stamps the Keycloak `picture` attribute so the
+  // photo becomes the canonical avatar in every UC app (next sign-in/refresh).
+  const handleUploadPhoto = async (file) => {
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Photo must be less than 2MB', 'error');
+      return;
+    }
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const response = await fetch(`/api/v1/admin/users/${encodeURIComponent(profile?.email || userId)}/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to upload photo');
+      }
+      showToast('Photo updated - propagates to all UC apps on next sign-in');
+      fetchProfile();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    try {
+      const response = await fetch(`/api/v1/admin/users/${encodeURIComponent(profile?.email || userId)}/avatar`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to remove photo');
+      }
+      showToast('Photo removed');
+      fetchProfile();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   };
 
   // Handle tab change
@@ -361,6 +405,7 @@ const UserDetail = () => {
         <Grid container spacing={3} alignItems="center">
           <Grid item>
             <Avatar
+              src={profile.picture || profile.attributes?.picture?.[0] || undefined}
               sx={{
                 width: 100,
                 height: 100,
@@ -370,6 +415,26 @@ const UserDetail = () => {
             >
               {getUserInitials()}
             </Avatar>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
+              <Button size="small" component="label" startIcon={<PhotoCameraIcon />}>
+                {profile.picture || profile.attributes?.picture?.[0] ? 'Change' : 'Photo'}
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.gif,.webp"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) handleUploadPhoto(file);
+                  }}
+                />
+              </Button>
+              {(profile.picture || profile.attributes?.picture?.[0]) && (
+                <Button size="small" color="inherit" onClick={handleRemovePhoto}>
+                  Remove
+                </Button>
+              )}
+            </Box>
           </Grid>
           <Grid item xs>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

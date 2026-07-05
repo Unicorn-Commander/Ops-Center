@@ -397,6 +397,7 @@ async def get_user_profile(
             "subscription_status": user_data.get("attributes", {}).get("subscription_status", ["active"])[0],
             "api_calls_limit": user_data.get("attributes", {}).get("api_calls_limit", ["100"])[0],
             "api_calls_used": user_data.get("attributes", {}).get("api_calls_used", ["0"])[0],
+            "picture": (user_data.get("attributes", {}).get("picture") or [None])[0],
         }
 
         logger.info(f"Admin {admin.get('email')} retrieved profile for user {user_id}")

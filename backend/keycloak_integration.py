@@ -412,6 +412,63 @@ async def update_user_attributes(email: str, attributes: Dict[str, List[str]]) -
         return False
 
 
+async def set_user_picture(email: str, picture_url: Optional[str]) -> bool:
+    """
+    Set or remove the canonical suite-wide profile picture for a user.
+
+    Writes an ABSOLUTE avatar URL into the Keycloak user's `picture`
+    attribute. The uchub realm's default `profile` client scope has a
+    `picture` user-attribute mapper (id/access/userinfo), so every suite
+    app receives the URL as the standard OIDC `picture` claim on the
+    user's next sign-in / token refresh.
+
+    Pass picture_url=None to REMOVE the attribute.
+
+    NOTE: PUTs the FULL fetched user representation (not attributes-only):
+    Keycloak 26's user-profile validation rejects partial representations
+    with 400 "User name is missing".
+    """
+    try:
+        user = await get_user_by_email(email)
+        if not user or not user.get("id"):
+            logger.error(f"set_user_picture: user not found: {email}")
+            return False
+
+        attrs = dict(user.get("attributes") or {})
+        if picture_url:
+            attrs["picture"] = [picture_url]
+        else:
+            if "picture" not in attrs:
+                return True  # nothing to remove
+            attrs.pop("picture", None)
+
+        rep = dict(user)
+        rep["attributes"] = attrs
+
+        token = await get_admin_token()
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.put(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user['id']}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json"
+                },
+                json=rep,
+                timeout=10.0
+            )
+
+            if response.status_code == 204:
+                action = "Set" if picture_url else "Removed"
+                logger.info(f"{action} picture attribute for user: {email}")
+                return True
+            logger.error(f"Failed to update picture attribute: {response.status_code} - {response.text}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error updating picture attribute for {email}: {e}")
+        return False
+
+
 async def create_user(email: str, username: str, first_name: str = "", last_name: str = "",
                      attributes: Dict[str, List[str]] = None, email_verified: bool = True) -> Optional[str]:
     """
