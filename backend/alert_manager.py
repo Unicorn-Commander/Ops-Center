@@ -116,6 +116,11 @@ class AlertManager:
         # Track persistent issues (for duration-based alerts)
         self.persistent_issues: Dict[str, datetime] = {}
 
+        # Shared low-level Docker client (lazy) — see metrics_collector.py;
+        # per-cycle docker.from_env() + containers.list(all=True) inspected
+        # every container individually and helped ratchet the process heap.
+        self._docker_api = None
+
     async def check_alerts(self) -> List[Dict]:
         """
         Check for new alerts based on system metrics.
@@ -197,7 +202,8 @@ class AlertManager:
         alerts = []
 
         try:
-            cpu_percent = psutil.cpu_percent(interval=1)
+            # interval=1 sleeps for a full second — keep it off the event loop
+            cpu_percent = await asyncio.to_thread(psutil.cpu_percent, 1)
 
             if cpu_percent >= self.CPU_CRITICAL:
                 alerts.append(Alert(
@@ -321,24 +327,33 @@ class AlertManager:
 
         return alerts
 
+    def _list_containers(self) -> List[Dict]:
+        """One summary API call on a shared client (runs in a worker thread)."""
+        try:
+            if self._docker_api is None:
+                self._docker_api = docker.APIClient(base_url='unix://var/run/docker.sock')
+            return self._docker_api.containers(all=True)
+        except Exception:
+            self._docker_api = None  # force reconnect next cycle
+            raise
+
     async def _check_service_alerts(self) -> List[Alert]:
         """Check for service-related alerts."""
         alerts = []
 
         try:
-            client = docker.from_env()
-            containers = client.containers.list(all=True)
+            containers = await asyncio.to_thread(self._list_containers)
 
             stopped_services = []
             unhealthy_services = []
 
             for container in containers:
-                if container.status != 'running':
-                    stopped_services.append(container.name)
-                else:
-                    health = container.attrs.get('State', {}).get('Health', {}).get('Status')
-                    if health == 'unhealthy':
-                        unhealthy_services.append(container.name)
+                name = (container.get('Names') or ['/unknown'])[0].lstrip('/')
+                if container.get('State') != 'running':
+                    stopped_services.append(name)
+                elif '(unhealthy)' in (container.get('Status') or ''):
+                    # summary Status text carries health, e.g. "Up 2 hours (unhealthy)"
+                    unhealthy_services.append(name)
 
             # Alert for stopped services
             if stopped_services:
