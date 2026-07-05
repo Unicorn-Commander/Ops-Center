@@ -5,6 +5,24 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.1] - 2026-07-05
+
+### Fixed
+- **Ops-Center backend RSS cut from ~6.6 GB to ~1 GB.** The Colonel's embedded
+  Kuzu graph (colonel/memory/kuzu_client.py) was created with default settings,
+  which size its buffer pool from HOST RAM (~6.5 GB reserved on a 126 GB box to
+  store a few hundred graph nodes) and spawn a worker thread per core. Now
+  capped at 256 MB / 4 threads (env-tunable: COLONEL_GRAPH_BUFFER_MB,
+  COLONEL_GRAPH_THREADS).
+- **Docker polling no longer hammers the socket or blocks the event loop.**
+  metrics_collector + alert_manager created a new docker client every cycle and
+  used containers.list(), which inspects every container individually (~350
+  synchronous socket calls per 5 s cycle on bigboy) on the asyncio event loop.
+  Both now share one low-level client, fetch the one-call container summary,
+  and run all blocking collectors (psutil interval sampling, nvidia-smi,
+  docker) in a worker thread. Also fixes the 1 s event-loop stall from
+  psutil.cpu_percent(interval=1) in the minutely alert check.
+
 ## [3.12.0] - 2026-06-19
 
 ### Added

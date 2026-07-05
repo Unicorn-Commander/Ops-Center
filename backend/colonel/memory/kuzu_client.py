@@ -15,6 +15,12 @@ logger = logging.getLogger("colonel.memory.kuzu")
 
 KUZU_DB_PATH = os.getenv("COLONEL_GRAPH_PATH", "/app/data/colonel_graph")
 
+# Kuzu's default buffer pool is sized from HOST RAM (~6.5 GB on a 126 GB box)
+# and its default thread count is all cores — wildly oversized for this graph
+# (hundreds of nodes). This was the bulk of ops-center's multi-GB RSS.
+KUZU_BUFFER_POOL_BYTES = int(os.getenv("COLONEL_GRAPH_BUFFER_MB", "256")) * 1024 * 1024
+KUZU_MAX_THREADS = int(os.getenv("COLONEL_GRAPH_THREADS", "4"))
+
 
 class ColonelGraphClient:
     """Embedded Kuzu graph database for Colonel entity relationships."""
@@ -39,7 +45,11 @@ class ColonelGraphClient:
             # Kuzu 0.11+ expects to create the path itself; if an empty dir exists, remove it
             if os.path.isdir(KUZU_DB_PATH) and not os.listdir(KUZU_DB_PATH):
                 os.rmdir(KUZU_DB_PATH)
-            self._db = kuzu.Database(KUZU_DB_PATH)
+            self._db = kuzu.Database(
+                KUZU_DB_PATH,
+                buffer_pool_size=KUZU_BUFFER_POOL_BYTES,
+                max_num_threads=KUZU_MAX_THREADS,
+            )
             self._conn = kuzu.Connection(self._db)
 
             # Create schema (idempotent)
@@ -106,7 +116,8 @@ class ColonelGraphClient:
             )
 
             # Upsert container nodes
-            for c in client.containers.list():
+            containers = client.containers.list()
+            for c in containers:
                 image = c.image.tags[0] if c.image.tags else c.image.short_id
                 self._conn.execute(
                     "MERGE (c:Container {name: $name}) SET c.image = $image, c.status = $status",
@@ -119,7 +130,7 @@ class ColonelGraphClient:
                     {"cname": c.name, "sname": hostname},
                 )
 
-            logger.info(f"Graph populated with {len(client.containers.list())} containers on {hostname}")
+            logger.info(f"Graph populated with {len(containers)} containers on {hostname}")
         except Exception as e:
             logger.warning(f"Failed to populate graph from Docker: {e}")
 
