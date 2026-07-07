@@ -117,6 +117,7 @@ class NodeAgent:
         self._shutdown = asyncio.Event()
         self._discovered_services: List[Dict[str, Any]] = []
         self._last_hardware: Dict[str, Any] = {}
+        self._local_registry = None  # lazily built for in-process self-heartbeats
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -262,16 +263,22 @@ class NodeAgent:
             "services": self._discovered_services,
         }
 
-        # Self-heartbeat to keep our own node fresh in the local registry
+        # Self-heartbeat to keep our own node fresh in the local registry.
+        # Done in-process via NodeRegistry (same Redis/PG the API uses) instead
+        # of POSTing http://localhost:8084/... — the HTTP loopback flooded the
+        # access logs with a self-heartbeat request every interval.
         try:
-            async with httpx.AsyncClient(timeout=5.0) as local_client:
-                await local_client.post(
-                    "http://localhost:8084/api/v1/federation/heartbeat",
-                    json=payload,
-                    headers=self._headers(),
-                )
-        except Exception:
-            pass  # Local heartbeat failure is non-fatal
+            registry = await self._get_local_registry()
+            await registry.heartbeat(
+                self.node_id,
+                {
+                    "load": payload["load"],
+                    "hardware_profile": payload["hardware_profile"],
+                    "services": payload["services"],
+                },
+            )
+        except Exception as exc:
+            logger.debug("Local self-heartbeat failed (non-fatal): %s", exc)
 
         if not self.peers:
             return
@@ -286,6 +293,28 @@ class NodeAgent:
                     response.raise_for_status()
                 except Exception as exc:
                     logger.debug("Heartbeat to %s failed: %s", peer, exc)
+
+    async def _get_local_registry(self):
+        """Lazily build a NodeRegistry for in-process self-heartbeats.
+
+        Uses the same REDIS_URL / DB pool as the federation API router, so
+        state lands exactly where an HTTP heartbeat would have put it.
+        """
+        if self._local_registry is None:
+            import redis.asyncio as aioredis
+
+            from database.connection import get_db_pool
+            from federation.node_registry import NodeRegistry
+
+            redis_client = aioredis.from_url(
+                os.getenv("REDIS_URL", "redis://unicorn-redis:6379/0"),
+                decode_responses=True,
+            )
+            db_pool = await get_db_pool()
+            self._local_registry = NodeRegistry(
+                redis_client=redis_client, db_pool=db_pool
+            )
+        return self._local_registry
 
     def _build_load_report(self) -> Dict[str, Any]:
         """Build current load metrics."""
