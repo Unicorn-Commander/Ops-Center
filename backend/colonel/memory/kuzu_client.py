@@ -33,6 +33,21 @@ class ColonelGraphClient:
 
     def _initialize(self):
         """Initialize Kuzu database and schema."""
+        # COLONEL_LOCAL_GRAPH: auto (default) | true/on/always | false/off.
+        # The embedded graph is a standalone fallback — when this deployment is
+        # wired to a Unicorn Brigade (BRIGADE_API_URL set), Brigade owns agent
+        # memory (FalkorDB/Graphiti graph) and the local copy is redundant.
+        mode = os.getenv("COLONEL_LOCAL_GRAPH", "auto").strip().lower()
+        if mode in ("false", "0", "off", "disabled", "never"):
+            logger.info("Colonel local graph disabled (COLONEL_LOCAL_GRAPH=%s)", mode)
+            return
+        if mode == "auto" and os.getenv("BRIGADE_API_URL", "").strip():
+            logger.info(
+                "Colonel local graph skipped: Brigade is configured (BRIGADE_API_URL set) "
+                "and owns agent memory; set COLONEL_LOCAL_GRAPH=true to run the embedded graph anyway"
+            )
+            return
+
         try:
             import kuzu
         except ImportError:
