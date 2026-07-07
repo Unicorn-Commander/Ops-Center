@@ -5,6 +5,15 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.2] - 2026-07-06
+
+### Changed
+- **Colonel local graph is now Brigade-aware (COLONEL_LOCAL_GRAPH=auto|true|false).**
+  The embedded Kuzu graph is a standalone fallback; when the deployment is
+  wired to a Unicorn Brigade (BRIGADE_API_URL set), Brigade owns agent memory
+  and the local graph is skipped by default. Standalone deployments (no
+  Brigade) keep the embedded graph. Force either way with COLONEL_LOCAL_GRAPH.
+
 ## [3.12.1] - 2026-07-05
 
 ### Fixed
