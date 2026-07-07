@@ -5,6 +5,18 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.3] - 2026-07-07
+
+### Fixed
+- **Colonel->Brigade re-registration no longer 500s on reboot.** Brigade assigns
+  its own agent id (name-slug, e.g. "the-colonel"), so the Colonel's GET on the id
+  it submitted (colonel-<id>) 404'd and a blind POST then duplicate-keyed (500) on
+  every boot after the first. Registration now resolves Brigade's real id by listing
+  and matching on source metadata/name, treats an already-present agent as
+  registered (best-effort card refresh; Brigade gates update=admin so an operator
+  service key's 403 is expected and benign), and never falls through to a
+  duplicate create.
+
 ## [3.12.2] - 2026-07-06
 
 ### Changed
