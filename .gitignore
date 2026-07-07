@@ -35,3 +35,7 @@ backend/data/
 # node_modules may be a SYMLINK in build worktrees (dir-only "node_modules/" pattern
 # does not match symlinks; without this, `git add -A` would commit the link)
 node_modules
+.env
+.env.auth
+.env.*
+!.env.template*

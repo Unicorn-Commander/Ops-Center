@@ -20,6 +20,11 @@ services:
     env_file:
       - .env.auth
     environment:
+      # Colonel -> Brigade wiring: when BRIGADE_API_URL is set, Brigade owns
+      # agent memory (Colonel skips its embedded graph, COLONEL_LOCAL_GRAPH=auto)
+      # and the Colonel registers itself as a Brigade agent using the PAT below.
+      - BRIGADE_API_URL=${BRIGADE_API_URL:-}
+      - BRIGADE_SERVICE_KEY=${BRIGADE_SERVICE_KEY:-}
       - EXTERNAL_HOST=${EXTERNAL_HOST:-magicunicorn.dev}
       - EXTERNAL_PROTOCOL=https
       - OAUTH_CLIENT_ID=ops-center
