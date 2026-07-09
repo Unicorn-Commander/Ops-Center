@@ -100,7 +100,7 @@ class CampaignGrantRequest(BaseModel):
     user_email: Optional[str] = None
     expires_at: Optional[datetime] = None
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def validate_org_or_email(cls, values):
         if not values.get("org_id") and not values.get("user_email"):
             raise ValueError("Provide org_id or user_email")
