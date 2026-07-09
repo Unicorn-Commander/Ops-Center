@@ -1,7 +1,9 @@
 -- ============================================================
 -- INVITE CODE SYSTEM MIGRATION
 -- ============================================================
--- Creates invite code system for VIP Founder tier and others
+-- Creates invite code system for VIP Founder tier and others.
+-- Legacy reference only: the live deployment now stores tier in invite-code
+-- metadata and tracks usage via remaining uses.
 -- Migration Date: 2025-11-12
 -- ============================================================
 
@@ -13,9 +15,9 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS invite_codes (
     id SERIAL PRIMARY KEY,
     code VARCHAR(50) UNIQUE NOT NULL,
-    tier_code VARCHAR(50) NOT NULL REFERENCES subscription_tiers(tier_code),
+    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
     max_uses INTEGER,  -- NULL = unlimited
-    current_uses INTEGER DEFAULT 0 NOT NULL,
+    uses_remaining INTEGER,
     expires_at TIMESTAMP WITH TIME ZONE,  -- NULL = never expires
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
     created_by VARCHAR(255),  -- Admin who created it
@@ -25,8 +27,7 @@ CREATE TABLE IF NOT EXISTS invite_codes (
 
     -- Constraints
     CONSTRAINT valid_max_uses CHECK (max_uses IS NULL OR max_uses > 0),
-    CONSTRAINT valid_current_uses CHECK (current_uses >= 0),
-    CONSTRAINT valid_usage CHECK (max_uses IS NULL OR current_uses <= max_uses)
+    CONSTRAINT valid_uses_remaining CHECK (uses_remaining IS NULL OR uses_remaining >= 0)
 );
 
 -- ============================================================
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS invite_code_redemptions (
 -- STEP 3: Create indexes for performance
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_invite_codes_code ON invite_codes(code);
-CREATE INDEX IF NOT EXISTS idx_invite_codes_tier ON invite_codes(tier_code);
+CREATE INDEX IF NOT EXISTS idx_invite_codes_tier ON invite_codes((metadata->>'tier_code'));
 CREATE INDEX IF NOT EXISTS idx_invite_codes_active ON invite_codes(is_active) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_invite_codes_expires ON invite_codes(expires_at) WHERE expires_at IS NOT NULL;
 
@@ -76,9 +77,9 @@ CREATE TRIGGER trg_invite_codes_update
 -- ============================================================
 INSERT INTO invite_codes (
     code,
-    tier_code,
+    metadata,
     max_uses,
-    current_uses,
+    uses_remaining,
     expires_at,
     is_active,
     created_by,
@@ -87,9 +88,9 @@ INSERT INTO invite_codes (
     -- Unlimited use VIP Founder code (for internal team)
     (
         'VIP-FOUNDER-INTERNAL',
-        'vip_founder',
+        jsonb_build_object('tier_code', 'vip_founder', 'notes', 'Internal team and founders - unlimited uses'),
         NULL,  -- Unlimited uses
-        0,
+        NULL,
         NULL,  -- Never expires
         TRUE,
         'system',
@@ -98,9 +99,9 @@ INSERT INTO invite_codes (
     -- Limited use VIP Founder codes (for early adopters)
     (
         'VIP-FOUNDER-EARLY100',
-        'vip_founder',
+        jsonb_build_object('tier_code', 'vip_founder', 'notes', 'Early adopters program - 100 invites, expires in 90 days'),
         100,  -- 100 uses
-        0,
+        100,
         (CURRENT_TIMESTAMP + INTERVAL '90 days'),  -- Expires in 90 days
         TRUE,
         'system',
@@ -108,9 +109,9 @@ INSERT INTO invite_codes (
     ),
     (
         'VIP-FOUNDER-PARTNER50',
-        'vip_founder',
+        jsonb_build_object('tier_code', 'vip_founder', 'notes', 'Partner organizations - 50 invites, expires in 6 months'),
         50,  -- 50 uses
-        0,
+        50,
         (CURRENT_TIMESTAMP + INTERVAL '180 days'),  -- Expires in 6 months
         TRUE,
         'system',
@@ -126,12 +127,12 @@ ON CONFLICT (code) DO NOTHING;
 SELECT
     id,
     code,
-    tier_code,
+    metadata->>'tier_code' AS tier_code,
     max_uses,
-    current_uses,
+    uses_remaining,
     CASE
         WHEN max_uses IS NULL THEN 'Unlimited'
-        ELSE (max_uses - current_uses)::TEXT || ' remaining'
+        ELSE uses_remaining::TEXT || ' remaining'
     END as remaining,
     expires_at,
     is_active,
@@ -143,7 +144,7 @@ ORDER BY created_at DESC;
 -- Show redemptions summary
 SELECT
     ic.code,
-    ic.tier_code,
+    ic.metadata->>'tier_code' AS tier_code,
     COUNT(icr.id) as redemption_count,
     ic.max_uses,
     CASE
@@ -152,7 +153,7 @@ SELECT
     END as remaining
 FROM invite_codes ic
 LEFT JOIN invite_code_redemptions icr ON ic.id = icr.invite_code_id
-GROUP BY ic.id, ic.code, ic.tier_code, ic.max_uses
+GROUP BY ic.id, ic.code, ic.metadata, ic.max_uses
 ORDER BY ic.created_at DESC;
 
 COMMIT;

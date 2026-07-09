@@ -5,6 +5,21 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.4] - 2026-07-09
+
+### Added
+- **Campaigns / promos on the deployed invite-code schema.** Added the admin
+  campaigns surface, shared org-feature grant helpers, and the additive
+  campaigns/campaign_grants migration plus `campaign_id` linkage for invite and
+  coupon codes.
+
+### Fixed
+- **Invite-code minting and redemption now use the deployed metadata model.**
+  Tier is stored in invite-code `metadata`, usage is tracked with
+  `uses_remaining`, campaign-scoped redemptions now record org feature grants
+  and campaign grant ledger rows, and the campaign detail page can filter codes
+  by `campaign_id`.
+
 ## [3.12.3] - 2026-07-07
 
 ### Fixed

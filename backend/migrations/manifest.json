@@ -20,6 +20,11 @@
       "file": "org_features_schema.sql",
       "idempotent": true,
       "notes": "org_features table + indexes + org_has_feature() helper + v_org_features_with_names view. Fully re-runnable: CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS, CREATE OR REPLACE FUNCTION/VIEW, COMMENT ON, GRANT, DO-block that only RAISEs NOTICEs; the sample INSERT is commented out. FK depends on organizations(id uuid) — created earlier in startup by migrations/core, and a non-benign failure just retries next boot."
+    },
+    {
+      "file": "create_campaigns_schema.sql",
+      "idempotent": true,
+      "notes": "Campaigns/promos tables plus additive campaign_id linkage for invite_codes and coupon_codes. Only CREATE IF NOT EXISTS, ALTER ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, and DROP-IF-EXISTS/CREATE trigger pairs are used."
     }
   ],
   "needs_review": [

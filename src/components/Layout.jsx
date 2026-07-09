@@ -147,6 +147,7 @@ export default function Layout({ children }) {
       organization: true,
       peopleAccess: true,
       billingPlans: true,
+      growth: true,
       aiModels: true,
       infrastructure: true,
       monitoring: true,
@@ -445,6 +446,8 @@ export default function Layout({ children }) {
                     {renderNavSection('peopleAccess', navStructure.system.children.peopleAccess)}
 
                     {renderNavSection('billingPlans', navStructure.system.children.billingPlans)}
+
+                    {renderNavSection('growth', navStructure.system.children.growth)}
 
                     {renderNavSection('aiModels', navStructure.system.children.aiModels)}
 
