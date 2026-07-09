@@ -402,6 +402,20 @@ export const routes = {
         }
       },
 
+      growth: {
+        section: 'Growth',
+        icon: 'TicketIcon',
+        roles: ['admin'],
+        children: {
+          campaigns: {
+            path: '/admin/growth/campaigns',
+            component: 'CampaignsManagement',
+            roles: ['admin'],
+            name: 'Campaigns'
+          }
+        }
+      },
+
       // AI & Models — consolidated from 12 nav items to 7
       aiModels: {
         section: 'AI & Models',
@@ -902,6 +916,7 @@ export const routes = {
     { from: '/admin/system/subscription-management', to: '/admin/billing/tiers', type: 'permanent' },
     { from: '/admin/system/app-management', to: '/admin/billing/apps', type: 'permanent' },
     { from: '/admin/system/pricing-management', to: '/admin/billing/pricing', type: 'permanent' },
+    { from: '/admin/system/campaigns', to: '/admin/growth/campaigns', type: 'permanent' },
     { from: '/admin/system/billing', to: '/admin/billing/system', type: 'permanent' },
     { from: '/admin/billing/dashboard', to: '/admin/billing/revenue', type: 'permanent' },
     // NOTE: /admin/credits is a real page (CreditDashboard), not a redirect

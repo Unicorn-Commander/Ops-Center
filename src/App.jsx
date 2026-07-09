@@ -286,6 +286,7 @@ const UsageAnalytics = lazy(() => import('./pages/UsageAnalytics'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
 const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
+const CampaignsManagement = lazy(() => import('./pages/admin/CampaignsManagement'));
 const WhiteLabelBuilder = lazy(() => import('./pages/admin/WhiteLabelBuilder'));
 const DynamicPricingManagement = lazy(() => import('./pages/admin/DynamicPricingManagement'));
 // Admin pricing/policy pages (June 2026)
@@ -661,6 +662,7 @@ function AppRoutes() {
                   <Route path="billing/inference-policy" element={<AppModelPolicy />} />
                   <Route path="billing/credit-packs" element={<CreditPackages />} />
                   <Route path="billing/agent-pricing" element={<AgentPricing />} />
+                  <Route path="growth/campaigns" element={<CampaignsManagement />} />
 
                   {/* AI & Models */}
                   <Route path="ai" element={<LLMHub />} />
@@ -724,6 +726,7 @@ function AppRoutes() {
                   <Route path="system/analytics" element={<Navigate to="/admin/monitoring/analytics/advanced" replace />} />
                   <Route path="system/usage-analytics" element={<Navigate to="/admin/monitoring/usage-analytics" replace />} />
                   <Route path="system/billing" element={<Navigate to="/admin/billing/system" replace />} />
+                  <Route path="system/campaigns" element={<Navigate to="/admin/growth/campaigns" replace />} />
                   <Route path="system/users" element={<Navigate to="/admin/people/users" replace />} />
                   <Route path="system/users/:userId" element={<ParamRedirect to="/admin/people/users/:userId" />} />
                   <Route path="billing/dashboard" element={<Navigate to="/admin/billing/revenue" replace />} />

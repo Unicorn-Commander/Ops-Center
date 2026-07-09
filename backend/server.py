@@ -155,6 +155,7 @@ from model_list_api import public_router as model_list_public_router
 # Invite Code System (VIP Founder)
 from invite_codes_api import admin_router as invite_codes_admin_router
 from invite_codes_api import user_router as invite_codes_user_router
+from campaigns_api import router as campaigns_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -1292,6 +1293,8 @@ app.include_router(invite_codes_admin_router)
 logger.info("Invite Codes Admin API endpoints registered at /api/v1/admin/invite-codes")
 app.include_router(invite_codes_user_router)
 logger.info("Invite Codes User API endpoints registered at /api/v1/invite-codes")
+app.include_router(campaigns_router)
+logger.info("Campaigns API endpoints registered at /api/v1/admin/campaigns")
 
 # Alerts Management (January 2026)
 app.include_router(alerts_router)
