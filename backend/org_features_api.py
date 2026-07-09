@@ -262,6 +262,9 @@ async def grant_org_feature(
                 grant=grant
             )
 
+        except HTTPException:
+            # Preserve intended 404 (org not found) / 400 (invalid feature_key) responses
+            raise
         except Exception as e:
             logger.error(f"Error granting feature to org {org_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to grant feature: {str(e)}")
