@@ -418,7 +418,7 @@ const AddAPIKeyModal = ({ open, onClose, onSave, editApiKey = null }) => {
                 onClick={() => {
                   setFormData((prev) => ({
                     ...prev,
-                    api_key: 'REMOVED',
+                    api_key: '',
                     key_name: 'Default OpenRouter Key'
                   }));
                 }}
