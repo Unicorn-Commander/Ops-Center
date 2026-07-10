@@ -35,3 +35,9 @@ backend/data/
 # node_modules may be a SYMLINK in build worktrees (dir-only "node_modules/" pattern
 # does not match symlinks; without this, `git add -A` would commit the link)
 node_modules
+
+# Secret-bearing backups from env-ify (2026-07-03) - never commit
+*.bak-pre-envify-20260703
+
+# gitignored test secret (env-ify 2026-07-03) - never commit
+.env.byok-test

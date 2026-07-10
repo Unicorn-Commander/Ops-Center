@@ -17,6 +17,7 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 from enum import Enum
 import json
+import os
 
 import asyncpg
 from cryptography.fernet import Fernet
@@ -1145,12 +1146,17 @@ class LLMConfigManager:
             existing_keys = await self.list_api_keys()
 
             if not existing_keys:
+                # Read default OpenRouter key from environment (no hardcoded secret)
+                default_openrouter_key = os.getenv("OPENROUTER_API_KEY")
+                if not default_openrouter_key:
+                    logger.warning("No API keys found and OPENROUTER_API_KEY not set - skipping default OpenRouter key initialization")
+                    return
                 # Pre-populate OpenRouter key
                 logger.info("No API keys found - initializing default OpenRouter key")
                 await self.add_api_key(
                     provider="openrouter",
                     key_name="Default OpenRouter Key",
-                    api_key="REMOVED",
+                    api_key=default_openrouter_key,
                     use_for_ops_center=True,
                     user_id="system",
                     metadata={"source": "pre-populated"}
