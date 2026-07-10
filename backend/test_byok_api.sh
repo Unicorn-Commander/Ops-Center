@@ -7,6 +7,13 @@
 BASE_URL="http://localhost:8084/api/v1/llm/byok"
 AUTH_HEADER="Authorization: Bearer REMOVED"
 
+# Load OPENROUTER_API_KEY from a gitignored .env.byok-test next to this script - never hardcoded
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "$SCRIPT_DIR/.env.byok-test" ] && { set -a; . "$SCRIPT_DIR/.env.byok-test"; set +a; }
+if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+  echo "WARNING: OPENROUTER_API_KEY not set (create $SCRIPT_DIR/.env.byok-test or export it); Test 4 sends an empty key." >&2
+fi
+
 echo "========================================"
 echo "BYOK REST API Test Suite"
 echo "========================================"
@@ -67,7 +74,7 @@ RESPONSE=$(curl -s -X POST "$BASE_URL/keys" \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "openrouter",
-    "api_key": "REMOVED",
+    "api_key": "'"${OPENROUTER_API_KEY}"'",
     "metadata": {"test": "true"}
   }')
 echo "$RESPONSE" | jq '.'

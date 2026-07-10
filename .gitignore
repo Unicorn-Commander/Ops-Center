@@ -39,3 +39,6 @@ node_modules
 .env.auth
 .env.*
 !.env.template*
+
+# gitignored BYOK test secret (never commit)
+.env.byok-test
