@@ -23,8 +23,8 @@ TIERS = [
     },
     {
         "code": "app",
-        "name": "App (Meeting + Contact)",
-        "description": "Meeting-Ops and Contact-Ops with MCP and starter credits.",
+        "name": "Meeting-Ops",
+        "description": "Meeting-Ops with MCP and starter credits.",
         "monthly": Decimal("15.00"),
         "annual": Decimal("150.00"),
     },
