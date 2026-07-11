@@ -1281,7 +1281,7 @@ async def chat_completions(
                 await asyncio.sleep(0)
 
                 try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with httpx.AsyncClient(timeout=900.0) as client:
                         async with client.stream(
                             'POST',
                             f"{base_url}/chat/completions",
@@ -1446,7 +1446,7 @@ async def chat_completions(
 
         else:
             # NON-STREAMING PATH: Return complete JSON response
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=900.0) as client:
                 response = await client.post(
                     f"{base_url}/chat/completions",
                     json=proxy_request,
@@ -2236,6 +2236,32 @@ async def get_credits(
 
     except Exception as e:
         logger.error(f"Error getting credits: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve credits")
+
+
+@router.get("/credits/me", response_model=CreditResponse)
+async def get_credits_me(
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """Credit balance for the authenticated caller (uc_ API key or JWT).
+
+    Unshadowed alias of GET /credits: litellm_routing_api registers a bare
+    /credits (query-param user_id, different table) on the same prefix BEFORE
+    this router, so key-authed clients (e.g. Majiks DJ sign-in) use this path.
+    (P10, 2026-07-11)
+    """
+    try:
+        balance = await credit_system.get_user_credits(user_id)
+        tier = await credit_system.get_user_tier(user_id)
+        return {
+            "user_id": user_id,
+            "credits_remaining": balance,
+            "tier": tier,
+            "monthly_cap": None
+        }
+    except Exception as e:
+        logger.error(f"Error getting credits (me): {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve credits")
 
 

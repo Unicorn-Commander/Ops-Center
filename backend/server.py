@@ -818,6 +818,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/compute/",  # GPU Compute Fabric - machine-to-machine, uses agent key auth
         "/api/v1/billing/events",  # Billing Events API - machine-to-machine, uses agent key auth
         "/api/v1/internal/llm/",  # Gateway local-pricing preflight - service-key m2m, not forms
+        "/api/v1/account/uc-api-keys/mint-via-token",  # KC-Bearer-authed key mint for native apps (P10), not forms
+        "/api/v1/account/uc-api-keys/revoke-self",  # uc_-key-authed self-revoke at app sign-out (P10), not forms
         "/api/v1/uuda/",  # UUDA control plane
         "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
     },

@@ -73,6 +73,8 @@ PUBLIC_PREFIXES = (
     "/api/v1/inference/",
     "/api/v1/uuda/",
     "/api/v1/entitlements",  # token-authed cross-app entitlement endpoint (verifies its own KC Bearer)
+    "/api/v1/account/uc-api-keys/mint-via-token",  # KC-Bearer-authed key mint for native apps (P10; verifies its own KC Bearer)
+    "/api/v1/account/uc-api-keys/revoke-self",       # uc_-key-authed self-revoke at app sign-out (P10)
     "/api/v1/metered/",               # metered compute: /report is service-key m2m;
                                       # /embeddings & /rerank still enforce session via
                                       # their own require_authenticated_user dependency
