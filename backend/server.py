@@ -592,6 +592,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
                     "display_name": org_name,
                     "slug": slugify(org_name) if "slug" in org_column_names else None,
                     "plan_tier": "free",
+                    "subscription_tier": "free",
                     "status": "active",
                     "is_active": True,
                     "max_seats": 1,
