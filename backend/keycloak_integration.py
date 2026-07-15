@@ -382,21 +382,32 @@ async def update_user_attributes(email: str, attributes: Dict[str, List[str]]) -
         user_id = user.get("id")
         token = await get_admin_token()
 
-        # Get existing attributes
-        existing_attrs = user.get("attributes", {})
-
-        # Merge with new attributes
-        updated_attrs = {**existing_attrs, **attributes}
-
-        # Update user
         async with httpx.AsyncClient(verify=False) as client:
+            # Keycloak 26 requires the FULL user representation on
+            # PUT /users/{id}; a partial body fails with
+            # 400 "User name is missing". GET the current representation,
+            # merge the attribute changes, and PUT the whole thing back.
+            get_response = await client.get(
+                f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0
+            )
+            if get_response.status_code != 200:
+                logger.error(
+                    f"Failed to fetch full user representation for {email}: {get_response.status_code}"
+                )
+                return False
+
+            user_rep = get_response.json()
+            user_rep["attributes"] = {**(user_rep.get("attributes") or {}), **attributes}
+
             response = await client.put(
                 f"{KEYCLOAK_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json"
                 },
-                json={"attributes": updated_attrs},
+                json=user_rep,
                 timeout=10.0
             )
 

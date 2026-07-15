@@ -581,8 +581,13 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
                 def slugify(value: str) -> str:
                     return re.sub(r"[^a-z0-9-]", "", value.lower().replace(" ", "-"))
 
+                # Postgres organizations.id is a bare uuid column; the JSON
+                # store (org_manager) uses an 'org_'-prefixed id. Strip the
+                # prefix for the Postgres rows (matches existing org rows).
+                pg_org_id = org_id[4:] if org_id.startswith("org_") else org_id
+
                 org_values = {
-                    "id": org_id,
+                    "id": pg_org_id,
                     "name": org_name,
                     "display_name": org_name,
                     "slug": slugify(org_name) if "slug" in org_column_names else None,
@@ -623,7 +628,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
 
                 if org_id_column and "user_id" in member_column_names and "role" in member_column_names:
                     member_values = {
-                        org_id_column: org_id,
+                        org_id_column: pg_org_id,
                         "user_id": user_id,
                         "role": "owner",
                         "joined_at": datetime.utcnow(),
@@ -658,25 +663,10 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         except Exception as keycloak_error:
             logger.error(f"Failed to update Keycloak attributes for {email}: {keycloak_error}")
 
-    # Create Lago subscription for the organization (best-effort)
-    try:
-        from lago_integration import subscribe_org_to_plan, LagoIntegrationError
-        subscription = await subscribe_org_to_plan(
-            org_id=org_id,
-            plan_code="free",
-            org_name=org_name,
-            email=email or "",
-            user_id=user_id
-        )
-        if subscription and subscription.get("lago_id"):
-            org_manager.update_org_billing_ids(
-                org_id=org_id,
-                lago_id=subscription.get("lago_id")
-            )
-    except LagoIntegrationError as lago_error:
-        logger.error(f"Failed to create Lago subscription for org {org_id}: {lago_error}")
-    except Exception as lago_error:
-        logger.error(f"Unexpected error creating Lago subscription for org {org_id}: {lago_error}")
+    # Lago subscription intentionally skipped for auto-provisioned free-tier
+    # orgs: Lago has no 'free' plan, so subscription creation 404s with
+    # plan_not_found. Paid upgrade flows create the Lago customer+subscription.
+    logger.info(f"Skipping Lago subscription creation for free-tier org {org_id}")
 
     # Provision the per-org gateway key (metered-inference billing keystone).
     # Best-effort + failure-isolated: never blocks provisioning.
@@ -690,8 +680,11 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
     try:
         from credit_system import credit_manager
         await credit_manager.initialize()
+        # user_credits.user_id is a uuid referencing the Keycloak sub /
+        # users.id — never the email (the lazy on-read path in
+        # credit_manager.get_balance also uses the Keycloak user id).
         await credit_manager.create_user_credits(
-            user_id=email or user_id,
+            user_id=user_id,
             tier="free"
         )
     except Exception as credit_error:
