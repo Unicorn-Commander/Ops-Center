@@ -432,42 +432,42 @@ async def list_organizations(
 
         user_id = user.get("user_id") or user.get("sub")
 
-        conn = await get_db_connection()
-
-        # Get organizations where user is a member
-        rows = await conn.fetch("""
-            SELECT
-                o.id,
-                o.name,
-                o.slug,
-                o.subscription_tier,
-                o.created_at,
-                o.is_active,
-                COUNT(om.user_id) as member_count
-            FROM organizations o
-            LEFT JOIN organization_members om ON o.id = om.org_id
-            WHERE o.id IN (
-                SELECT org_id FROM organization_members WHERE user_id = $1
-            )
-            GROUP BY o.id, o.name, o.slug, o.subscription_tier, o.created_at, o.is_active
-            ORDER BY o.created_at DESC
-            LIMIT $2 OFFSET $3
-        """, user_id, limit, offset)
+        # get_db_connection() (database package) returns pool.acquire() —
+        # a PoolAcquireContext that must be entered, not used directly.
+        async with await get_db_connection() as conn:
+            # Get organizations where user is a member
+            # NOTE: organizations has no is_active column; derive from status.
+            rows = await conn.fetch("""
+                SELECT
+                    o.id,
+                    o.name,
+                    o.slug,
+                    o.subscription_tier,
+                    o.created_at,
+                    o.status,
+                    COUNT(om.user_id) as member_count
+                FROM organizations o
+                LEFT JOIN organization_members om ON o.id = om.org_id
+                WHERE o.id IN (
+                    SELECT org_id FROM organization_members WHERE user_id = $1
+                )
+                GROUP BY o.id, o.name, o.slug, o.subscription_tier, o.created_at, o.status
+                ORDER BY o.created_at DESC
+                LIMIT $2 OFFSET $3
+            """, user_id, limit, offset)
 
         organizations = [
             {
-                "id": row['id'],
+                "id": str(row['id']),
                 "name": row['name'],
-                "slug": row['slug'],
-                "subscription_tier": row['subscription_tier'],
+                "slug": row['slug'] or "",
+                "subscription_tier": row['subscription_tier'] or "free",
                 "member_count": row['member_count'],
                 "created_at": row['created_at'].isoformat() + "Z",
-                "is_active": row['is_active']
+                "is_active": row['status'] == 'active'
             }
             for row in rows
         ]
-
-        await conn.close()
 
         logger.info(f"User {user.get('email')} retrieved {len(organizations)} organizations")
         return {"organizations": organizations}
