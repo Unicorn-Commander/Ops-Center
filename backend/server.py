@@ -1234,6 +1234,10 @@ logger.info("Extensions Catalog API endpoints registered at /api/v1/extensions (
 # My Apps API - Tier-filtered apps for authenticated users
 app.include_router(my_apps_router)
 app.include_router(entitlements_router)
+from trial_codes_api import admin_router as trial_codes_admin_router, user_router as trial_codes_user_router
+app.include_router(trial_codes_admin_router)
+app.include_router(trial_codes_user_router)
+logger.info("Trial Codes API registered at /api/v1/admin/trial-codes and /api/v1/trial-codes")
 logger.info("My Apps API endpoints registered at /api/v1/my-apps (RBAC-filtered)")
 
 # Advanced Log Search API (Epic 2.5)

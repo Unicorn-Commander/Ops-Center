@@ -83,6 +83,15 @@ async def handle_stripe_webhook(
     obj = event.get("data", {}).get("object", {})
     from paid_org_provisioning import provision_paid_org, downgrade_org
     try:
+        # Trial-code checkouts grant org_features and return early; everything else falls through.
+        try:
+            from trial_codes_api import handle_trial_code_checkout
+            from database.connection import get_db_pool
+            _tc = await handle_trial_code_checkout(event, await get_db_pool())
+            if _tc.get("handled"):
+                return {"status": "trial_code", "result": _tc}
+        except Exception as _tce:
+            logger.error(f"trial-code hook error (non-fatal): {_tce}")
         if etype == "checkout.session.completed":
             md = obj.get("metadata", {}) or {}
             # Suite guard: ignore checkouts that aren't ops-center's (shared account).

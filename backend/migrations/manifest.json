@@ -8,7 +8,7 @@
     "CREATE OR REPLACE FUNCTION/VIEW, DROP-IF-EXISTS-then-CREATE trigger pairs,",
     "COMMENT ON, GRANT, CREATE EXTENSION IF NOT EXISTS. No DROPs of data, no",
     "unguarded INSERT/UPDATE/DELETE, no type changes. Files that fail the bar",
-    "stay in 'needs_review' (documentation only — the runner ignores it)."
+    "stay in 'needs_review' (documentation only \u2014 the runner ignores it)."
   ],
   "migrations": [
     {
@@ -19,18 +19,23 @@
     {
       "file": "org_features_schema.sql",
       "idempotent": true,
-      "notes": "org_features table + indexes + org_has_feature() helper + v_org_features_with_names view. Fully re-runnable: CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS, CREATE OR REPLACE FUNCTION/VIEW, COMMENT ON, GRANT, DO-block that only RAISEs NOTICEs; the sample INSERT is commented out. FK depends on organizations(id uuid) — created earlier in startup by migrations/core, and a non-benign failure just retries next boot."
+      "notes": "org_features table + indexes + org_has_feature() helper + v_org_features_with_names view. Fully re-runnable: CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS, CREATE OR REPLACE FUNCTION/VIEW, COMMENT ON, GRANT, DO-block that only RAISEs NOTICEs; the sample INSERT is commented out. FK depends on organizations(id uuid) \u2014 created earlier in startup by migrations/core, and a non-benign failure just retries next boot."
     },
     {
       "file": "create_campaigns_schema.sql",
       "idempotent": true,
       "notes": "Campaigns/promos tables plus additive campaign_id linkage for invite_codes and coupon_codes. Only CREATE IF NOT EXISTS, ALTER ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, and DROP-IF-EXISTS/CREATE trigger pairs are used."
+    },
+    {
+      "file": "trial_codes_schema.sql",
+      "idempotent": true,
+      "notes": "Trial codes: org_features.expires_at column + partial index; trial_codes + trial_code_redemptions tables + indexes. All ALTER ADD COLUMN IF NOT EXISTS / CREATE TABLE|INDEX IF NOT EXISTS; no data mutation. Depends on org_features_schema.sql (earlier in this manifest)."
     }
   ],
   "needs_review": [
     {
       "file": "usage_tracking_schema.sql",
-      "reason": "NOT auto-applied. (1) usage_alerts DDL is invalid PostgreSQL — 'CONSTRAINT unique_user_alert UNIQUE(user_id, alert_type, created_at::DATE)' puts an expression in a table UNIQUE constraint (needs a CREATE UNIQUE INDEX instead), so the CREATE TABLE fails every run and the table can never converge from this file. (2) It installs AFTER INSERT/UPDATE triggers that mutate usage_quotas on the api_usage hot write path plus a 90-day MATERIALIZED VIEW — runtime behavior changes, not just schema convergence. Fix the DDL and decide on the triggers before listing."
+      "reason": "NOT auto-applied. (1) usage_alerts DDL is invalid PostgreSQL \u2014 'CONSTRAINT unique_user_alert UNIQUE(user_id, alert_type, created_at::DATE)' puts an expression in a table UNIQUE constraint (needs a CREATE UNIQUE INDEX instead), so the CREATE TABLE fails every run and the table can never converge from this file. (2) It installs AFTER INSERT/UPDATE triggers that mutate usage_quotas on the api_usage hot write path plus a 90-day MATERIALIZED VIEW \u2014 runtime behavior changes, not just schema convergence. Fix the DDL and decide on the triggers before listing."
     }
   ]
 }

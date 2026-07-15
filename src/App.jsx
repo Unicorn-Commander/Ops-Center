@@ -215,6 +215,7 @@ const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const MarketplaceLanding = lazy(() => import('./pages/public/MarketplaceLanding'));
 const CheckoutContinue = lazy(() => import('./pages/public/CheckoutContinue'));
+const RedeemTrial = lazy(() => import('./pages/public/RedeemTrial'));
 
 // Apps Marketplace pages (user-facing) - lazy loaded
 const AppsLauncher = lazy(() => import('./pages/AppsLauncher'));
@@ -287,6 +288,7 @@ const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
 const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
 const CampaignsManagement = lazy(() => import('./pages/admin/CampaignsManagement'));
+const TrialCodes = lazy(() => import('./pages/admin/TrialCodes'));
 const WhiteLabelBuilder = lazy(() => import('./pages/admin/WhiteLabelBuilder'));
 const DynamicPricingManagement = lazy(() => import('./pages/admin/DynamicPricingManagement'));
 // Admin pricing/policy pages (June 2026)
@@ -529,6 +531,9 @@ function AppRoutes() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/pricing" element={<MarketplaceLanding />} />
           <Route path="/checkout/continue" element={<CheckoutContinue />} />
+          {/* Public trial-code redemption (requires a logged-in session; the page
+              itself handles 401 by showing a "Sign in to redeem" CTA) */}
+          <Route path="/redeem/:code" element={<RedeemTrial />} />
 
           {/* User Landing Page - Authenticated users (search bar, apps, user dropdown) */}
           <Route path="/dashboard" element={
@@ -663,6 +668,7 @@ function AppRoutes() {
                   <Route path="billing/credit-packs" element={<CreditPackages />} />
                   <Route path="billing/agent-pricing" element={<AgentPricing />} />
                   <Route path="growth/campaigns" element={<CampaignsManagement />} />
+                  <Route path="growth/trial-codes" element={<TrialCodes />} />
 
                   {/* AI & Models */}
                   <Route path="ai" element={<LLMHub />} />
