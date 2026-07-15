@@ -33,8 +33,8 @@ class MetricsCollector:
         self,
         collection_interval: int = 5,
         retention_hours: int = 24,
-        redis_host: str = 'unicorn-redis',
-        redis_port: int = 6379,
+        redis_host: str = os.getenv("REDIS_HOST", "unicorn-redis"),
+        redis_port: int = int(os.getenv("REDIS_PORT", "6379")),
         redis_db: int = 1
     ):
         """
