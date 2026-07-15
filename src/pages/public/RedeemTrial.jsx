@@ -9,11 +9,14 @@
  *   1. On mount, GET /api/v1/trial-codes/validate/{code}.
  *        - 401  -> show sign-in CTA.
  *        - 4xx  -> show the invalid/expired/used message.
- *        - 200  -> show the offer (feature + trial length + free/$1).
+ *        - 200  -> show the offer (feature/tier + trial length + free/$1).
  *   2. "Redeem" -> POST /api/v1/trial-codes/redeem { code }.
  *        - status "checkout" -> window.location.href = checkout_url (Stripe).
  *        - status "granted"  -> success state with expiry + link to the app.
  *        - already_redeemed  -> "already active" state.
+ *
+ * The offer copy is tier-aware: a grant_tier (e.g. "founder_friend") is a
+ * full-suite comp; otherwise it's a Project-Ops trial (free 14-day or $1).
  *
  * Visual style mirrors pages/public/CheckoutContinue.jsx (Tailwind, dark card).
  */
@@ -21,17 +24,29 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 
-// Human label for the offer headline.
+// Human label for the offer headline — tier-aware.
 const offerHeadline = (code) => {
+  if (code?.grant_tier === 'founder_friend') {
+    return 'Founder Friend — full suite access (comp)';
+  }
   const keys = code?.feature_keys || [];
   const app = keys.includes('project_ops_access') ? 'Project-Ops' : (keys[0] || 'App');
   const days = code?.trial_days ?? 14;
-  const price = code?.mode === 'paid'
-    ? `$${(((code?.price_cents ?? 100) / 100)).toFixed(2).replace(/\.00$/, '')} trial`
-    : `${days}-day free trial`;
+  if (code?.mode === 'paid') {
+    const price = `$${(((code?.price_cents ?? 100) / 100)).toFixed(2).replace(/\.00$/, '')} trial`;
+    return days ? `${app} — ${price} (${days} days)` : `${app} — ${price}`;
+  }
+  return days ? `${app} — ${days}-day free trial` : `${app} — free trial`;
+};
+
+// Short supporting line under the headline while deciding to redeem.
+const offerBlurb = (code) => {
+  if (code?.grant_tier === 'founder_friend') {
+    return 'Redeem to unlock the full suite as a comp — no card required. Local inference is free; cloud inference is metered/paid.';
+  }
   return code?.mode === 'paid'
-    ? `${app} — ${price} (${days} days)`
-    : `${app} — ${price}`;
+    ? 'Redeem to start your trial — a small charge confirms your card, and access unlocks right away.'
+    : 'Redeem to activate your trial instantly — no card required.';
 };
 
 const formatDate = (dateStr) => {
@@ -178,11 +193,7 @@ export default function RedeemTrial() {
             </div>
             <p className="text-sm uppercase tracking-wide text-purple-300">You've been invited</p>
             <h1 className="mt-1 text-2xl font-semibold">{offerHeadline(offer)}</h1>
-            <p className="mt-3 text-slate-300">
-              {offer?.mode === 'paid'
-                ? 'Redeem to start your trial — a small charge confirms your card, and access unlocks right away.'
-                : 'Redeem to activate your trial instantly — no card required.'}
-            </p>
+            <p className="mt-3 text-slate-300">{offerBlurb(offer)}</p>
             <button
               type="button"
               onClick={handleRedeem}
@@ -207,7 +218,9 @@ export default function RedeemTrial() {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 text-2xl">
               ✅
             </div>
-            <h1 className="text-2xl font-semibold">Your trial is active</h1>
+            <h1 className="text-2xl font-semibold">
+              {offer?.grant_tier === 'founder_friend' ? 'Your comp access is active' : 'Your trial is active'}
+            </h1>
             <p className="mt-3 text-slate-300">
               {offerHeadline(offer).split(' — ')[0]} is unlocked
               {formatDate(expiresAt) ? ` — expires ${formatDate(expiresAt)}.` : '.'}
@@ -229,7 +242,7 @@ export default function RedeemTrial() {
             </div>
             <h1 className="text-2xl font-semibold">You've already redeemed this</h1>
             <p className="mt-3 text-slate-300">
-              Your trial is already active
+              {offer?.grant_tier === 'founder_friend' ? 'Your comp access is already active' : 'Your trial is already active'}
               {formatDate(expiresAt) ? ` — expires ${formatDate(expiresAt)}.` : '.'}
             </p>
             <a

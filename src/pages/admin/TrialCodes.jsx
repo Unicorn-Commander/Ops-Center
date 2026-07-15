@@ -5,13 +5,15 @@
  *   - free ($0): redeeming immediately grants the trial.
  *   - paid ($1): redeeming sends the user to a Stripe checkout first.
  *
- * Each code carries one or more feature_keys (e.g. "project_ops_access"),
- * a trial length in days, and a max redemption count. Admins can copy a
- * public redeem link (/redeem/{code}), deactivate a code, and inspect the
- * redemptions for any code.
+ * Each code carries zero or more feature_keys (e.g. "project_ops_access"),
+ * an optional grant_tier (put the org on a plan tier, e.g. "founder_friend"),
+ * a trial length in days, and a max redemption count. Codes are individual
+ * single-use by default (max_uses=1); admins typically generate a BATCH of N
+ * codes at once (count) — one per person. Admins can copy a public redeem
+ * link (/redeem/{code}), deactivate a code, and inspect redemptions.
  *
  * Backend contract (all admin-gated, same-origin, cookie auth):
- *   POST   /api/v1/admin/trial-codes                 -> created code row
+ *   POST   /api/v1/admin/trial-codes                 -> { codes: [row, ...], count: N }
  *   GET    /api/v1/admin/trial-codes                 -> array of code rows
  *   POST   /api/v1/admin/trial-codes/{id}/deactivate -> { deactivated: true }
  *   GET    /api/v1/admin/trial-codes/{id}/redemptions-> array of redemptions
@@ -23,8 +25,6 @@ import {
   Paper,
   Typography,
   Button,
-  Card,
-  CardContent,
   Table,
   TableBody,
   TableCell,
@@ -42,12 +42,15 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  ToggleButton,
+  ToggleButtonGroup,
   Alert,
   Snackbar,
   CircularProgress,
   LinearProgress,
   Tooltip,
-  Stack
+  Stack,
+  Divider
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -62,6 +65,46 @@ import PageHeader from '../../components/admin/PageHeader';
 import AdminBreadcrumbs from '../../components/admin/AdminBreadcrumbs';
 
 const ADMIN_BASE = '/api/v1/admin';
+
+// Create-form presets — pick one, then tweak the sensible defaults it sets.
+const PRESETS = {
+  free_trial: {
+    label: 'Project-Ops — Free trial ($0)',
+    mode: 'free',
+    featureKeys: ['project_ops_access'],
+    grant_tier: null,
+    trial_days: 14
+  },
+  paid_trial: {
+    label: 'Project-Ops — $1 trial',
+    mode: 'paid',
+    featureKeys: ['project_ops_access'],
+    grant_tier: null,
+    trial_days: 30
+  },
+  founder_friend: {
+    label: 'Founder Friend (comp)',
+    mode: 'free',
+    featureKeys: [],
+    grant_tier: 'founder_friend',
+    trial_days: 0,
+    helper: 'Full-suite comp — local inference free, cloud inference metered/paid.'
+  }
+};
+
+const defaultForm = () => ({
+  preset: 'free_trial',
+  mode: PRESETS.free_trial.mode,
+  featureKeys: [...PRESETS.free_trial.featureKeys],
+  featureInput: '',
+  grant_tier: PRESETS.free_trial.grant_tier,
+  trial_days: PRESETS.free_trial.trial_days,
+  max_uses: 1,
+  count: 1,
+  code: '',
+  note: '',
+  campaign: ''
+});
 
 // Format an ISO timestamp for display
 const formatDate = (dateStr) => {
@@ -85,6 +128,8 @@ const modeLabel = (code) => {
   return 'Free ($0)';
 };
 
+const redeemLink = (code) => `${window.location.origin}/redeem/${code}`;
+
 const TrialCodes = () => {
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -92,16 +137,9 @@ const TrialCodes = () => {
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
-    mode: 'free',
-    featureKeys: ['project_ops_access'],
-    featureInput: '',
-    trial_days: 14,
-    max_uses: 1,
-    code: '',
-    note: '',
-    campaign: ''
-  });
+  const [form, setForm] = useState(defaultForm());
+  // Batch result panel (shown after a successful create, replaces the form)
+  const [createdBatch, setCreatedBatch] = useState(null); // array of created code rows
 
   // Redemptions dialog
   const [redemptionsFor, setRedemptionsFor] = useState(null); // the code row
@@ -154,17 +192,29 @@ const TrialCodes = () => {
 
   // --- Create dialog helpers ---------------------------------------------
   const openCreate = () => {
-    setForm({
-      mode: 'free',
-      featureKeys: ['project_ops_access'],
-      featureInput: '',
-      trial_days: 14,
-      max_uses: 1,
-      code: '',
-      note: '',
-      campaign: ''
-    });
+    setForm(defaultForm());
+    setCreatedBatch(null);
     setCreateOpen(true);
+  };
+
+  const closeCreate = () => {
+    setCreateOpen(false);
+    setCreatedBatch(null);
+  };
+
+  // Apply a preset — sets sensible defaults the user can still tweak.
+  const applyPreset = (key) => {
+    if (!key || !PRESETS[key]) return;
+    const p = PRESETS[key];
+    setForm((f) => ({
+      ...f,
+      preset: key,
+      mode: p.mode,
+      featureKeys: [...p.featureKeys],
+      grant_tier: p.grant_tier,
+      trial_days: p.trial_days,
+      featureInput: ''
+    }));
   };
 
   const addFeatureKey = () => {
@@ -182,8 +232,10 @@ const TrialCodes = () => {
   };
 
   const handleCreate = async () => {
-    if (form.featureKeys.length === 0) {
-      showToast('Add at least one feature key.', 'warning');
+    const count = Math.max(1, Math.min(500, Number(form.count) || 1));
+    // feature_keys may be empty only when a grant_tier is set.
+    if (form.featureKeys.length === 0 && !form.grant_tier) {
+      showToast('Add at least one feature key, or set a grant tier.', 'warning');
       return;
     }
     setCreating(true);
@@ -192,19 +244,23 @@ const TrialCodes = () => {
         feature_keys: form.featureKeys,
         mode: form.mode,
         trial_days: Number(form.trial_days) || 0,
-        max_uses: Number(form.max_uses) || 1
+        max_uses: Number(form.max_uses) || 1,
+        count
       };
+      if (form.grant_tier) body.grant_tier = form.grant_tier;
       if (form.mode === 'paid') body.price_cents = 100; // $1 trial
-      if (form.code.trim()) body.code = form.code.trim();
+      // A custom code is only allowed for a single code (API rejects it with count>1).
+      if (count === 1 && form.code.trim()) body.code = form.code.trim();
       if (form.note.trim()) body.note = form.note.trim();
       if (form.campaign.trim()) body.campaign = form.campaign.trim();
 
-      const created = await apiFetch(`${ADMIN_BASE}/trial-codes`, {
+      const result = await apiFetch(`${ADMIN_BASE}/trial-codes`, {
         method: 'POST',
         body: JSON.stringify(body)
       });
-      showToast(`Trial code created: ${created?.code || ''}`);
-      setCreateOpen(false);
+      const batch = Array.isArray(result?.codes) ? result.codes : [];
+      setCreatedBatch(batch);
+      showToast(`${batch.length} trial code${batch.length === 1 ? '' : 's'} created`);
       loadCodes();
     } catch (err) {
       showToast(`Failed to create trial code: ${err.message}`, 'error');
@@ -213,16 +269,27 @@ const TrialCodes = () => {
     }
   };
 
-  // --- Copy redeem link ---------------------------------------------------
+  // --- Copy helpers -------------------------------------------------------
   const copyRedeemLink = (code) => {
-    const link = `${window.location.origin}/redeem/${code}`;
-    navigator.clipboard.writeText(link);
+    navigator.clipboard.writeText(redeemLink(code));
     showToast('Redeem link copied to clipboard');
   };
 
   const copyCode = (code) => {
     navigator.clipboard.writeText(code);
     showToast('Code copied to clipboard');
+  };
+
+  const copyAllCodes = () => {
+    if (!createdBatch?.length) return;
+    navigator.clipboard.writeText(createdBatch.map((c) => c.code).join('\n'));
+    showToast(`Copied ${createdBatch.length} code${createdBatch.length === 1 ? '' : 's'}`);
+  };
+
+  const copyAllLinks = () => {
+    if (!createdBatch?.length) return;
+    navigator.clipboard.writeText(createdBatch.map((c) => redeemLink(c.code)).join('\n'));
+    showToast(`Copied ${createdBatch.length} redeem link${createdBatch.length === 1 ? '' : 's'}`);
   };
 
   // --- Redemptions --------------------------------------------------------
@@ -258,6 +325,8 @@ const TrialCodes = () => {
     }
   };
 
+  const singleCode = Number(form.count) === 1;
+
   return (
     <Box sx={{ p: 3 }}>
       <AdminBreadcrumbs />
@@ -290,6 +359,7 @@ const TrialCodes = () => {
               <TableRow sx={{ background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)' }}>
                 <TableCell sx={{ fontWeight: 700 }}>Code</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Mode</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Tier</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Feature Keys</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Trial Days</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>Uses</TableCell>
@@ -301,7 +371,7 @@ const TrialCodes = () => {
             <TableBody>
               {!loading && codes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
                     <Typography variant="body2" color="text.secondary">
                       No trial codes yet. Create one to start sharing trial access.
                     </Typography>
@@ -336,10 +406,27 @@ const TrialCodes = () => {
                       />
                     </TableCell>
                     <TableCell>
+                      {code.grant_tier ? (
+                        <Chip
+                          label={code.grant_tier}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                          sx={{ fontFamily: 'monospace' }}
+                        />
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">—</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 260 }}>
-                        {(code.feature_keys || []).map((k) => (
-                          <Chip key={k} label={k} size="small" variant="outlined" sx={{ fontFamily: 'monospace' }} />
-                        ))}
+                        {(code.feature_keys || []).length === 0 ? (
+                          <Typography variant="body2" color="text.secondary">—</Typography>
+                        ) : (
+                          (code.feature_keys || []).map((k) => (
+                            <Chip key={k} label={k} size="small" variant="outlined" sx={{ fontFamily: 'monospace' }} />
+                          ))
+                        )}
                       </Box>
                     </TableCell>
                     <TableCell align="center">{code.trial_days}</TableCell>
@@ -379,110 +466,210 @@ const TrialCodes = () => {
       </Paper>
 
       {/* Create Code Dialog */}
-      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Create Trial Code</DialogTitle>
+      <Dialog open={createOpen} onClose={closeCreate} maxWidth="sm" fullWidth>
+        <DialogTitle>{createdBatch ? 'Codes Created' : 'Create Trial Code'}</DialogTitle>
         <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <FormControl fullWidth required>
-              <InputLabel>Mode</InputLabel>
-              <Select
-                value={form.mode}
-                label="Mode"
-                onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value }))}
-              >
-                <MenuItem value="free">Free ($0)</MenuItem>
-                <MenuItem value="paid">Paid ($1)</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Box>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                <TextField
-                  label="Feature keys"
-                  value={form.featureInput}
-                  onChange={(e) => setForm((f) => ({ ...f, featureInput: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addFeatureKey();
-                    }
-                  }}
-                  placeholder="e.g. project_ops_access"
-                  helperText="Press Enter or Add to append a feature key"
-                  fullWidth
-                />
-                <Button variant="outlined" onClick={addFeatureKey} sx={{ mt: 1, whiteSpace: 'nowrap' }}>
-                  Add
+          {createdBatch ? (
+            /* --- Batch result panel --- */
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Alert severity="success">
+                Generated {createdBatch.length} single-use code{createdBatch.length === 1 ? '' : 's'}.
+                Each is meant for one person — share one code (or redeem link) each.
+              </Alert>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" startIcon={<CopyIcon />} onClick={copyAllCodes}>
+                  Copy all codes
                 </Button>
+                <Button variant="outlined" startIcon={<LinkIcon />} onClick={copyAllLinks}>
+                  Copy all redeem links
+                </Button>
+              </Stack>
+              <Paper variant="outlined" sx={{ maxHeight: 320, overflow: 'auto' }}>
+                <Table size="small">
+                  <TableBody>
+                    {createdBatch.map((c) => (
+                      <TableRow key={c.id || c.code} hover>
+                        <TableCell>
+                          <Typography variant="body2" fontFamily="monospace" sx={{ fontWeight: 600 }}>
+                            {c.code}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Copy code">
+                            <IconButton size="small" onClick={() => copyCode(c.code)}>
+                              <CopyIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Copy redeem link">
+                            <IconButton size="small" onClick={() => copyRedeemLink(c.code)}>
+                              <LinkIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Paper>
+            </Stack>
+          ) : (
+            /* --- Create form --- */
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>Preset</Typography>
+                <ToggleButtonGroup
+                  value={form.preset}
+                  exclusive
+                  onChange={(e, val) => applyPreset(val)}
+                  size="small"
+                  fullWidth
+                  sx={{ flexWrap: 'wrap' }}
+                >
+                  {Object.entries(PRESETS).map(([key, p]) => (
+                    <ToggleButton key={key} value={key} sx={{ textTransform: 'none' }}>
+                      {p.label}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+                {PRESETS[form.preset]?.helper && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    {PRESETS[form.preset].helper}
+                  </Typography>
+                )}
               </Box>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                {form.featureKeys.map((k) => (
-                  <Chip
-                    key={k}
-                    label={k}
-                    size="small"
-                    onDelete={() => removeFeatureKey(k)}
-                    sx={{ fontFamily: 'monospace' }}
-                  />
-                ))}
-              </Box>
-            </Box>
 
-            <Stack direction="row" spacing={2}>
+              <Divider />
+
               <TextField
-                label="Trial days"
+                label="How many codes"
                 type="number"
-                value={form.trial_days}
-                onChange={(e) => setForm((f) => ({ ...f, trial_days: e.target.value }))}
+                value={form.count}
+                onChange={(e) => setForm((f) => ({ ...f, count: e.target.value }))}
+                inputProps={{ min: 1, max: 500 }}
+                helperText="Individual single-use codes — one per person (max 500)."
                 fullWidth
               />
+
+              <FormControl fullWidth required>
+                <InputLabel>Mode</InputLabel>
+                <Select
+                  value={form.mode}
+                  label="Mode"
+                  onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value }))}
+                >
+                  <MenuItem value="free">Free ($0)</MenuItem>
+                  <MenuItem value="paid">Paid ($1)</MenuItem>
+                </Select>
+              </FormControl>
+
               <TextField
-                label="Max uses"
-                type="number"
-                value={form.max_uses}
-                onChange={(e) => setForm((f) => ({ ...f, max_uses: e.target.value }))}
+                label="Grant tier (optional)"
+                value={form.grant_tier || ''}
+                onChange={(e) => setForm((f) => ({ ...f, grant_tier: e.target.value.trim() || null }))}
+                placeholder="e.g. founder_friend — leave blank for none"
+                helperText="Puts the redeeming org on a plan tier. Feature keys may be empty when a tier is set."
+                fullWidth
+              />
+
+              <Box>
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                  <TextField
+                    label="Feature keys"
+                    value={form.featureInput}
+                    onChange={(e) => setForm((f) => ({ ...f, featureInput: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addFeatureKey();
+                      }
+                    }}
+                    placeholder="e.g. project_ops_access"
+                    helperText="Press Enter or Add to append a feature key"
+                    fullWidth
+                  />
+                  <Button variant="outlined" onClick={addFeatureKey} sx={{ mt: 1, whiteSpace: 'nowrap' }}>
+                    Add
+                  </Button>
+                </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                  {form.featureKeys.map((k) => (
+                    <Chip
+                      key={k}
+                      label={k}
+                      size="small"
+                      onDelete={() => removeFeatureKey(k)}
+                      sx={{ fontFamily: 'monospace' }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+
+              <Stack direction="row" spacing={2}>
+                <TextField
+                  label="Trial days"
+                  type="number"
+                  value={form.trial_days}
+                  onChange={(e) => setForm((f) => ({ ...f, trial_days: e.target.value }))}
+                  helperText="0 = no expiry / permanent"
+                  fullWidth
+                />
+                <TextField
+                  label="Max uses per code"
+                  type="number"
+                  value={form.max_uses}
+                  onChange={(e) => setForm((f) => ({ ...f, max_uses: e.target.value }))}
+                  helperText="1 = single-use (individual)"
+                  fullWidth
+                />
+              </Stack>
+
+              {singleCode && (
+                <TextField
+                  label="Custom code (optional)"
+                  value={form.code}
+                  onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                  placeholder="Leave blank to auto-generate"
+                  helperText="Only available for a single code. Uppercase / memorable, e.g. PROJECTOPS14"
+                  fullWidth
+                />
+              )}
+
+              <TextField
+                label="Campaign (optional)"
+                value={form.campaign}
+                onChange={(e) => setForm((f) => ({ ...f, campaign: e.target.value }))}
+                placeholder="e.g. launch-2026"
+                fullWidth
+              />
+
+              <TextField
+                label="Note (optional)"
+                value={form.note}
+                onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                multiline
+                rows={2}
+                placeholder="Admin note, e.g. 'Shared in the Project-Ops launch email'"
                 fullWidth
               />
             </Stack>
-
-            <TextField
-              label="Custom code (optional)"
-              value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-              placeholder="Leave blank to auto-generate"
-              helperText="Uppercase / memorable code, e.g. PROJECTOPS14"
-              fullWidth
-            />
-
-            <TextField
-              label="Campaign (optional)"
-              value={form.campaign}
-              onChange={(e) => setForm((f) => ({ ...f, campaign: e.target.value }))}
-              placeholder="e.g. launch-2026"
-              fullWidth
-            />
-
-            <TextField
-              label="Note (optional)"
-              value={form.note}
-              onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
-              multiline
-              rows={2}
-              placeholder="Admin note, e.g. 'Shared in the Project-Ops launch email'"
-              fullWidth
-            />
-          </Stack>
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 1 }}>
-          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleCreate}
-            disabled={creating || form.featureKeys.length === 0}
-            startIcon={creating ? <CircularProgress size={16} /> : <AddIcon />}
-          >
-            Create Code
-          </Button>
+          {createdBatch ? (
+            <Button variant="contained" onClick={closeCreate}>Done</Button>
+          ) : (
+            <>
+              <Button onClick={closeCreate}>Cancel</Button>
+              <Button
+                variant="contained"
+                onClick={handleCreate}
+                disabled={creating || (form.featureKeys.length === 0 && !form.grant_tier)}
+                startIcon={creating ? <CircularProgress size={16} /> : <AddIcon />}
+              >
+                {Number(form.count) > 1 ? `Create ${form.count} Codes` : 'Create Code'}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 

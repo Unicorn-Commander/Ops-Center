@@ -72,3 +72,7 @@ CREATE TABLE IF NOT EXISTS trial_code_redemptions (
 
 CREATE INDEX IF NOT EXISTS idx_trial_redemptions_org ON trial_code_redemptions (org_id);
 CREATE INDEX IF NOT EXISTS idx_trial_redemptions_session ON trial_code_redemptions (stripe_session_id);
+
+-- 2b) tier grant (comp) support (added 2026-07-15)
+ALTER TABLE trial_codes ADD COLUMN IF NOT EXISTS grant_tier VARCHAR(64);
+ALTER TABLE trial_code_redemptions ADD COLUMN IF NOT EXISTS granted_tier VARCHAR(64);
