@@ -391,69 +391,107 @@ async def handle_stripe_webhook(request: Request):
 
         try:
             pool = await get_db_connection()
+            result: Dict[str, Any] = {"status": "success"}
+            purchase_id = None
+            credits_granted = False
 
-            async with pool.acquire() as conn:
-                # Update purchase record
-                await conn.execute(
-                    """
-                    UPDATE credit_purchases
-                    SET status = 'completed',
-                        completed_at = NOW(),
-                        stripe_payment_intent_id = $1,
-                        updated_at = NOW()
-                    WHERE stripe_checkout_session_id = $2
-                    """,
-                    payment_intent,
-                    session_id
-                )
-
-                # Get purchase details
-                purchase = await conn.fetchrow(
-                    """
-                    SELECT id, package_name, amount_credits, amount_paid
-                    FROM credit_purchases
-                    WHERE stripe_checkout_session_id = $1
-                    """,
-                    session_id
-                )
-
-            await pool.close()
-
-            if not purchase:
-                logger.error(f"Purchase not found for session {session_id}")
-                return {"status": "error", "message": "Purchase not found"}
-
-            # Add credits to user account
-            await credit_manager.allocate_credits(
-                user_id=user_id,
-                amount=Decimal(str(credits)),
-                source="purchase",
-                metadata={
-                    "purchase_id": str(purchase["id"]),
-                    "package_code": package_code,
-                    "stripe_session_id": session_id,
-                    "stripe_payment_intent": payment_intent
-                }
-            )
-
-            # Audit log
-            await audit_logger.log_credit_purchase_completed(
-                user_id=user_id,
-                purchase_id=str(purchase["id"]),
-                credits_added=credits
-            )
-
-            # Send confirmation email
             try:
-                # Get user email from Keycloak or session
-                # For now, log it - email will be sent in future enhancement
-                logger.info(f"TODO: Send purchase confirmation email to user {user_id}")
-            except Exception as e:
-                logger.warning(f"Failed to send confirmation email: {e}")
+                # Single connection + single transaction so the grant and the status flip
+                # commit atomically. The FOR UPDATE lock serializes concurrent duplicate
+                # deliveries: the second delivery blocks, then sees status='completed' and
+                # no-ops. This makes the webhook idempotent / exactly-once.
+                async with pool.acquire() as conn:
+                    async with conn.transaction():
+                        purchase = await conn.fetchrow(
+                            """
+                            SELECT id, status, amount_credits, package_name
+                            FROM credit_purchases
+                            WHERE stripe_checkout_session_id = $1
+                            FOR UPDATE
+                            """,
+                            session_id
+                        )
 
-            logger.info(f"Successfully processed credit purchase for user {user_id}: {credits} credits")
+                        if not purchase:
+                            # Unknown session: do NOT 500 (a 500 forces endless Stripe
+                            # retries for an event we can never satisfy). Ack with 200.
+                            logger.error(
+                                f"Purchase not found for session {session_id}; acking to stop retries"
+                            )
+                            result = {"status": "ignored", "message": "Unknown checkout session"}
+                        elif purchase["status"] == "completed":
+                            # Idempotent no-op: this session was already granted (duplicate
+                            # / redelivered event). Do not grant again.
+                            logger.info(
+                                f"Session {session_id} already completed; skipping duplicate grant"
+                            )
+                            result = {"status": "already_processed"}
+                        else:
+                            # Grant credits ON THIS CONNECTION so the balance update and the
+                            # status flip are in the SAME transaction. A crash between them
+                            # rolls BOTH back, so a Stripe retry re-attempts exactly once.
+                            await credit_manager.allocate_credits_on_conn(
+                                conn,
+                                user_id=user_id,
+                                amount=Decimal(str(credits)),
+                                source="purchase",
+                                metadata={
+                                    "purchase_id": str(purchase["id"]),
+                                    "package_code": package_code,
+                                    "stripe_session_id": session_id,
+                                    "stripe_payment_intent": payment_intent
+                                }
+                            )
+
+                            await conn.execute(
+                                """
+                                UPDATE credit_purchases
+                                SET status = 'completed',
+                                    completed_at = NOW(),
+                                    stripe_payment_intent_id = $1,
+                                    updated_at = NOW()
+                                WHERE id = $2
+                                """,
+                                payment_intent,
+                                purchase["id"]
+                            )
+
+                            purchase_id = purchase["id"]
+                            credits_granted = True
+                            result = {"status": "success"}
+            finally:
+                await pool.close()
+
+            # Post-commit side effects run ONLY on a fresh grant, and never roll back the
+            # already-committed credits (a failure here must not trigger a re-grant).
+            if credits_granted:
+                try:
+                    await audit_logger.log_credit_purchase_completed(
+                        user_id=user_id,
+                        purchase_id=str(purchase_id),
+                        credits_added=credits
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Audit log after credit grant failed (credits already committed): {e}"
+                    )
+
+                # Send confirmation email (best-effort; never re-grant on failure)
+                try:
+                    logger.info(f"TODO: Send purchase confirmation email to user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to send confirmation email: {e}")
+
+                logger.info(
+                    f"Successfully processed credit purchase for user {user_id}: {credits} credits"
+                )
+
+            return result
 
         except Exception as e:
+            # After this fix a 500 + Stripe retry is SAFE: the retry re-locks the row and
+            # either re-attempts (grant rolled back) or no-ops (already completed). We only
+            # 500 on genuinely unexpected/transient faults so Stripe retries them.
             logger.error(f"Failed to process webhook: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
