@@ -782,6 +782,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/traefik",  # Traefik API (Epic 1.3) - REST API, not form submissions
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
+        "/api/v1/audio/",  # OpenAI-compatible TTS proxy - API-key m2m, not forms
         "/api/v1/metered/",  # Metered compute proxy/bridge - API/service auth, not forms
         "/api/v1/network/vpn-keys",  # VPN pre-auth key management (admin, REST API)
         "/api/v1/network/nodes",      # VPN node management (admin, REST API)
@@ -1433,6 +1434,11 @@ app.include_router(litellm_api_router)
 from litellm_api import set_sessions_store as litellm_set_sessions_store
 litellm_set_sessions_store(sessions)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
+
+# Public OpenAI-compatible TTS route (uc_-key metered) -> Kokoro backends
+from audio_speech_api import router as audio_speech_router
+app.include_router(audio_speech_router)
+logger.info("Audio Speech API registered at /api/v1/audio/speech (uc_-key metered TTS)")
 app.include_router(model_catalog_router)
 logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")
 # model_access_router already registered earlier (line ~547) - REMOVED DUPLICATE

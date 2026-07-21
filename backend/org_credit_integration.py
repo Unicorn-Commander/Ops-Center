@@ -168,6 +168,18 @@ class OrgCreditIntegration:
                         remaining = allocation['remaining']
                         return False, org_id, f"Insufficient credits. Available: {remaining/1000:.3f}, needed: {credits_needed:.3f}"
                     else:
+                        # No per-user allocation. If the org has never been provisioned
+                        # for org billing (no credit pool either), it is a personal /
+                        # auto-created org: return org_id=None so the caller falls back
+                        # to individual user_credits billing (the path mint-via-token
+                        # funds with trial credits). Orgs WITH a pool keep the hard 402 —
+                        # a member without an allocation is a real org-billing config issue.
+                        pool = await conn.fetchrow(
+                            "SELECT org_id FROM organization_credit_pools WHERE org_id = $1",
+                            org_id
+                        )
+                        if pool is None:
+                            return False, None, "Organization has no credit pool; using individual credits"
                         return False, org_id, "No credit allocation found for user in organization"
 
             finally:

@@ -1358,6 +1358,10 @@ async def chat_completions(
                             is_local=is_local_provider,
                             local_rate_per_1k=local_rate_per_1k
                         )
+                        if (request.model or "").endswith(":free"):
+                            # Requested a free-variant model: providers may echo the
+                            # model without the :free suffix, which would re-price it.
+                            actual_cost = 0.0
 
                         # Deduct credits
                         if org_id:
@@ -1491,6 +1495,10 @@ async def chat_completions(
             is_local=is_local_provider,
             local_rate_per_1k=local_rate_per_1k
         )
+        if (request.model or "").endswith(":free"):
+            # Requested a free-variant model: providers may echo the model
+            # without the :free suffix, which would re-price it.
+            actual_cost = 0.0
 
         # Debit credits (skip if using BYOK - user pays provider directly)
         if using_byok:

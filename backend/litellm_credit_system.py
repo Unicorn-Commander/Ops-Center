@@ -593,6 +593,11 @@ class CreditSystem:
                 base_cost_per_1k = (
                     local_rate_per_1k if local_rate_per_1k is not None else PRICING["local"]
                 )
+            elif model.endswith(":free"):
+                # OpenRouter-style free-variant models cost the provider $0 —
+                # never charge credits for them (the provider-prefix fallback
+                # below would otherwise price them like the paid provider).
+                base_cost_per_1k = 0.0
             elif model in MODEL_PRICING:
                 base_cost_per_1k = MODEL_PRICING[model]
             else:
