@@ -50,14 +50,18 @@ TTS_CREDIT_PER_CHAR = float(os.getenv("TTS_CREDIT_PER_CHAR", "0.00002"))
 TTS_MAX_INPUT_CHARS = int(os.getenv("TTS_MAX_INPUT_CHARS", "4096"))
 TTS_TIMEOUT_SECONDS = float(os.getenv("TTS_TIMEOUT_SECONDS", "60"))
 
-# ElevenLabs premium engine (model "elevenlabs"): platform key, priced above
-# the EL per-char cost. The account may be quota-limited — synthesis ALWAYS
-# falls back to Kokoro on any EL failure so the default voice never goes
-# silent; billing charges the rate of the engine that actually served.
+# ElevenLabs premium engine (model "elevenlabs"): platform key, priced
+# COST-PLUS over the real EL spend. With eleven_flash_v2_5 (0.5 EL-credit/char)
+# the wholesale cost per char is: Creator $22/100k ≈ 0.00011, Pro $99/500k ≈
+# 0.000099, Scale $330/2M ≈ 0.0000825 — so the 0.0002 default clears cost
+# with ~1.8-2.4x margin at every paid tier (and still undercuts EL retail).
+# Tune via env as the account tier changes. The account may be quota-limited —
+# synthesis ALWAYS falls back to Kokoro on any EL failure so the default
+# voice never goes silent; billing charges the rate of the engine that served.
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5")
 ELEVENLABS_DEFAULT_VOICE = os.getenv("ELEVENLABS_DEFAULT_VOICE", "IKne3meq5aSn9XLyUdCD")  # Charlie
-ELEVENLABS_CREDIT_PER_CHAR = float(os.getenv("ELEVENLABS_CREDIT_PER_CHAR", "0.00015"))
+ELEVENLABS_CREDIT_PER_CHAR = float(os.getenv("ELEVENLABS_CREDIT_PER_CHAR", "0.0002"))
 
 ALLOWED_MODELS = {"tts-1", "tts-1-hd", "kokoro", "gpt-4o-mini-tts", "elevenlabs"}
 
