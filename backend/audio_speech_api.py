@@ -50,7 +50,16 @@ TTS_CREDIT_PER_CHAR = float(os.getenv("TTS_CREDIT_PER_CHAR", "0.00002"))
 TTS_MAX_INPUT_CHARS = int(os.getenv("TTS_MAX_INPUT_CHARS", "4096"))
 TTS_TIMEOUT_SECONDS = float(os.getenv("TTS_TIMEOUT_SECONDS", "60"))
 
-ALLOWED_MODELS = {"tts-1", "tts-1-hd", "kokoro", "gpt-4o-mini-tts"}
+# ElevenLabs premium engine (model "elevenlabs"): platform key, priced above
+# the EL per-char cost. The account may be quota-limited — synthesis ALWAYS
+# falls back to Kokoro on any EL failure so the default voice never goes
+# silent; billing charges the rate of the engine that actually served.
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5")
+ELEVENLABS_DEFAULT_VOICE = os.getenv("ELEVENLABS_DEFAULT_VOICE", "IKne3meq5aSn9XLyUdCD")  # Charlie
+ELEVENLABS_CREDIT_PER_CHAR = float(os.getenv("ELEVENLABS_CREDIT_PER_CHAR", "0.00015"))
+
+ALLOWED_MODELS = {"tts-1", "tts-1-hd", "kokoro", "gpt-4o-mini-tts", "elevenlabs"}
 
 
 class SpeechRequest(BaseModel):
@@ -59,6 +68,20 @@ class SpeechRequest(BaseModel):
     voice: str = "am_michael"
     response_format: Optional[str] = None
     speed: Optional[float] = None
+
+
+def _is_kokoro_voice(voice: str) -> bool:
+    """Kokoro ids look like am_michael / af_bella / bm_george."""
+    import re
+
+    return bool(re.fullmatch(r"[a-z]{2}_[a-z]+", voice or ""))
+
+
+def _is_elevenlabs_voice_id(voice: str) -> bool:
+    """EL voice ids are ~20-char alphanumeric tokens (never kokoro-shaped)."""
+    import re
+
+    return bool(re.fullmatch(r"[A-Za-z0-9]{12,40}", voice or ""))
 
 
 @router.post("/speech")
@@ -82,7 +105,11 @@ async def create_speech(
         )
 
     user_tier = await credit_system.get_user_tier(user_id)
-    cost = round(len(text) * TTS_CREDIT_PER_CHAR, 6)
+    wants_elevenlabs = body.model == "elevenlabs"
+    # Pre-check at the highest rate this request could bill (EL); the actual
+    # charge after synthesis uses the engine that served.
+    precheck_rate = ELEVENLABS_CREDIT_PER_CHAR if wants_elevenlabs else TTS_CREDIT_PER_CHAR
+    cost = round(len(text) * precheck_rate, 6)
 
     # Credit pre-check — same org-vs-individual split as chat completions.
     org_id = None
@@ -106,34 +133,69 @@ async def create_speech(
                     detail=f"Insufficient credits. Balance: {balance:.6f}, cost: {cost:.6f}",
                 )
 
-    payload = {"model": body.model, "input": text, "voice": body.voice}
-    if body.response_format:
-        payload["response_format"] = body.response_format
-    if body.speed is not None:
-        payload["speed"] = body.speed
-
     audio_bytes = None
     content_type = "audio/mpeg"
+    served_engine = None
     last_error = None
     async with httpx.AsyncClient(timeout=TTS_TIMEOUT_SECONDS) as client:
-        for backend in TTS_SPEECH_BACKENDS:
+        # Engine 1: ElevenLabs (only for model "elevenlabs", only if a
+        # platform key is configured). Any failure falls through to Kokoro.
+        if wants_elevenlabs and ELEVENLABS_API_KEY:
+            el_voice = body.voice if _is_elevenlabs_voice_id(body.voice) else ELEVENLABS_DEFAULT_VOICE
             try:
-                resp = await client.post(f"{backend}/v1/audio/speech", json=payload)
+                resp = await client.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{el_voice}",
+                    params={"output_format": "mp3_44100_128"},
+                    headers={"xi-api-key": ELEVENLABS_API_KEY},
+                    json={"text": text, "model_id": ELEVENLABS_MODEL_ID},
+                )
                 if resp.status_code == 200 and resp.content:
                     audio_bytes = resp.content
-                    content_type = resp.headers.get("Content-Type", content_type)
-                    break
-                last_error = f"{backend} returned {resp.status_code}"
-                logger.warning(f"TTS backend {last_error}; trying next")
+                    content_type = resp.headers.get("Content-Type", "audio/mpeg")
+                    served_engine = "elevenlabs"
+                else:
+                    last_error = f"elevenlabs returned {resp.status_code}"
+                    logger.warning(f"TTS {last_error}; falling back to kokoro")
             except Exception as exc:
-                last_error = f"{backend}: {exc}"
-                logger.warning(f"TTS backend failed ({last_error}); trying next")
+                last_error = f"elevenlabs: {exc}"
+                logger.warning(f"TTS elevenlabs failed ({exc}); falling back to kokoro")
+
+        # Engine 2: Kokoro backend chain (native for the OpenAI-style models,
+        # fallback for "elevenlabs"). Voice must be a Kokoro id here — an EL
+        # voice id degrades to the house default rather than erroring.
+        if audio_bytes is None:
+            payload = {
+                "model": body.model if not wants_elevenlabs else "tts-1",
+                "input": text,
+                "voice": body.voice if _is_kokoro_voice(body.voice) else "am_michael",
+            }
+            if body.response_format:
+                payload["response_format"] = body.response_format
+            if body.speed is not None:
+                payload["speed"] = body.speed
+            for backend in TTS_SPEECH_BACKENDS:
+                try:
+                    resp = await client.post(f"{backend}/v1/audio/speech", json=payload)
+                    if resp.status_code == 200 and resp.content:
+                        audio_bytes = resp.content
+                        content_type = resp.headers.get("Content-Type", content_type)
+                        served_engine = "kokoro"
+                        break
+                    last_error = f"{backend} returned {resp.status_code}"
+                    logger.warning(f"TTS backend {last_error}; trying next")
+                except Exception as exc:
+                    last_error = f"{backend}: {exc}"
+                    logger.warning(f"TTS backend failed ({last_error}); trying next")
 
     if audio_bytes is None:
         raise HTTPException(
             status_code=502,
             detail=f"All TTS backends failed. Last error: {last_error}",
         )
+
+    # Bill at the rate of the engine that actually served.
+    served_rate = ELEVENLABS_CREDIT_PER_CHAR if served_engine == "elevenlabs" else TTS_CREDIT_PER_CHAR
+    cost = round(len(text) * served_rate, 6)
 
     # Charge only after successful synthesis; never fail the response on a
     # deduction error (log loudly instead).
@@ -143,8 +205,8 @@ async def create_speech(
                 success, used_org_id, _ = await get_org_credit_integration().deduct_org_credits(
                     user_id=user_id,
                     credits_used=cost,
-                    service_name="kokoro-tts",
-                    provider="kokoro",
+                    service_name=f"{served_engine}-tts",
+                    provider=served_engine,
                     model=body.model,
                     tokens_used=len(text),
                     power_level="balanced",
@@ -164,7 +226,7 @@ async def create_speech(
                     user_id=user_id,
                     amount=cost,
                     metadata={
-                        "provider": "kokoro",
+                        "provider": served_engine,
                         "model": body.model,
                         "characters": len(text),
                         "task_type": "tts",
@@ -177,4 +239,8 @@ async def create_speech(
         except Exception as exc:
             logger.error(f"TTS: credit deduction error for user {user_id}: {exc}", exc_info=True)
 
-    return Response(content=audio_bytes, media_type=content_type)
+    return Response(
+        content=audio_bytes,
+        media_type=content_type,
+        headers={"X-TTS-Engine": served_engine or "unknown"},
+    )
