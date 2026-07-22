@@ -1248,7 +1248,13 @@ async def chat_completions(
                 headers = {
                     "Content-Type": "application/json"
                 }
-                logger.info(f"Using local provider: {provider_name} at {base_url} (no API key required)")
+                # A local GATEWAY (e.g. uchub-litellm fronting our own GPUs)
+                # still authenticates: a key stored on a local provider row is
+                # sent as Bearer while the request keeps local ($0) pricing.
+                local_gateway_key = provider.get('api_key_encrypted') if provider is not None else None
+                if local_gateway_key:
+                    headers["Authorization"] = f"Bearer {local_gateway_key}"
+                logger.info(f"Using local provider: {provider_name} at {base_url}" + (" (authenticated gateway)" if local_gateway_key else " (no API key required)"))
             else:
                 headers = {
                     "Authorization": f"Bearer {api_key}",
