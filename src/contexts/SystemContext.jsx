@@ -100,6 +100,12 @@ export function SystemProvider({ children }) {
       
       const response = await fetch('/api/v1/system/status', {
         credentials: 'include',
+        // Live host sample — never let the HTTP cache answer this. This endpoint's
+        // headers were once max-age=3600, and a browser that stored that copy keeps
+        // replaying it for an hour even after the server is corrected, so the page
+        // polls "successfully" while CPU/memory/uptime sit frozen. Requesting
+        // no-store keeps the client correct regardless of header hygiene.
+        cache: 'no-store',
         signal: controller.signal
       });
       clearTimeout(timeoutId);
