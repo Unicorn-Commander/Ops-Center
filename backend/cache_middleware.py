@@ -19,6 +19,17 @@ import time
 from typing import Optional
 
 
+# Endpoints whose body is a real-time sample of host state. They are polled on a
+# short interval by the System Resources monitor, so they must never be cached and
+# must never be answered with a 304 (a manual fetch() gets an empty body and the
+# caller's .json() throws).
+LIVE_METRIC_PATHS = frozenset({
+    '/api/v1/system/status',
+    '/api/v1/system/disk-io',
+    '/api/v1/network/status',
+})
+
+
 class CacheHeaderMiddleware(BaseHTTPMiddleware):
     """
     Middleware to add intelligent cache control headers based on content type and route
@@ -100,8 +111,16 @@ class CacheHeaderMiddleware(BaseHTTPMiddleware):
         if path.endswith('sw.js') or path.endswith('workbox-') or path == '/manifest.webmanifest':
             return 'no-cache, must-revalidate'
 
+        # API - Live host metrics: NEVER cache. These are sampled per-request and the
+        # System Resources monitor polls them on a 2s interval. Any max-age makes the
+        # browser replay a stale body, so the page looks alive (poll succeeds, spinner
+        # spins) while CPU/memory/uptime sit frozen — /system/status was previously in
+        # the "static configuration" bucket below and served a 1-HOUR public cache.
+        if path in LIVE_METRIC_PATHS:
+            return 'private, no-store'
+
         # API - Static configuration endpoints (rarely change)
-        if path in ['/api/v1/system/status', '/api/v1/service-urls', '/api/v1/deployment/config']:
+        if path in ['/api/v1/service-urls', '/api/v1/deployment/config']:
             return 'public, max-age=3600, must-revalidate'  # 1 hour
 
         # API - Public data (short cache)
@@ -138,6 +157,11 @@ class CacheHeaderMiddleware(BaseHTTPMiddleware):
         """
         # Only add ETags for successful responses
         if status_code != 200:
+            return False
+
+        # Live metrics are no-store; an ETag here would let two identical samples
+        # collapse into a 304 with an empty body, which breaks the caller's .json().
+        if path in LIVE_METRIC_PATHS:
             return False
 
         # Add ETags for API responses

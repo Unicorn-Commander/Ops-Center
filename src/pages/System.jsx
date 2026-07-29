@@ -216,11 +216,23 @@ export default function System() {
       fetchSystemStatus();
       fetchDiskIo();
       fetchNetworkStats();
-      updateHistoricalData();
     }, refreshInterval);
 
     return () => clearInterval(interval);
   }, [autoRefresh, refreshInterval]);
+
+  // Append a history point whenever a fresh sample actually lands.
+  //
+  // This is driven by the systemStatus value, NOT by the poll interval. The
+  // interval callback closes over the render that created it (deps are only
+  // [autoRefresh, refreshInterval]), so an interval-driven updateHistoricalData()
+  // only ever saw the mount-time systemStatus — which is null — and hit its
+  // `if (!systemStatus) return;` guard on every tick. The four history charts
+  // therefore stayed empty for the entire life of the page while the poll itself
+  // looked healthy. Keying off the value means we also pick up manual refreshes.
+  useEffect(() => {
+    updateHistoricalData();
+  }, [systemStatus]);
 
   const fetchHardwareInfo = async () => {
     try {
@@ -251,7 +263,7 @@ export default function System() {
 
   const fetchDiskIo = async () => {
     try {
-      const response = await fetch('/api/v1/system/disk-io', { credentials: 'include' });
+      const response = await fetch('/api/v1/system/disk-io', { credentials: 'include', cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -278,7 +290,7 @@ export default function System() {
 
   const fetchNetworkStats = async () => {
     try {
-      const response = await fetch('/api/v1/network/status', { credentials: 'include' });
+      const response = await fetch('/api/v1/network/status', { credentials: 'include', cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
