@@ -233,8 +233,13 @@ class OrgCreditIntegration:
                 logger.error(f"Cannot deduct credits: user {user_id} has no organization")
                 return False, None, None
 
-            # Convert float credits to integer milicredits
-            credits_used_int = int(credits_used * 1000)
+            # Convert float credits to integer milicredits.
+            # int() TRUNCATES, which made every charge below 0.001 credits free
+            # (a measured 0.000693-credit call billed zero). Round instead, and
+            # never let a real, non-zero charge round down to nothing.
+            credits_used_int = int(round(credits_used * 1000))
+            if credits_used_int == 0 and credits_used > 0:
+                credits_used_int = 1
 
             # Build metadata
             metadata = {
