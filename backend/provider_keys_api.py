@@ -20,6 +20,7 @@ Author: Backend Developer #2
 Date: October 27, 2025
 """
 
+import json
 import logging
 import os
 from typing import Dict, List, Optional
@@ -586,7 +587,7 @@ async def save_provider_key(
                     encrypted_key,
                     key_request.provider_type.lower(),
                     'success' if (test_result and test_result.success) else 'failed',
-                    key_request.config,
+                    json.dumps(key_request.config) if key_request.config is not None else None,
                     existing['id']
                 )
                 provider_id = str(existing['id'])
@@ -607,7 +608,7 @@ async def save_provider_key(
                     key_request.provider_type.lower(),
                     encrypted_key,
                     'success' if (test_result and test_result.success) else 'failed',
-                    key_request.config or {}
+                    json.dumps(key_request.config or {})
                 )
                 provider_id = str(row['id'])
                 logger.info(f"Admin {user_id} added new provider key: {provider_name}")

@@ -11,6 +11,7 @@ Author: Backend Team Lead
 Date: November 12, 2025
 """
 
+import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
@@ -264,10 +265,10 @@ async def create_purchase_checkout(
                 package["price_usd"],
                 checkout_session.id,
                 "pending",
-                {
+                json.dumps({
                     "package_code": package["package_code"],
                     "discount_percentage": package["discount_percentage"]
-                }
+                })
             )
 
             # Audit log
