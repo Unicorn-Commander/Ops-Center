@@ -9,6 +9,7 @@ Author: Integration Team
 Date: November 12, 2025
 """
 
+import json
 import logging
 from typing import Optional, Dict, Tuple
 import asyncpg
@@ -256,7 +257,7 @@ class OrgCreditIntegration:
                     "llm_inference",  # service_type
                     service_name,     # service_name (model)
                     request_id,
-                    metadata
+                    json.dumps(metadata)  # p_request_metadata is jsonb: asyncpg needs a JSON string, not a dict
                 )
 
                 if success:
