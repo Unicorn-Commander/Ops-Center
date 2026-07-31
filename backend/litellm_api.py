@@ -1345,7 +1345,7 @@ async def chat_completions(
                                         continue
 
                     # After streaming completes, deduct credits
-                    if not using_byok and (user_tier != 'free' or total_tokens > 0):
+                    if not using_byok and not is_credit_exempt(user_tier) and (user_tier != 'free' or total_tokens > 0):
                         # Use actual tokens if available, otherwise estimate
                         tokens_for_billing = total_tokens if total_tokens > 0 else estimated_tokens
 
@@ -1376,6 +1376,17 @@ async def chat_completions(
                             )
                             if success:
                                 logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
+                            else:
+                                # The body has already been streamed to the client, so we
+                                # cannot fail closed here the way the non-streaming twin
+                                # does. Log loudly instead: this branch used to be absent
+                                # entirely, so a broken deduction leaked with NO signal.
+                                logger.error(
+                                    "UNBILLED STREAMING REQUEST: org credit deduction failed "
+                                    f"for user={user_id} org={org_id} model={request.model} "
+                                    f"cost={actual_cost:.6f} tokens={tokens_for_billing}; "
+                                    "response already delivered, reconcile manually"
+                                )
                         else:
                             # Individual billing
                             await credit_system.debit_credits(
@@ -2118,6 +2129,13 @@ async def generate_image(
             transaction_id = None
             actual_cost = 0.0
             logger.info(f"BYOK image generation for {user_id} - no credits charged")
+        elif is_credit_exempt(user_tier):
+            # Mirror the chat path: exempt tiers are free everywhere, not just
+            # on non-streaming chat.
+            new_balance = 0.0
+            transaction_id = None
+            actual_cost = 0.0
+            logger.info(f"Credit-exempt tier image generation for {user_id} (tier: {user_tier}) - no credits charged")
         elif user_tier != 'free' or actual_cost > 0:
             if org_id:
                 # Using organization billing
