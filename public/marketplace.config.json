@@ -1,0 +1,6 @@
+{
+  "_what": "Anonymous-visitor landing mode for the unicorncommander.ai apex. Read client-side by RootRedirect.",
+  "_values": "direct_sso = bounce logged-out visitors to /auth/login (behavior before 2026-08-06). public_marketplace = show the marketplace front door.",
+  "_flip": "This file is served from the bind-mounted public/ dir: edit + save = live on the next pageview. No build, no restart. Preview regardless of this setting: /?marketplace=1",
+  "landing_page_mode": "direct_sso"
+}
