@@ -686,7 +686,7 @@ class CreditSystem:
         power_level: str = "balanced",
         user_tier: str = "vip_founder",
         is_local: bool = False,
-        local_rate_per_1k: Optional[float] = None,
+        use_catalog_local_rates: bool = False,
         prompt_tokens: Optional[int] = None,
         completion_tokens: Optional[int] = None,
         request_model: Optional[str] = None,
@@ -705,7 +705,8 @@ class CreditSystem:
             power_level: Kept for call-site compatibility; does not affect cost.
             user_tier: Kept for call-site compatibility; does not affect cost.
             is_local: Authoritative local/cloud signal from the resolved provider.
-            local_rate_per_1k: Optional metered local rate ($ per 1k tokens).
+            use_catalog_local_rates: Price local usage through the same llm_models
+                split input/output rate lookup used for cloud models.
             prompt_tokens / completion_tokens: Preferred split for asymmetric rates.
             request_model: Original client model id. Required for :free safety when
                 the provider echoes the model WITHOUT the :free suffix.
@@ -721,11 +722,8 @@ class CreditSystem:
                 return 0.0
 
             if is_local:
-                if local_rate_per_1k is not None:
-                    base = (max(int(tokens_used or 0), 0) / 1000.0) * float(local_rate_per_1k)
-                    return round(base * CREDIT_MARKUP_MULTIPLIER, 6)
-                # Default local is free (Aaron's local-charge decision is pending).
-                return 0.0
+                if not use_catalog_local_rates:
+                    return 0.0
 
             # Resolve rates
             rates = await self._lookup_model_rates(model or "")
@@ -780,10 +778,8 @@ class CreditSystem:
         except Exception as e:
             logger.error(f"Error calculating cost: {e}", exc_info=True)
             if is_local:
-                return round(
-                    (max(int(tokens_used or 0), 0) / 1000.0) * (local_rate_per_1k or 0.0),
-                    6,
-                )
+                # Local pricing fails open: never substitute an unrelated cloud rate.
+                return 0.0
             # Safe conservative fallback on unexpected errors
             total = max(int(tokens_used or 0), 0)
             return round(

@@ -169,6 +169,27 @@ class TestPerModelInputOutput:
         assert cost == 0.0
 
     @pytest.mark.asyncio
+    async def test_metered_local_uses_catalog_split_rates_and_markup(self):
+        system, _ = _system([
+            {
+                "name": "uc/qwen3.6-35b-a3b",
+                "cost_per_1m_input_tokens": 0.028,
+                "cost_per_1m_output_tokens": 0.20,
+            }
+        ])
+        cost = await system.calculate_cost(
+            tokens_used=1_000_000,
+            model="qwen3.6-35b-a3b",
+            request_model="uc/qwen3.6-35b-a3b",
+            is_local=True,
+            use_catalog_local_rates=True,
+            prompt_tokens=500_000,
+            completion_tokens=500_000,
+        )
+        expected = (0.5 * 0.028 + 0.5 * 0.20) * CREDIT_MARKUP_MULTIPLIER
+        assert cost == pytest.approx(expected, rel=1e-6)
+
+    @pytest.mark.asyncio
     async def test_bare_provider_not_flat_six(self):
         """Bare 'openai' must not land on the old $6/Mtok middleware rate."""
         system, _ = _system([])  # unknown → conservative default

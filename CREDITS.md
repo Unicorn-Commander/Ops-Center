@@ -27,7 +27,8 @@ first.
 1. Chat handler (`litellm_api.py`) records `prompt_tokens` / `completion_tokens` from the provider usage block (and the original `request.model`).
 2. `CreditSystem.calculate_cost` resolves **per-model input and output rates** (USD per 1M tokens) from, in order:
    - free short-circuit if either billed model or request model ends with `:free`
-   - local short-circuit (`is_local` → free unless a metered local rate is set)
+   - local short-circuit (`is_local` → free unless the tier's metered-local gate
+     selects the catalog split-rate path)
    - `llm_models.cost_per_1m_input_tokens` / `cost_per_1m_output_tokens` (catalog)
    - static `MODEL_RATES_USD_PER_MTOK` table in `litellm_credit_system.py`
    - **conservative default** (`CONSERVATIVE_DEFAULT_USD_PER_MTOK`, labelled `conservative_default_unknown_model`) — never a silent provider-prefix flat rate
@@ -49,7 +50,11 @@ Aaron sets any non-1.0 value. Do not invent one.
 
 ### Local models
 
-Local remains **free** (`actual_cost == 0`, no ledger row) until Aaron decides otherwise. That decision is a product lever, not a bug fix.
+Local is free for exempt and `free_unlimited` tiers. When `LOCAL_PRICING_ENABLED=true`
+and a tier's `local_pricing_mode` is `metered`, the same `calculate_cost` function uses
+the local model's `llm_models.cost_per_1m_input_tokens` and
+`cost_per_1m_output_tokens`, then applies the single `CREDIT_MARKUP_MULTIPLIER`.
+There is no separate local rate or debit mechanism.
 
 ### Free variants (`:free`)
 

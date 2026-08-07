@@ -1022,7 +1022,7 @@ async def chat_completions(
         # from the model string — real local names lack ollama/vllm prefixes.
         is_local_provider = False
         # Local-pricing state (set by the gate after the provider is resolved):
-        local_rate_per_1k = None      # metered-mode per-1k local rate (None = free)
+        use_catalog_local_rates = False  # metered-mode llm_models split-rate path
         record_local_usage = False    # whether to add served tokens to the monthly local quota
 
         # Federated local models: if a trusted federation peer publishes the
@@ -1179,7 +1179,7 @@ async def chat_completions(
 
                 # --- Per-tier local-pricing gate (inert unless LOCAL_PRICING_ENABLED) ---
                 # Runs only for LOCAL providers. resolve_local_pricing decides:
-                #   metered  -> keep model, price local at local_rate_per_1k;
+                #   metered  -> keep model, price via catalog split rates;
                 #   overflow -> re-resolve provider for a PAID model (bills as cloud);
                 #   deny     -> 429; otherwise serve free (today's behavior).
                 # Fail-open: any error serves the request unchanged.
@@ -1222,8 +1222,8 @@ async def chat_completions(
                                 )
                             else:
                                 logger.warning(f"[local_pricing] overflow model '{overflow_model}' not found; serving local")
-                        elif _dec.get("meter") and _dec.get("local_rate_per_1k") is not None:
-                            local_rate_per_1k = _dec["local_rate_per_1k"]
+                        elif _dec.get("meter"):
+                            use_catalog_local_rates = bool(_dec.get("use_catalog_rates"))
                         # Record served tokens against the monthly local quota only when
                         # the served provider is (still) local.
                         record_local_usage = bool(org_id) and is_local_provider
@@ -1431,7 +1431,7 @@ async def chat_completions(
                             power_level=power_level,
                             user_tier=user_tier,
                             is_local=is_local_provider,
-                            local_rate_per_1k=local_rate_per_1k,
+                            use_catalog_local_rates=use_catalog_local_rates,
                             prompt_tokens=stream_prompt_tokens or None,
                             completion_tokens=stream_completion_tokens or None,
                             request_model=request.model,
@@ -1590,7 +1590,7 @@ async def chat_completions(
             power_level=power_level,
             user_tier=user_tier,
             is_local=is_local_provider,
-            local_rate_per_1k=local_rate_per_1k,
+            use_catalog_local_rates=use_catalog_local_rates,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             request_model=request.model,

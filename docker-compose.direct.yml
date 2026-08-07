@@ -20,6 +20,8 @@ services:
     env_file:
       - .env.auth
     environment:
+      - CREDIT_MARKUP_MULTIPLIER=1.25
+      - LOCAL_PRICING_ENABLED=true
       - ELEVENLABS_API_KEY=REMOVED
       # Colonel -> Brigade wiring: when BRIGADE_API_URL is set, Brigade owns
       # agent memory (Colonel skips its embedded graph, COLONEL_LOCAL_GRAPH=auto)
