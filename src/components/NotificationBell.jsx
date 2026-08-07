@@ -38,8 +38,10 @@ import { useWebSocketChannel } from '../hooks/useWebSocket';
 const MAX_NOTIFICATIONS = 50;
 const NOTIFICATION_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
-// Notification sound
-const notificationSound = new Audio('/notification.mp3'); // Add notification.mp3 to public folder
+// Create the audio element only when a notification actually needs a sound.
+// Constructing it at module load makes every public page request this admin
+// asset, including the signed-out marketplace.
+const playNotificationSound = () => new Audio('/notification.mp3').play();
 
 const getCategoryIcon = (category) => {
   switch (category) {
@@ -177,7 +179,7 @@ export default function NotificationBell() {
 
       // Play sound if enabled
       if (soundEnabled) {
-        notificationSound.play().catch(err => {
+        playNotificationSound().catch(err => {
           console.warn('Failed to play notification sound:', err);
         });
       }

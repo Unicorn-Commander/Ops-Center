@@ -6887,6 +6887,35 @@ async def serve_spa(full_path: str, request: Request):
             detail="Not Found"
         )
 
+    # Public marketplace pages are pre-rendered so crawlers, social unfurls,
+    # and text-only agents receive the actual product copy. Only generated
+    # index and listing pages are accepted here. An unknown slug is a real
+    # 404 instead of the SPA shell.
+    marketplace_route = full_path == "marketplace" or (
+        full_path.startswith("marketplace/")
+        and "." not in full_path.rstrip("/").rsplit("/", 1)[-1]
+    )
+    if marketplace_route:
+        marketplace_suffix = full_path[len("marketplace"):].strip("/")
+        marketplace_path = os.path.join(
+            "public",
+            "marketplace",
+            marketplace_suffix,
+            "index.html",
+        )
+        if os.path.isfile(marketplace_path):
+            response = FileResponse(marketplace_path)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+        raise HTTPException(status_code=404, detail="Marketplace listing not found")
+
+    # These names were previously soft-200 SPA fallthroughs. None is a public
+    # marketplace surface yet, so teach clients the truth until each exists.
+    if full_path.rstrip("/") in {"agents", "apps", "crews", "publish"}:
+        raise HTTPException(status_code=404, detail="Not Found")
+
     # Skip empty path as it's handled by the root redirect
     if full_path == "":
         print("Catch-all got empty path, this shouldn't happen")

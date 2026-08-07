@@ -11,14 +11,14 @@
  * Usage:
  *   node scripts/export-marketplace-listings.mjs <path-to-products-data.js> [source-label]
  *
- * Re-run whenever products-data.js changes (e.g. after the 01 access-vocabulary
- * pass lands). Marketplace-only truth (listing_type, access state, bundle
- * membership, CTA targets) lives in the OVERLAY below.
+ * Re-run whenever products-data.js changes. Marketplace-only truth
+ * (listing_type, access state, bundle membership, trust facts, deployment
+ * modes, image clearance, and CTA targets) lives in the OVERLAY below.
  *
- * ⚠ ACCESS STATES + PRICES ARE PENDING AARON. Every price is {{PRICE_TBD}}
- * and the page renders no number for it. The access mapping below is the
- * PROPOSED table from the 2026-08-06 site-refresh pack (01 step 4) and must
- * be confirmed by Aaron before the marketplace is flipped public.
+ * Prices are pending Aaron. Every unset price is {{PRICE_TBD}} and the page
+ * renders no number for it. Access states follow the confirmed four-listing
+ * catalog from 2026-08-07. Anything without a numbered private-beta capacity
+ * is "In development", per the shared access vocabulary.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -43,16 +43,10 @@ const deDash = (s) => (s || '').replace(/\s*—\s*/g, ': ').replace(/—/g, '-')
 
 const PRICE_TBD = '{{PRICE_TBD}}'; // machine value; NEVER rendered literally
 
-const BOOK = (slug) => `https://magicunicorn.dev/book/?product=${slug}`;
-
 /**
- * Marketplace overlay: which products are LISTED (only things a visitor can
- * actually get: Available now / Private beta; In-development lives in the
- * catalog on magicunicorn.tech, not here), what kind of listing each is,
- * and where its CTAs go today. `canonical_url` follows the spine §6 rule
- * (<app>.unicorncommander.ai); `learn_more_url` is where "Learn more" can
- * safely point TODAY (canonical pages that are still login walls get their
- * catalog page until 03B ships the landing gates).
+ * Marketplace overlay: the four products Aaron confirmed on 2026-08-07,
+ * what kind of listing each is, and where its CTAs go today. Canonical URLs
+ * follow the shared-spine product-page rule.
  */
 const OVERLAY = {
   'meeting-ops': {
@@ -66,8 +60,22 @@ const OVERLAY = {
     canonical_url: 'https://meeting-ops.unicorncommander.ai/',
     learn_more_url: 'https://meeting-ops.unicorncommander.ai/',
     icon: '/logos/tile-meeting-ops.png',
+    screenshot: '/marketplace/media/meeting-ops-ai-chat.webp',
+    screenshot_alt: 'Meeting-Ops AI chat answering from a fictional meeting transcript',
+    og_image: '/marketplace/media/og-meeting-ops.png',
+    capabilities: [
+      'Records and transcribes meetings',
+      'Builds summaries, decisions, and action items',
+      'Runs the appliance path entirely on your network',
+    ],
+    approval_boundary: null,
+    deployment_options: ['Local app', 'Unicorn Cloud', 'Self-host'],
+    deployment_note: 'Local means the Meeting-Ops appliance path, including local transcription and Ollama analysis.',
+    source_license: 'AGPL-3.0 (Community)',
+    source_url: 'https://github.com/Unicorn-Commander/meeting-ops-community',
+    data_egress: 'Self-hosted appliance: no. Hosted service: meeting data is processed in Unicorn Cloud.',
     cta: { label: 'Start free', href: 'https://meeting-ops.unicorncommander.ai/' },
-    secondary_cta: { label: 'Self-host free (AGPL)', href: 'https://unicorncommander.ai/meeting-ops/self-host' },
+    secondary_cta: { label: 'View AGPL source', href: 'https://github.com/Unicorn-Commander/meeting-ops-community' },
   },
   'center-deep-research': {
     access: 'Available now',
@@ -78,6 +86,20 @@ const OVERLAY = {
     canonical_url: 'https://research.unicorncommander.ai/',
     learn_more_url: 'https://magicunicorn.tech/products/center-deep-research/',
     icon: '/logos/tile-center-deep.png',
+    screenshot: null,
+    screenshot_alt: null,
+    og_image: '/marketplace/media/og-center-deep-research.png',
+    capabilities: [
+      'Searches configured providers',
+      'Reranks and normalizes results',
+      'Produces research with citations',
+    ],
+    approval_boundary: 'Its verified MCP surface is research-only: search and deep_research. No mail, payment, or account-writing tool is listed.',
+    deployment_options: ['Local app', 'Unicorn Cloud', 'Self-host'],
+    deployment_note: 'Self-hosting controls the application and history. Web searches still contact the providers you configure.',
+    source_license: 'AGPL-3.0 (Core)',
+    source_url: 'https://github.com/Unicorn-Commander/Center-Deep',
+    data_egress: 'Yes. Search queries and selected filters go to each configured search provider.',
     cta: { label: 'Get started', href: '/auth/login?signup=1&return_url=%2Fdashboard' },
     secondary_cta: { label: 'Self-host Core (AGPL)', href: 'https://github.com/Unicorn-Commander/Center-Deep' },
   },
@@ -90,11 +112,25 @@ const OVERLAY = {
     canonical_url: 'https://majiks.studio/download',
     learn_more_url: 'https://majiks.studio/',
     icon: '/logos/tile-majiks-studio.png',
+    screenshot: null,
+    screenshot_alt: null,
+    og_image: '/marketplace/media/og-majiks-studio.png',
     platforms: 'macOS and Linux',
+    capabilities: [
+      'Generates music locally with ACE-Step and MLX',
+      'Keeps sessions and audio in a local library',
+      'Publishes selected tracks to majiks.online after sign-in',
+    ],
+    approval_boundary: 'Publishing is optional. It requires Unicorn Commander sign-in and an explicit publish action.',
+    deployment_options: ['Local app', 'Hybrid', 'BYOK (ACE Music)'],
+    deployment_note: 'Local generation stays on the Mac. Hybrid mode can use a user server or the ACE Music API.',
+    source_license: 'Apache-2.0',
+    source_url: 'https://git.unicorncommander.ai/MajiksStudio/majiks-music-studio-pro',
+    data_egress: 'Local mode: no. Cloud generation and publishing send only the material you choose to those services.',
     cta: { label: 'Download free', href: 'https://majiks.studio/download' },
   },
   'accounting-ops': {
-    access: 'Private beta',
+    access: 'In development',
     listing_type: 'hosted',
     bundle: 'standalone-addon',
     dogfood: true,
@@ -102,61 +138,22 @@ const OVERLAY = {
     canonical_url: 'https://accounting-ops.unicorncommander.ai/',
     learn_more_url: 'https://magicunicorn.tech/products/accounting-ops/',
     icon: '/logos/tile-accounting-ops.png',
-    cta: { label: 'Talk to us', href: BOOK('accounting-ops') },
-    note: 'Standalone add-on. Pairs with Tax-Planning-Ops.',
-  },
-  'tax-planning-ops': {
-    access: 'Private beta',
-    listing_type: 'hosted',
-    bundle: 'standalone-addon',
-    dogfood: false,
-    price: PRICE_TBD,
-    canonical_url: 'https://tax-planning-ops.unicorncommander.ai/',
-    learn_more_url: 'https://magicunicorn.tech/products/tax-planning-ops/',
-    icon: '/logos/tax-ops.png',
-    cta: { label: 'Talk to us', href: BOOK('tax-planning-ops') },
-    note: 'Companion to Accounting-Ops.',
-  },
-  'security-ops': {
-    access: 'Private beta',
-    listing_type: 'hosted',
-    bundle: null,
-    dogfood: false,
-    price: PRICE_TBD,
-    canonical_url: 'https://security-ops.unicorncommander.ai/',
-    learn_more_url: 'https://magicunicorn.tech/products/security-ops/',
-    icon: null,
-    cta: { label: 'Talk to us', href: BOOK('security-ops') },
-    // Not present in products-data.js @ 85e3bed; facts taken from the LIVE
-    // magicunicorn.tech/products/security-ops/ page (repo is behind live;
-    // 01/03A are reconciling). Re-export once that lands.
-    factsFallback: {
-      name: 'Security-Ops',
-      pillar: 'AI Employees',
-      oneLiner: 'An autonomous AI pentester that only fires on targets you can prove you own, then exploits, verifies, and hands off.',
-    },
-  },
-  'wealth-ops': {
-    access: 'Private beta',
-    listing_type: 'hosted',
-    bundle: null,
-    dogfood: false,
-    price: PRICE_TBD,
-    canonical_url: 'https://wealth-ops.unicorncommander.ai/',
-    learn_more_url: 'https://magicunicorn.tech/products/wealth-ops/',
-    icon: null,
-    cta: { label: 'Talk to us', href: BOOK('wealth-ops') },
-  },
-  'crisis-management-ops': {
-    access: 'Private beta',
-    listing_type: 'hosted',
-    bundle: null,
-    dogfood: false,
-    price: PRICE_TBD,
-    canonical_url: 'https://crisis-management-ops.unicorncommander.ai/',
-    learn_more_url: 'https://magicunicorn.tech/products/crisis-management-ops/',
-    icon: '/logos/crisis-ops-logo.png',
-    cta: { label: 'Talk to us', href: BOOK('crisis-management-ops') },
+    screenshot: '/marketplace/media/accounting-ops-provenance.webp',
+    screenshot_alt: 'Accounting-Ops tracing a fictional ledger figure back through its source and approval history',
+    og_image: '/marketplace/media/og-accounting-ops.png',
+    capabilities: [
+      'Categorizes transactions and reconciles receipts',
+      'Drafts statements and tax packages',
+      'Traces report lines through an append-only journal',
+    ],
+    approval_boundary: 'Material items and missing-receipt entries stop for human approval. Tax packages remain draft and do not file themselves.',
+    deployment_options: ['Local app', 'Unicorn Cloud', 'Hybrid', 'BYOK', 'Self-host'],
+    deployment_note: 'The app self-hosts on your hardware and can use a local model, your hosted model API, or Unicorn Cloud.',
+    source_license: 'AGPL-3.0',
+    source_url: 'https://git.unicorncommander.ai/UnicornCommander/Accounting-Ops',
+    data_egress: 'Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.',
+    cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log/?project=accounting-ops' },
+    note: 'Standalone add-on. In development, with no signup list.',
   },
 };
 
@@ -183,7 +180,7 @@ const SUITE = {
   name: 'Unicorn Commander Suite',
   publisher: 'Magic Unicorn',
   listing_type: 'hosted',
-  access: 'Private beta',
+  access: 'In development',
   price: PRICE_TBD,
   entitlement_sku: null,
   dogfood: true,
@@ -191,9 +188,9 @@ const SUITE = {
   includes: suiteSlugs.map((s) => bySlug[s]?.name || ({ 'knowledge-ops': 'Knowledge-Ops' }[s] || s)),
   callouts: [
     'Meeting-Ops is also sold standalone.',
-    'Accounting-Ops (with Tax-Planning-Ops) is a standalone add-on, in or out of the bundle.',
+    'Accounting-Ops is a standalone add-on, in or out of the bundle.',
   ],
-  cta: { label: 'Talk to us', href: BOOK('unicorn-commander-suite') },
+  cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log/?project=unicorn-commander-suite' },
 };
 
 // Hard rule (spine §4): the literal placeholder must never be renderable copy.
@@ -205,12 +202,12 @@ for (const l of [...LISTINGS, SUITE]) {
   }
 }
 
-const out = `// GENERATED FILE — do not edit by hand.
+const out = `// GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
 // Source of product facts: ${sourceLabel}
 // Generated: ${new Date().toISOString()}
-// Access states are the PROPOSED 2026-08-06 mapping, pending Aaron's
-// confirmation. price === '{{PRICE_TBD}}' means: render NO number.
+// Access states follow Aaron's confirmed four-listing catalog (2026-08-07).
+// price === '{{PRICE_TBD}}' means: render NO number.
 
 export const LISTINGS = ${JSON.stringify(LISTINGS, null, 2)};
 
