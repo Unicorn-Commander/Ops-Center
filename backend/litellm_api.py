@@ -1022,7 +1022,7 @@ async def chat_completions(
         # from the model string — real local names lack ollama/vllm prefixes.
         is_local_provider = False
         # Local-pricing state (set by the gate after the provider is resolved):
-        local_rate_per_1k = None      # metered-mode per-1k local rate (None = free)
+        use_catalog_local_rates = False  # metered-mode llm_models split-rate path
         record_local_usage = False    # whether to add served tokens to the monthly local quota
 
         # Federated local models: if a trusted federation peer publishes the
@@ -1179,7 +1179,7 @@ async def chat_completions(
 
                 # --- Per-tier local-pricing gate (inert unless LOCAL_PRICING_ENABLED) ---
                 # Runs only for LOCAL providers. resolve_local_pricing decides:
-                #   metered  -> keep model, price local at local_rate_per_1k;
+                #   metered  -> keep model, price via catalog split rates;
                 #   overflow -> re-resolve provider for a PAID model (bills as cloud);
                 #   deny     -> 429; otherwise serve free (today's behavior).
                 # Fail-open: any error serves the request unchanged.
@@ -1222,8 +1222,8 @@ async def chat_completions(
                                 )
                             else:
                                 logger.warning(f"[local_pricing] overflow model '{overflow_model}' not found; serving local")
-                        elif _dec.get("meter") and _dec.get("local_rate_per_1k") is not None:
-                            local_rate_per_1k = _dec["local_rate_per_1k"]
+                        elif _dec.get("meter"):
+                            use_catalog_local_rates = bool(_dec.get("use_catalog_rates"))
                         # Record served tokens against the monthly local quota only when
                         # the served provider is (still) local.
                         record_local_usage = bool(org_id) and is_local_provider
@@ -1431,7 +1431,7 @@ async def chat_completions(
                             power_level=power_level,
                             user_tier=user_tier,
                             is_local=is_local_provider,
-                            local_rate_per_1k=local_rate_per_1k,
+                            use_catalog_local_rates=use_catalog_local_rates,
                             prompt_tokens=stream_prompt_tokens or None,
                             completion_tokens=stream_completion_tokens or None,
                             request_model=request.model,
@@ -1440,6 +1440,13 @@ async def chat_completions(
                         # calculate_cost is called with a stripped provider echo.
                         if credit_system.is_free_model(provider_used, request.model):
                             actual_cost = 0.0
+
+                        ledger_provider, ledger_model = credit_system.ledger_attribution(
+                            provider_used,
+                            request.model,
+                            provider_name,
+                            is_local_provider,
+                        )
 
                         # Deduct credits only when there is a real charge
                         # (free/local/zero-cost must not write ledger noise).
@@ -1454,8 +1461,8 @@ async def chat_completions(
                                 user_id=user_id,
                                 credits_used=actual_cost,
                                 service_name=provider_used,
-                                provider=provider_used,
-                                model=request.model,
+                                provider=ledger_provider,
+                                model=ledger_model,
                                 tokens_used=tokens_for_billing,
                                 power_level=power_level,
                                 task_type=request.task_type,
@@ -1481,8 +1488,8 @@ async def chat_completions(
                                 user_id=user_id,
                                 amount=actual_cost,
                                 metadata={
-                                    'provider': provider_used,
-                                    'model': provider_used,
+                                    'provider': ledger_provider,
+                                    'model': ledger_model,
                                     'tokens_used': tokens_for_billing,
                                     'power_level': power_level,
                                     'task_type': request.task_type,
@@ -1513,7 +1520,10 @@ async def chat_completions(
                                 metadata={
                                     'power_level': power_level,
                                     'task_type': request.task_type,
-                                    'streaming': True
+                                    'streaming': True,
+                                    'provider': ledger_provider,
+                                    'requested_model': ledger_model,
+                                    'is_local': is_local_provider,
                                 }
                             )
                         except Exception as usage_error:
@@ -1590,7 +1600,7 @@ async def chat_completions(
             power_level=power_level,
             user_tier=user_tier,
             is_local=is_local_provider,
-            local_rate_per_1k=local_rate_per_1k,
+            use_catalog_local_rates=use_catalog_local_rates,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             request_model=request.model,
@@ -1598,6 +1608,13 @@ async def chat_completions(
         # Belt-and-suspenders free guard (provider may echo without :free)
         if credit_system.is_free_model(provider_used, request.model):
             actual_cost = 0.0
+
+        ledger_provider, ledger_model = credit_system.ledger_attribution(
+            provider_used,
+            request.model,
+            provider_name,
+            is_local_provider,
+        )
 
         # Debit credits (skip if using BYOK - user pays provider directly)
         if using_byok:
@@ -1628,8 +1645,8 @@ async def chat_completions(
                     user_id=user_id,
                     credits_used=actual_cost,
                     service_name=provider_used,
-                    provider=provider_used,
-                    model=request.model,
+                    provider=ledger_provider,
+                    model=ledger_model,
                     tokens_used=tokens_used,
                     power_level=power_level,
                     task_type=request.task_type,
@@ -1650,8 +1667,8 @@ async def chat_completions(
                     user_id=user_id,
                     amount=actual_cost,
                     metadata={
-                        'provider': provider_used,
-                        'model': provider_used,
+                        'provider': ledger_provider,
+                        'model': ledger_model,
                         'tokens_used': tokens_used,
                         'power_level': power_level,
                         'task_type': request.task_type,
@@ -1692,7 +1709,9 @@ async def chat_completions(
                     'power_level': power_level,
                     'task_type': request.task_type,
                     'privacy_required': request.privacy_required,
-                    'provider': provider_used,
+                    'provider': ledger_provider,
+                    'requested_model': ledger_model,
+                    'is_local': is_local_provider,
                     'transaction_id': transaction_id
                 }
             )
@@ -1703,6 +1722,9 @@ async def chat_completions(
         # Add custom headers to response
         response_data['_metadata'] = {
             'provider_used': provider_used,
+            'catalog_provider': ledger_provider,
+            'requested_model': ledger_model,
+            'is_local': is_local_provider,
             'cost_incurred': actual_cost,
             'credits_remaining': new_balance,
             'transaction_id': transaction_id,

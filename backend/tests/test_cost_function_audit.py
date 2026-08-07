@@ -23,10 +23,13 @@ from litellm_credit_system import (
 
 def _system(db_rows=None):
     """CreditSystem with mocked pool/redis. db_rows: list of dicts returned by fetchrow."""
-    pool = AsyncMock()
+    # asyncpg's pool.acquire() returns an async context manager directly; it is
+    # not itself awaitable. Keep the pool/context manager synchronous and only
+    # mock the connection methods as async.
+    pool = MagicMock()
     conn = AsyncMock()
-    pool.acquire.return_value.__aenter__.return_value = conn
-    pool.acquire.return_value.__aexit__.return_value = None
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
 
     rows = list(db_rows or [])
 
@@ -79,6 +82,28 @@ class TestFreeGuard:
         assert cost == 0.0
 
 
+class TestLedgerAttribution:
+    def test_local_uses_catalog_provider_and_requested_alias(self):
+        provider, model = CreditSystem.ledger_attribution(
+            "Qwen_Qwen3.6-35B-A3B-Q4_K_M",
+            "uc/qwen3.6-35b-a3b",
+            "UC Gateway Local",
+            True,
+        )
+        assert provider == "UC Gateway Local"
+        assert model == "uc/qwen3.6-35b-a3b"
+
+    def test_cloud_preserves_served_model_convention(self):
+        provider, model = CreditSystem.ledger_attribution(
+            "qwen/qwen3.6-flash",
+            "qwen-flash",
+            "DashScope",
+            False,
+        )
+        assert provider == "qwen/qwen3.6-flash"
+        assert model == "qwen/qwen3.6-flash"
+
+
 class TestPerModelInputOutput:
     @pytest.mark.asyncio
     async def test_1b_model_near_published_rate(self):
@@ -96,7 +121,7 @@ class TestPerModelInputOutput:
             prompt_tokens=500_000,
             completion_tokens=500_000,
         )
-        assert cost == pytest.approx(0.0075, rel=1e-6)
+        assert cost == pytest.approx(0.0075 * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
         # Effective blended $/Mtok = 0.0075 → far below the old ~2.52 bug
         assert cost < 0.05
 
@@ -121,8 +146,8 @@ class TestPerModelInputOutput:
             prompt_tokens=0,
             completion_tokens=1_000_000,
         )
-        assert in_only == pytest.approx(2.50, rel=1e-6)
-        assert out_only == pytest.approx(10.00, rel=1e-6)
+        assert in_only == pytest.approx(2.50 * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
+        assert out_only == pytest.approx(10.00 * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
         assert out_only > in_only
 
     @pytest.mark.asyncio
@@ -142,7 +167,7 @@ class TestPerModelInputOutput:
             completion_tokens=500,
         )
         expected = (1000 / 1e6) * 0.15 + (500 / 1e6) * 0.60
-        assert cost == pytest.approx(round(expected, 6), rel=1e-6)
+        assert cost == pytest.approx(round(expected * CREDIT_MARKUP_MULTIPLIER, 6), rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_claude_sonnet_from_static_table(self):
@@ -154,7 +179,7 @@ class TestPerModelInputOutput:
             completion_tokens=1000,
         )
         expected = (1000 / 1e6) * 3.0 + (1000 / 1e6) * 15.0
-        assert cost == pytest.approx(round(expected, 6), rel=1e-6)
+        assert cost == pytest.approx(round(expected * CREDIT_MARKUP_MULTIPLIER, 6), rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_local_is_free(self):
@@ -169,6 +194,27 @@ class TestPerModelInputOutput:
         assert cost == 0.0
 
     @pytest.mark.asyncio
+    async def test_metered_local_uses_catalog_split_rates_and_markup(self):
+        system, _ = _system([
+            {
+                "name": "uc/qwen3.6-35b-a3b",
+                "cost_per_1m_input_tokens": 0.028,
+                "cost_per_1m_output_tokens": 0.20,
+            }
+        ])
+        cost = await system.calculate_cost(
+            tokens_used=1_000_000,
+            model="qwen3.6-35b-a3b",
+            request_model="uc/qwen3.6-35b-a3b",
+            is_local=True,
+            use_catalog_local_rates=True,
+            prompt_tokens=500_000,
+            completion_tokens=500_000,
+        )
+        expected = (0.5 * 0.028 + 0.5 * 0.20) * CREDIT_MARKUP_MULTIPLIER
+        assert cost == pytest.approx(expected, rel=1e-6)
+
+    @pytest.mark.asyncio
     async def test_bare_provider_not_flat_six(self):
         """Bare 'openai' must not land on the old $6/Mtok middleware rate."""
         system, _ = _system([])  # unknown → conservative default
@@ -180,7 +226,7 @@ class TestPerModelInputOutput:
         )
         # Conservative default: 0.5*5 + 0.5*15 = 10.0, NOT 6.0
         expected = 0.5 * CONSERVATIVE_DEFAULT_USD_PER_MTOK["input"] + 0.5 * CONSERVATIVE_DEFAULT_USD_PER_MTOK["output"]
-        assert cost == pytest.approx(expected, rel=1e-6)
+        assert cost == pytest.approx(expected * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
         assert abs(cost - 6.0) > 0.5
 
     @pytest.mark.asyncio
