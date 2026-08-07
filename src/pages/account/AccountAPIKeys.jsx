@@ -365,12 +365,20 @@ export default function AccountAPIKeys() {
   const handleGenerateUcKey = async () => {
     setLoadingUcKeys(true);
     try {
+      // Default scopes: LLM gateway + Accounting-Ops MCP so a key minted from
+      // Account can be pasted into Claude/Cursor for both inference and Ops MCP.
+      // Server also defaults to this set; sending explicitly keeps UI + API in sync.
       const response = await fetch('/api/v1/account/uc-api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          name: 'API Key ' + new Date().toLocaleDateString()
+          name: 'API Key ' + new Date().toLocaleDateString(),
+          permissions: [
+            'llm:inference',
+            'llm:models',
+            'mcp:accounting-ops',
+          ],
         })
       });
       if (response.ok) {
@@ -626,11 +634,11 @@ export default function AccountAPIKeys() {
     return {
       python: `import requests
 
-# Unicorn Commander API
+# Unicorn Commander API (OpenAI-compatible)
 BASE_URL = "https://api.unicorncommander.ai"
 API_KEY = "${apiKey}"
 
-# Example: Chat completion
+# Chat completion (stock /v1 path works with OpenAI SDKs)
 response = requests.post(
     f"{BASE_URL}/v1/chat/completions",
     headers={"Authorization": f"Bearer {API_KEY}"},
@@ -639,14 +647,26 @@ response = requests.post(
         "messages": [{"role": "user", "content": "Hello!"}]
     }
 )
-print(response.json())`,
-      javascript: `// Unicorn Commander API
+print(response.json())
+
+# Accounting-Ops MCP (paste the same key into Claude Desktop / Cursor as a Bearer token)
+# URL: https://accounting-ops.unicorncommander.ai/mcp/
+mcp = requests.post(
+    "https://accounting-ops.unicorncommander.ai/mcp/",
+    headers={
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    },
+    json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+)
+print(mcp.status_code, mcp.text[:500])`,
+      javascript: `// Unicorn Commander API (OpenAI-compatible)
 const BASE_URL = "https://api.unicorncommander.ai";
 const API_KEY = "${apiKey}";
 
-// Example: Chat completion
+// Chat completion
 fetch(\`\${BASE_URL}/v1/chat/completions\`, {
-  credentials: 'include',
   method: "POST",
   headers: {
     "Authorization": \`Bearer \${API_KEY}\`,
@@ -658,7 +678,10 @@ fetch(\`\${BASE_URL}/v1/chat/completions\`, {
   })
 })
 .then(res => res.json())
-.then(data => console.log(data));`
+.then(data => console.log(data));
+
+// MCP: point Claude/Cursor at https://accounting-ops.unicorncommander.ai/mcp/
+// with Authorization: Bearer <this key>`
     };
   };
 

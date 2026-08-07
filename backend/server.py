@@ -783,6 +783,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/analytics/web-vitals",  # Web Vitals tracking (Epic 3.1) - high-frequency analytics
         "/api/v1/llm/",  # LLM API endpoints - used by Brigade, Open-WebUI (API calls, not forms)
         "/api/v1/audio/",  # OpenAI-compatible TTS proxy - API-key m2m, not forms
+        "/api/v1/mcp/",  # MCP metering (uc_ key auth) + public agent surface
+        "/v1/",  # OpenAI-compatible alias of /api/v1/llm/* (+ /v1/audio/*)
         "/api/v1/metered/",  # Metered compute proxy/bridge - API/service auth, not forms
         "/api/v1/network/vpn-keys",  # VPN pre-auth key management (admin, REST API)
         "/api/v1/network/nodes",      # VPN node management (admin, REST API)
@@ -1439,6 +1441,40 @@ logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (c
 from audio_speech_api import router as audio_speech_router
 app.include_router(audio_speech_router)
 logger.info("Audio Speech API registered at /api/v1/audio/speech (uc_-key metered TTS)")
+
+# OpenAI-compatible /v1/* aliases — stock SDKs default to baseURL .../v1.
+# Pure ASGI middleware rewrites the path BEFORE routing so the existing
+# /api/v1/llm/* and /api/v1/audio/* handlers run unchanged (same auth, billing).
+class OpenAIV1AliasMiddleware:
+    """Map /v1/chat/completions -> /api/v1/llm/chat/completions, /v1/audio/* -> /api/v1/audio/*."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            path = scope.get("path") or ""
+            if path == "/v1" or path.startswith("/v1/"):
+                rest = path[3:]  # drop "/v1" -> "" or "/chat/..."
+                if rest == "" or rest == "/":
+                    new_path = "/api/v1/llm/models"  # harmless default discovery
+                elif rest.startswith("/audio"):
+                    new_path = f"/api/v1{rest}"
+                else:
+                    new_path = f"/api/v1/llm{rest}"
+                scope = dict(scope)
+                scope["path"] = new_path
+                scope["raw_path"] = new_path.encode("utf-8")
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(OpenAIV1AliasMiddleware)
+logger.info("OpenAI /v1/* alias middleware registered -> /api/v1/llm/* and /api/v1/audio/*")
+
+# MCP metering (uc_ key debit onto the shared credit ledger)
+from mcp_meter_api import router as mcp_meter_router
+app.include_router(mcp_meter_router)
+logger.info("MCP meter API registered at /api/v1/mcp/meter")
 app.include_router(model_catalog_router)
 logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")
 # model_access_router already registered earlier (line ~547) - REMOVED DUPLICATE
@@ -4690,15 +4726,21 @@ async def validate_key_endpoint(request: Request):
     """
     Validate a UC API key and return user context for downstream services.
 
-    Used by mesh services (Center Deep Search, etc.) to authenticate requests
-    that carry a user's UC API key. Returns user identity, subscription tier,
-    organization, and role so the caller can apply its own tier/quota policy.
+    Used by mesh services (Center Deep Search, Ops MCP servers, etc.) to
+    authenticate requests that carry a user's UC API key. Returns user identity,
+    subscription tier, organization, role, and key permissions so the caller can
+    apply its own tier/quota/scope policy.
 
-    Request body: {"key": "uc_..."}
+    Request body:
+      {"key": "uc_...", "required_permission": "mcp:accounting-ops"}  # optional gate
+
+    When required_permission is set and the key lacks it (and lacks mcp:*), the
+    response is ``{"valid": false, "reason": "missing_permission"}`` so callers
+    can distinguish a bad key from a valid key without MCP scope.
 
     Responses:
-      200 {"valid": true, "user": {...}}   valid key
-      200 {"valid": false}                 invalid key
+      200 {"valid": true, "user": {...}}   valid key (and permission if required)
+      200 {"valid": false, ...}            invalid key or missing permission
       400                                  malformed request
     """
     try:
@@ -4709,6 +4751,12 @@ async def validate_key_endpoint(request: Request):
     api_key = body.get("key") if isinstance(body, dict) else None
     if not api_key or not isinstance(api_key, str):
         raise HTTPException(status_code=400, detail="Missing 'key' field")
+
+    required_permission = None
+    if isinstance(body, dict):
+        rp = body.get("required_permission")
+        if isinstance(rp, str) and rp.strip():
+            required_permission = rp.strip()
 
     try:
         from api_key_manager import get_api_key_manager
@@ -4722,7 +4770,37 @@ async def validate_key_endpoint(request: Request):
         return JSONResponse(status_code=200, content={"valid": False})
 
     user_id = key_info.get("user_id")
-    permissions = key_info.get("permissions") or []
+    raw_perms = key_info.get("permissions") or []
+    # DB may return JSONB as list, or as a JSON string depending on driver/path
+    if isinstance(raw_perms, str):
+        try:
+            import json as _json
+            raw_perms = _json.loads(raw_perms)
+        except Exception:
+            raw_perms = []
+    if not isinstance(raw_perms, list):
+        raw_perms = list(raw_perms) if raw_perms else []
+    permissions = [str(p) for p in raw_perms]
+
+    if required_permission:
+        from uc_api_keys import key_has_mcp_permission
+        # required_permission may be llm:* or mcp:*
+        ok = required_permission in permissions
+        if not ok and required_permission.startswith("mcp:"):
+            app_slug = required_permission[4:] if required_permission != "mcp:*" else None
+            ok = key_has_mcp_permission(permissions, app=app_slug if app_slug else None)
+            if required_permission == "mcp:*":
+                ok = key_has_mcp_permission(permissions, app=None)
+        if not ok:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "valid": False,
+                    "reason": "missing_permission",
+                    "required_permission": required_permission,
+                    "permissions": permissions,
+                },
+            )
 
     org_info = None
     try:
@@ -4770,6 +4848,7 @@ async def validate_key_endpoint(request: Request):
                 "permissions": permissions,
                 "subscription_tier": effective_tier,
                 "organization": org_info,
+                "key_id": key_info.get("key_id"),
             },
         },
     )

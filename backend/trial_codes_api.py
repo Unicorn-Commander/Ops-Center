@@ -118,12 +118,43 @@ async def _apply_tier(org_id, tier, email, source):
 
 
 async def _resolve_org(conn, user: dict) -> dict:
+    """Resolve the redeemer's active org. In this deployment org membership is
+    keyed DIRECTLY by the Keycloak sub in organization_members (the `users`
+    table is largely unused), so we resolve that way -- and prefer the org the
+    session already established at login."""
+    # 1) the session already carries the active org (set at login).
+    if user.get("org_id"):
+        return {"org_id": str(user["org_id"])}
+
     sub = user.get("user_id") or user.get("sub")
     email = user.get("email")
+
+    # 2) memberships are keyed by the KC sub (uc_uid) directly.
+    if sub:
+        row = await conn.fetchrow(
+            """
+            SELECT om.org_id
+            FROM organization_members om
+            JOIN organizations o ON om.org_id = o.id
+            WHERE om.user_id = $1 AND COALESCE(o.status, 'active') = 'active'
+            ORDER BY om.is_default DESC NULLS LAST, om.joined_at ASC
+            LIMIT 1
+            """,
+            sub,
+        )
+        if row and row["org_id"]:
+            return {"org_id": str(row["org_id"])}
+
+    # 3) fallback: the users-JOIN resolver (covers internal-id / email cases).
     org = await resolve_org_by_user_identifier(conn, user_id=sub, user_email=email)
-    if not org or not org.get("org_id"):
-        raise HTTPException(400, "Your account is not linked to an organization yet.")
-    return org
+    if org and org.get("org_id"):
+        return {"org_id": str(org["org_id"])}
+
+    raise HTTPException(
+        400,
+        "Your account isn't linked to an organization yet. Sign in to the "
+        "dashboard once so your workspace is set up, then try the code again.",
+    )
 
 
 def _grant_expiry(trial_days: int):

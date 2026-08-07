@@ -80,6 +80,8 @@ PUBLIC_PREFIXES = (
                                       # their own require_authenticated_user dependency
     "/api/v1/internal/llm/",          # gateway local-pricing preflight: service-key (X-Internal-Key) m2m
     "/api/v1/audio/",                 # OpenAI-compatible TTS proxy: uc_-key auth via its own get_user_id dependency
+    "/api/v1/mcp/",                   # MCP meter: uc_-key auth inside the handler
+    "/v1/",                           # OpenAI /v1 alias (rewrites to /api/v1/llm or /api/v1/audio)
     "/api/v1/llm/",                   # API-key (Brigade/Open-WebUI/Bolt). Admin subpaths
                                       # (usage/providers/costs/routing/...) get their own
                                       # per-endpoint require_admin_user.

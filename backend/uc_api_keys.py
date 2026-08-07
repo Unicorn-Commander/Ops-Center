@@ -37,6 +37,75 @@ router = APIRouter(prefix="/api/v1/account/uc-api-keys", tags=["UC API Keys"])
 
 
 # ============================================================================
+# Permission scopes
+# ============================================================================
+# llm:* — OpenAI-compatible gateway (chat, models, speech)
+# mcp:* — public MCP servers for customer agents (Claude Desktop, Cursor, …)
+# mcp:<app> — single-app MCP scope (e.g. mcp:accounting-ops)
+DEFAULT_UC_KEY_PERMISSIONS = [
+    "llm:inference",
+    "llm:models",
+    "mcp:accounting-ops",
+]
+
+_LLM_PERMISSIONS = frozenset({"llm:inference", "llm:models", "llm:embeddings", "llm:audio"})
+_MCP_WILDCARD = "mcp:*"
+
+
+def _is_allowed_permission(perm: str) -> bool:
+    """Allow known llm scopes, mcp:*, and mcp:<app-slug> (lowercase slug)."""
+    if not isinstance(perm, str) or not perm:
+        return False
+    if perm in _LLM_PERMISSIONS:
+        return True
+    if perm == _MCP_WILDCARD:
+        return True
+    if perm.startswith("mcp:") and len(perm) > 4:
+        slug = perm[4:]
+        # app slug: lowercase letters, digits, hyphen
+        return bool(slug) and all(c.isalnum() or c == "-" for c in slug) and slug == slug.lower()
+    return False
+
+
+def sanitize_permissions(permissions: Optional[List[str]]) -> List[str]:
+    """Validate and normalize a permissions list. Raises HTTP 400 on unknowns."""
+    if permissions is None:
+        return list(DEFAULT_UC_KEY_PERMISSIONS)
+    if not isinstance(permissions, list) or not permissions:
+        raise HTTPException(
+            status_code=400,
+            detail="permissions must be a non-empty list of scope strings",
+        )
+    cleaned: List[str] = []
+    seen = set()
+    for p in permissions:
+        if not _is_allowed_permission(p):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown permission '{p}'. Allowed: llm:inference, llm:models, "
+                    f"llm:embeddings, llm:audio, mcp:*, mcp:<app> (e.g. mcp:accounting-ops)"
+                ),
+            )
+        if p not in seen:
+            seen.add(p)
+            cleaned.append(p)
+    return cleaned
+
+
+def key_has_mcp_permission(permissions: List[str], app: Optional[str] = None) -> bool:
+    """True if permissions grant MCP access (wildcard or specific app)."""
+    if not permissions:
+        return False
+    if _MCP_WILDCARD in permissions:
+        return True
+    if app:
+        return f"mcp:{app}" in permissions
+    # any mcp:* or mcp:<app>
+    return any(p == _MCP_WILDCARD or p.startswith("mcp:") for p in permissions)
+
+
+# ============================================================================
 # Request/Response Models
 # ============================================================================
 
@@ -44,7 +113,10 @@ class CreateUCAPIKeyRequest(BaseModel):
     """Request to create a new UC API key"""
     name: str = Field(..., description="Descriptive name for the key", min_length=1, max_length=255)
     expires_in_days: Optional[int] = Field(90, description="Days until expiration (default: 90)", ge=1, le=3650)
-    permissions: Optional[List[str]] = Field(["llm:inference", "llm:models"], description="API permissions")
+    permissions: Optional[List[str]] = Field(
+        default_factory=lambda: list(DEFAULT_UC_KEY_PERMISSIONS),
+        description="API permissions (llm:* and/or mcp:*)",
+    )
 
 
 class UCAPIKeyResponse(BaseModel):
@@ -211,6 +283,7 @@ async def create_uc_api_key(
     """
     try:
         user_id = current_user.get("user_id")
+        permissions = sanitize_permissions(key_request.permissions)
 
         # Generate API key
         api_key, prefix = generate_uc_api_key()
@@ -230,16 +303,16 @@ async def create_uc_api_key(
                 VALUES ($1, $2, $3, $4, $5::jsonb, $6)
                 RETURNING id, created_at
             """, user_id, key_request.name, key_hash, prefix,
-                json_lib.dumps(key_request.permissions), expires_at)
+                json_lib.dumps(permissions), expires_at)
 
-        logger.info(f"Created UC API key '{key_request.name}' for user {user_id}")
+        logger.info(f"Created UC API key '{key_request.name}' for user {user_id} perms={permissions}")
 
         return UCAPIKeyCreateResponse(
             key_id=str(result['id']),
             api_key=api_key,  # FULL KEY - shown only once!
             key_name=key_request.name,
             key_preview=mask_api_key(api_key),
-            permissions=key_request.permissions,
+            permissions=permissions,
             created_at=result['created_at'].isoformat(),
             expires_at=expires_at.isoformat()
         )
@@ -536,6 +609,8 @@ class MintViaTokenRequest(BaseModel):
     name: str = Field("majiks-dj", description="App key name (one live key per name)",
                       min_length=1, max_length=255)
     expires_in_days: Optional[int] = Field(90, ge=1, le=3650)
+    # Default stays LLM-only for native apps (Majiks DJ); pass mcp:* explicitly
+    # when the client needs Ops MCP. Account-page mint uses DEFAULT_UC_KEY_PERMISSIONS.
     permissions: Optional[List[str]] = Field(["llm:inference", "llm:models"])
 
 
@@ -601,6 +676,7 @@ async def mint_uc_api_key_via_token(
             # Key minting still proceeds — org context is not required for per-user credits.
             logger.error(f"mint-via-token: auto-provisioning failed for {email}: {provision_error}")
 
+    permissions = sanitize_permissions(body.permissions)
     api_key, prefix = generate_uc_api_key()
     key_hash = hash_api_key(api_key)
     expires_at = datetime.utcnow() + timedelta(days=body.expires_in_days)
@@ -620,7 +696,7 @@ async def mint_uc_api_key_via_token(
                     VALUES ($1, $2, $3, $4, $5::jsonb, $6)
                     RETURNING id, created_at
                 """, user_id, body.name, key_hash, prefix,
-                    json.dumps(body.permissions), expires_at)
+                    json.dumps(permissions), expires_at)
     except Exception as db_err:
         logger.error(f"mint-via-token: DB error for user {user_id}: {db_err}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to mint API key")
@@ -650,7 +726,7 @@ async def mint_uc_api_key_via_token(
         api_key=api_key,  # FULL KEY — shown only once!
         key_name=body.name,
         key_preview=mask_api_key(api_key),
-        permissions=body.permissions,
+        permissions=permissions,
         created_at=result["created_at"].isoformat(),
         expires_at=expires_at.isoformat(),
         replaced_key_ids=[str(r["id"]) for r in replaced],

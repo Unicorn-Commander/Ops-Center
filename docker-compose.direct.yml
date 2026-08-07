@@ -20,6 +20,7 @@ services:
     env_file:
       - .env.auth
     environment:
+      - ELEVENLABS_API_KEY=REMOVED
       # Colonel -> Brigade wiring: when BRIGADE_API_URL is set, Brigade owns
       # agent memory (Colonel skips its embedded graph, COLONEL_LOCAL_GRAPH=auto)
       # and the Colonel registers itself as a Brigade agent using the PAT below.
@@ -35,10 +36,6 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=REMOVED-KEYCLOAK_ADMIN_PASSWORD
       - SESSION_SECRET_KEY=REMOVED-SESSION_SECRET_KEY
       # Stripe Configuration
-      - SREMOVED
-      - STRIPE_SECRET_KEY=sREMOVED
-      - STRIPE_API_KEY=sREMOVED
-      - SREMOVED
       - STRIPE_SUCCESS_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/signup-flow.html?success=true
       - STRIPE_CANCEL_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/signup-flow.html?canceled=true
       # Lago Configuration
