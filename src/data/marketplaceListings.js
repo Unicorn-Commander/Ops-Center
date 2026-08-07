@@ -1,19 +1,15 @@
-// GENERATED FILE — do not edit by hand.
+// GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
-// Source of product facts: magic-unicorn-landing products/products-data.js @ 85e3bed (feat/stable-landing-p-00127 HEAD, 2026-08-06)
-// Generated: 2026-08-06T17:18:12.375Z
-// Access states CONFIRMED by Aaron 2026-08-07. Tax-Planning-Ops,
-// Security-Ops, Wealth-Ops and Crisis-Management-Ops were REMOVED: they are
-// not ready for customers, and a marketplace lists only what you can get.
-// Icons now use Brand-Ops launcher_tile (brand-colour background) rather than
-// the transparent app_icon, because the mascots do not differentiate at small
-// sizes -- every product reduces to the same rainbow unicorn head. price === '{{PRICE_TBD}}' means: render NO number.
+// Source of product facts: magic-unicorn-landing products-data.js @ e4e19db (04B cleared)
+// Generated: 2026-08-07T18:38:08.807Z
+// Access states follow Aaron's confirmed four-listing catalog (2026-08-07).
+// price === '{{PRICE_TBD}}' means: render NO number.
 
 export const LISTINGS = [
   {
     "slug": "meeting-ops",
     "name": "Meeting-Ops",
-    "tagline": "An autonomous meeting scribe that records, transcribes, summarizes, and turns conversations into action.",
+    "tagline": "Walk out of every meeting with a transcript, speaker-tagged notes, and action items already done. And your audio stays yours.",
     "pillar": "AI Employees",
     "publisher": "Magic Unicorn",
     "entitlement_sku": null,
@@ -27,19 +23,37 @@ export const LISTINGS = [
     "canonical_url": "https://meeting-ops.unicorncommander.ai/",
     "learn_more_url": "https://meeting-ops.unicorncommander.ai/",
     "icon": "/logos/tile-meeting-ops.png",
+    "screenshot": "/marketplace/media/meeting-ops-ai-chat.webp",
+    "screenshot_alt": "Meeting-Ops AI chat answering from a fictional meeting transcript",
+    "og_image": "/marketplace/media/og-meeting-ops.png",
+    "capabilities": [
+      "Records and transcribes meetings",
+      "Builds summaries, decisions, and action items",
+      "Runs the appliance path entirely on your network"
+    ],
+    "approval_boundary": null,
+    "deployment_options": [
+      "Local app",
+      "Unicorn Cloud",
+      "Self-host"
+    ],
+    "deployment_note": "Local means the Meeting-Ops appliance path, including local transcription and Ollama analysis.",
+    "source_license": "AGPL-3.0 (Community)",
+    "source_url": "https://github.com/Unicorn-Commander/meeting-ops-community",
+    "data_egress": "Self-hosted appliance: no. Hosted service: meeting data is processed in Unicorn Cloud.",
     "cta": {
       "label": "Start free",
       "href": "https://meeting-ops.unicorncommander.ai/"
     },
     "secondary_cta": {
-      "label": "Self-host free (AGPL)",
-      "href": "https://unicorncommander.ai/meeting-ops/self-host"
+      "label": "View AGPL source",
+      "href": "https://github.com/Unicorn-Commander/meeting-ops-community"
     }
   },
   {
     "slug": "center-deep-research",
     "name": "Center Deep Research",
-    "tagline": "An AI deep-research engine that turns a question into search, reranking, and a cited report.",
+    "tagline": "Ask a hard question, get a cited report with per-claim confidence, synthesized on hardware you own. Your AI agents can use it too.",
     "pillar": "Discovery",
     "publisher": "Magic Unicorn",
     "entitlement_sku": null,
@@ -51,6 +65,24 @@ export const LISTINGS = [
     "canonical_url": "https://research.unicorncommander.ai/",
     "learn_more_url": "https://magicunicorn.tech/products/center-deep-research/",
     "icon": "/logos/tile-center-deep.png",
+    "screenshot": null,
+    "screenshot_alt": null,
+    "og_image": "/marketplace/media/og-center-deep-research.png",
+    "capabilities": [
+      "Searches configured providers",
+      "Reranks and normalizes results",
+      "Produces research with citations"
+    ],
+    "approval_boundary": "Its verified MCP surface is research-only: search and deep_research. No mail, payment, or account-writing tool is listed.",
+    "deployment_options": [
+      "Local app",
+      "Unicorn Cloud",
+      "Self-host"
+    ],
+    "deployment_note": "Self-hosting controls the application and history. Web searches still contact the providers you configure.",
+    "source_license": "AGPL-3.0 (Core)",
+    "source_url": "https://github.com/Unicorn-Commander/Center-Deep",
+    "data_egress": "Yes. Search queries and selected filters go to each configured search provider.",
     "cta": {
       "label": "Get started",
       "href": "/auth/login?signup=1&return_url=%2Fdashboard"
@@ -63,7 +95,7 @@ export const LISTINGS = [
   {
     "slug": "majiks-studio",
     "name": "Majiks Studio",
-    "tagline": "A Mac studio app for generating and owning AI music locally, then publishing into the Majiks ecosystem.",
+    "tagline": "Make AI music on your own Mac and actually own it, with a cryptographic chain of custody from generation to publish.",
     "pillar": "Creative",
     "publisher": "Magic Unicorn",
     "entitlement_sku": null,
@@ -75,7 +107,25 @@ export const LISTINGS = [
     "canonical_url": "https://majiks.studio/download",
     "learn_more_url": "https://majiks.studio/",
     "icon": "/logos/tile-majiks-studio.png",
+    "screenshot": null,
+    "screenshot_alt": null,
+    "og_image": "/marketplace/media/og-majiks-studio.png",
     "platforms": "macOS and Linux",
+    "capabilities": [
+      "Generates music locally with ACE-Step and MLX",
+      "Keeps sessions and audio in a local library",
+      "Publishes selected tracks to majiks.online after sign-in"
+    ],
+    "approval_boundary": "Publishing is optional. It requires Unicorn Commander sign-in and an explicit publish action.",
+    "deployment_options": [
+      "Local app",
+      "Hybrid",
+      "BYOK (ACE Music)"
+    ],
+    "deployment_note": "Local generation stays on the Mac. Hybrid mode can use a user server or the ACE Music API.",
+    "source_license": "Apache-2.0",
+    "source_url": "https://git.unicorncommander.ai/MajiksStudio/majiks-music-studio-pro",
+    "data_egress": "Local mode: no. Cloud generation and publishing send only the material you choose to those services.",
     "cta": {
       "label": "Download free",
       "href": "https://majiks.studio/download"
@@ -84,11 +134,11 @@ export const LISTINGS = [
   {
     "slug": "accounting-ops",
     "name": "Accounting-Ops",
-    "tagline": "An autonomous bookkeeper that keeps ledgers, reconciliation, approvals, and accounting work moving toward a finished close.",
+    "tagline": "An autonomous bookkeeper that closes your books and hands you finished work. Your ledger, your machine, CPA review optional.",
     "pillar": "AI Employees",
     "publisher": "Magic Unicorn",
     "entitlement_sku": null,
-    "access": "Private beta",
+    "access": "In development",
     "listing_type": "hosted",
     "bundle": "standalone-addon",
     "dogfood": true,
@@ -96,11 +146,31 @@ export const LISTINGS = [
     "canonical_url": "https://accounting-ops.unicorncommander.ai/",
     "learn_more_url": "https://magicunicorn.tech/products/accounting-ops/",
     "icon": "/logos/tile-accounting-ops.png",
+    "screenshot": "/marketplace/media/accounting-ops-provenance.webp",
+    "screenshot_alt": "Accounting-Ops tracing a fictional ledger figure back through its source and approval history",
+    "og_image": "/marketplace/media/og-accounting-ops.png",
+    "capabilities": [
+      "Categorizes transactions and reconciles receipts",
+      "Drafts statements and tax packages",
+      "Traces report lines through an append-only journal"
+    ],
+    "approval_boundary": "Material items and missing-receipt entries stop for human approval. Tax packages remain draft and do not file themselves.",
+    "deployment_options": [
+      "Local app",
+      "Unicorn Cloud",
+      "Hybrid",
+      "BYOK",
+      "Self-host"
+    ],
+    "deployment_note": "The app self-hosts on your hardware and can use a local model, your hosted model API, or Unicorn Cloud.",
+    "source_license": "AGPL-3.0",
+    "source_url": "https://git.unicorncommander.ai/UnicornCommander/Accounting-Ops",
+    "data_egress": "Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.",
     "cta": {
-      "label": "Talk to us",
-      "href": "https://magicunicorn.dev/book/?product=accounting-ops"
+      "label": "Read the build log",
+      "href": "https://magicunicorn.dev/log/?project=accounting-ops"
     },
-    "note": "Standalone add-on. Pairs with Tax-Planning-Ops."
+    "note": "Standalone add-on. In development, with no signup list."
   }
 ];
 
@@ -109,7 +179,7 @@ export const SUITE = {
   "name": "Unicorn Commander Suite",
   "publisher": "Magic Unicorn",
   "listing_type": "hosted",
-  "access": "Private beta",
+  "access": "In development",
   "price": "{{PRICE_TBD}}",
   "entitlement_sku": null,
   "dogfood": true,
@@ -126,11 +196,11 @@ export const SUITE = {
   ],
   "callouts": [
     "Meeting-Ops is also sold standalone.",
-    "Accounting-Ops (with Tax-Planning-Ops) is a standalone add-on, in or out of the bundle."
+    "Accounting-Ops is a standalone add-on, in or out of the bundle."
   ],
   "cta": {
-    "label": "Talk to us",
-    "href": "https://magicunicorn.dev/book/?product=unicorn-commander-suite"
+    "label": "Read the build log",
+    "href": "https://magicunicorn.dev/log/?project=unicorn-commander-suite"
   }
 };
 
