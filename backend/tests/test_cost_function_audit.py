@@ -212,7 +212,7 @@ class TestPerModelInputOutput:
             completion_tokens=500_000,
         )
         expected = (0.5 * 0.028 + 0.5 * 0.20) * CREDIT_MARKUP_MULTIPLIER
-        assert cost == pytest.approx(expected * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
+        assert cost == pytest.approx(expected, rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_bare_provider_not_flat_six(self):
@@ -226,7 +226,7 @@ class TestPerModelInputOutput:
         )
         # Conservative default: 0.5*5 + 0.5*15 = 10.0, NOT 6.0
         expected = 0.5 * CONSERVATIVE_DEFAULT_USD_PER_MTOK["input"] + 0.5 * CONSERVATIVE_DEFAULT_USD_PER_MTOK["output"]
-        assert cost == pytest.approx(expected, rel=1e-6)
+        assert cost == pytest.approx(expected * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
         assert abs(cost - 6.0) > 0.5
 
     @pytest.mark.asyncio
