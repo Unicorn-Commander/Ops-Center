@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
-// Source of product facts: magic-unicorn-landing products-data.js @ e4e19db (04B cleared)
-// Generated: 2026-08-07T18:38:08.807Z
+// Source of product facts: magic-unicorn-landing products-data.js @ da13d8a (04B cleared @ e4e19db baseline)
+// Generated: 2026-08-07T19:37:57.413Z
 // Access states follow Aaron's confirmed four-listing catalog (2026-08-07).
 // price === '{{PRICE_TBD}}' means: render NO number.
 
@@ -23,6 +23,11 @@ export const LISTINGS = [
     "canonical_url": "https://meeting-ops.unicorncommander.ai/",
     "learn_more_url": "https://meeting-ops.unicorncommander.ai/",
     "icon": "/logos/tile-meeting-ops.png",
+    "mascot": "/marketplace/media/mascot-meeting-ops.webp",
+    "mascot_alt": "The Meeting-Ops scribe, in headset",
+    "mascot_role": "The scribe",
+    "brand_primary": "#1b3a6b",
+    "brand_accent": "#d4af37",
     "screenshot": "/marketplace/media/meeting-ops-ai-chat.webp",
     "screenshot_alt": "Meeting-Ops AI chat answering from a fictional meeting transcript",
     "og_image": "/marketplace/media/og-meeting-ops.png",
@@ -65,6 +70,11 @@ export const LISTINGS = [
     "canonical_url": "https://research.unicorncommander.ai/",
     "learn_more_url": "https://magicunicorn.tech/products/center-deep-research/",
     "icon": "/logos/tile-center-deep.png",
+    "mascot": "/marketplace/media/mascot-center-deep-research.webp",
+    "mascot_alt": "The Center Deep diver, suited up in the dark water",
+    "mascot_role": "The diver",
+    "brand_primary": "#0891b2",
+    "brand_accent": "#22d3ee",
     "screenshot": null,
     "screenshot_alt": null,
     "og_image": "/marketplace/media/og-center-deep-research.png",
@@ -107,6 +117,11 @@ export const LISTINGS = [
     "canonical_url": "https://majiks.studio/download",
     "learn_more_url": "https://majiks.studio/",
     "icon": "/logos/tile-majiks-studio.png",
+    "mascot": "/marketplace/media/mascot-majiks-studio.webp",
+    "mascot_alt": "The Majiks Studio DJ, headphones on, shades down",
+    "mascot_role": "The DJ",
+    "brand_primary": "#a855f7",
+    "brand_accent": "#9333ea",
     "screenshot": null,
     "screenshot_alt": null,
     "og_image": "/marketplace/media/og-majiks-studio.png",
@@ -146,6 +161,11 @@ export const LISTINGS = [
     "canonical_url": "https://accounting-ops.unicorncommander.ai/",
     "learn_more_url": "https://magicunicorn.tech/products/accounting-ops/",
     "icon": "/logos/tile-accounting-ops.png",
+    "mascot": "/marketplace/media/mascot-accounting-ops.webp",
+    "mascot_alt": "The Accounting-Ops bookkeeper, bowler hat, ledger, and brass scale",
+    "mascot_role": "The bookkeeper",
+    "brand_primary": "#0f766e",
+    "brand_accent": "#d4af37",
     "screenshot": "/marketplace/media/accounting-ops-provenance.webp",
     "screenshot_alt": "Accounting-Ops tracing a fictional ledger figure back through its source and approval history",
     "og_image": "/marketplace/media/og-accounting-ops.png",
