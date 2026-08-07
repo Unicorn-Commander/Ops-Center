@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
 // Source of product facts: products-data.js @ 2026-08-07 instrument
-// Generated: 2026-08-07T22:16:20.461Z
+// Generated: 2026-08-07T23:28:44.937Z
 // Access states follow the confirmed catalog (2026-08-07, five listings).
 // price === '{{PRICE_TBD}}' means: render NO number.
 
@@ -121,7 +121,6 @@ export const LISTINGS = [
     "mascot": "/marketplace/media/mascot-meeting-ops.webp",
     "mascot_alt": "The Meeting-Ops scribe, in a camo patrol cap and headset",
     "mascot_role": "The scribe",
-    "plate": "#d3d3d3",
     "brand_primary": "#1b3a6b",
     "brand_accent": "#d4af37",
     "screenshot": "/marketplace/media/meeting-ops-ai-chat.webp",
@@ -132,7 +131,7 @@ export const LISTINGS = [
       "Builds summaries, decisions, and action items",
       "Runs the appliance path entirely on your network"
     ],
-    "approval_boundary": null,
+    "approval_boundary": "Meeting-Ops proposes; the owning app disposes. Extracted action items are sent to Project-Ops as task proposals, and that push is off by default until an org turns it on. Nothing reaches a customer record until a human releases that summary, and it never overwrites another app’s state.",
     "deployment_options": [
       "Local app",
       "Unicorn Cloud",
@@ -188,8 +187,9 @@ export const LISTINGS = [
       "Self-host"
     ],
     "deployment_note": "Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.",
-    "source_license": "Apache-2.0",
-    "source_url": null,
+    "source_license": "AGPL-3.0",
+    "source_url": "https://github.com/Unicorn-Commander/project-ops-community",
+    "source_note": "This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.",
     "data_egress": "Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.",
     "cta": {
       "label": "Request access",
@@ -239,6 +239,10 @@ export const LISTINGS = [
     "source_url": "https://github.com/Unicorn-Commander/accounting-ops-community",
     "data_egress": "Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.",
     "cta": {
+      "label": "See Accounting-Ops",
+      "href": "https://accounting-ops.unicorncommander.ai/"
+    },
+    "secondary_cta": {
       "label": "Read the build log",
       "href": "https://magicunicorn.dev/log?project=accounting-ops"
     },

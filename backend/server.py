@@ -1807,10 +1807,123 @@ async def bolt_github_template_proxy(repo: str):
         logger.error(f"GitHub template proxy error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Apex dynamic rendering (crawlers only) ---------------------------------
+# The apex serves the SPA shell, whose <body> is a "Loading Ops-Center" splash.
+# Crawlers do not run JS, so they index the splash instead of the product copy.
+# These helpers let root_redirect hand a crawler the pre-rendered marketplace
+# page -- the SAME content a human sees once the SPA boots, which is why this is
+# sanctioned dynamic rendering and not cloaking.
+#
+# HUMANS MUST NEVER RECEIVE THIS FILE. It has no #root div and no JS bundle;
+# serving it to a browser breaks Ops-Center for logged-in users. Every ambiguous
+# user-agent is therefore resolved as "human".
+
+_CRAWLER_UA_TOKENS = (
+    # Search
+    "googlebot", "google-inspectiontool", "storebot-google", "google-extended",
+    "bingbot", "adidxbot", "duckduckbot", "duckduckgo", "slurp", "baiduspider",
+    "yandexbot", "applebot", "petalbot", "seznambot", "naver.me/bot",
+    # Social / unfurlers
+    "facebookexternalhit", "facebookcatalog", "meta-externalagent",
+    "twitterbot", "linkedinbot", "slackbot", "slack-imgproxy", "discordbot",
+    "whatsapp", "telegrambot", "redditbot", "pinterestbot", "embedly",
+    "quora link preview", "skypeuripreview", "vkshare", "mastodon",
+    # AI / answer engines
+    "perplexitybot", "perplexity-user", "gptbot", "oai-searchbot",
+    "chatgpt-user", "claudebot", "claude-web", "claude-searchbot",
+    "anthropic-ai", "ccbot", "amazonbot", "bytespider", "youbot", "diffbot",
+    # Archives
+    "ia_archiver", "archive.org_bot",
+)
+
+# Generic fallback for crawlers we have not enumerated.
+_CRAWLER_UA_GENERIC_RE = re.compile(r"bot|crawler|spider", re.IGNORECASE)
+
+# A real browser engine signature. If the generic pattern above fires but this
+# also matches, the user-agent is ambiguous (e.g. a headless browser, or a
+# browser whose UA merely contains the substring "bot") and we serve the app.
+# Known crawlers that ship a full browser UA -- Googlebot-Smartphone is one --
+# are already caught by the explicit token list before this check runs.
+_BROWSER_UA_RE = re.compile(
+    r"chrome/\d|chromium/\d|firefox/\d|edg[ae]?/\d|opr/\d|crios/\d|fxios/\d"
+    r"|version/[\d.]+ +(mobile +)?safari",
+    re.IGNORECASE,
+)
+
+_APEX_CANONICAL_URL = "https://unicorncommander.ai/"
+_MARKETPLACE_CANONICAL_URL = "https://unicorncommander.ai/marketplace"
+_APEX_PRERENDER_PATH = os.path.join("public", "marketplace", "index.html")
+_LANDING_MODE_PATH = os.path.join("public", "marketplace.config.json")
+
+
+def _is_crawler_ua(user_agent: Optional[str]) -> bool:
+    """True only for crawlers/unfurlers. Biased hard toward returning False."""
+    if not user_agent:
+        return False
+    ua = user_agent.lower()
+    if any(token in ua for token in _CRAWLER_UA_TOKENS):
+        return True
+    if _CRAWLER_UA_GENERIC_RE.search(ua) and not _BROWSER_UA_RE.search(ua):
+        return True
+    return False
+
+
+def _apex_landing_mode() -> Optional[str]:
+    """Read the anonymous-visitor landing mode from the bind-mounted config."""
+    try:
+        with open(_LANDING_MODE_PATH, "r", encoding="utf-8") as fh:
+            return (json.load(fh) or {}).get("landing_page_mode")
+    except Exception as exc:
+        logger.warning(f"Apex landing mode unreadable: {exc}")
+        return None
+
+
+def _apex_prerendered_html() -> Optional[str]:
+    """The pre-rendered marketplace page, re-canonicalised for the apex."""
+    try:
+        if not os.path.isfile(_APEX_PRERENDER_PATH):
+            return None
+        with open(_APEX_PRERENDER_PATH, "r", encoding="utf-8") as fh:
+            html = fh.read()
+    except Exception as exc:
+        logger.warning(f"Apex prerender unavailable: {exc}")
+        return None
+    # The generated file claims /marketplace as its canonical URL. Served
+    # verbatim at the apex that would fold apex authority into /marketplace, so
+    # the apex copy points at itself. Exact-string replacement: if the generator
+    # changes its markup we serve the file unmodified rather than fail.
+    html = html.replace(
+        f'<link rel="canonical" href="{_MARKETPLACE_CANONICAL_URL}">',
+        f'<link rel="canonical" href="{_APEX_CANONICAL_URL}">',
+    )
+    html = html.replace(
+        f'<meta property="og:url" content="{_MARKETPLACE_CANONICAL_URL}">',
+        f'<meta property="og:url" content="{_APEX_CANONICAL_URL}">',
+    )
+    return html
+
+
 # Root redirect must be defined early to take precedence
 @app.get("/", include_in_schema=False)
 async def root_redirect(request: Request):
     """Show registration page or serve dashboard for authenticated users"""
+    # Dynamic rendering: a crawler at the apex gets the pre-rendered marketplace
+    # instead of the SPA loading shell. Gated on user-agent AND the same landing
+    # mode the SPA obeys, so the crawler is never shown a door humans cannot use.
+    # ?app=1 forces the app for any user-agent (diagnostic escape hatch).
+    if (
+        "app" not in request.query_params
+        and _is_crawler_ua(request.headers.get("user-agent"))
+        and _apex_landing_mode() == "public_marketplace"
+    ):
+        prerendered_apex = _apex_prerendered_html()
+        if prerendered_apex is not None:
+            response = HTMLResponse(content=prerendered_apex)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Vary"] = "User-Agent"
+            response.headers["X-Prerendered"] = "marketplace"
+            return response
+
     print("Root redirect handler called!")
     session_token = request.cookies.get("session_token")
     print(f"Session token from cookie: {session_token[:20] if session_token else 'None'}...")

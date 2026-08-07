@@ -65,15 +65,20 @@ const OVERLAY = {
     mascot: '/marketplace/media/mascot-meeting-ops.webp',
     mascot_alt: 'The Meeting-Ops scribe, in a camo patrol cap and headset',
     mascot_role: 'The scribe',
-    // MEASURED 2026-08-07 on the live asset: 0.0% transparent, corner
-    // (211,211,211). The currently shipped file has a flat LIGHT GREY
-    // background baked in, so it is a scene, not a cutout, and it needs a
-    // declared plate like the other baked assets. (Earlier notes calling this
-    // a 71.5%-alpha cutout describe an older file and are stale.)
-    // FLAGGED for Brand-Ops: Meeting-Ops is the flagship listing and a light
-    // plate in an otherwise dark set is a brand inconsistency. The fix belongs
-    // in the artwork, not in a crop here.
-    plate: '#d3d3d3',
+    // NO PLATE. Re-measured 2026-08-07 by decoding the actual served bytes
+    // (https://unicorncommander.ai/marketplace/media/mascot-meeting-ops.webp,
+    // md5 1308f0ee3cd28212d285740491220627, byte-identical to the file on
+    // disk): 900x900 RGBA, colour-type 6, 71.8% of sampled pixels alpha<255,
+    // 71.5% fully transparent, and ALL FOUR CORNERS (0,0,0,0). It is a true
+    // cutout, exactly like project-ops and accounting-ops.
+    //
+    // The previous note here claimed "0.0% transparent, corner (211,211,211)"
+    // and set plate:'#d3d3d3' on that basis. That measurement was wrong, and
+    // it put a light-grey slab behind a transparent PNG on the flagship
+    // listing, which read as a failed asset load in an otherwise dark crew.
+    // Do not reintroduce a plate here without re-decoding the served bytes:
+    // only the three colour-type-2 assets (center-deep-research,
+    // customer-ops, majiks-studio) actually have baked backgrounds.
     brand_primary: '#1b3a6b',
     brand_accent: '#d4af37',
     screenshot: '/marketplace/media/meeting-ops-ai-chat.webp',
@@ -84,7 +89,13 @@ const OVERLAY = {
       'Builds summaries, decisions, and action items',
       'Runs the appliance path entirely on your network',
     ],
-    approval_boundary: null,
+    // VERIFIED against the AGPL source README (Meeting-Ops-OSS, "Works with
+    // the rest of the suite" + the stated design rule "Meeting-Ops proposes,
+    // the owning app disposes"), and against the named implementation files
+    // it cites: api/federation_summary_approval.py and
+    // services/projectops_writer.py with the per-org auto_push_action_items
+    // flag defaulting to off. Nothing here is inferred from the roadmap.
+    approval_boundary: 'Meeting-Ops proposes; the owning app disposes. Extracted action items are sent to Project-Ops as task proposals, and that push is off by default until an org turns it on. Nothing reaches a customer record until a human releases that summary, and it never overwrites another app’s state.',
     deployment_options: ['Local app', 'Unicorn Cloud', 'Self-host'],
     deployment_note: 'Local means the Meeting-Ops appliance path, including local transcription and Ollama analysis.',
     source_license: 'AGPL-3.0',
@@ -201,7 +212,15 @@ const OVERLAY = {
     // This mirror is public and its LICENSE file is AGPL-3.0 verbatim.
     source_url: 'https://github.com/Unicorn-Commander/accounting-ops-community',
     data_egress: 'Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.',
-    cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log?project=accounting-ops' },
+    // The PRIMARY link is the product's own page, like every other listing.
+    // canonical_url was already correct here and already verified healthy by
+    // verify-hosts.mjs (200, 126,018 bytes, "Books that can answer for
+    // themselves"), but nothing rendered it: every link on the listing pointed
+    // at magicunicorn.dev, so the marketplace told visitors Accounting-Ops
+    // lives on the build-log domain. In-development is a state, not a reason
+    // to hide a live page, so the build log moves to the secondary slot.
+    cta: { label: 'See Accounting-Ops', href: 'https://accounting-ops.unicorncommander.ai/' },
+    secondary_cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log?project=accounting-ops' },
     note: 'Standalone add-on. In development, with no signup list.',
   },
   // ── FIFTH LISTING ────────────────────────────────────────────────────────
@@ -253,13 +272,31 @@ const OVERLAY = {
     approval_boundary: 'AI-proposed action items land in a Triage queue: nothing becomes project work until a human approves, routes, or rejects it. Agents act only through the MCP surface, under the caller’s own role, so a CLIENT is read-only and write tools refuse.',
     deployment_options: ['Unicorn Cloud', 'Self-host'],
     deployment_note: 'Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.',
-    // Verified from the shipping product: LICENSE is Apache-2.0 verbatim, and
-    // both package.json files plus the README badge agree. NOTE for the owner:
-    // the public project-ops-community mirror carries an AGPL-3.0 LICENSE file
-    // while its GitHub description claims Apache-2.0. Those two editions
-    // disagree, so no source link is published here until that is resolved.
-    source_license: 'Apache-2.0',
-    source_url: null,
+    // This card answers ONE question: "what can I actually go and get?"
+    // So it states the PUBLIC edition, measured, not the internal tree.
+    //
+    // Measured 2026-08-07, unauthenticated:
+    //   GET https://github.com/Unicorn-Commander/project-ops-community  -> 200
+    //   api.github.com/repos/...  private=false  visibility=public
+    //                             license.spdx_id=AGPL-3.0
+    //   raw LICENSE -> 200, "GNU AFFERO GENERAL PUBLIC LICENSE Version 3"
+    // The repo is public and the edition you can clone is AGPL-3.0.
+    //
+    // The previous value said Apache-2.0 with source_url:null, which made the
+    // page print "The repository is not publicly reachable today" about a repo
+    // that answers 200 to anyone. That was a verifiable falsehood on the one
+    // page whose thesis is verified honesty, and it is why this changed.
+    //
+    // STILL UNRESOLVED, and deliberately disclosed rather than hidden: the
+    // internal tree ships Apache-2.0 (LICENSE, both package.json files, README
+    // badge all agree) and the community repo's GitHub *description* still
+    // reads "Apache-2.0 OSS release ... Private staging mirror" — which
+    // disagrees with its own LICENSE file and with its public visibility.
+    // That is an owner decision about editions, not something a page generator
+    // may quietly pick a winner for, so source_note says so in plain words.
+    source_license: 'AGPL-3.0',
+    source_url: 'https://github.com/Unicorn-Commander/project-ops-community',
+    source_note: 'This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.',
     data_egress: 'Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.',
     cta: { label: 'Request access', href: 'https://projectops.unicorncommander.ai/' },
     secondary_cta: null,
@@ -328,6 +365,31 @@ for (const l of [...LISTINGS, SUITE]) {
     if (k !== 'price' && typeof v === 'string' && v.includes('{{PRICE_TBD}}')) {
       throw new Error(`{{PRICE_TBD}} leaked into renderable field ${l.slug}.${k}`);
     }
+  }
+}
+
+// Hard rule: the trust & permissions panel has FIVE elements and every listing
+// owes all five. The generator used to emit the approval card conditionally, so
+// meeting-ops (approval_boundary: null) silently shipped a 4-of-5 panel on the
+// flagship listing. A missing answer to "what waits for a human?" is not a
+// smaller panel, it is an unanswered trust question, so it fails the build.
+const TRUST_FIELDS = ['capabilities', 'approval_boundary', 'deployment_options', 'source_license', 'data_egress'];
+for (const l of LISTINGS) {
+  for (const f of TRUST_FIELDS) {
+    const v = l[f];
+    const empty = v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '');
+    if (empty) throw new Error(`Trust panel incomplete: ${l.slug} is missing ${f}. Every listing owes all five elements.`);
+  }
+}
+
+// Hard rule: a listing's own product page is the destination. canonical_url is
+// verified by verify-hosts.mjs, but "verified" is worthless if nothing renders
+// it — accounting-ops had a healthy canonical_url and every rendered link
+// pointed at the build-log domain instead. At least one CTA must go there.
+for (const l of LISTINGS) {
+  const hrefs = [l.cta?.href, l.secondary_cta?.href].filter(Boolean);
+  if (!hrefs.includes(l.canonical_url)) {
+    throw new Error(`${l.slug}: canonical_url ${l.canonical_url} is not reachable from any CTA (${hrefs.join(', ') || 'none'}).`);
   }
 }
 

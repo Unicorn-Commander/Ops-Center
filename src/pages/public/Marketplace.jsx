@@ -16,9 +16,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LISTINGS, SUITE } from '../../data/marketplaceListings.js';
 import {
-  AUDIENCES, CREW, CREW_NOTE, CSS_VERSION, GLYPH, HEADLINES, LIT, PLAIN_TRUTH,
-  READOUTS, TARGETS, TONE_BY_AUDIENCE, accessClass, egressShort, hostOf, pad2,
-  supports, toggleTheme,
+  AUDIENCES, CREW, CREW_NOTE, CSS_VERSION, GLYPH, LIT, MAST_HEADLINE,
+  MAST_HEADLINE_TEXT, PLAIN_TRUTH, READOUTS, TARGETS, TONE_BY_AUDIENCE,
+  accessClass, egressShort, hostOf, pad2, supports, toggleTheme,
 } from '../../data/marketplaceSystem.js';
 
 // ── SHARED FRAGMENTS ────────────────────────────────────────────────────────
@@ -62,15 +62,15 @@ function Hostname({ href, className = '' }) {
 
 // ── PAGE ────────────────────────────────────────────────────────────────────
 
+const MARKETPLACE_TITLE = `${MAST_HEADLINE_TEXT.replace(/\.$/, '')} | Unicorn Commander Marketplace`;
+
 export default function Marketplace() {
-  const [headline] = useState(() => HEADLINES[Math.floor(Math.random() * HEADLINES.length)]);
   // "all" is the served default: every column lit, nothing selected. The
   // legend is not a filter and never removes a product.
   const [audience, setAudience] = useState('all');
   const [swapping, setSwapping] = useState(false);
 
   useEffect(() => {
-    document.title = 'Put AI to work | Unicorn Commander Marketplace';
     let stylesheet = document.getElementById('marketplace-instrument-css');
     if (!stylesheet) {
       stylesheet = document.createElement('link');
@@ -80,6 +80,24 @@ export default function Marketplace() {
       document.head.appendChild(stylesheet);
     }
     return () => stylesheet?.remove();
+  }, []);
+
+  // The title has to be DEFENDED, not just set. This component mounts at "/"
+  // inside the ops-center bundle, and BrandingContext + Layout both write
+  // document.title after we do — which is why the SPA measured
+  // "Unicorn Commander - Admin Dashboard" while the SSR twin said
+  // "Put AI to work | ...". A logged-out visitor on the front door must not
+  // see the admin console's title. The observer re-asserts ours whenever
+  // something else overwrites it, and disconnects on unmount so the admin
+  // shell gets its title back.
+  useEffect(() => {
+    const titleEl = document.querySelector('title');
+    if (!titleEl) { document.title = MARKETPLACE_TITLE; return undefined; }
+    const assert = () => { if (document.title !== MARKETPLACE_TITLE) document.title = MARKETPLACE_TITLE; };
+    assert();
+    const observer = new MutationObserver(assert);
+    observer.observe(titleEl, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   const lit = LIT[audience] || LIT.all;
@@ -126,10 +144,10 @@ export default function Marketplace() {
           {/* Audience order invariant: buy, publish, host. Same three, same
               order, in header, hero, and footer. */}
           <nav className="nav" aria-label="Primary">
-            <a className="aud-buy" href="#catalog">Products</a>
-            <a className="aud-publish" href="#catalog">Publish</a>
-            <a className="aud-host" href="/marketplace/self-host">Self-host</a>
-            <a href="#platform">The platform</a>
+            <a className="nav-section aud-buy" href="#catalog">Products</a>
+            <a className="nav-section aud-publish" href="#catalog">Publish</a>
+            <a className="nav-section aud-host" href="/marketplace/self-host">Self-host</a>
+            <a className="nav-section" href="#platform">The platform</a>
             <a href="/auth/login">Sign in</a>
             <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Switch colour theme">Theme</button>
           </nav>
@@ -141,7 +159,10 @@ export default function Marketplace() {
           <div className="shell hero-inner">
             <div className="hero-copy">
               <p className="eyebrow">The Unicorn Commander marketplace</p>
-              <h1 className="mast" dangerouslySetInnerHTML={{ __html: headline }} />
+              {/* Static, and the SAME string the SSR page ships. There is no
+                  rotator here any more: it put unapproved copy on the H1 and
+                  made the crawled page disagree with the seen page. */}
+              <h1 className="mast" dangerouslySetInnerHTML={{ __html: MAST_HEADLINE }} />
               <p className="lede hero-claim">Tell us the job. Take home finished work from AI employees and creator tools that run on infrastructure you can own.</p>
               <p className="small">{PLAIN_TRUTH}</p>
             </div>

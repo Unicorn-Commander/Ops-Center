@@ -22,7 +22,7 @@ import { LISTINGS, PRICE_TBD } from './marketplaceListings.js';
 // NOTE: marketplace.css must stay hyphen-free in its filename. The backend's
 // cache middleware marks any .css path containing a hyphen as immutable for a
 // year, so renaming it would freeze it in browsers.
-export const CSS_VERSION = '20260807-instrument-6';
+export const CSS_VERSION = '20260807-instrument-7';
 
 export const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -45,12 +45,25 @@ export const hostOf = (url) => {
 // Four mono glyphs. There is no icon library and no emoji on this page.
 export const GLYPH = { yes: '●', no: '○', unknown: '—', ext: '↗' };
 
-export const HEADLINES = [
-  'Put AI to <em>work</em>.',
-  'Meetings noted. Books <em>closed</em>.',
-  'Finished work <em>lives</em> here.',
-  'Own the magic. <em>Keep</em> the data.',
-];
+// THE MAST. One string, rendered statically, identical in the SSR bytes, the
+// SPA, the <title>, and og:title.
+//
+// This used to be a four-item HEADLINES array that both renderers picked from
+// at random on every pageview. Three of those four lines were newly written
+// here and had never been approved; the approved line showed up on roughly a
+// quarter of loads; and the crawled H1 disagreed with the visible H1 the rest
+// of the time. One of the invented lines ("Meetings noted. Books closed.")
+// also headlined the whole marketplace on closing books while the page itself
+// marks Accounting-Ops "In development" — a product claim the page contradicts
+// four sections later, on the front door of a page whose thesis is that every
+// claim is verified.
+//
+// If a rotating mast is ever wanted, it needs approved copy AND <title> /
+// og:title have to rotate with it. Do not reintroduce an array here.
+export const MAST_HEADLINE = 'Put AI to <em>work</em>.';
+
+// The plain-text form, for <title>, og:title, and the SSR/SPA parity test.
+export const MAST_HEADLINE_TEXT = 'Put AI to work.';
 
 // ── DEPLOYMENT TARGETS ──────────────────────────────────────────────────────
 // Five runtime homes. SELF-HOST is last on purpose: a spec sheet puts the
@@ -127,9 +140,11 @@ export const AUDIENCES = [
     n: 'No. 03',
     verb: 'Host the whole platform',
     // Door 3 carries the most concrete sentence on the page. It must NEVER
-    // claim blanket AGPL: Project-Ops ships Apache-2.0, so a blanket claim
-    // would be false on the fifth listing, and a false sovereignty claim
+    // claim blanket AGPL: Majiks Studio ships Apache-2.0 with no public repo,
+    // so a blanket claim would be false, and a false sovereignty claim
     // discredits the one thesis no competing marketplace can match.
+    // (Project-Ops was the example here until its public edition was measured
+    // and found to be AGPL-3.0 and genuinely public; the rule is unchanged.)
     claim: 'Run every part of this on your own hardware. Every listing states its exact license, and the source link only appears when the repository is actually public.',
     proof: `${SELF_HOSTABLE} of ${TOTAL} self-hostable today`,
     cta: 'What self-hosting takes',
@@ -175,19 +190,27 @@ export const READOUTS = {
 // Access states mirror the listings. Project-Ops is Available now here because
 // it is Available now in the catalog; the two must never disagree.
 //
-// `plate` is set for the mascots whose artwork has a BAKED background (0.0%
-// transparency). They are illustrated scenes, not cutouts, so the plate is
-// filled with their own corner colour and they read as a mounted specimen
-// rather than a broken cutout. Do not "fix" these by cropping the art.
+// `plate` is set ONLY for the mascots whose artwork has a BAKED background.
+// Verified 2026-08-07 by decoding the served bytes of all six assets:
+//
+//   center-deep-research  PNG colour-type 2 — no alpha channel  -> plate
+//   customer-ops          PNG colour-type 2 — no alpha channel  -> plate
+//   majiks-studio         PNG colour-type 2 — no alpha channel  -> plate
+//   meeting-ops           RGBA, 71.5% fully transparent, corners (0,0,0,0)
+//   project-ops           RGBA, 68.0% fully transparent, corners (0,0,0,0)
+//   accounting-ops        RGBA, 58.8% fully transparent, corners (0,0,0,0)
+//
+// The bottom three are true cutouts and must have NO plate. Meeting-Ops
+// carried plate:'#d3d3d3' on the strength of a bad measurement, which painted
+// a light-grey slab behind a transparent cutout — one bright box in a row of
+// dark ones, on the flagship listing, reading as a broken image rather than a
+// choice. Re-decode the bytes before ever adding a plate here.
 export const CREW = [
   {
     name: 'Meeting-Ops',
     mascot: '/marketplace/media/mascot-meeting-ops.webp',
     alt: 'The Meeting-Ops scribe, in a camo patrol cap and headset',
     color: '#1b3a6b',
-    // Measured: 0.0% transparent, light-grey baked background. See the note in
-    // export-marketplace-listings.mjs.
-    plate: '#d3d3d3',
     blurb: 'Captures the conversation, decisions, owners, and due dates.',
     state: 'Available now',
   },

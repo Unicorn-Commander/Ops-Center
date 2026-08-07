@@ -12,19 +12,20 @@
     <meta property="og:title" content="Self-host the whole platform | Unicorn Commander">
     <meta property="og:description" content="What it takes to run Unicorn Commander on your own hardware, product by product, with the exact license for each.">
     <meta property="og:url" content="https://unicorncommander.ai/marketplace/self-host">
-    <meta property="og:image" content="https://unicorncommander.ai/marketplace/media/og-marketplace.png">
+    <meta property="og:image" content="https://unicorncommander.ai/logos/uc-og-card.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="The Colonel, the Unicorn Commander mark, beside the wordmark Unicorn Commander and the line: AI employees and creator tools on infrastructure you can own.">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Self-host the whole platform | Unicorn Commander">
     <meta name="twitter:description" content="What it takes to run Unicorn Commander on your own hardware, product by product, with the exact license for each.">
-    <meta name="twitter:image" content="https://unicorncommander.ai/marketplace/media/og-marketplace.png">
+    <meta name="twitter:image" content="https://unicorncommander.ai/logos/uc-og-card.png">
     <link rel="icon" type="image/webp" href="/logos/uc-mark-colonel.webp">
     <script>(function(){try{var t=localStorage.getItem('mu-theme');var d=t||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=d;document.documentElement.style.colorScheme=d;}catch(e){}})()</script>
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/marketplace/fonts/manrope-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/marketplace/fonts/plex-sans-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-6">
+    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-7">
 
   </head>
 <body>
@@ -36,10 +37,10 @@
         <span>Unicorn Commander</span>
       </a>
       <nav class="nav" aria-label="Primary">
-        <a class="aud-buy" href="/marketplace#catalog">Products</a>
-        <a class="aud-publish" href="/marketplace#catalog">Publish</a>
-        <a class="aud-host" href="/marketplace/self-host">Self-host</a>
-        <a href="/marketplace#platform">The platform</a>
+        <a class="nav-section aud-buy" href="/marketplace#catalog">Products</a>
+        <a class="nav-section aud-publish" href="/marketplace#catalog">Publish</a>
+        <a class="nav-section aud-host" href="/marketplace/self-host">Self-host</a>
+        <a class="nav-section" href="/marketplace#platform">The platform</a>
         <a href="/auth/login">Sign in</a>
         <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch colour theme">Theme</button>
       </nav>
@@ -92,7 +93,7 @@
                 <td class="license"><span class="micro">Repository is not public</span></td>
                 <td>Local generation stays on the Mac. Hybrid mode can use a user server or the ACE Music API.</td>
               </tr>
-              <tr style="--b:#1b3a6b;--ba:#d4af37;--plate:#d3d3d3">
+              <tr style="--b:#1b3a6b;--ba:#d4af37">
                 <td class="cell-index"><span class="chip" aria-hidden="true"></span>03</td>
                 <td class="cell-name"><h3 class="product-name"><a href="/marketplace/meeting-ops">Meeting-Ops</a></h3></td>
                 <td><span class="is-selfhost">● Yes</span></td>
@@ -104,8 +105,8 @@
                 <td class="cell-index"><span class="chip" aria-hidden="true"></span>04</td>
                 <td class="cell-name"><h3 class="product-name"><a href="/marketplace/project-ops">Project-Ops</a></h3></td>
                 <td><span class="is-selfhost">● Yes</span></td>
-                <td class="license">Apache-2.0</td>
-                <td class="license"><span class="micro">Repository is not public</span></td>
+                <td class="license">AGPL-3.0</td>
+                <td class="license"><a href="https://github.com/Unicorn-Commander/project-ops-community">github.com</a></td>
                 <td>Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.</td>
               </tr>
               <tr style="--b:#0f766e;--ba:#d4af37">

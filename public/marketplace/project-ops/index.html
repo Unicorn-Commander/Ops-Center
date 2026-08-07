@@ -12,20 +12,21 @@
     <meta property="og:title" content="Project-Ops | Unicorn Commander Marketplace">
     <meta property="og:description" content="The project manager that tracks your AI agents like employees. Tasks, time, billing, and profitability in one loop, for humans and agents alike.">
     <meta property="og:url" content="https://unicorncommander.ai/marketplace/project-ops">
-    <meta property="og:image" content="https://unicorncommander.ai/marketplace/media/og-marketplace.png">
+    <meta property="og:image" content="https://unicorncommander.ai/logos/uc-og-card.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="The Colonel, the Unicorn Commander mark, beside the wordmark Unicorn Commander and the line: AI employees and creator tools on infrastructure you can own.">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Project-Ops | Unicorn Commander Marketplace">
     <meta name="twitter:description" content="The project manager that tracks your AI agents like employees. Tasks, time, billing, and profitability in one loop, for humans and agents alike.">
-    <meta name="twitter:image" content="https://unicorncommander.ai/marketplace/media/og-marketplace.png">
+    <meta name="twitter:image" content="https://unicorncommander.ai/logos/uc-og-card.png">
     <link rel="icon" type="image/webp" href="/logos/uc-mark-colonel.webp">
     <script>(function(){try{var t=localStorage.getItem('mu-theme');var d=t||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=d;document.documentElement.style.colorScheme=d;}catch(e){}})()</script>
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/marketplace/fonts/manrope-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/marketplace/fonts/plex-sans-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-6">
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Project-Ops","description":"The project manager that tracks your AI agents like employees. Tasks, time, billing, and profitability in one loop, for humans and agents alike.","applicationCategory":"AI Employees","operatingSystem":"Web, self-hosted","author":{"@type":"Organization","name":"Magic Unicorn","url":"https://magicunicorn.tech"},"image":"https://unicorncommander.ai/marketplace/media/og-marketplace.png","url":"https://projectops.unicorncommander.ai/","license":"Apache-2.0","offers":{"@type":"Offer","availability":"https://schema.org/InStock","url":"https://projectops.unicorncommander.ai/"}}</script>
+    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-7">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Project-Ops","description":"The project manager that tracks your AI agents like employees. Tasks, time, billing, and profitability in one loop, for humans and agents alike.","applicationCategory":"AI Employees","operatingSystem":"Web, self-hosted","author":{"@type":"Organization","name":"Magic Unicorn","url":"https://magicunicorn.tech"},"image":"https://unicorncommander.ai/logos/uc-og-card.png","url":"https://projectops.unicorncommander.ai/","license":"AGPL-3.0","offers":{"@type":"Offer","availability":"https://schema.org/InStock","url":"https://projectops.unicorncommander.ai/"}}</script>
   </head>
 <body>
 
@@ -36,10 +37,10 @@
         <span>Unicorn Commander</span>
       </a>
       <nav class="nav" aria-label="Primary">
-        <a class="aud-buy" href="/marketplace#catalog">Products</a>
-        <a class="aud-publish" href="/marketplace#catalog">Publish</a>
-        <a class="aud-host" href="/marketplace/self-host">Self-host</a>
-        <a href="/marketplace#platform">The platform</a>
+        <a class="nav-section aud-buy" href="/marketplace#catalog">Products</a>
+        <a class="nav-section aud-publish" href="/marketplace#catalog">Publish</a>
+        <a class="nav-section aud-host" href="/marketplace/self-host">Self-host</a>
+        <a class="nav-section" href="/marketplace#platform">The platform</a>
         <a href="/auth/login">Sign in</a>
         <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch colour theme">Theme</button>
       </nav>
@@ -58,7 +59,7 @@
         </div>
         <div>
           <div class="plate"><img src="/marketplace/media/mascot-project-ops.webp" alt="The Project-Ops coordinator, in a purple judo gi and black belt" width="240" height="240"></div>
-          <span class="partno mono">UC-04 · APACHE-2.0</span>
+          <span class="partno mono">UC-04 · AGPL-3.0</span>
         </div>
       </div>
     </section>
@@ -72,7 +73,7 @@
           <article class="trust-card"><h3>What waits for you</h3><p>AI-proposed action items land in a Triage queue: nothing becomes project work until a human approves, routes, or rejects it. Agents act only through the MCP surface, under the caller’s own role, so a CLIENT is read-only and write tools refuse.</p></article>
           <article class="trust-card"><h3>Where it runs</h3><ul><li>Unicorn Cloud</li><li class="is-selfhost">Self-host</li></ul><p>Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.</p></article>
           <article class="trust-card"><h3>Does data leave your network?</h3><p>Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.</p></article>
-          <article class="trust-card"><h3>Source license</h3><p>Apache-2.0</p><p class="small">The repository is not publicly reachable today, so no link is shown here. <a href="/marketplace/self-host">What self-hosting takes</a>.</p></article>
+          <article class="trust-card"><h3>Source license</h3><p>AGPL-3.0</p><p><a href="https://github.com/Unicorn-Commander/project-ops-community">Source and self-host ↗</a></p><p class="small">This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.</p></article>
         </div>
         <p class="small" style="margin-top:var(--s-8);max-width:68ch">Claims on this page are intentionally narrower than the roadmap. If a capability was not verified in current source or operator documentation, it is not listed.</p>
       </div>
