@@ -60,6 +60,12 @@ const OVERLAY = {
     canonical_url: 'https://meeting-ops.unicorncommander.ai/',
     learn_more_url: 'https://meeting-ops.unicorncommander.ai/',
     icon: '/logos/tile-meeting-ops.png',
+    // Task 14 visual identity: approved Brand-Ops mascot + brand tokens.
+    mascot: '/marketplace/media/mascot-meeting-ops.webp',
+    mascot_alt: 'The Meeting-Ops scribe, in headset',
+    mascot_role: 'The scribe',
+    brand_primary: '#1b3a6b',
+    brand_accent: '#d4af37',
     screenshot: '/marketplace/media/meeting-ops-ai-chat.webp',
     screenshot_alt: 'Meeting-Ops AI chat answering from a fictional meeting transcript',
     og_image: '/marketplace/media/og-meeting-ops.png',
@@ -86,6 +92,11 @@ const OVERLAY = {
     canonical_url: 'https://research.unicorncommander.ai/',
     learn_more_url: 'https://magicunicorn.tech/products/center-deep-research/',
     icon: '/logos/tile-center-deep.png',
+    mascot: '/marketplace/media/mascot-center-deep-research.webp',
+    mascot_alt: 'The Center Deep diver, suited up in the dark water',
+    mascot_role: 'The diver',
+    brand_primary: '#0891b2',
+    brand_accent: '#22d3ee',
     screenshot: null,
     screenshot_alt: null,
     og_image: '/marketplace/media/og-center-deep-research.png',
@@ -112,6 +123,11 @@ const OVERLAY = {
     canonical_url: 'https://majiks.studio/download',
     learn_more_url: 'https://majiks.studio/',
     icon: '/logos/tile-majiks-studio.png',
+    mascot: '/marketplace/media/mascot-majiks-studio.webp',
+    mascot_alt: 'The Majiks Studio DJ, headphones on, shades down',
+    mascot_role: 'The DJ',
+    brand_primary: '#a855f7',
+    brand_accent: '#9333ea',
     screenshot: null,
     screenshot_alt: null,
     og_image: '/marketplace/media/og-majiks-studio.png',
@@ -138,6 +154,11 @@ const OVERLAY = {
     canonical_url: 'https://accounting-ops.unicorncommander.ai/',
     learn_more_url: 'https://magicunicorn.tech/products/accounting-ops/',
     icon: '/logos/tile-accounting-ops.png',
+    mascot: '/marketplace/media/mascot-accounting-ops.webp',
+    mascot_alt: 'The Accounting-Ops bookkeeper, bowler hat, ledger, and brass scale',
+    mascot_role: 'The bookkeeper',
+    brand_primary: '#0f766e',
+    brand_accent: '#d4af37',
     screenshot: '/marketplace/media/accounting-ops-provenance.webp',
     screenshot_alt: 'Accounting-Ops tracing a fictional ledger figure back through its source and approval history',
     og_image: '/marketplace/media/og-accounting-ops.png',
@@ -185,7 +206,13 @@ const SUITE = {
   entitlement_sku: null,
   dogfood: true,
   tagline: 'The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.',
-  includes: suiteSlugs.map((s) => bySlug[s]?.name || ({ 'knowledge-ops': 'Knowledge-Ops' }[s] || s)),
+  includes: suiteSlugs.map((s) => {
+    // Prefer the products-data name unless it is just the slug echoed back
+    // (the stable entry does this in some checkouts).
+    const proper = { 'knowledge-ops': 'Knowledge-Ops', stable: 'Unicorn Stable' };
+    const n = bySlug[s]?.name;
+    return (n && n.toLowerCase() !== s.toLowerCase()) ? n : (proper[s] || n || s);
+  }),
   callouts: [
     'Meeting-Ops is also sold standalone.',
     'Accounting-Ops is a standalone add-on, in or out of the bundle.',
