@@ -141,9 +141,6 @@
 
 :root {
   --canvas: #090b0b;          --canvas-ch: 9 11 11;
-  --canvas-raised: #0e1110;
-  --panel: #111513;
-  --panel-soft: #151917;
   --ink: #eceeea;             --ink-ch: 236 238 234;
   --ink-soft: #c4c8c3;
   --muted: #859089;
@@ -158,9 +155,6 @@
   --signal-violet: #a89bd8;   --signal-violet-ch: 168 155 216; /* HOST  */
 
   /* Dark elevation is a hairline. These resolve to none on purpose. */
-  --shadow-card: none;
-  --shadow-hover: none;
-  --shadow-pop: none;
 
   --s-1: 4px;  --s-2: 8px;   --s-3: 12px;  --s-4: 16px;
   --s-5: 20px; --s-6: 24px;  --s-7: 32px;  --s-8: 40px;
@@ -190,9 +184,6 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     --canvas: #eceeea;        --canvas-ch: 236 238 234;
-    --canvas-raised: #e6e9e4;
-    --panel: #e1e4df;
-    --panel-soft: #d9ddd7;
     --ink: #141815;           --ink-ch: 20 24 21;
     --ink-soft: #333a35;
     --muted: #5f6863;
@@ -202,17 +193,11 @@
     --signal: #167052;        --signal-ch: 22 112 82;
     --signal-warm: #78590f;   --signal-warm-ch: 120 89 15;
     --signal-violet: #5f5297; --signal-violet-ch: 95 82 151;
-    --shadow-card: 0 1px 2px rgb(16 24 40/.06), 0 4px 8px rgb(16 24 40/.04), 0 8px 24px rgb(16 24 40/.08);
-    --shadow-hover: 0 2px 6px rgb(16 24 40/.09), 0 12px 24px rgb(16 24 40/.08), 0 24px 48px rgb(16 24 40/.12);
-    --shadow-pop: 0 2px 6px rgb(16 24 40/.08), 0 12px 28px rgb(16 24 40/.10), 0 28px 56px rgb(16 24 40/.14);
     color-scheme: light;
   }
 }
 :root[data-theme='light'] {
   --canvas: #eceeea;          --canvas-ch: 236 238 234;
-  --canvas-raised: #e6e9e4;
-  --panel: #e1e4df;
-  --panel-soft: #d9ddd7;
   --ink: #141815;             --ink-ch: 20 24 21;
   --ink-soft: #333a35;
   --muted: #5f6863;
@@ -222,16 +207,10 @@
   --signal: #167052;          --signal-ch: 22 112 82;
   --signal-warm: #78590f;     --signal-warm-ch: 120 89 15;
   --signal-violet: #5f5297;   --signal-violet-ch: 95 82 151;
-  --shadow-card: 0 1px 2px rgb(16 24 40/.06), 0 4px 8px rgb(16 24 40/.04), 0 8px 24px rgb(16 24 40/.08);
-  --shadow-hover: 0 2px 6px rgb(16 24 40/.09), 0 12px 24px rgb(16 24 40/.08), 0 24px 48px rgb(16 24 40/.12);
-  --shadow-pop: 0 2px 6px rgb(16 24 40/.08), 0 12px 28px rgb(16 24 40/.10), 0 28px 56px rgb(16 24 40/.14);
   color-scheme: light;
 }
 :root[data-theme='dark'] {
   --canvas: #090b0b;          --canvas-ch: 9 11 11;
-  --canvas-raised: #0e1110;
-  --panel: #111513;
-  --panel-soft: #151917;
   --ink: #eceeea;             --ink-ch: 236 238 234;
   --ink-soft: #c4c8c3;
   --muted: #859089;
@@ -241,9 +220,6 @@
   --signal: #b8f4d6;          --signal-ch: 184 244 214;
   --signal-warm: #e3bb5a;     --signal-warm-ch: 227 187 90;
   --signal-violet: #a89bd8;   --signal-violet-ch: 168 155 216;
-  --shadow-card: none;
-  --shadow-hover: none;
-  --shadow-pop: none;
   color-scheme: dark;
 }
 

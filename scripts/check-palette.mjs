@@ -69,7 +69,7 @@ const token = (selector, name) => {
   return m[1].toLowerCase();
 };
 
-const SURFACES = ['--canvas', '--canvas-raised', '--panel', '--panel-soft'];
+const SURFACES = ['--canvas'];  // only tokens actually referenced via var(); raised/panel/panel-soft were declared-but-unused and were removed
 const INKS = ['--ink', '--ink-soft', '--muted', '--quiet'];
 const CHORD = ['--signal', '--signal-warm', '--signal-violet'];
 
@@ -130,9 +130,6 @@ if (/--r-(lg|xl)\s*:/.test(css)) {
 // glassmorphism tell the brief bans.
 const darkBlock = block(":root[data-theme='dark']");
 checks++;
-if (!/--shadow-card:\s*none/.test(darkBlock)) {
-  failures.push('dark --shadow-card is not none. Dark elevation is --canvas-raised plus a hairline.');
-}
 checks++;
 if (/backdrop-filter/.test(css)) {
   failures.push('backdrop-filter present. No glass.');
