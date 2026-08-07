@@ -133,7 +133,7 @@ function ListingCard({ listing }) {
             alt=""
             loading="lazy"
             onError={() => setIconBroken(true)}
-            className="h-12 w-12 rounded-xl bg-white/5 object-contain p-1"
+            className="h-16 w-16 shrink-0 rounded-xl bg-white/5 object-contain p-0.5"
           />
         ) : (
           <Monogram name={listing.name} />
