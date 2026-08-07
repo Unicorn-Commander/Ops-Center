@@ -506,8 +506,8 @@ export default function ProviderKeysSection({
           {/* Provider Cards Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {Array.isArray(providers) && providers.length > 0 ? providers.map((provider) => {
-              const info = providerInfo[provider.id] || {
-                name: provider.id,
+              const info = providerInfo[provider.type] || providerInfo[provider.id] || {
+                name: provider.name || provider.id,
                 icon: '🔑',
                 color: 'from-gray-500 to-gray-600',
                 description: 'LLM Provider'
