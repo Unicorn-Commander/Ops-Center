@@ -151,7 +151,7 @@ export default function Marketplace() {
       <header className="site-header">
         <div className="shell">
           <a className="brand" href="/marketplace">
-            <img src="/logos/uc-logo-192.png" alt="" />
+            <img src="/logos/uc-mark-colonel.webp" alt="" />
             <span>Unicorn Commander</span>
           </a>
           <nav className="nav" aria-label="Primary">
@@ -291,7 +291,7 @@ export default function Marketplace() {
 
       <footer className="site-footer">
         <div className="shell">
-          <span>Built by Magic Unicorn in Folly Beach, South Carolina.</span>
+          <span>Built by Magic Unicorn in Charleston, South Carolina.</span>
           <span><a href="https://magicunicorn.dev/log">Build log</a> · <a href={PUBLISHER_URL}>Become a publisher</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
         </div>
       </footer>

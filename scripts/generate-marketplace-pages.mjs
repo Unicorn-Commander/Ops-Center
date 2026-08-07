@@ -82,7 +82,7 @@ const pageHead = ({ title, description, canonical, image, jsonLd = null }) => `
     <meta name="twitter:title" content="${escapeHtml(title)}">
     <meta name="twitter:description" content="${escapeHtml(description)}">
     <meta name="twitter:image" content="${escapeHtml(absolute(image))}">
-    <link rel="icon" type="image/png" href="/logos/uc-logo-192.png">
+    <link rel="icon" type="image/webp" href="/logos/uc-mark-colonel.webp">
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/marketplace/marketplace.css?v=${CSS_VERSION}">
@@ -93,7 +93,7 @@ const header = () => `
   <header class="site-header">
     <div class="shell">
       <a class="brand" href="/marketplace">
-        <img src="/logos/uc-logo-192.png" alt="">
+        <img src="/logos/uc-mark-colonel.webp" alt="">
         <span>Unicorn Commander</span>
       </a>
       <nav class="nav" aria-label="Primary">
@@ -108,7 +108,7 @@ const header = () => `
 const footer = () => `
   <footer class="site-footer">
     <div class="shell">
-      <span>Built by Magic Unicorn in Folly Beach, South Carolina.</span>
+      <span>Built by Magic Unicorn in Charleston, South Carolina.</span>
       <span><a href="https://magicunicorn.dev/log">Build log</a> · <a href="https://magicunicorn.dev/book/?product=marketplace-publisher">Become a publisher</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
     </div>
   </footer>`;
@@ -225,7 +225,7 @@ ${pageHead({
   title: 'Put AI to work | Unicorn Commander Marketplace',
   description: 'AI employees and creator tools that finish work on infrastructure you can own.',
   canonical: `${origin}/marketplace`,
-  image: '/logos/uc-logo-512.png',
+  image: '/logos/uc-og-colonel.png',
   jsonLd: indexJsonLd,
 })}
 <body>
