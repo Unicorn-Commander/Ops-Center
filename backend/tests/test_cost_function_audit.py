@@ -23,10 +23,13 @@ from litellm_credit_system import (
 
 def _system(db_rows=None):
     """CreditSystem with mocked pool/redis. db_rows: list of dicts returned by fetchrow."""
-    pool = AsyncMock()
+    # asyncpg's pool.acquire() returns an async context manager directly; it is
+    # not itself awaitable. Keep the pool/context manager synchronous and only
+    # mock the connection methods as async.
+    pool = MagicMock()
     conn = AsyncMock()
-    pool.acquire.return_value.__aenter__.return_value = conn
-    pool.acquire.return_value.__aexit__.return_value = None
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
 
     rows = list(db_rows or [])
 
