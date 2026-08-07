@@ -926,9 +926,10 @@ async def chat_completions(
         # Calculate estimated cost (ASYNC NOW)
         estimated_cost = await credit_system.calculate_cost(
             tokens_used=estimated_tokens,
-            model=request.model or "balanced",
+            model=request.model or "unknown",
             power_level=power_level,
-            user_tier=user_tier
+            user_tier=user_tier,
+            request_model=request.model,
         )
 
         # Check credits BEFORE making request (skip if using BYOK or credit-exempt tier)
@@ -1343,6 +1344,8 @@ async def chat_completions(
                 """
                 import asyncio  # Import here for sleep(0) flush
                 total_tokens = 0
+                stream_prompt_tokens = 0
+                stream_completion_tokens = 0
                 provider_used = request.model or "unknown"
                 chunks_received = 0
 
@@ -1396,7 +1399,9 @@ async def chat_completions(
                                         if 'usage' in chunk:
                                             usage = chunk['usage']
                                             total_tokens = usage.get('total_tokens', 0)
-                                            logger.info(f"Received usage data: {total_tokens} tokens")
+                                            stream_prompt_tokens = int(usage.get('prompt_tokens') or 0)
+                                            stream_completion_tokens = int(usage.get('completion_tokens') or 0)
+                                            logger.info(f"Received usage data: {total_tokens} tokens (in={stream_prompt_tokens} out={stream_completion_tokens})")
 
                                         # Extract model info if present
                                         if 'model' in chunk and chunk['model']:
@@ -1426,15 +1431,24 @@ async def chat_completions(
                             power_level=power_level,
                             user_tier=user_tier,
                             is_local=is_local_provider,
-                            local_rate_per_1k=local_rate_per_1k
+                            local_rate_per_1k=local_rate_per_1k,
+                            prompt_tokens=stream_prompt_tokens or None,
+                            completion_tokens=stream_completion_tokens or None,
+                            request_model=request.model,
                         )
-                        if (request.model or "").endswith(":free"):
-                            # Requested a free-variant model: providers may echo the
-                            # model without the :free suffix, which would re-price it.
+                        # Belt-and-suspenders: free variants must never bill, even if
+                        # calculate_cost is called with a stripped provider echo.
+                        if credit_system.is_free_model(provider_used, request.model):
                             actual_cost = 0.0
 
-                        # Deduct credits
-                        if org_id:
+                        # Deduct credits only when there is a real charge
+                        # (free/local/zero-cost must not write ledger noise).
+                        if actual_cost <= 0:
+                            logger.info(
+                                f"Streaming zero-cost settle user={user_id} model={request.model} "
+                                f"provider_used={provider_used} tokens={tokens_for_billing}"
+                            )
+                        elif org_id:
                             # Organization billing
                             success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
                                 user_id=user_id,
@@ -1565,20 +1579,24 @@ async def chat_completions(
         # Extract usage information (non-streaming only)
         usage = response_data.get('usage', {})
         tokens_used = usage.get('total_tokens', estimated_tokens)
+        prompt_tokens = usage.get('prompt_tokens')
+        completion_tokens = usage.get('completion_tokens')
         provider_used = response_data.get('model', 'unknown')
 
-        # Calculate actual cost (ASYNC NOW)
+        # Calculate actual cost (ASYNC NOW) — per-model input/output rates
         actual_cost = await credit_system.calculate_cost(
             tokens_used=tokens_used,
             model=provider_used,
             power_level=power_level,
             user_tier=user_tier,
             is_local=is_local_provider,
-            local_rate_per_1k=local_rate_per_1k
+            local_rate_per_1k=local_rate_per_1k,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            request_model=request.model,
         )
-        if (request.model or "").endswith(":free"):
-            # Requested a free-variant model: providers may echo the model
-            # without the :free suffix, which would re-price it.
+        # Belt-and-suspenders free guard (provider may echo without :free)
+        if credit_system.is_free_model(provider_used, request.model):
             actual_cost = 0.0
 
         # Debit credits (skip if using BYOK - user pays provider directly)
