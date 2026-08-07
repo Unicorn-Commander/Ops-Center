@@ -1441,6 +1441,13 @@ async def chat_completions(
                         if credit_system.is_free_model(provider_used, request.model):
                             actual_cost = 0.0
 
+                        ledger_provider, ledger_model = credit_system.ledger_attribution(
+                            provider_used,
+                            request.model,
+                            provider_name,
+                            is_local_provider,
+                        )
+
                         # Deduct credits only when there is a real charge
                         # (free/local/zero-cost must not write ledger noise).
                         if actual_cost <= 0:
@@ -1454,8 +1461,8 @@ async def chat_completions(
                                 user_id=user_id,
                                 credits_used=actual_cost,
                                 service_name=provider_used,
-                                provider=provider_used,
-                                model=request.model,
+                                provider=ledger_provider,
+                                model=ledger_model,
                                 tokens_used=tokens_for_billing,
                                 power_level=power_level,
                                 task_type=request.task_type,
@@ -1481,8 +1488,8 @@ async def chat_completions(
                                 user_id=user_id,
                                 amount=actual_cost,
                                 metadata={
-                                    'provider': provider_used,
-                                    'model': provider_used,
+                                    'provider': ledger_provider,
+                                    'model': ledger_model,
                                     'tokens_used': tokens_for_billing,
                                     'power_level': power_level,
                                     'task_type': request.task_type,
@@ -1513,7 +1520,10 @@ async def chat_completions(
                                 metadata={
                                     'power_level': power_level,
                                     'task_type': request.task_type,
-                                    'streaming': True
+                                    'streaming': True,
+                                    'provider': ledger_provider,
+                                    'requested_model': ledger_model,
+                                    'is_local': is_local_provider,
                                 }
                             )
                         except Exception as usage_error:
@@ -1599,6 +1609,13 @@ async def chat_completions(
         if credit_system.is_free_model(provider_used, request.model):
             actual_cost = 0.0
 
+        ledger_provider, ledger_model = credit_system.ledger_attribution(
+            provider_used,
+            request.model,
+            provider_name,
+            is_local_provider,
+        )
+
         # Debit credits (skip if using BYOK - user pays provider directly)
         if using_byok:
             # User is using their own API key - no credit charge
@@ -1628,8 +1645,8 @@ async def chat_completions(
                     user_id=user_id,
                     credits_used=actual_cost,
                     service_name=provider_used,
-                    provider=provider_used,
-                    model=request.model,
+                    provider=ledger_provider,
+                    model=ledger_model,
                     tokens_used=tokens_used,
                     power_level=power_level,
                     task_type=request.task_type,
@@ -1650,8 +1667,8 @@ async def chat_completions(
                     user_id=user_id,
                     amount=actual_cost,
                     metadata={
-                        'provider': provider_used,
-                        'model': provider_used,
+                        'provider': ledger_provider,
+                        'model': ledger_model,
                         'tokens_used': tokens_used,
                         'power_level': power_level,
                         'task_type': request.task_type,
@@ -1692,7 +1709,9 @@ async def chat_completions(
                     'power_level': power_level,
                     'task_type': request.task_type,
                     'privacy_required': request.privacy_required,
-                    'provider': provider_used,
+                    'provider': ledger_provider,
+                    'requested_model': ledger_model,
+                    'is_local': is_local_provider,
                     'transaction_id': transaction_id
                 }
             )
@@ -1703,6 +1722,9 @@ async def chat_completions(
         # Add custom headers to response
         response_data['_metadata'] = {
             'provider_used': provider_used,
+            'catalog_provider': ledger_provider,
+            'requested_model': ledger_model,
+            'is_local': is_local_provider,
             'cost_incurred': actual_cost,
             'credits_remaining': new_balance,
             'transaction_id': transaction_id,

@@ -82,6 +82,28 @@ class TestFreeGuard:
         assert cost == 0.0
 
 
+class TestLedgerAttribution:
+    def test_local_uses_catalog_provider_and_requested_alias(self):
+        provider, model = CreditSystem.ledger_attribution(
+            "Qwen_Qwen3.6-35B-A3B-Q4_K_M",
+            "uc/qwen3.6-35b-a3b",
+            "UC Gateway Local",
+            True,
+        )
+        assert provider == "UC Gateway Local"
+        assert model == "uc/qwen3.6-35b-a3b"
+
+    def test_cloud_preserves_served_model_convention(self):
+        provider, model = CreditSystem.ledger_attribution(
+            "qwen/qwen3.6-flash",
+            "qwen-flash",
+            "DashScope",
+            False,
+        )
+        assert provider == "qwen/qwen3.6-flash"
+        assert model == "qwen/qwen3.6-flash"
+
+
 class TestPerModelInputOutput:
     @pytest.mark.asyncio
     async def test_1b_model_near_published_rate(self):

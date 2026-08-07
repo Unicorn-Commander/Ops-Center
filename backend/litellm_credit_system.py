@@ -605,6 +605,25 @@ class CreditSystem:
                 return True
         return False
 
+    @staticmethod
+    def ledger_attribution(
+        provider_used: Optional[str],
+        request_model: Optional[str],
+        catalog_provider: Optional[str],
+        is_local: bool,
+    ) -> tuple[str, str]:
+        """Return provider/model labels for the existing credit-ledger path.
+
+        Provider responses identify the served backend model, not the catalog
+        provider. Preserve that historical convention for cloud calls, while
+        local calls must be attributable to the local provider and requested
+        catalog alias so local-serve share is measurable.
+        """
+        served = provider_used or "unknown"
+        if is_local:
+            return catalog_provider or "UC Gateway Local", request_model or served
+        return served, served
+
     async def _lookup_model_rates(self, model: str):
         """
         Resolve input/output USD-per-1M rates for a model id.
