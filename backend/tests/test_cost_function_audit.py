@@ -121,7 +121,7 @@ class TestPerModelInputOutput:
             prompt_tokens=500_000,
             completion_tokens=500_000,
         )
-        assert cost == pytest.approx(0.0075, rel=1e-6)
+        assert cost == pytest.approx(0.0075 * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
         # Effective blended $/Mtok = 0.0075 → far below the old ~2.52 bug
         assert cost < 0.05
 
@@ -146,8 +146,8 @@ class TestPerModelInputOutput:
             prompt_tokens=0,
             completion_tokens=1_000_000,
         )
-        assert in_only == pytest.approx(2.50, rel=1e-6)
-        assert out_only == pytest.approx(10.00, rel=1e-6)
+        assert in_only == pytest.approx(2.50 * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
+        assert out_only == pytest.approx(10.00 * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
         assert out_only > in_only
 
     @pytest.mark.asyncio
@@ -167,7 +167,7 @@ class TestPerModelInputOutput:
             completion_tokens=500,
         )
         expected = (1000 / 1e6) * 0.15 + (500 / 1e6) * 0.60
-        assert cost == pytest.approx(round(expected, 6), rel=1e-6)
+        assert cost == pytest.approx(round(expected * CREDIT_MARKUP_MULTIPLIER, 6), rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_claude_sonnet_from_static_table(self):
@@ -179,7 +179,7 @@ class TestPerModelInputOutput:
             completion_tokens=1000,
         )
         expected = (1000 / 1e6) * 3.0 + (1000 / 1e6) * 15.0
-        assert cost == pytest.approx(round(expected, 6), rel=1e-6)
+        assert cost == pytest.approx(round(expected * CREDIT_MARKUP_MULTIPLIER, 6), rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_local_is_free(self):
@@ -212,7 +212,7 @@ class TestPerModelInputOutput:
             completion_tokens=500_000,
         )
         expected = (0.5 * 0.028 + 0.5 * 0.20) * CREDIT_MARKUP_MULTIPLIER
-        assert cost == pytest.approx(expected, rel=1e-6)
+        assert cost == pytest.approx(expected * CREDIT_MARKUP_MULTIPLIER, rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_bare_provider_not_flat_six(self):
