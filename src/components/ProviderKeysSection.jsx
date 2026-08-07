@@ -176,7 +176,25 @@ export default function ProviderKeysSection({
       keyFormat: 'API key from Ollama Cloud',
       customUrl: false
     },
-    custom: {
+    deepseek: {
+      name: 'DeepSeek',
+      icon: '🐋',
+      color: 'from-indigo-500 to-blue-600',
+      description: 'DeepSeek chat and reasoner models'
+    },
+    siliconflow: {
+      name: 'SiliconFlow',
+      icon: '💠',
+      color: 'from-cyan-500 to-teal-600',
+      description: 'SiliconFlow OpenAI-compatible models'
+    },
+    dashscope: {
+      name: 'DashScope',
+      icon: '☁️',
+      color: 'from-orange-500 to-amber-600',
+      description: 'Alibaba DashScope (Qwen) compatible API'
+    },
+        custom: {
       name: 'Custom Provider',
       icon: '⚙️',
       color: 'from-gray-500 to-slate-500',
@@ -194,11 +212,9 @@ export default function ProviderKeysSection({
   const loadProviders = async () => {
     setLoading(true);
     try {
-      // Add timestamp to prevent caching
+      // PLATFORM keys only (llm_providers). Personal BYOK lives at Account → API Keys.
       const timestamp = new Date().getTime();
-
-      // Fetch all supported providers (including unconfigured ones)
-      const providersResponse = await fetch(`/api/v1/byok/providers?_t=${timestamp}`, {
+      const providersResponse = await fetch(`/api/v1/llm/admin/system-keys?_t=${timestamp}`, {
         credentials: 'include',
         cache: 'no-cache',
         headers: {
@@ -209,49 +225,31 @@ export default function ProviderKeysSection({
 
       if (!providersResponse.ok) {
         const errorData = await providersResponse.json().catch(() => ({}));
-        console.error('Failed to load providers:', providersResponse.status, errorData);
+        console.error('Failed to load platform providers:', providersResponse.status, errorData);
         setProviders([]);
-        showToast('error', `Failed to load providers: ${errorData.detail || providersResponse.statusText}`);
+        showToast('error', `Failed to load platform providers: ${errorData.detail || providersResponse.statusText}`);
         return;
       }
 
-      const allProviders = await providersResponse.json();
+      const payload = await providersResponse.json();
+      const list = Array.isArray(payload?.providers) ? payload.providers : (Array.isArray(payload) ? payload : []);
 
-      // Fetch configured keys for details (key preview, test status)
-      const keysResponse = await fetch(`/api/v1/byok/keys?_t=${timestamp}`, {
-        credentials: 'include',
-        cache: 'no-cache',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      });
-
-      const configuredKeys = keysResponse.ok ? await keysResponse.json() : [];
-
-      // Merge providers with key details
-      const providersWithStatus = allProviders.map(provider => {
-        const keyDetails = Array.isArray(configuredKeys)
-          ? configuredKeys.find(k => k.provider === provider.id)
-          : null;
-
-        return {
-          id: provider.id,
-          provider_type: provider.id,
-          name: provider.name,
-          key_source: provider.configured ? 'database' : 'not_set',
-          key_preview: keyDetails?.key_preview || null,
-          last_tested: keyDetails?.last_tested || null,
-          test_status: keyDetails?.test_status || null,
-          configured: provider.configured
-        };
-      });
+      const providersWithStatus = list.map(provider => ({
+        id: provider.id,
+        provider_type: provider.provider_type || provider.type || provider.id,
+        name: provider.name,
+        key_source: provider.key_source || (provider.has_db_key ? 'database' : (provider.has_env_key ? 'environment' : 'not_set')),
+        key_preview: provider.key_preview || null,
+        last_tested: provider.last_tested || null,
+        test_status: provider.test_status || null,
+        configured: provider.key_source === 'database' || provider.has_db_key === true
+      }));
 
       setProviders(providersWithStatus);
     } catch (error) {
-      console.error('Error loading providers:', error);
+      console.error('Error loading platform providers:', error);
       setProviders([]);
-      showToast('error', 'Network error loading providers');
+      showToast('error', 'Network error loading platform providers');
     } finally {
       setLoading(false);
     }
@@ -287,19 +285,18 @@ export default function ProviderKeysSection({
 
     setSavingKey(true);
     try {
+      // Write PLATFORM key into llm_providers via system-keys (NOT personal BYOK)
+      const providerId = selectedProvider.id;
       const requestBody = {
-        provider: selectedProvider.id,
-        key: apiKeyInput.trim()
+        api_key: apiKeyInput.trim()
       };
-
-      // Add custom provider fields if applicable
-      if (selectedProvider.id === 'custom') {
-        requestBody.label = customProviderName.trim();
-        requestBody.endpoint = customProviderUrl.trim();
+      if (selectedProvider.provider_type === 'custom' || selectedProvider.id === 'custom') {
+        requestBody.name = customProviderName.trim();
+        requestBody.base_url = customProviderUrl.trim();
       }
 
-      const response = await fetch(`/api/v1/byok/keys/add`, {
-        method: 'POST',
+      const response = await fetch(`/api/v1/llm/admin/system-keys/${providerId}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(requestBody)
@@ -337,7 +334,7 @@ export default function ProviderKeysSection({
   const handleTestKey = async (providerId) => {
     setTestingProvider(providerId);
     try {
-      const response = await fetch(`/api/v1/byok/keys/test/${providerId}`, {
+      const response = await fetch(`/api/v1/llm/admin/system-keys/${providerId}/test`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -345,10 +342,10 @@ export default function ProviderKeysSection({
       const result = await response.json();
 
       if (response.ok && result.success) {
-        showToast('success', result.message || `${result.provider_name || 'Provider'} key is valid!`);
+        showToast('success', result.message || `${result.provider_name || 'Provider'} platform key is valid!`);
         await loadProviders();
       } else {
-        showToast('error', result.message || 'Key validation failed');
+        showToast('error', result.message || result.detail || 'Key validation failed');
       }
     } catch (error) {
       console.error('Error testing key:', error);
@@ -363,13 +360,13 @@ export default function ProviderKeysSection({
       const provider = providers.find(p => p.id === providerId);
       const providerName = provider ? (providerInfo[provider.provider_type]?.name || provider.name) : 'Provider';
 
-      const response = await fetch(`/api/v1/byok/keys/${providerId}`, {
+      const response = await fetch(`/api/v1/llm/admin/system-keys/${providerId}`, {
         method: 'DELETE',
         credentials: 'include'
       });
 
       if (response.ok) {
-        showToast('info', `${providerName} key deleted. Will use environment fallback.`);
+        showToast('info', `${providerName} platform key deleted. Will use environment fallback.`);
         setConfirmDelete(null);
         await loadProviders();
 
@@ -448,7 +445,7 @@ export default function ProviderKeysSection({
               <KeyIcon className="h-6 w-6 text-purple-400" />
             </div>
             <div>
-              <h3 className={`text-lg font-semibold ${themeClasses.text}`}>Provider API Keys</h3>
+              <h3 className={`text-lg font-semibold ${themeClasses.text}`}>Platform Provider Keys</h3>
               <p className={`text-sm ${themeClasses.subtext}`}>
                 {Array.isArray(providers) ? providers.filter(p => p.key_source !== 'not_set').length : 0} providers configured
               </p>
@@ -466,9 +463,9 @@ export default function ProviderKeysSection({
             <KeyIcon className="h-6 w-6 text-purple-400" />
           </div>
           <div>
-            <h3 className={`text-lg font-semibold ${themeClasses.text}`}>Provider API Keys</h3>
+            <h3 className={`text-lg font-semibold ${themeClasses.text}`}>Platform Provider Keys</h3>
             <p className={`text-sm ${themeClasses.subtext}`}>
-              Configure LLM provider credentials
+              Platform provider credentials (shared by every app and agent)
             </p>
           </div>
         </div>

@@ -470,6 +470,9 @@ class SystemKeyManager:
                         {'type': 'mistral', 'name': 'Mistral'},
                         {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
                         {'type': 'huggingface', 'name': 'HuggingFace'},
+                        {'type': 'deepseek', 'name': 'DeepSeek'},
+                        {'type': 'siliconflow', 'name': 'SiliconFlow'},
+                        {'type': 'dashscope', 'name': 'DashScope'},
                         {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
                         {'type': 'custom', 'name': 'Custom Provider'}
                     ]
@@ -486,15 +489,31 @@ class SystemKeyManager:
                     if not provider_type:
                         raise HTTPException(status_code=400, detail="Invalid provider ID")
 
+                    BASE_URLS = {
+                        'openrouter': 'https://openrouter.ai/api/v1',
+                        'openai': 'https://api.openai.com/v1',
+                        'anthropic': 'https://api.anthropic.com/v1',
+                        'google': 'https://generativelanguage.googleapis.com/v1beta',
+                        'groq': 'https://api.groq.com/openai/v1',
+                        'together': 'https://api.together.xyz/v1',
+                        'mistral': 'https://api.mistral.ai/v1',
+                        'deepseek': 'https://api.deepseek.com/v1',
+                        'siliconflow': 'https://api.siliconflow.com/v1',
+                        'dashscope': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+                        'ollama-cloud': 'https://ollama.com/api',
+                    }
+                    api_base = BASE_URLS.get(provider_type)
+
                     # Insert or update provider
                     await conn.execute("""
-                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, created_at, updated_at, api_key_updated_at)
-                        VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW(), NOW())
+                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, priority, api_base_url, created_at, updated_at, api_key_updated_at)
+                        VALUES ($1, $2, $3, $4, TRUE, 100, $5, NOW(), NOW(), NOW())
                         ON CONFLICT (name) DO UPDATE
                         SET api_key_encrypted = $3,
                             api_key_source = $4,
-                            api_key_updated_at = NOW()
-                    """, provider_name, provider_type, encrypted, source)
+                            api_key_updated_at = NOW(),
+                            api_base_url = COALESCE(llm_providers.api_base_url, $5)
+                    """, provider_name, provider_type, encrypted, source, api_base)
                     logger.info(f"Created/updated provider {provider_name} ({provider_type}) with system key")
                 else:
                     # Regular UUID - update existing provider
@@ -586,6 +605,9 @@ class SystemKeyManager:
                 {'type': 'mistral', 'name': 'Mistral'},
                 {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
                 {'type': 'huggingface', 'name': 'HuggingFace'},
+                {'type': 'deepseek', 'name': 'DeepSeek'},
+                {'type': 'siliconflow', 'name': 'SiliconFlow'},
+                {'type': 'dashscope', 'name': 'DashScope'},
                 {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
                 {'type': 'custom', 'name': 'Custom Provider'}
             ]
@@ -1264,6 +1286,48 @@ async def chat_completions(
                 }
 
         # Call provider API directly
+        # OpenRouter accepts UC metadata; direct OpenAI-compatible providers (OpenAI,
+        # DeepSeek, SiliconFlow, etc.) reject non-string metadata values. Strip for them.
+        provider_type_for_meta = ''
+        try:
+            if not using_byok and provider is not None:
+                provider_type_for_meta = (provider.get('type') or '').lower()
+                provider_name_for_meta = (provider.get('name') or '').lower()
+            else:
+                provider_name_for_meta = (detected_provider or '').lower()
+                provider_type_for_meta = provider_name_for_meta
+        except Exception:
+            provider_name_for_meta = ''
+        is_openrouterish = (
+            'openrouter' in provider_type_for_meta
+            or 'openrouter' in provider_name_for_meta
+            or 'openrouter.ai' in (base_url or '')
+        )
+        if not is_openrouterish:
+            proxy_request.pop('metadata', None)
+            proxy_request.pop('user', None)
+            # Keep model id as the provider expects (do not force OpenRouter org/model form)
+            if request.model:
+                proxy_request['model'] = request.model
+
+        # Anthropic Messages API uses x-api-key, not Bearer.
+        if ('anthropic' in provider_type_for_meta) or ('anthropic' in provider_name_for_meta) or ('api.anthropic.com' in (base_url or '')):
+            api_key_hdr = None
+            auth = headers.get('Authorization') or ''
+            if auth.lower().startswith('bearer '):
+                api_key_hdr = auth.split(' ', 1)[1]
+            if api_key_hdr:
+                headers = {
+                    'x-api-key': api_key_hdr,
+                    'anthropic-version': '2023-06-01',
+                    'content-type': 'application/json',
+                }
+                # Anthropic messages endpoint is /v1/messages not /chat/completions
+                # Keep chat/completions path only if base already points at a compatible proxy.
+                if base_url.rstrip('/').endswith('/v1') and 'anthropic.com' in base_url:
+                    # Use messages API path by rewriting base_url consumer below via flag
+                    pass
+
         # Handle streaming vs non-streaming requests differently
         if request.stream:
             # STREAMING PATH: Return Server-Sent Events (SSE)
@@ -3393,6 +3457,72 @@ async def test_provider_api_key(provider: str, api_key: str) -> Dict:
                 else:
                     return {'success': False, 'message': f'API error: {response.status_code}'}
 
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('deepseek',):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.deepseek.com/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid DeepSeek key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('siliconflow', 'silicon flow'):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.siliconflow.cn/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', data if isinstance(data, list) else []))
+                    return {
+                        'success': True,
+                        'message': f'Valid SiliconFlow key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('dashscope',):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid DashScope key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
         except Exception as e:
             return {'success': False, 'message': f'Test failed: {str(e)}'}
 

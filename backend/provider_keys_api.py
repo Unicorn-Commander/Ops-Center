@@ -127,7 +127,37 @@ PROVIDER_CONFIGS = {
         'key_format': 'Bearer ...',
         'description': 'Mistral Large, Medium, Small'
     },
-    'custom': {
+    'deepseek': {
+        'display_name': 'DeepSeek',
+        'test_url': 'https://api.deepseek.com/v1/models',
+        'test_method': 'GET',
+        'auth_type': 'bearer',
+        'headers': {},
+        'key_format': 'sk-...',
+        'description': 'DeepSeek chat and reasoner models',
+        'base_url': 'https://api.deepseek.com/v1'
+    },
+    'siliconflow': {
+        'display_name': 'SiliconFlow',
+        'test_url': 'https://api.siliconflow.com/v1/models',
+        'test_method': 'GET',
+        'auth_type': 'bearer',
+        'headers': {},
+        'key_format': 'sk-...',
+        'description': 'SiliconFlow OpenAI-compatible models',
+        'base_url': 'https://api.siliconflow.com/v1'
+    },
+    'dashscope': {
+        'display_name': 'DashScope',
+        'test_url': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models',
+        'test_method': 'GET',
+        'auth_type': 'bearer',
+        'headers': {},
+        'key_format': 'sk-...',
+        'description': 'Alibaba DashScope (Qwen) compatible API',
+        'base_url': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+    },
+        'custom': {
         'display_name': 'Custom Endpoint',
         'test_url': None,  # User-provided
         'test_method': 'GET',
