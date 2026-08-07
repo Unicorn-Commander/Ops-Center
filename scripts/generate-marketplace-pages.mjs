@@ -1,21 +1,37 @@
 #!/usr/bin/env node
 
-// Pre-renders the public marketplace (index + one page per listing) into
-// public/marketplace/. These files are what crawlers, unfurls, and agents
-// see; the SPA re-renders the same markup for logged-out humans. Task 14
-// gave both surfaces the market-square skin; the honesty skeleton (real
-// listings only, verified trust claims, no invented numbers) is task 12's
-// and is not negotiable.
+// Pre-renders the public marketplace into public/marketplace/:
+//   index.html, self-host/index.html, and one page per listing.
+//
+// These files are what crawlers, unfurls, and agents see; the SPA re-renders
+// the same markup for logged-out humans. Both surfaces share
+// public/marketplace/marketplace.css, so ANY change here must land in
+// src/pages/public/Marketplace.jsx too or the twins diverge silently.
+//
+// DIRECTION "INSTRUMENT": the catalog is a ledger, not a card grid, and the
+// signature moment is a deployment matrix whose numbers are computed HERE, at
+// build time, from the listing records. The client only swaps between strings
+// this file already proved. Nothing counts in the browser.
+//
+// The honesty skeleton is not negotiable: real listings only, verified trust
+// claims, no invented numbers, no fake popularity, one deliberately empty
+// stall, and no price rendered anywhere until a real one exists.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LISTINGS, PRICE_TBD, SUITE } from '../src/data/marketplaceListings.js';
+// Everything that is not markup comes from the shared system module, which the
+// SPA twin imports too. That is what keeps the two surfaces from drifting.
+import {
+  AUDIENCES, CREW, CREW_NOTE, CSS_VERSION, GLYPH, HEADLINES, LIT, PLAIN_TRUTH,
+  READOUTS, SELF_HOSTABLE, TARGETS, THEME_BOOTSTRAP, TOTAL, accessClass,
+  egressShort, hostOf, isSelfHostable, pad2, priceText, supports,
+} from '../src/data/marketplaceSystem.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outputRoot = resolve(here, '../public/marketplace');
 const origin = 'https://unicorncommander.ai';
-const CSS_VERSION = '20260807c';
 
 const escapeHtml = (value = '') => String(value)
   .replaceAll('&', '&amp;')
@@ -24,47 +40,21 @@ const escapeHtml = (value = '') => String(value)
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
-const absolute = (path) => path?.startsWith('http') ? path : `${origin}${path}`;
-const accessClass = (access) => access === 'Available now' ? 'available' : 'development';
-const priceText = (listing) => {
-  if (listing.price && listing.price !== PRICE_TBD) return listing.price;
-  if (listing.free_tier) return 'Free tier available';
-  return '';
+const absolute = (path) => (path?.startsWith('http') ? path : `${origin}${path}`);
+
+// Per-listing identity. Product colour appears ONLY as the rail chip and the
+// plate hairline: it never tints text, never tints a background, never becomes
+// a gradient.
+const brandStyle = (listing) => {
+  const parts = [];
+  if (listing.brand_primary) parts.push(`--b:${listing.brand_primary}`);
+  if (listing.brand_accent || listing.brand_primary) parts.push(`--ba:${listing.brand_accent || listing.brand_primary}`);
+  if (listing.plate) parts.push(`--plate:${listing.plate}`);
+  return parts.length ? ` style="${escapeHtml(parts.join(';'))}"` : '';
 };
 
-// Per-card brand identity. Colors come from Brand-Ops tokens; falls back to
-// the page's own palette for anything unlisted.
-const brandStyle = (listing) => listing.brand_primary
-  ? ` style="--b:${escapeHtml(listing.brand_primary)};--ba:${escapeHtml(listing.brand_accent || listing.brand_primary)}"`
-  : '';
+// ── HEAD ────────────────────────────────────────────────────────────────────
 
-// The designed deployment-badge system: one icon per runtime home,
-// consistent across every card. Matched by prefix so "BYOK (ACE Music)"
-// gets the key.
-const DEPLOY_ICONS = [
-  ['Local app', '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/>'],
-  ['Unicorn Cloud', '<path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 18.6 11 3.6 3.6 0 0 1 18 18Z"/>'],
-  ['Hybrid', '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor" stroke="none"/>'],
-  ['BYOK', '<circle cx="7.5" cy="12" r="3.2"/><path d="M10.7 12H20"/><path d="M16.6 12v3"/><path d="M19.6 12v2.2"/>'],
-  ['Self-host', '<rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13" width="16" height="6" rx="1.5"/><path d="M7.2 8h.01M7.2 16h.01"/>'],
-];
-const deployIcon = (option) => {
-  const hit = DEPLOY_ICONS.find(([prefix]) => option.startsWith(prefix));
-  return hit
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${hit[1]}</svg>`
-    : '';
-};
-
-const deploymentList = (listing) => `
-  <ul class="deployment" aria-label="Where it runs">
-    ${listing.deployment_options.map((option) => `<li>${deployIcon(option)}${escapeHtml(option)}</li>`).join('')}
-  </ul>`;
-
-const accessBadges = (listing) => `
-  <div class="listing-meta">
-    <span class="badge ${accessClass(listing.access)}">${escapeHtml(listing.access)}</span>
-    ${listing.dogfood ? '<span class="badge dogfood">We run our company on this</span>' : ''}
-  </div>`;
 
 const pageHead = ({ title, description, canonical, image, jsonLd = null }) => `
   <head>
@@ -74,137 +64,207 @@ const pageHead = ({ title, description, canonical, image, jsonLd = null }) => `
     <meta name="description" content="${escapeHtml(description)}">
     <link rel="canonical" href="${escapeHtml(canonical)}">
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Unicorn Commander">
     <meta property="og:title" content="${escapeHtml(title)}">
     <meta property="og:description" content="${escapeHtml(description)}">
     <meta property="og:url" content="${escapeHtml(canonical)}">
     <meta property="og:image" content="${escapeHtml(absolute(image))}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${escapeHtml(title)}">
     <meta name="twitter:description" content="${escapeHtml(description)}">
     <meta name="twitter:image" content="${escapeHtml(absolute(image))}">
     <link rel="icon" type="image/webp" href="/logos/uc-mark-colonel.webp">
+    <script>${THEME_BOOTSTRAP}</script>
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/marketplace/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/marketplace/fonts/manrope-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/marketplace/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/marketplace/marketplace.css?v=${CSS_VERSION}">
     ${jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd).replaceAll('<', '\\u003c')}</script>` : ''}
   </head>`;
 
+// Audience order invariant: the same three items, in the same order, in the
+// header, the hero, and the footer.
 const header = () => `
   <header class="site-header">
     <div class="shell">
       <a class="brand" href="/marketplace">
-        <img src="/logos/uc-mark-colonel.webp" alt="">
+        <img src="/logos/uc-mark-colonel.webp" alt="" width="30" height="30">
         <span>Unicorn Commander</span>
       </a>
       <nav class="nav" aria-label="Primary">
-        <a href="/marketplace#listings">Products</a>
-        <a href="/marketplace#ecosystem">The platform</a>
-        <a href="/marketplace#business-crew">The business crew</a>
-        <a class="sign-in" href="/auth/login">Sign in</a>
+        <a class="aud-buy" href="/marketplace#catalog">Products</a>
+        <a class="aud-publish" href="/marketplace#catalog">Publish</a>
+        <a class="aud-host" href="/marketplace/self-host">Self-host</a>
+        <a href="/marketplace#platform">The platform</a>
+        <a href="/auth/login">Sign in</a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch colour theme">Theme</button>
       </nav>
     </div>
   </header>`;
 
 const footer = () => `
   <footer class="site-footer">
-    <div class="shell">
-      <span>Built by Magic Unicorn in Charleston, South Carolina.</span>
-      <span><a href="https://magicunicorn.dev/log">Build log</a> · <a href="https://magicunicorn.dev/book/?product=marketplace-publisher">Become a publisher</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
+    <div class="shell footer-grid">
+      <div class="footer-lockup">
+        <span class="footer-sigil" aria-hidden="true"><img src="/logos/uc-mark-colonel.webp" alt="" width="18" height="18"></span>
+        <span>Built by Magic Unicorn in Charleston, South Carolina.</span>
+      </div>
+      <nav class="footer-plinth" aria-label="Audiences">
+        <a class="aud-buy" href="/marketplace#catalog">Buy an AI employee</a>
+        <a class="aud-publish" href="https://magicunicorn.dev/book/?product=marketplace-publisher">Publish your own</a>
+        <a class="aud-host" href="/marketplace/self-host">Host the whole platform</a>
+      </nav>
+      <nav class="footer-plinth" aria-label="More">
+        <a href="https://magicunicorn.dev/log">Build log</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </nav>
     </div>
   </footer>`;
 
-const listingCard = (listing) => {
-  const outcome = listing.slug === 'meeting-ops' || listing.slug === 'accounting-ops'
-    ? 'business'
-    : listing.slug === 'center-deep-research' ? 'research' : 'music';
-  const price = priceText(listing);
+// The theme toggle is the only page script besides the legend. Keep it tiny.
+const THEME_SCRIPT = `
+      document.querySelectorAll('[data-theme-toggle]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+          document.documentElement.dataset.theme = next;
+          document.documentElement.style.colorScheme = next;
+          try { localStorage.setItem('mu-theme', next); } catch (e) {}
+        });
+      });`;
+
+// ── LEDGER ──────────────────────────────────────────────────────────────────
+
+const plate = (listing, extraClass = '') => `
+            <div class="plate ${extraClass}">
+              <img src="${escapeHtml(listing.mascot)}" alt="${escapeHtml(listing.mascot_alt || '')}" loading="lazy" width="96" height="96">
+            </div>
+            <span class="partno mono">${escapeHtml(listing.part)} \u00B7 ${escapeHtml((listing.source_license || '').toUpperCase())}</span>`;
+
+const runsCell = (listing) => `
+          <ul class="runs-list">
+            ${(listing.deployment_options || []).map((o) => `<li${o.startsWith('Self-host') ? ' class="is-selfhost"' : ''}>${escapeHtml(o)}</li>`).join('')}
+          </ul>`;
+
+// Source renders the exact licence string as a permanent column, at the same
+// weight as Access, never as a footer badge. The LINK appears only when the
+// repository answered 200 to an anonymous fetch; otherwise the licence stands
+// alone and the row points at /marketplace/self-host instead.
+const sourceCell = (listing) => (listing.source_url
+  ? `<a href="${escapeHtml(listing.source_url)}">${escapeHtml(listing.source_license)}</a>`
+  : `${escapeHtml(listing.source_license)}<br><a class="micro" href="/marketplace/self-host">Self-host guide</a>`);
+
+const ledgerRow = (listing, i) => {
+  const host = hostOf(listing.cta?.href || listing.canonical_url);
   return `
-    <article class="stall" data-outcome="${outcome}"${brandStyle(listing)}>
-      <div class="stall-awning"></div>
-      <div class="stall-body">
-        <div class="stall-info">
-          ${accessBadges(listing)}
-          <h3 class="stall-name"><a href="/marketplace/${escapeHtml(listing.slug)}">${escapeHtml(listing.name)}</a></h3>
-          <p class="publisher">by ${escapeHtml(listing.publisher)}</p>
-          <p class="tagline">${escapeHtml(listing.tagline)}</p>
-          ${deploymentList(listing)}
-          ${price ? `<p class="price-line">${escapeHtml(price)}</p>` : ''}
-          <a class="card-link" href="/marketplace/${escapeHtml(listing.slug)}">See what it does</a>
-          <details class="card-trust">
-            <summary>Trust and permissions</summary>
-            <p><strong>Can do:</strong> ${escapeHtml(listing.capabilities.join('; '))}.</p>
-            ${listing.approval_boundary ? `<p><strong>Waits for you:</strong> ${escapeHtml(listing.approval_boundary)}</p>` : ''}
-            <p><strong>Data egress:</strong> ${escapeHtml(listing.data_egress)}</p>
-            <p><strong>Source:</strong> <a href="${escapeHtml(listing.source_url)}">${escapeHtml(listing.source_license)}</a></p>
-          </details>
-        </div>
-        ${listing.mascot ? `
-        <div class="stall-keeper">
-          <img class="mascot" src="${escapeHtml(listing.mascot)}" alt="${escapeHtml(listing.mascot_alt || '')}">
-          ${listing.mascot_role ? `<span class="keeper-caption">${escapeHtml(listing.mascot_role)}</span>` : ''}
-        </div>` : ''}
-      </div>
-    </article>`;
+        <tr${brandStyle(listing)}>
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>${pad2(i + 1)}</td>
+          <td class="cell-art">${plate(listing)}</td>
+          <td class="cell-name">
+            <h3 class="product-name"><a href="/marketplace/${escapeHtml(listing.slug)}">${escapeHtml(listing.name)}</a></h3>
+            <p class="row-tagline">${escapeHtml(listing.tagline)}</p>
+            <p class="row-subline mono">${escapeHtml((listing.deployment_options || []).join(' \u00B7 '))} | ${escapeHtml(listing.source_license)} | Data leaves: ${escapeHtml(egressShort(listing))}</p>
+          </td>
+          <td><span class="pill pill-${accessClass(listing.access)}">${escapeHtml(listing.access)}</span></td>
+          <td class="col-runs">${runsCell(listing)}</td>
+          <td class="col-source license">${sourceCell(listing)}</td>
+          <td class="col-egress">${escapeHtml(egressShort(listing))}</td>
+          <td class="cell-action">
+            <a class="hostname" href="${escapeHtml(listing.cta.href)}">${escapeHtml(host)}<span class="arrow" aria-hidden="true">${GLYPH.ext}</span></a>
+            <a class="btn btn-secondary" href="/marketplace/${escapeHtml(listing.slug)}">${escapeHtml(listing.cta.label)}</a>
+          </td>
+        </tr>`;
 };
 
-// The crew, cast with the same approved Brand-Ops characters that keep the
-// stalls. Facts (who is available) mirror the listings; do not edit access
-// states here without editing the source of truth.
-const CREW = [
-  { name: 'Meeting-Ops', step: 'Meeting', mascot: '/marketplace/media/mascot-meeting-ops.webp', alt: 'The Meeting-Ops scribe, in headset', color: '#1b3a6b', blurb: 'Captures the conversation, decisions, owners, and due dates.', state: 'Available now' },
-  { name: 'Project-Ops', step: 'Decision', mascot: '/marketplace/media/mascot-project-ops.webp', alt: 'The Project-Ops coordinator, in beret', color: '#4f46e5', blurb: 'Turns agreed work into owned tasks with status and context.', state: 'In development' },
-  { name: 'Customer-Ops', step: 'Customer', mascot: '/marketplace/media/mascot-customer-ops.webp', alt: 'The Customer-Ops account keeper', color: '#FF5D73', blurb: 'Keeps the work tied to the customer and the promised outcome.', state: 'In development' },
-  { name: 'Accounting-Ops', step: 'Close', mascot: '/marketplace/media/mascot-accounting-ops.webp', alt: 'The Accounting-Ops bookkeeper, bowler hat and brass scale', color: '#0f766e', blurb: 'Drafts the invoice, traces the posting, and stops for approval where money matters.', state: 'In development' },
-];
-const HANDOFFS = ['Decisions + owners', 'Owned tasks, in context', 'The promised outcome'];
+// Row 06. It sits in the table with the shipping products on purpose.
+const openStallRow = () => `
+        <tr class="row-open" style="--b:var(--signal-warm)">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>${pad2(LISTINGS.length + 1)}</td>
+          <td class="cell-art">
+            <div class="plate"><span aria-hidden="true">+</span></div>
+            <span class="partno mono">UC-${pad2(LISTINGS.length + 1)} \u00B7 YOUR LICENSE</span>
+          </td>
+          <td class="cell-name">
+            <h3 class="product-name">This spot is for your app</h3>
+            <p class="row-tagline">The stalls are real products only, which is why one of them is empty. It stays empty until a real app fills it.</p>
+          </td>
+          <td><span class="pill pill-open">Open</span></td>
+          <td class="col-runs"><ul class="runs-list"><li>${GLYPH.unknown}</li></ul></td>
+          <td class="col-source license">${GLYPH.unknown}</td>
+          <td class="col-egress">${GLYPH.unknown}</td>
+          <td class="cell-action"><a class="publish-link" href="https://magicunicorn.dev/book/?product=marketplace-publisher">Publish on UC ${GLYPH.ext}</a></td>
+        </tr>`;
 
-const crewFlow = () => CREW.map((actor, i) => `
-      <article class="crew-actor" style="--b:${actor.color}">
-        <img class="mascot" src="${actor.mascot}" alt="${escapeHtml(actor.alt)}">
-        <h3>${escapeHtml(actor.name)}</h3>
-        <p class="crew-role">${escapeHtml(actor.blurb)}</p>
-        <span class="crew-state ${accessClass(actor.state)}">${escapeHtml(actor.state)}</span>
-      </article>
-      ${i < HANDOFFS.length ? `
-      <div class="crew-handoff" aria-label="Hands off: ${escapeHtml(HANDOFFS[i])}">
-        <span class="packet" aria-hidden="true"></span>
-        <span class="handoff-label">${escapeHtml(HANDOFFS[i])}</span>
-      </div>` : ''}`).join('');
+const ledger = () => `
+      <div class="ledger-scroll">
+        <table class="ledger">
+          <caption class="sr-only">Every product listed on the Unicorn Commander marketplace, with its access state, runtimes, source license, and data-egress answer.</caption>
+          <thead>
+            <tr>
+              <th class="colhead" scope="col">#<span class="colhead-note">index, not rank</span></th>
+              <th class="colhead" scope="col"><span class="sr-only">Character art</span></th>
+              <th class="colhead" scope="col">Product</th>
+              <th class="colhead" scope="col">Access</th>
+              <th class="colhead col-runs" scope="col">Runs where</th>
+              <th class="colhead col-source" scope="col">Source</th>
+              <th class="colhead col-egress" scope="col">Data leaves</th>
+              <th class="colhead" scope="col"><span class="sr-only">Go to product</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${LISTINGS.map(ledgerRow).join('')}
+            ${openStallRow()}
+          </tbody>
+        </table>
+      </div>`;
 
-const ecosystemSection = () => `
-    <section class="ecosystem" id="ecosystem">
-      <div class="shell">
-        <div class="section-head">
-          <h2>An ecosystem,<br>not a catalog.</h2>
-          <p>Identity, credits, the model gateway, and MCP tools are the ground. Our apps stand on it today. The stalls are real products only, which is why one of them is empty.</p>
+// ── MATRIX ──────────────────────────────────────────────────────────────────
+
+const matrixRow = (listing, i) => `
+          <tr${brandStyle(listing)}>
+            <td class="cell-index"><span class="chip" aria-hidden="true"></span>${pad2(i + 1)}</td>
+            <th scope="row">${escapeHtml(listing.name)}</th>
+            ${TARGETS.map((t) => {
+    const s = supports(listing, t);
+    const hatch = t.id === 'selfhost' && s === 'yes' ? ' hatch-cell' : '';
+    return `<td class="mcell${hatch}" data-col="${t.id}"><span class="sr-only">${s === 'yes' ? 'Supported' : s === 'no' ? 'Not supported' : 'Unverified'}</span><span aria-hidden="true">${GLYPH[s]}</span></td>`;
+  }).join('')}
+          </tr>`;
+
+const matrix = () => `
+      <div class="matrix-scroll">
+        <table class="matrix">
+          <caption class="sr-only">Deployment matrix: which runtime homes each product supports. Filled circle means supported, hollow circle means not supported, dash means unverified.</caption>
+          <thead>
+            <tr>
+              <th class="colhead" scope="col">#</th>
+              <th class="colhead" scope="col">Product</th>
+              ${TARGETS.map((t) => `<th class="colhead" scope="col" data-col="${t.id}">${escapeHtml(t.label)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${LISTINGS.map(matrixRow).join('')}
+            <tr class="row-open" style="--b:var(--signal-warm)">
+              <td class="cell-index"><span class="chip" aria-hidden="true"></span>${pad2(LISTINGS.length + 1)}</td>
+              <th scope="row">This spot is for your app</th>
+              ${TARGETS.map((t) => `<td class="mcell" data-col="${t.id}"><span class="sr-only">Unverified</span><span aria-hidden="true">${GLYPH.unknown}</span></td>`).join('')}
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+
+const legend = () => `
+      <div class="legend">
+        <p class="eyebrow">Which of these three are you?</p>
+        <div class="legend-control" role="group" aria-label="Audience">
+          ${AUDIENCES.map((a) => `<button class="legend-btn" type="button" data-aud="${a.id}" aria-pressed="false" style="--tone:var(${a.tone});--tone-ch:var(${a.tone}-ch)">${escapeHtml(a.verb)}</button>`).join('')}
         </div>
-        <div class="platform-diagram">
-          <div class="stall-row">
-            ${LISTINGS.map((listing) => `
-            <a class="mini-stall" href="/marketplace/${escapeHtml(listing.slug)}"${brandStyle(listing)}>
-              <img src="${escapeHtml(listing.icon)}" alt="" loading="lazy">
-              <strong>${escapeHtml(listing.name)}</strong>
-              <span>${escapeHtml(listing.access)}</span>
-            </a>`).join('')}
-            <div class="mini-stall open">
-              <span class="stall-hole" aria-hidden="true">+</span>
-              <strong>This spot is for your app</strong>
-              <a href="https://magicunicorn.dev/book/?product=marketplace-publisher">Become a publisher</a>
-            </div>
-          </div>
-          <div class="platform-rail" role="img" aria-label="The Unicorn Commander platform: identity and SSO, credits and metering, model gateway, MCP tools">
-            <span class="rail-title">The Unicorn Commander platform</span>
-            <span class="rail-cells">
-              <span class="rail-cell">Identity + SSO</span>
-              <span class="rail-cell">Credits + metering</span>
-              <span class="rail-cell">Model gateway</span>
-              <span class="rail-cell">MCP tools</span>
-            </span>
-          </div>
-        </div>
-        <p class="ecosystem-note">Self-hostable, AGPL at the core, or hosted in Unicorn Cloud. Apps built by other people run on the same rail ours do.</p>
-      </div>
-    </section>`;
+        <p class="small">This is a legend, not a filter. It never removes a product. It tells you what the three colours on this page mean.</p>
+      </div>`;
+
+// ── PAGE 1: THE INDEX ───────────────────────────────────────────────────────
 
 const indexJsonLd = {
   '@context': 'https://schema.org',
@@ -225,107 +285,186 @@ ${pageHead({
   title: 'Put AI to work | Unicorn Commander Marketplace',
   description: 'AI employees and creator tools that finish work on infrastructure you can own.',
   canonical: `${origin}/marketplace`,
-  image: '/logos/uc-og-colonel.png',
+  image: '/marketplace/media/og-marketplace.png',
   jsonLd: indexJsonLd,
 })}
 <body>
   ${header()}
   <main>
-    <section class="hero shell">
-      <div class="hero-main">
-        <div class="sunburst" aria-hidden="true"></div>
-        <p class="eyebrow">The Unicorn Commander marketplace</p>
-        <h1 id="marketplace-headline">Put AI to <em>work</em>.</h1>
-        <p class="hero-claim">Tell us the job. Take home finished work from AI employees and creator tools that run on infrastructure you can own.</p>
-      </div>
-      <aside class="hero-side">
-        <p class="plain-truth">Four real products. No empty shelves. No fake popularity contest.</p>
-        <p class="hero-hint">Every stall is a real product with a verified trust panel. New stalls open when they clear that bar.</p>
-      </aside>
-    </section>
-
-    <section class="doors-section shell" aria-labelledby="outcome-title">
-      <p class="section-kicker" id="outcome-title">What do you need done? Pick a door.</p>
-      <div class="doors">
-        <a class="door" href="#business-crew" data-filter="business" style="--b:#0f766e">
-          <span class="door-num">No. 01</span>
-          <strong class="door-title">Run my business</strong>
-          <span class="door-detail">Meetings to invoices</span>
-          <span class="door-go">Step in</span>
-        </a>
-        <a class="door" href="#listings" data-filter="research" style="--b:#0891b2">
-          <span class="door-num">No. 02</span>
-          <strong class="door-title">Research something</strong>
-          <span class="door-detail">Question to cited report</span>
-          <span class="door-go">Step in</span>
-        </a>
-        <a class="door" href="#listings" data-filter="music" style="--b:#a855f7">
-          <span class="door-num">No. 03</span>
-          <strong class="door-title">Make music</strong>
-          <span class="door-detail">Idea to owned track</span>
-          <span class="door-go">Step in</span>
-        </a>
+    <section class="hero">
+      <div class="shell hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow">The Unicorn Commander marketplace</p>
+          <h1 class="mast" id="marketplace-headline">Put AI to <em>work</em>.</h1>
+          <p class="lede hero-claim">Tell us the job. Take home finished work from AI employees and creator tools that run on infrastructure you can own.</p>
+          <p class="small">${escapeHtml(PLAIN_TRUTH)}</p>
+        </div>
+        <img class="colonel" src="/logos/The_Colonel.png" alt="The Colonel, the Unicorn Commander mark: a white unicorn in a navy beret with a rainbow mane and a gold horn" width="288" height="288">
       </div>
     </section>
 
-    <section class="catalog" id="listings">
-      <div class="shell">
-        <div class="section-head">
-          <h2>Choose the work,<br>not the software.</h2>
-          <p>Each stall says where the product runs. Open a listing for its verified capabilities, approval boundaries, source license, and data-egress answer.</p>
+    <section class="section-block" id="audiences" aria-labelledby="audiences-title">
+      <div class="shell railed">
+        <span class="rail-num">01</span>
+        <h2 class="section-title" id="audiences-title">Three ways in.<br>All of them real.</h2>
+        <div class="triptych">
+          ${AUDIENCES.map((a) => `
+          <a class="door" href="${escapeHtml(a.href)}" style="--door:var(${a.tone})">
+            <span class="door-n">${escapeHtml(a.n)}</span>
+            <h3 class="door-verb">${escapeHtml(a.verb)}</h3>
+            <p class="door-claim">${escapeHtml(a.claim)}</p>
+            <p class="door-proof">${escapeHtml(a.proof)}</p>
+            <span class="door-cta">${escapeHtml(a.cta)} ${GLYPH.ext}</span>
+          </a>`).join('')}
         </div>
-        <div class="stall-grid">
-          ${LISTINGS.map(listingCard).join('')}
-        </div>
+        ${legend()}
       </div>
     </section>
 
-    <section class="suite-section">
-      <div class="shell suite-card">
-        <div>
-          <p class="eyebrow">The bundle</p>
-          <h2>${escapeHtml(SUITE.name)}</h2>
-          <p>${escapeHtml(SUITE.tagline)}</p>
-        </div>
-        <div>
-          <span class="badge development">${escapeHtml(SUITE.access)}</span>
-          <ul class="suite-includes">${SUITE.includes.map((name) => `<li>${escapeHtml(name)}</li>`).join('')}</ul>
-          <a class="card-link" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(SUITE.cta.label)}</a>
-        </div>
+    <section class="section-block" id="catalog" aria-labelledby="catalog-title">
+      <div class="shell railed">
+        <span class="rail-num">02</span>
+        <h2 class="section-title" id="catalog-title">Choose the work,<br>not the software.</h2>
+        <p class="lede">Each row says where the product runs, what license it ships under, and whether your data leaves. Open a listing for its verified capabilities and approval boundaries.</p>
+        ${ledger()}
       </div>
     </section>
 
-    ${ecosystemSection()}
+    <section class="section-block" id="deployment" aria-labelledby="deployment-title">
+      <div class="shell railed">
+        <span class="rail-num">03</span>
+        <h2 class="section-title" id="deployment-title">Where it runs.<br>Your call.</h2>
+        <p class="lede">The same fleet, viewed along a different axis. ${GLYPH.yes} supported, ${GLYPH.no} not supported, ${GLYPH.unknown} unverified.</p>
+        ${matrix()}
+        <p class="readout mono" id="matrix-readout"
+           data-all="${escapeHtml(READOUTS.all.line)}"
+           data-buy="${escapeHtml(READOUTS.buy.line)}"
+           data-publish="${escapeHtml(READOUTS.publish.line)}"
+           data-host="${escapeHtml(READOUTS.host.line)}">${escapeHtml(READOUTS.all.line)}</p>
+        <p class="readout-caption" id="matrix-caption"
+           data-all="${escapeHtml(READOUTS.all.caption)}"
+           data-buy="${escapeHtml(READOUTS.buy.caption)}"
+           data-publish="${escapeHtml(READOUTS.publish.caption)}"
+           data-host="${escapeHtml(READOUTS.host.caption)}">${escapeHtml(READOUTS.all.caption)}</p>
+      </div>
+    </section>
 
-    <section class="crew" id="business-crew">
-      <div class="shell">
-        <div class="crew-intro">
-          <div><p class="eyebrow">One crew, shown honestly</p><h2>The I Have A Business To Run Crew</h2></div>
-          <p>The product is the handoff. Meetings become decisions. Decisions become assigned work. Customer work stays connected. Completed work becomes a draft invoice and an auditable ledger entry.</p>
+    <section class="section-block" id="platform" aria-labelledby="platform-title">
+      <div class="shell railed">
+        <span class="rail-num">04</span>
+        <h2 class="section-title" id="platform-title">An ecosystem,<br>not a catalog.</h2>
+        <p class="lede">Identity, credits, the model gateway, and MCP tools are the ground. Our apps stand on it today. The stalls are real products only, which is why one of them is empty.</p>
+        <div class="platform-rail">
+          <p class="eyebrow">The Unicorn Commander platform</p>
+          <div class="rail-cells">
+            <span class="rail-cell">Identity + SSO</span>
+            <span class="rail-cell">Credits + metering</span>
+            <span class="rail-cell">Model gateway</span>
+            <span class="rail-cell">MCP tools</span>
+          </div>
         </div>
-        <div class="crew-flow" aria-label="Business crew handoff">
-          ${crewFlow()}
+        <p class="prose" style="margin-top:var(--s-6)">Apps built by other people run on the same rail ours do. Self-hostable, or hosted in Unicorn Cloud. Each listing states its own license rather than inheriting a blanket claim.</p>
+      </div>
+    </section>
+
+    <section class="section-block" id="crew" aria-labelledby="crew-title">
+      <div class="shell railed">
+        <span class="rail-num">05</span>
+        <h2 class="section-title" id="crew-title">The I Have A Business<br>To Run Crew</h2>
+        <p class="lede">The product is the handoff. Meetings become decisions. Decisions become assigned work. Customer work stays connected. Completed work becomes a draft invoice and an auditable ledger entry.</p>
+        <div class="crew-register">
+          ${CREW.map((actor) => `
+          <article class="crew-member" style="--b:${escapeHtml(actor.color)}${actor.plate ? `;--plate:${escapeHtml(actor.plate)}` : ''}">
+            <div class="plate"><img src="${escapeHtml(actor.mascot)}" alt="${escapeHtml(actor.alt)}" loading="lazy" width="128" height="128"></div>
+            <h3 class="crew-name">${escapeHtml(actor.name)}</h3>
+            <span class="pill pill-${accessClass(actor.state)}">${escapeHtml(actor.state)}</span>
+            <p class="crew-blurb">${escapeHtml(actor.blurb)}</p>
+          </article>`).join('')}
         </div>
-        <p class="crew-note">You can use Meeting-Ops today. The remaining handoffs are in development, so this crew is not presented as an available bundle.</p>
+        <p class="prose" style="margin-top:var(--s-8)">${escapeHtml(CREW_NOTE)}</p>
+      </div>
+    </section>
+
+    <section class="section-block" id="suite" aria-labelledby="suite-title">
+      <div class="shell railed">
+        <span class="rail-num">06</span>
+        <p class="eyebrow">The bundle</p>
+        <h2 class="section-title" id="suite-title">${escapeHtml(SUITE.name)}</h2>
+        <p class="lede">${escapeHtml(SUITE.tagline)}</p>
+        <p style="margin-top:var(--s-5)"><span class="pill pill-development">${escapeHtml(SUITE.access)}</span></p>
+        <div class="rail-cells" style="margin-top:var(--s-6)">
+          ${SUITE.includes.map((name) => `<span class="rail-cell">${escapeHtml(name)}</span>`).join('')}
+        </div>
+        <p style="margin-top:var(--s-6)"><a class="btn btn-secondary" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(SUITE.cta.label)}</a></p>
       </div>
     </section>
   </main>
   ${footer()}
   <script>
     (() => {
-      // The joke rotates; the claim underneath never does (spine §7).
-      const headlines = [
-        'Put AI to <em>work</em>.',
-        'Meetings noted. Books <em>closed</em>.',
-        'Finished work <em>lives</em> here.',
-        'Own the magic. <em>Keep</em> the data.',
-      ];
+${THEME_SCRIPT}
+
+      // The joke rotates; the claim underneath never does.
+      const headlines = ${JSON.stringify(HEADLINES)};
       const headline = document.getElementById('marketplace-headline');
-      headline.innerHTML = headlines[Math.floor(Math.random() * headlines.length)];
-      document.querySelectorAll('[data-filter]').forEach((entry) => entry.addEventListener('click', () => {
-        const selected = entry.dataset.filter;
-        document.querySelectorAll('[data-outcome]').forEach((card) => { card.hidden = card.dataset.outcome !== selected; });
-        document.querySelectorAll('[data-filter]').forEach((door) => door.classList.toggle('selected', door === entry));
+      if (headline) headline.innerHTML = headlines[Math.floor(Math.random() * headlines.length)];
+
+      // The legend re-weights the matrix. It never counts: every string it can
+      // show was computed at build time and is sitting in a data- attribute.
+      const LIT = ${JSON.stringify(LIT)};
+      const TONE = ${JSON.stringify(Object.fromEntries(AUDIENCES.map((a) => [a.id, a.tone])))};
+      const readout = document.getElementById('matrix-readout');
+      const caption = document.getElementById('matrix-caption');
+      const buttons = [...document.querySelectorAll('[data-aud]')];
+      let current = 'all';
+
+      const apply = (id) => {
+        const lit = LIT[id] || LIT.all;
+        const tone = TONE[id];
+        document.querySelectorAll('.matrix [data-col]').forEach((cell) => {
+          const on = lit.includes(cell.dataset.col);
+          cell.classList.toggle('is-lit', on && id !== 'all');
+          cell.classList.toggle('is-dim', !on && id !== 'all');
+          if (tone && on) {
+            cell.style.setProperty('--tone', 'var(' + tone + ')');
+            cell.style.setProperty('--tone-ch', 'var(' + tone + '-ch)');
+          } else {
+            cell.style.removeProperty('--tone');
+            cell.style.removeProperty('--tone-ch');
+          }
+          // Machined hatch is the visual signature of self-host.
+          if (cell.classList.contains('hatch-cell')) {
+            cell.classList.toggle('hatch-on', id === 'host');
+          }
+        });
+        // HOST also lights the ledger's SOURCE column above.
+        document.querySelectorAll('.ledger .col-source').forEach((c) => {
+          c.classList.toggle('is-lit', id === 'host');
+          if (id === 'host') {
+            c.style.setProperty('--tone', 'var(--signal-violet)');
+          } else {
+            c.style.removeProperty('--tone');
+          }
+        });
+        buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.aud === id && id !== 'all')));
+
+        if (readout && caption) {
+          readout.classList.add('swapping');
+          caption.classList.add('swapping');
+          setTimeout(() => {
+            readout.textContent = readout.dataset[id] || readout.dataset.all;
+            caption.textContent = caption.dataset[id] || caption.dataset.all;
+            readout.classList.remove('swapping');
+            caption.classList.remove('swapping');
+          }, 180);
+        }
+        current = id;
+      };
+
+      buttons.forEach((b) => b.addEventListener('click', () => {
+        // Selecting the active position returns to the all-lit state, so there
+        // is always a way back to the full grid without a reload.
+        apply(current === b.dataset.aud ? 'all' : b.dataset.aud);
       }));
     })();
   </script>
@@ -334,6 +473,93 @@ ${pageHead({
 
 mkdirSync(outputRoot, { recursive: true });
 writeFileSync(resolve(outputRoot, 'index.html'), `${indexHtml.replace(/[ \t]+$/gm, '')}\n`);
+
+// ── PAGE 2: /marketplace/self-host ──────────────────────────────────────────
+// Audience 3 needs somewhere to land. Without this page the sovereignty
+// position is the only one of the three with no destination, which would make
+// it the weakest by structure no matter how it is coloured.
+
+const selfHostHtml = `<!doctype html>
+<html lang="en">
+${pageHead({
+  title: 'Self-host the whole platform | Unicorn Commander',
+  description: 'What it takes to run Unicorn Commander on your own hardware, product by product, with the exact license for each.',
+  canonical: `${origin}/marketplace/self-host`,
+  image: '/marketplace/media/og-marketplace.png',
+})}
+<body>
+  ${header()}
+  <main>
+    <section class="hero">
+      <div class="shell hero-inner">
+        <div class="hero-copy">
+          <a class="back" href="/marketplace">${'\u2190'} Marketplace</a>
+          <p class="eyebrow" style="color:var(--signal-violet)">No. 03 ${'\u00B7'} Host the whole platform</p>
+          <h1 class="page-title">Your rack.<br>Your data.<br>Same instrument.</h1>
+          <p class="lede">Moving to your hardware changes the ground, not the contents: same identity, same gateway, same MCP surface, seated somewhere else. This page is the honest inventory of what that costs you.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">01</span>
+        <h2 class="section-title">What ships, and under what license</h2>
+        <p class="lede">${pad2(SELF_HOSTABLE)} of ${pad2(TOTAL)} products are self-hostable today. Each states its own license. There is no blanket claim on this page because there is no blanket truth: one of these is Apache-2.0 and the rest are AGPL-3.0.</p>
+        <div class="ledger-scroll">
+          <table class="ledger">
+            <thead>
+              <tr>
+                <th class="colhead" scope="col">#</th>
+                <th class="colhead" scope="col">Product</th>
+                <th class="colhead" scope="col">Self-host</th>
+                <th class="colhead" scope="col">License</th>
+                <th class="colhead" scope="col">Source</th>
+                <th class="colhead" scope="col">What it takes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${LISTINGS.map((l, i) => `
+              <tr${brandStyle(l)}>
+                <td class="cell-index"><span class="chip" aria-hidden="true"></span>${pad2(i + 1)}</td>
+                <td class="cell-name"><h3 class="product-name"><a href="/marketplace/${escapeHtml(l.slug)}">${escapeHtml(l.name)}</a></h3></td>
+                <td><span class="${isSelfHostable(l) ? 'is-selfhost' : ''}">${isSelfHostable(l) ? GLYPH.yes + ' Yes' : GLYPH.no + ' Not yet'}</span></td>
+                <td class="license">${escapeHtml(l.source_license)}</td>
+                <td class="license">${l.source_url
+    ? `<a href="${escapeHtml(l.source_url)}">${escapeHtml(hostOf(l.source_url))}</a>`
+    : '<span class="micro">Repository is not public</span>'}</td>
+                <td>${escapeHtml(l.deployment_note || '')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="prose" style="margin-top:var(--s-8)">Where a source link is missing, the repository is not currently reachable without a login, so no link is shown. A source link that bounces an anonymous visitor to a sign-in page would undercut the exact claim this page exists to make, so the build refuses to render one.</p>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">02</span>
+        <h2 class="section-title">What does not change</h2>
+        <p class="lede">This is the argument, and it matters more than the count above.</p>
+        <div class="trust-grid">
+          <article class="trust-card"><h3>Identity</h3><p>The same Keycloak realm and SSO model. Your users, your realm, your session policy.</p></article>
+          <article class="trust-card"><h3>Model gateway</h3><p>The same gateway contract. Point it at your own hardware, your own keys, or Unicorn Cloud, per app.</p></article>
+          <article class="trust-card"><h3>MCP surface</h3><p>The same tools, under the same role-based permissions. Agents do not get a private back door when you self-host.</p></article>
+          <article class="trust-card"><h3>Credits and metering</h3><p>Still there, still auditable. On your hardware it measures your own consumption instead of billing it.</p></article>
+        </div>
+      </div>
+    </section>
+  </main>
+  ${footer()}
+  <script>(() => {${THEME_SCRIPT}})();</script>
+</body>
+</html>`;
+
+mkdirSync(resolve(outputRoot, 'self-host'), { recursive: true });
+writeFileSync(resolve(outputRoot, 'self-host', 'index.html'), `${selfHostHtml.replace(/[ \t]+$/gm, '')}\n`);
+
+// ── PAGE 3..N: ONE PER LISTING ──────────────────────────────────────────────
 
 for (const listing of LISTINGS) {
   const offer = {
@@ -351,6 +577,10 @@ for (const listing of LISTINGS) {
     offer.priceCurrency = 'USD';
   }
 
+  // og_image may legitimately be null (Project-Ops has no cleared plate yet).
+  // Fall back to the marketplace card rather than emitting a broken URL.
+  const ogImage = listing.og_image || '/marketplace/media/og-marketplace.png';
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -359,65 +589,76 @@ for (const listing of LISTINGS) {
     applicationCategory: listing.pillar,
     operatingSystem: listing.platforms || 'Web, self-hosted',
     author: { '@type': 'Organization', name: listing.publisher, url: 'https://magicunicorn.tech' },
-    image: absolute(listing.og_image),
+    image: absolute(ogImage),
     url: listing.canonical_url,
+    license: listing.source_license,
     offers: offer,
   };
-  const screenshot = listing.screenshot
-    ? `<figure><img src="${escapeHtml(listing.screenshot)}" alt="${escapeHtml(listing.screenshot_alt)}"><figcaption>Cleared product screenshot using fictional data.</figcaption></figure>`
-    : `<figure><img src="${escapeHtml(listing.og_image)}" alt="${escapeHtml(`${listing.name} brand art`)}"><figcaption>Brand art. A product screenshot is withheld until a current product view clears the two-pass public-image review.</figcaption></figure>`;
+
   const price = priceText(listing);
+  const host = hostOf(listing.cta?.href || listing.canonical_url);
+
   const detailHtml = `<!doctype html>
 <html lang="en">
 ${pageHead({
   title: `${listing.name} | Unicorn Commander Marketplace`,
   description: listing.tagline,
-  canonical: listing.canonical_url,
-  image: listing.og_image,
+  canonical: `${origin}/marketplace/${listing.slug}`,
+  image: ogImage,
   jsonLd,
 })}
 <body>
   ${header()}
   <main>
-    <div class="detail-stage"${brandStyle(listing)}>
-      <section class="detail-hero shell">
-        <div>
-          <a class="back" href="/marketplace">← Marketplace</a>
-          <p class="detail-eyebrow">${escapeHtml(listing.pillar)} · by ${escapeHtml(listing.publisher)}</p>
-          <h1>${escapeHtml(listing.name)}</h1>
-          <p class="tagline">${escapeHtml(listing.tagline)}</p>
-          ${accessBadges(listing)}
-          ${deploymentList(listing)}
-          ${price ? `<p class="price-line">${escapeHtml(price)}</p>` : ''}
-          <div class="detail-actions">
-            <a class="primary-link" href="${escapeHtml(listing.cta.href)}">${escapeHtml(listing.cta.label)}</a>
-            ${listing.secondary_cta ? `<a class="secondary-link" href="${escapeHtml(listing.secondary_cta.href)}">${escapeHtml(listing.secondary_cta.label)}</a>` : ''}
-          </div>
+    <section class="hero">
+      <div class="shell detail-hero"${brandStyle(listing)}>
+        <div class="detail-copy">
+          <a class="back" href="/marketplace">${'\u2190'} Marketplace</a>
+          <p class="eyebrow">${escapeHtml(listing.pillar)} ${'\u00B7'} ${escapeHtml(listing.part)} ${'\u00B7'} by ${escapeHtml(listing.publisher)}</p>
+          <h1 class="page-title">${escapeHtml(listing.name)}</h1>
+          <p class="lede">${escapeHtml(listing.tagline)}</p>
+          <p><span class="pill pill-${accessClass(listing.access)}">${escapeHtml(listing.access)}</span>${listing.dogfood ? ' <span class="pill pill-open">We run our company on this</span>' : ''}</p>
+          ${price ? `<p class="mono small">${escapeHtml(price)}</p>` : ''}
         </div>
-        ${listing.mascot ? `
-        <div class="detail-portrait">
-          <img class="mascot" src="${escapeHtml(listing.mascot)}" alt="${escapeHtml(listing.mascot_alt || '')}">
-          ${listing.mascot_role ? `<span class="keeper-caption">${escapeHtml(listing.mascot_role)}</span>` : ''}
-        </div>` : ''}
-      </section>
-    </div>
-    <section class="product-view shell"${brandStyle(listing)}>${screenshot}</section>
-    <section class="trust"${brandStyle(listing)}>
-      <div class="shell">
-        <p class="eyebrow">Trust, in plain language</p>
-        <h2>What it can touch.<br>Where it runs.</h2>
+        <div>
+          <div class="plate"><img src="${escapeHtml(listing.mascot)}" alt="${escapeHtml(listing.mascot_alt || '')}" width="240" height="240"></div>
+          <span class="partno mono">${escapeHtml(listing.part)} ${'\u00B7'} ${escapeHtml((listing.source_license || '').toUpperCase())}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">01</span>
+        <h2 class="section-title">What it can touch.<br>Where it runs.</h2>
         <div class="trust-grid">
           <article class="trust-card"><h3>What it can do</h3><ul>${listing.capabilities.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></article>
           ${listing.approval_boundary ? `<article class="trust-card"><h3>What waits for you</h3><p>${escapeHtml(listing.approval_boundary)}</p></article>` : ''}
-          <article class="trust-card"><h3>Where it runs</h3>${deploymentList(listing)}<p>${escapeHtml(listing.deployment_note)}</p></article>
+          <article class="trust-card"><h3>Where it runs</h3><ul>${(listing.deployment_options || []).map((o) => `<li${o.startsWith('Self-host') ? ' class="is-selfhost"' : ''}>${escapeHtml(o)}</li>`).join('')}</ul><p>${escapeHtml(listing.deployment_note)}</p></article>
           <article class="trust-card"><h3>Does data leave your network?</h3><p>${escapeHtml(listing.data_egress)}</p></article>
-          <article class="trust-card"><h3>Source</h3><p><a href="${escapeHtml(listing.source_url)}">${escapeHtml(listing.source_license)} source repository</a></p></article>
+          <article class="trust-card"><h3>Source license</h3><p>${escapeHtml(listing.source_license)}</p>${listing.source_url
+    ? `<p><a href="${escapeHtml(listing.source_url)}">Source and self-host ${GLYPH.ext}</a></p>`
+    : '<p class="small">The repository is not publicly reachable today, so no link is shown here. <a href="/marketplace/self-host">What self-hosting takes</a>.</p>'}</article>
         </div>
-        <p class="truth-note">Claims on this page are intentionally narrower than the roadmap. If a capability was not verified in current source or operator documentation, it is not listed.</p>
+        <p class="small" style="margin-top:var(--s-8);max-width:68ch">Claims on this page are intentionally narrower than the roadmap. If a capability was not verified in current source or operator documentation, it is not listed.</p>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">02</span>
+        <div class="threshold"${brandStyle(listing)}>
+          <p class="eyebrow">Leaving the marketplace</p>
+          <a class="hostname mono" href="${escapeHtml(listing.cta.href)}">${escapeHtml(host)}<span class="arrow" aria-hidden="true">${GLYPH.ext}</span></a>
+          <p class="threshold-note">You are leaving the marketplace. This page is served by Magic Unicorn at the host above, and it runs its own visual system: it will not look like this page.</p>
+          <p><a class="btn btn-primary" href="${escapeHtml(listing.cta.href)}">${escapeHtml(listing.cta.label)}</a>
+          ${listing.secondary_cta ? ` <a class="btn btn-secondary" href="${escapeHtml(listing.secondary_cta.href)}">${escapeHtml(listing.secondary_cta.label)}</a>` : ''}</p>
+        </div>
       </div>
     </section>
   </main>
   ${footer()}
+  <script>(() => {${THEME_SCRIPT}})();</script>
 </body>
 </html>`;
 
@@ -426,4 +667,6 @@ ${pageHead({
   writeFileSync(resolve(listingDir, 'index.html'), `${detailHtml.replace(/[ \t]+$/gm, '')}\n`);
 }
 
-console.log(`Generated marketplace index and ${LISTINGS.length} listing pages in ${outputRoot}`);
+console.log(`Generated marketplace index, self-host page, and ${LISTINGS.length} listing pages in ${outputRoot}`);
+console.log(`  readout(all):  ${READOUTS.all.line}`);
+console.log(`  readout(host): ${READOUTS.host.line}`);

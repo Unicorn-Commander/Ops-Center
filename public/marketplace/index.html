@@ -8,358 +8,485 @@
     <meta name="description" content="AI employees and creator tools that finish work on infrastructure you can own.">
     <link rel="canonical" href="https://unicorncommander.ai/marketplace">
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Unicorn Commander">
     <meta property="og:title" content="Put AI to work | Unicorn Commander Marketplace">
     <meta property="og:description" content="AI employees and creator tools that finish work on infrastructure you can own.">
     <meta property="og:url" content="https://unicorncommander.ai/marketplace">
-    <meta property="og:image" content="https://unicorncommander.ai/logos/uc-og-colonel.png">
+    <meta property="og:image" content="https://unicorncommander.ai/marketplace/media/og-marketplace.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Put AI to work | Unicorn Commander Marketplace">
     <meta name="twitter:description" content="AI employees and creator tools that finish work on infrastructure you can own.">
-    <meta name="twitter:image" content="https://unicorncommander.ai/logos/uc-og-colonel.png">
+    <meta name="twitter:image" content="https://unicorncommander.ai/marketplace/media/og-marketplace.png">
     <link rel="icon" type="image/webp" href="/logos/uc-mark-colonel.webp">
+    <script>(function(){try{var t=localStorage.getItem('mu-theme');var d=t||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=d;document.documentElement.style.colorScheme=d;}catch(e){}})()</script>
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/marketplace/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807c">
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Unicorn Commander Marketplace","description":"AI employees and creator tools that finish work on infrastructure you can own.","url":"https://unicorncommander.ai/marketplace","hasPart":[{"@type":"SoftwareApplication","name":"Meeting-Ops","url":"https://unicorncommander.ai/marketplace/meeting-ops"},{"@type":"SoftwareApplication","name":"Center Deep Research","url":"https://unicorncommander.ai/marketplace/center-deep-research"},{"@type":"SoftwareApplication","name":"Majiks Studio","url":"https://unicorncommander.ai/marketplace/majiks-studio"},{"@type":"SoftwareApplication","name":"Accounting-Ops","url":"https://unicorncommander.ai/marketplace/accounting-ops"}]}</script>
+    <link rel="preload" href="/marketplace/fonts/manrope-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/marketplace/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-6">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Unicorn Commander Marketplace","description":"AI employees and creator tools that finish work on infrastructure you can own.","url":"https://unicorncommander.ai/marketplace","hasPart":[{"@type":"SoftwareApplication","name":"Center Deep Research","url":"https://unicorncommander.ai/marketplace/center-deep-research"},{"@type":"SoftwareApplication","name":"Majiks Studio","url":"https://unicorncommander.ai/marketplace/majiks-studio"},{"@type":"SoftwareApplication","name":"Meeting-Ops","url":"https://unicorncommander.ai/marketplace/meeting-ops"},{"@type":"SoftwareApplication","name":"Project-Ops","url":"https://unicorncommander.ai/marketplace/project-ops"},{"@type":"SoftwareApplication","name":"Accounting-Ops","url":"https://unicorncommander.ai/marketplace/accounting-ops"}]}</script>
   </head>
 <body>
 
   <header class="site-header">
     <div class="shell">
       <a class="brand" href="/marketplace">
-        <img src="/logos/uc-mark-colonel.webp" alt="">
+        <img src="/logos/uc-mark-colonel.webp" alt="" width="30" height="30">
         <span>Unicorn Commander</span>
       </a>
       <nav class="nav" aria-label="Primary">
-        <a href="/marketplace#listings">Products</a>
-        <a href="/marketplace#ecosystem">The platform</a>
-        <a href="/marketplace#business-crew">The business crew</a>
-        <a class="sign-in" href="/auth/login">Sign in</a>
+        <a class="aud-buy" href="/marketplace#catalog">Products</a>
+        <a class="aud-publish" href="/marketplace#catalog">Publish</a>
+        <a class="aud-host" href="/marketplace/self-host">Self-host</a>
+        <a href="/marketplace#platform">The platform</a>
+        <a href="/auth/login">Sign in</a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch colour theme">Theme</button>
       </nav>
     </div>
   </header>
   <main>
-    <section class="hero shell">
-      <div class="hero-main">
-        <div class="sunburst" aria-hidden="true"></div>
-        <p class="eyebrow">The Unicorn Commander marketplace</p>
-        <h1 id="marketplace-headline">Put AI to <em>work</em>.</h1>
-        <p class="hero-claim">Tell us the job. Take home finished work from AI employees and creator tools that run on infrastructure you can own.</p>
-      </div>
-      <aside class="hero-side">
-        <p class="plain-truth">Four real products. No empty shelves. No fake popularity contest.</p>
-        <p class="hero-hint">Every stall is a real product with a verified trust panel. New stalls open when they clear that bar.</p>
-      </aside>
-    </section>
-
-    <section class="doors-section shell" aria-labelledby="outcome-title">
-      <p class="section-kicker" id="outcome-title">What do you need done? Pick a door.</p>
-      <div class="doors">
-        <a class="door" href="#business-crew" data-filter="business" style="--b:#0f766e">
-          <span class="door-num">No. 01</span>
-          <strong class="door-title">Run my business</strong>
-          <span class="door-detail">Meetings to invoices</span>
-          <span class="door-go">Step in</span>
-        </a>
-        <a class="door" href="#listings" data-filter="research" style="--b:#0891b2">
-          <span class="door-num">No. 02</span>
-          <strong class="door-title">Research something</strong>
-          <span class="door-detail">Question to cited report</span>
-          <span class="door-go">Step in</span>
-        </a>
-        <a class="door" href="#listings" data-filter="music" style="--b:#a855f7">
-          <span class="door-num">No. 03</span>
-          <strong class="door-title">Make music</strong>
-          <span class="door-detail">Idea to owned track</span>
-          <span class="door-go">Step in</span>
-        </a>
+    <section class="hero">
+      <div class="shell hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow">The Unicorn Commander marketplace</p>
+          <h1 class="mast" id="marketplace-headline">Put AI to <em>work</em>.</h1>
+          <p class="lede hero-claim">Tell us the job. Take home finished work from AI employees and creator tools that run on infrastructure you can own.</p>
+          <p class="small">Five real products. No empty shelves. No fake popularity contest.</p>
+        </div>
+        <img class="colonel" src="/logos/The_Colonel.png" alt="The Colonel, the Unicorn Commander mark: a white unicorn in a navy beret with a rainbow mane and a gold horn" width="288" height="288">
       </div>
     </section>
 
-    <section class="catalog" id="listings">
-      <div class="shell">
-        <div class="section-head">
-          <h2>Choose the work,<br>not the software.</h2>
-          <p>Each stall says where the product runs. Open a listing for its verified capabilities, approval boundaries, source license, and data-egress answer.</p>
-        </div>
-        <div class="stall-grid">
+    <section class="section-block" id="audiences" aria-labelledby="audiences-title">
+      <div class="shell railed">
+        <span class="rail-num">01</span>
+        <h2 class="section-title" id="audiences-title">Three ways in.<br>All of them real.</h2>
+        <div class="triptych">
 
-    <article class="stall" data-outcome="business" style="--b:#1b3a6b;--ba:#d4af37">
-      <div class="stall-awning"></div>
-      <div class="stall-body">
-        <div class="stall-info">
-
-  <div class="listing-meta">
-    <span class="badge available">Available now</span>
-    <span class="badge dogfood">We run our company on this</span>
-  </div>
-          <h3 class="stall-name"><a href="/marketplace/meeting-ops">Meeting-Ops</a></h3>
-          <p class="publisher">by Magic Unicorn</p>
-          <p class="tagline">Walk out of every meeting with a transcript, speaker-tagged notes, and action items already done. And your audio stays yours.</p>
-
-  <ul class="deployment" aria-label="Where it runs">
-    <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/></svg>Local app</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 18.6 11 3.6 3.6 0 0 1 18 18Z"/></svg>Unicorn Cloud</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13" width="16" height="6" rx="1.5"/><path d="M7.2 8h.01M7.2 16h.01"/></svg>Self-host</li>
-  </ul>
-          <p class="price-line">Free tier available</p>
-          <a class="card-link" href="/marketplace/meeting-ops">See what it does</a>
-          <details class="card-trust">
-            <summary>Trust and permissions</summary>
-            <p><strong>Can do:</strong> Records and transcribes meetings; Builds summaries, decisions, and action items; Runs the appliance path entirely on your network.</p>
-
-            <p><strong>Data egress:</strong> Self-hosted appliance: no. Hosted service: meeting data is processed in Unicorn Cloud.</p>
-            <p><strong>Source:</strong> <a href="https://github.com/Unicorn-Commander/meeting-ops-community">AGPL-3.0 (Community)</a></p>
-          </details>
+          <a class="door" href="#catalog" style="--door:var(--signal)">
+            <span class="door-n">No. 01</span>
+            <h3 class="door-verb">Buy an AI employee</h3>
+            <p class="door-claim">Hire one hosted. It shows up with an account, a credit balance, and a job.</p>
+            <p class="door-proof">4 of 5 listings available now</p>
+            <span class="door-cta">See the catalog ↗</span>
+          </a>
+          <a class="door" href="https://magicunicorn.dev/book/?product=marketplace-publisher" style="--door:var(--signal-warm)">
+            <span class="door-n">No. 02</span>
+            <h3 class="door-verb">Publish your own</h3>
+            <p class="door-claim">Build on the same identity, credits, gateway, and MCP tools our apps use.</p>
+            <p class="door-proof">01 stall open, and it stays open</p>
+            <span class="door-cta">Become a publisher ↗</span>
+          </a>
+          <a class="door" href="/marketplace/self-host" style="--door:var(--signal-violet)">
+            <span class="door-n">No. 03</span>
+            <h3 class="door-verb">Host the whole platform</h3>
+            <p class="door-claim">Run every part of this on your own hardware. Every listing states its exact license, and the source link only appears when the repository is actually public.</p>
+            <p class="door-proof">4 of 5 self-hostable today</p>
+            <span class="door-cta">What self-hosting takes ↗</span>
+          </a>
         </div>
 
-        <div class="stall-keeper">
-          <img class="mascot" src="/marketplace/media/mascot-meeting-ops.webp" alt="The Meeting-Ops scribe, in headset">
-          <span class="keeper-caption">The scribe</span>
+      <div class="legend">
+        <p class="eyebrow">Which of these three are you?</p>
+        <div class="legend-control" role="group" aria-label="Audience">
+          <button class="legend-btn" type="button" data-aud="buy" aria-pressed="false" style="--tone:var(--signal);--tone-ch:var(--signal-ch)">Buy an AI employee</button><button class="legend-btn" type="button" data-aud="publish" aria-pressed="false" style="--tone:var(--signal-warm);--tone-ch:var(--signal-warm-ch)">Publish your own</button><button class="legend-btn" type="button" data-aud="host" aria-pressed="false" style="--tone:var(--signal-violet);--tone-ch:var(--signal-violet-ch)">Host the whole platform</button>
         </div>
+        <p class="small">This is a legend, not a filter. It never removes a product. It tells you what the three colours on this page mean.</p>
       </div>
-    </article>
-    <article class="stall" data-outcome="research" style="--b:#0891b2;--ba:#22d3ee">
-      <div class="stall-awning"></div>
-      <div class="stall-body">
-        <div class="stall-info">
-
-  <div class="listing-meta">
-    <span class="badge available">Available now</span>
-
-  </div>
-          <h3 class="stall-name"><a href="/marketplace/center-deep-research">Center Deep Research</a></h3>
-          <p class="publisher">by Magic Unicorn</p>
-          <p class="tagline">Ask a hard question, get a cited report with per-claim confidence, synthesized on hardware you own. Your AI agents can use it too.</p>
-
-  <ul class="deployment" aria-label="Where it runs">
-    <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/></svg>Local app</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 18.6 11 3.6 3.6 0 0 1 18 18Z"/></svg>Unicorn Cloud</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13" width="16" height="6" rx="1.5"/><path d="M7.2 8h.01M7.2 16h.01"/></svg>Self-host</li>
-  </ul>
-
-          <a class="card-link" href="/marketplace/center-deep-research">See what it does</a>
-          <details class="card-trust">
-            <summary>Trust and permissions</summary>
-            <p><strong>Can do:</strong> Searches configured providers; Reranks and normalizes results; Produces research with citations.</p>
-            <p><strong>Waits for you:</strong> Its verified MCP surface is research-only: search and deep_research. No mail, payment, or account-writing tool is listed.</p>
-            <p><strong>Data egress:</strong> Yes. Search queries and selected filters go to each configured search provider.</p>
-            <p><strong>Source:</strong> <a href="https://github.com/Unicorn-Commander/Center-Deep">AGPL-3.0 (Core)</a></p>
-          </details>
-        </div>
-
-        <div class="stall-keeper">
-          <img class="mascot" src="/marketplace/media/mascot-center-deep-research.webp" alt="The Center Deep diver, suited up in the dark water">
-          <span class="keeper-caption">The diver</span>
-        </div>
-      </div>
-    </article>
-    <article class="stall" data-outcome="music" style="--b:#a855f7;--ba:#9333ea">
-      <div class="stall-awning"></div>
-      <div class="stall-body">
-        <div class="stall-info">
-
-  <div class="listing-meta">
-    <span class="badge available">Available now</span>
-
-  </div>
-          <h3 class="stall-name"><a href="/marketplace/majiks-studio">Majiks Studio</a></h3>
-          <p class="publisher">by Magic Unicorn</p>
-          <p class="tagline">Make AI music on your own Mac and actually own it, with a cryptographic chain of custody from generation to publish.</p>
-
-  <ul class="deployment" aria-label="Where it runs">
-    <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/></svg>Local app</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor" stroke="none"/></svg>Hybrid</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="12" r="3.2"/><path d="M10.7 12H20"/><path d="M16.6 12v3"/><path d="M19.6 12v2.2"/></svg>BYOK (ACE Music)</li>
-  </ul>
-          <p class="price-line">Free</p>
-          <a class="card-link" href="/marketplace/majiks-studio">See what it does</a>
-          <details class="card-trust">
-            <summary>Trust and permissions</summary>
-            <p><strong>Can do:</strong> Generates music locally with ACE-Step and MLX; Keeps sessions and audio in a local library; Publishes selected tracks to majiks.online after sign-in.</p>
-            <p><strong>Waits for you:</strong> Publishing is optional. It requires Unicorn Commander sign-in and an explicit publish action.</p>
-            <p><strong>Data egress:</strong> Local mode: no. Cloud generation and publishing send only the material you choose to those services.</p>
-            <p><strong>Source:</strong> <a href="https://git.unicorncommander.ai/MajiksStudio/majiks-music-studio-pro">Apache-2.0</a></p>
-          </details>
-        </div>
-
-        <div class="stall-keeper">
-          <img class="mascot" src="/marketplace/media/mascot-majiks-studio.webp" alt="The Majiks Studio DJ, headphones on, shades down">
-          <span class="keeper-caption">The DJ</span>
-        </div>
-      </div>
-    </article>
-    <article class="stall" data-outcome="business" style="--b:#0f766e;--ba:#d4af37">
-      <div class="stall-awning"></div>
-      <div class="stall-body">
-        <div class="stall-info">
-
-  <div class="listing-meta">
-    <span class="badge development">In development</span>
-    <span class="badge dogfood">We run our company on this</span>
-  </div>
-          <h3 class="stall-name"><a href="/marketplace/accounting-ops">Accounting-Ops</a></h3>
-          <p class="publisher">by Magic Unicorn</p>
-          <p class="tagline">An autonomous bookkeeper that closes your books and hands you finished work. Your ledger, your machine, CPA review optional.</p>
-
-  <ul class="deployment" aria-label="Where it runs">
-    <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/></svg>Local app</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 18.6 11 3.6 3.6 0 0 1 18 18Z"/></svg>Unicorn Cloud</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor" stroke="none"/></svg>Hybrid</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="12" r="3.2"/><path d="M10.7 12H20"/><path d="M16.6 12v3"/><path d="M19.6 12v2.2"/></svg>BYOK</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13" width="16" height="6" rx="1.5"/><path d="M7.2 8h.01M7.2 16h.01"/></svg>Self-host</li>
-  </ul>
-
-          <a class="card-link" href="/marketplace/accounting-ops">See what it does</a>
-          <details class="card-trust">
-            <summary>Trust and permissions</summary>
-            <p><strong>Can do:</strong> Categorizes transactions and reconciles receipts; Drafts statements and tax packages; Traces report lines through an append-only journal.</p>
-            <p><strong>Waits for you:</strong> Material items and missing-receipt entries stop for human approval. Tax packages remain draft and do not file themselves.</p>
-            <p><strong>Data egress:</strong> Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.</p>
-            <p><strong>Source:</strong> <a href="https://git.unicorncommander.ai/UnicornCommander/Accounting-Ops">AGPL-3.0</a></p>
-          </details>
-        </div>
-
-        <div class="stall-keeper">
-          <img class="mascot" src="/marketplace/media/mascot-accounting-ops.webp" alt="The Accounting-Ops bookkeeper, bowler hat, ledger, and brass scale">
-          <span class="keeper-caption">The bookkeeper</span>
-        </div>
-      </div>
-    </article>
-        </div>
       </div>
     </section>
 
-    <section class="suite-section">
-      <div class="shell suite-card">
-        <div>
-          <p class="eyebrow">The bundle</p>
-          <h2>Unicorn Commander Suite</h2>
-          <p>The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.</p>
-        </div>
-        <div>
-          <span class="badge development">In development</span>
-          <ul class="suite-includes"><li>Project-Ops</li><li>Contact-Ops</li><li>Customer-Ops</li><li>Email-Ops</li><li>Knowledge-Ops</li><li>Center Deep Research</li><li>Unicorn Stable</li><li>Meeting-Ops</li></ul>
-          <a class="card-link" href="https://magicunicorn.dev/log/?project=unicorn-commander-suite">Read the build log</a>
-        </div>
-      </div>
-    </section>
+    <section class="section-block" id="catalog" aria-labelledby="catalog-title">
+      <div class="shell railed">
+        <span class="rail-num">02</span>
+        <h2 class="section-title" id="catalog-title">Choose the work,<br>not the software.</h2>
+        <p class="lede">Each row says where the product runs, what license it ships under, and whether your data leaves. Open a listing for its verified capabilities and approval boundaries.</p>
 
+      <div class="ledger-scroll">
+        <table class="ledger">
+          <caption class="sr-only">Every product listed on the Unicorn Commander marketplace, with its access state, runtimes, source license, and data-egress answer.</caption>
+          <thead>
+            <tr>
+              <th class="colhead" scope="col">#<span class="colhead-note">index, not rank</span></th>
+              <th class="colhead" scope="col"><span class="sr-only">Character art</span></th>
+              <th class="colhead" scope="col">Product</th>
+              <th class="colhead" scope="col">Access</th>
+              <th class="colhead col-runs" scope="col">Runs where</th>
+              <th class="colhead col-source" scope="col">Source</th>
+              <th class="colhead col-egress" scope="col">Data leaves</th>
+              <th class="colhead" scope="col"><span class="sr-only">Go to product</span></th>
+            </tr>
+          </thead>
+          <tbody>
 
-    <section class="ecosystem" id="ecosystem">
-      <div class="shell">
-        <div class="section-head">
-          <h2>An ecosystem,<br>not a catalog.</h2>
-          <p>Identity, credits, the model gateway, and MCP tools are the ground. Our apps stand on it today. The stalls are real products only, which is why one of them is empty.</p>
-        </div>
-        <div class="platform-diagram">
-          <div class="stall-row">
-
-            <a class="mini-stall" href="/marketplace/meeting-ops" style="--b:#1b3a6b;--ba:#d4af37">
-              <img src="/logos/tile-meeting-ops.png" alt="" loading="lazy">
-              <strong>Meeting-Ops</strong>
-              <span>Available now</span>
-            </a>
-            <a class="mini-stall" href="/marketplace/center-deep-research" style="--b:#0891b2;--ba:#22d3ee">
-              <img src="/logos/tile-center-deep.png" alt="" loading="lazy">
-              <strong>Center Deep Research</strong>
-              <span>Available now</span>
-            </a>
-            <a class="mini-stall" href="/marketplace/majiks-studio" style="--b:#a855f7;--ba:#9333ea">
-              <img src="/logos/tile-majiks-studio.png" alt="" loading="lazy">
-              <strong>Majiks Studio</strong>
-              <span>Available now</span>
-            </a>
-            <a class="mini-stall" href="/marketplace/accounting-ops" style="--b:#0f766e;--ba:#d4af37">
-              <img src="/logos/tile-accounting-ops.png" alt="" loading="lazy">
-              <strong>Accounting-Ops</strong>
-              <span>In development</span>
-            </a>
-            <div class="mini-stall open">
-              <span class="stall-hole" aria-hidden="true">+</span>
-              <strong>This spot is for your app</strong>
-              <a href="https://magicunicorn.dev/book/?product=marketplace-publisher">Become a publisher</a>
+        <tr style="--b:#0891b2;--ba:#22d3ee;--plate:#072745">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>01</td>
+          <td class="cell-art">
+            <div class="plate ">
+              <img src="/marketplace/media/mascot-center-deep-research.webp" alt="The Center Deep diver, suited up in the dark water" loading="lazy" width="96" height="96">
             </div>
-          </div>
-          <div class="platform-rail" role="img" aria-label="The Unicorn Commander platform: identity and SSO, credits and metering, model gateway, MCP tools">
-            <span class="rail-title">The Unicorn Commander platform</span>
-            <span class="rail-cells">
-              <span class="rail-cell">Identity + SSO</span>
-              <span class="rail-cell">Credits + metering</span>
-              <span class="rail-cell">Model gateway</span>
-              <span class="rail-cell">MCP tools</span>
-            </span>
-          </div>
-        </div>
-        <p class="ecosystem-note">Self-hostable, AGPL at the core, or hosted in Unicorn Cloud. Apps built by other people run on the same rail ours do.</p>
+            <span class="partno mono">UC-01 · AGPL-3.0 (CORE)</span></td>
+          <td class="cell-name">
+            <h3 class="product-name"><a href="/marketplace/center-deep-research">Center Deep Research</a></h3>
+            <p class="row-tagline">Ask a hard question, get a cited report with per-claim confidence, synthesized on hardware you own. Your AI agents can use it too.</p>
+            <p class="row-subline mono">Local app · Unicorn Cloud · Self-host | AGPL-3.0 (Core) | Data leaves: Yes</p>
+          </td>
+          <td><span class="pill pill-available">Available now</span></td>
+          <td class="col-runs">
+          <ul class="runs-list">
+            <li>Local app</li><li>Unicorn Cloud</li><li class="is-selfhost">Self-host</li>
+          </ul></td>
+          <td class="col-source license"><a href="https://github.com/Unicorn-Commander/Center-Deep">AGPL-3.0 (Core)</a></td>
+          <td class="col-egress">Yes</td>
+          <td class="cell-action">
+            <a class="hostname" href="https://centerdeep.ai/">centerdeep.ai<span class="arrow" aria-hidden="true">↗</span></a>
+            <a class="btn btn-secondary" href="/marketplace/center-deep-research">Open Center Deep</a>
+          </td>
+        </tr>
+        <tr style="--b:#a855f7;--ba:#9333ea;--plate:#170922">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>02</td>
+          <td class="cell-art">
+            <div class="plate ">
+              <img src="/marketplace/media/mascot-majiks-studio.webp" alt="The Majiks Studio DJ, headphones on, shades down" loading="lazy" width="96" height="96">
+            </div>
+            <span class="partno mono">UC-02 · APACHE-2.0</span></td>
+          <td class="cell-name">
+            <h3 class="product-name"><a href="/marketplace/majiks-studio">Majiks Studio</a></h3>
+            <p class="row-tagline">Make AI music on your own Mac and actually own it, with a cryptographic chain of custody from generation to publish.</p>
+            <p class="row-subline mono">Local app · Hybrid · BYOK (ACE Music) | Apache-2.0 | Data leaves: Depends on mode</p>
+          </td>
+          <td><span class="pill pill-available">Available now</span></td>
+          <td class="col-runs">
+          <ul class="runs-list">
+            <li>Local app</li><li>Hybrid</li><li>BYOK (ACE Music)</li>
+          </ul></td>
+          <td class="col-source license">Apache-2.0<br><a class="micro" href="/marketplace/self-host">Self-host guide</a></td>
+          <td class="col-egress">Depends on mode</td>
+          <td class="cell-action">
+            <a class="hostname" href="https://majiks.studio/download">majiks.studio<span class="arrow" aria-hidden="true">↗</span></a>
+            <a class="btn btn-secondary" href="/marketplace/majiks-studio">Download free</a>
+          </td>
+        </tr>
+        <tr style="--b:#1b3a6b;--ba:#d4af37;--plate:#d3d3d3">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>03</td>
+          <td class="cell-art">
+            <div class="plate ">
+              <img src="/marketplace/media/mascot-meeting-ops.webp" alt="The Meeting-Ops scribe, in a camo patrol cap and headset" loading="lazy" width="96" height="96">
+            </div>
+            <span class="partno mono">UC-03 · AGPL-3.0</span></td>
+          <td class="cell-name">
+            <h3 class="product-name"><a href="/marketplace/meeting-ops">Meeting-Ops</a></h3>
+            <p class="row-tagline">Walk out of every meeting with a transcript, speaker-tagged notes, and action items already done. And your audio stays yours.</p>
+            <p class="row-subline mono">Local app · Unicorn Cloud · Self-host | AGPL-3.0 | Data leaves: Depends on mode</p>
+          </td>
+          <td><span class="pill pill-available">Available now</span></td>
+          <td class="col-runs">
+          <ul class="runs-list">
+            <li>Local app</li><li>Unicorn Cloud</li><li class="is-selfhost">Self-host</li>
+          </ul></td>
+          <td class="col-source license"><a href="https://github.com/Unicorn-Commander/Meeting-Ops-OSS">AGPL-3.0</a></td>
+          <td class="col-egress">Depends on mode</td>
+          <td class="cell-action">
+            <a class="hostname" href="https://meeting-ops.unicorncommander.ai/">meeting-ops.unicorncommander.ai<span class="arrow" aria-hidden="true">↗</span></a>
+            <a class="btn btn-secondary" href="/marketplace/meeting-ops">Start free</a>
+          </td>
+        </tr>
+        <tr style="--b:#4f46e5;--ba:#f59e0b">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>04</td>
+          <td class="cell-art">
+            <div class="plate ">
+              <img src="/marketplace/media/mascot-project-ops.webp" alt="The Project-Ops coordinator, in a purple judo gi and black belt" loading="lazy" width="96" height="96">
+            </div>
+            <span class="partno mono">UC-04 · APACHE-2.0</span></td>
+          <td class="cell-name">
+            <h3 class="product-name"><a href="/marketplace/project-ops">Project-Ops</a></h3>
+            <p class="row-tagline">The project manager that tracks your AI agents like employees. Tasks, time, billing, and profitability in one loop, for humans and agents alike.</p>
+            <p class="row-subline mono">Unicorn Cloud · Self-host | Apache-2.0 | Data leaves: Depends on edition</p>
+          </td>
+          <td><span class="pill pill-available">Available now</span></td>
+          <td class="col-runs">
+          <ul class="runs-list">
+            <li>Unicorn Cloud</li><li class="is-selfhost">Self-host</li>
+          </ul></td>
+          <td class="col-source license">Apache-2.0<br><a class="micro" href="/marketplace/self-host">Self-host guide</a></td>
+          <td class="col-egress">Depends on edition</td>
+          <td class="cell-action">
+            <a class="hostname" href="https://projectops.unicorncommander.ai/">projectops.unicorncommander.ai<span class="arrow" aria-hidden="true">↗</span></a>
+            <a class="btn btn-secondary" href="/marketplace/project-ops">Request access</a>
+          </td>
+        </tr>
+        <tr style="--b:#0f766e;--ba:#d4af37">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>05</td>
+          <td class="cell-art">
+            <div class="plate ">
+              <img src="/marketplace/media/mascot-accounting-ops.webp" alt="The Accounting-Ops bookkeeper, bowler hat, ledger, and brass scale" loading="lazy" width="96" height="96">
+            </div>
+            <span class="partno mono">UC-05 · AGPL-3.0</span></td>
+          <td class="cell-name">
+            <h3 class="product-name"><a href="/marketplace/accounting-ops">Accounting-Ops</a></h3>
+            <p class="row-tagline">An autonomous bookkeeper that closes your books and hands you finished work. Your ledger, your machine, CPA review optional.</p>
+            <p class="row-subline mono">Local app · Unicorn Cloud · Hybrid · BYOK · Self-host | AGPL-3.0 | Data leaves: Depends on mode</p>
+          </td>
+          <td><span class="pill pill-development">In development</span></td>
+          <td class="col-runs">
+          <ul class="runs-list">
+            <li>Local app</li><li>Unicorn Cloud</li><li>Hybrid</li><li>BYOK</li><li class="is-selfhost">Self-host</li>
+          </ul></td>
+          <td class="col-source license"><a href="https://github.com/Unicorn-Commander/accounting-ops-community">AGPL-3.0</a></td>
+          <td class="col-egress">Depends on mode</td>
+          <td class="cell-action">
+            <a class="hostname" href="https://magicunicorn.dev/log?project=accounting-ops">magicunicorn.dev<span class="arrow" aria-hidden="true">↗</span></a>
+            <a class="btn btn-secondary" href="/marketplace/accounting-ops">Read the build log</a>
+          </td>
+        </tr>
+
+        <tr class="row-open" style="--b:var(--signal-warm)">
+          <td class="cell-index"><span class="chip" aria-hidden="true"></span>06</td>
+          <td class="cell-art">
+            <div class="plate"><span aria-hidden="true">+</span></div>
+            <span class="partno mono">UC-06 · YOUR LICENSE</span>
+          </td>
+          <td class="cell-name">
+            <h3 class="product-name">This spot is for your app</h3>
+            <p class="row-tagline">The stalls are real products only, which is why one of them is empty. It stays empty until a real app fills it.</p>
+          </td>
+          <td><span class="pill pill-open">Open</span></td>
+          <td class="col-runs"><ul class="runs-list"><li>—</li></ul></td>
+          <td class="col-source license">—</td>
+          <td class="col-egress">—</td>
+          <td class="cell-action"><a class="publish-link" href="https://magicunicorn.dev/book/?product=marketplace-publisher">Publish on UC ↗</a></td>
+        </tr>
+          </tbody>
+        </table>
+      </div>
       </div>
     </section>
 
-    <section class="crew" id="business-crew">
-      <div class="shell">
-        <div class="crew-intro">
-          <div><p class="eyebrow">One crew, shown honestly</p><h2>The I Have A Business To Run Crew</h2></div>
-          <p>The product is the handoff. Meetings become decisions. Decisions become assigned work. Customer work stays connected. Completed work becomes a draft invoice and an auditable ledger entry.</p>
+    <section class="section-block" id="deployment" aria-labelledby="deployment-title">
+      <div class="shell railed">
+        <span class="rail-num">03</span>
+        <h2 class="section-title" id="deployment-title">Where it runs.<br>Your call.</h2>
+        <p class="lede">The same fleet, viewed along a different axis. ● supported, ○ not supported, — unverified.</p>
+
+      <div class="matrix-scroll">
+        <table class="matrix">
+          <caption class="sr-only">Deployment matrix: which runtime homes each product supports. Filled circle means supported, hollow circle means not supported, dash means unverified.</caption>
+          <thead>
+            <tr>
+              <th class="colhead" scope="col">#</th>
+              <th class="colhead" scope="col">Product</th>
+              <th class="colhead" scope="col" data-col="local">Local</th><th class="colhead" scope="col" data-col="cloud">Unicorn Cloud</th><th class="colhead" scope="col" data-col="hybrid">Hybrid</th><th class="colhead" scope="col" data-col="byok">BYOK</th><th class="colhead" scope="col" data-col="selfhost">Self-host</th>
+            </tr>
+          </thead>
+          <tbody>
+
+          <tr style="--b:#0891b2;--ba:#22d3ee;--plate:#072745">
+            <td class="cell-index"><span class="chip" aria-hidden="true"></span>01</td>
+            <th scope="row">Center Deep Research</th>
+            <td class="mcell" data-col="local"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="cloud"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="hybrid"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell" data-col="byok"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell hatch-cell" data-col="selfhost"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td>
+          </tr>
+          <tr style="--b:#a855f7;--ba:#9333ea;--plate:#170922">
+            <td class="cell-index"><span class="chip" aria-hidden="true"></span>02</td>
+            <th scope="row">Majiks Studio</th>
+            <td class="mcell" data-col="local"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="cloud"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell" data-col="hybrid"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="byok"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="selfhost"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td>
+          </tr>
+          <tr style="--b:#1b3a6b;--ba:#d4af37;--plate:#d3d3d3">
+            <td class="cell-index"><span class="chip" aria-hidden="true"></span>03</td>
+            <th scope="row">Meeting-Ops</th>
+            <td class="mcell" data-col="local"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="cloud"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="hybrid"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell" data-col="byok"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell hatch-cell" data-col="selfhost"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td>
+          </tr>
+          <tr style="--b:#4f46e5;--ba:#f59e0b">
+            <td class="cell-index"><span class="chip" aria-hidden="true"></span>04</td>
+            <th scope="row">Project-Ops</th>
+            <td class="mcell" data-col="local"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell" data-col="cloud"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="hybrid"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell" data-col="byok"><span class="sr-only">Not supported</span><span aria-hidden="true">○</span></td><td class="mcell hatch-cell" data-col="selfhost"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td>
+          </tr>
+          <tr style="--b:#0f766e;--ba:#d4af37">
+            <td class="cell-index"><span class="chip" aria-hidden="true"></span>05</td>
+            <th scope="row">Accounting-Ops</th>
+            <td class="mcell" data-col="local"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="cloud"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="hybrid"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell" data-col="byok"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td><td class="mcell hatch-cell" data-col="selfhost"><span class="sr-only">Supported</span><span aria-hidden="true">●</span></td>
+          </tr>
+            <tr class="row-open" style="--b:var(--signal-warm)">
+              <td class="cell-index"><span class="chip" aria-hidden="true"></span>06</td>
+              <th scope="row">This spot is for your app</th>
+              <td class="mcell" data-col="local"><span class="sr-only">Unverified</span><span aria-hidden="true">—</span></td><td class="mcell" data-col="cloud"><span class="sr-only">Unverified</span><span aria-hidden="true">—</span></td><td class="mcell" data-col="hybrid"><span class="sr-only">Unverified</span><span aria-hidden="true">—</span></td><td class="mcell" data-col="byok"><span class="sr-only">Unverified</span><span aria-hidden="true">—</span></td><td class="mcell" data-col="selfhost"><span class="sr-only">Unverified</span><span aria-hidden="true">—</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+        <p class="readout mono" id="matrix-readout"
+           data-all="05 PRODUCTS · 04 SELF-HOSTABLE · 01 STALL OPEN"
+           data-buy="05 / 05 PRODUCTS RUN HOSTED · 04 AVAILABLE NOW"
+           data-publish="01 STALL OPEN · 00 FAKE LISTINGS"
+           data-host="04 / 05 PRODUCTS SELF-HOSTABLE TODAY · 01 STALL OPEN">05 PRODUCTS · 04 SELF-HOSTABLE · 01 STALL OPEN</p>
+        <p class="readout-caption" id="matrix-caption"
+           data-all="Every column is shown at equal weight. Pick a position above and the same matrix re-weights: nothing is added, nothing is hidden."
+           data-buy="Hosted means we run it: your account, your credit balance, your data under the terms on the listing. Every one of these is on this page with its egress answer in writing."
+           data-publish="The empty stall is a row of the ledger, in the table with the shipping products, because publishing is a peer path and not a developer-docs footnote. It stays empty until a real app fills it."
+           data-host="Moving to your hardware changes the ground, not the contents: same identity, same gateway, same MCP surface, in your rack. Every listing states its exact license, and no source link is shown unless the repository answers to an anonymous visitor.">Every column is shown at equal weight. Pick a position above and the same matrix re-weights: nothing is added, nothing is hidden.</p>
+      </div>
+    </section>
+
+    <section class="section-block" id="platform" aria-labelledby="platform-title">
+      <div class="shell railed">
+        <span class="rail-num">04</span>
+        <h2 class="section-title" id="platform-title">An ecosystem,<br>not a catalog.</h2>
+        <p class="lede">Identity, credits, the model gateway, and MCP tools are the ground. Our apps stand on it today. The stalls are real products only, which is why one of them is empty.</p>
+        <div class="platform-rail">
+          <p class="eyebrow">The Unicorn Commander platform</p>
+          <div class="rail-cells">
+            <span class="rail-cell">Identity + SSO</span>
+            <span class="rail-cell">Credits + metering</span>
+            <span class="rail-cell">Model gateway</span>
+            <span class="rail-cell">MCP tools</span>
+          </div>
         </div>
-        <div class="crew-flow" aria-label="Business crew handoff">
-
-      <article class="crew-actor" style="--b:#1b3a6b">
-        <img class="mascot" src="/marketplace/media/mascot-meeting-ops.webp" alt="The Meeting-Ops scribe, in headset">
-        <h3>Meeting-Ops</h3>
-        <p class="crew-role">Captures the conversation, decisions, owners, and due dates.</p>
-        <span class="crew-state available">Available now</span>
-      </article>
-
-      <div class="crew-handoff" aria-label="Hands off: Decisions + owners">
-        <span class="packet" aria-hidden="true"></span>
-        <span class="handoff-label">Decisions + owners</span>
+        <p class="prose" style="margin-top:var(--s-6)">Apps built by other people run on the same rail ours do. Self-hostable, or hosted in Unicorn Cloud. Each listing states its own license rather than inheriting a blanket claim.</p>
       </div>
-      <article class="crew-actor" style="--b:#4f46e5">
-        <img class="mascot" src="/marketplace/media/mascot-project-ops.webp" alt="The Project-Ops coordinator, in beret">
-        <h3>Project-Ops</h3>
-        <p class="crew-role">Turns agreed work into owned tasks with status and context.</p>
-        <span class="crew-state development">In development</span>
-      </article>
+    </section>
 
-      <div class="crew-handoff" aria-label="Hands off: Owned tasks, in context">
-        <span class="packet" aria-hidden="true"></span>
-        <span class="handoff-label">Owned tasks, in context</span>
-      </div>
-      <article class="crew-actor" style="--b:#FF5D73">
-        <img class="mascot" src="/marketplace/media/mascot-customer-ops.webp" alt="The Customer-Ops account keeper">
-        <h3>Customer-Ops</h3>
-        <p class="crew-role">Keeps the work tied to the customer and the promised outcome.</p>
-        <span class="crew-state development">In development</span>
-      </article>
+    <section class="section-block" id="crew" aria-labelledby="crew-title">
+      <div class="shell railed">
+        <span class="rail-num">05</span>
+        <h2 class="section-title" id="crew-title">The I Have A Business<br>To Run Crew</h2>
+        <p class="lede">The product is the handoff. Meetings become decisions. Decisions become assigned work. Customer work stays connected. Completed work becomes a draft invoice and an auditable ledger entry.</p>
+        <div class="crew-register">
 
-      <div class="crew-handoff" aria-label="Hands off: The promised outcome">
-        <span class="packet" aria-hidden="true"></span>
-        <span class="handoff-label">The promised outcome</span>
-      </div>
-      <article class="crew-actor" style="--b:#0f766e">
-        <img class="mascot" src="/marketplace/media/mascot-accounting-ops.webp" alt="The Accounting-Ops bookkeeper, bowler hat and brass scale">
-        <h3>Accounting-Ops</h3>
-        <p class="crew-role">Drafts the invoice, traces the posting, and stops for approval where money matters.</p>
-        <span class="crew-state development">In development</span>
-      </article>
-
+          <article class="crew-member" style="--b:#1b3a6b;--plate:#d3d3d3">
+            <div class="plate"><img src="/marketplace/media/mascot-meeting-ops.webp" alt="The Meeting-Ops scribe, in a camo patrol cap and headset" loading="lazy" width="128" height="128"></div>
+            <h3 class="crew-name">Meeting-Ops</h3>
+            <span class="pill pill-available">Available now</span>
+            <p class="crew-blurb">Captures the conversation, decisions, owners, and due dates.</p>
+          </article>
+          <article class="crew-member" style="--b:#4f46e5">
+            <div class="plate"><img src="/marketplace/media/mascot-project-ops.webp" alt="The Project-Ops coordinator, in a purple judo gi and black belt" loading="lazy" width="128" height="128"></div>
+            <h3 class="crew-name">Project-Ops</h3>
+            <span class="pill pill-available">Available now</span>
+            <p class="crew-blurb">Turns agreed work into owned tasks with status and context.</p>
+          </article>
+          <article class="crew-member" style="--b:#FF5D73;--plate:#0b0c13">
+            <div class="plate"><img src="/marketplace/media/mascot-customer-ops.webp" alt="The Customer-Ops account keeper" loading="lazy" width="128" height="128"></div>
+            <h3 class="crew-name">Customer-Ops</h3>
+            <span class="pill pill-development">In development</span>
+            <p class="crew-blurb">Keeps the work tied to the customer and the promised outcome.</p>
+          </article>
+          <article class="crew-member" style="--b:#0f766e">
+            <div class="plate"><img src="/marketplace/media/mascot-accounting-ops.webp" alt="The Accounting-Ops bookkeeper, bowler hat and brass scale" loading="lazy" width="128" height="128"></div>
+            <h3 class="crew-name">Accounting-Ops</h3>
+            <span class="pill pill-development">In development</span>
+            <p class="crew-blurb">Drafts the invoice, traces the posting, and stops for approval where money matters.</p>
+          </article>
         </div>
-        <p class="crew-note">You can use Meeting-Ops today. The remaining handoffs are in development, so this crew is not presented as an available bundle.</p>
+        <p class="prose" style="margin-top:var(--s-8)">You can use Meeting-Ops and Project-Ops today. The remaining handoffs are in development, so this crew is not presented as an available bundle.</p>
+      </div>
+    </section>
+
+    <section class="section-block" id="suite" aria-labelledby="suite-title">
+      <div class="shell railed">
+        <span class="rail-num">06</span>
+        <p class="eyebrow">The bundle</p>
+        <h2 class="section-title" id="suite-title">Unicorn Commander Suite</h2>
+        <p class="lede">The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.</p>
+        <p style="margin-top:var(--s-5)"><span class="pill pill-development">In development</span></p>
+        <div class="rail-cells" style="margin-top:var(--s-6)">
+          <span class="rail-cell">Project-Ops</span><span class="rail-cell">Contact-Ops</span><span class="rail-cell">Customer-Ops</span><span class="rail-cell">Email-Ops</span><span class="rail-cell">Knowledge-Ops</span><span class="rail-cell">Center Deep Research</span><span class="rail-cell">Unicorn Stable</span><span class="rail-cell">Meeting-Ops</span>
+        </div>
+        <p style="margin-top:var(--s-6)"><a class="btn btn-secondary" href="https://magicunicorn.dev/log?project=unicorn-commander-suite">Read the build log</a></p>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="shell">
-      <span>Built by Magic Unicorn in Charleston, South Carolina.</span>
-      <span><a href="https://magicunicorn.dev/log">Build log</a> · <a href="https://magicunicorn.dev/book/?product=marketplace-publisher">Become a publisher</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span>
+    <div class="shell footer-grid">
+      <div class="footer-lockup">
+        <span class="footer-sigil" aria-hidden="true"><img src="/logos/uc-mark-colonel.webp" alt="" width="18" height="18"></span>
+        <span>Built by Magic Unicorn in Charleston, South Carolina.</span>
+      </div>
+      <nav class="footer-plinth" aria-label="Audiences">
+        <a class="aud-buy" href="/marketplace#catalog">Buy an AI employee</a>
+        <a class="aud-publish" href="https://magicunicorn.dev/book/?product=marketplace-publisher">Publish your own</a>
+        <a class="aud-host" href="/marketplace/self-host">Host the whole platform</a>
+      </nav>
+      <nav class="footer-plinth" aria-label="More">
+        <a href="https://magicunicorn.dev/log">Build log</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </nav>
     </div>
   </footer>
   <script>
     (() => {
-      // The joke rotates; the claim underneath never does (spine §7).
-      const headlines = [
-        'Put AI to <em>work</em>.',
-        'Meetings noted. Books <em>closed</em>.',
-        'Finished work <em>lives</em> here.',
-        'Own the magic. <em>Keep</em> the data.',
-      ];
+
+      document.querySelectorAll('[data-theme-toggle]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+          document.documentElement.dataset.theme = next;
+          document.documentElement.style.colorScheme = next;
+          try { localStorage.setItem('mu-theme', next); } catch (e) {}
+        });
+      });
+
+      // The joke rotates; the claim underneath never does.
+      const headlines = ["Put AI to <em>work</em>.","Meetings noted. Books <em>closed</em>.","Finished work <em>lives</em> here.","Own the magic. <em>Keep</em> the data."];
       const headline = document.getElementById('marketplace-headline');
-      headline.innerHTML = headlines[Math.floor(Math.random() * headlines.length)];
-      document.querySelectorAll('[data-filter]').forEach((entry) => entry.addEventListener('click', () => {
-        const selected = entry.dataset.filter;
-        document.querySelectorAll('[data-outcome]').forEach((card) => { card.hidden = card.dataset.outcome !== selected; });
-        document.querySelectorAll('[data-filter]').forEach((door) => door.classList.toggle('selected', door === entry));
+      if (headline) headline.innerHTML = headlines[Math.floor(Math.random() * headlines.length)];
+
+      // The legend re-weights the matrix. It never counts: every string it can
+      // show was computed at build time and is sitting in a data- attribute.
+      const LIT = {"all":["local","cloud","hybrid","byok","selfhost"],"buy":["cloud","hybrid"],"publish":["byok"],"host":["local","selfhost"]};
+      const TONE = {"buy":"--signal","publish":"--signal-warm","host":"--signal-violet"};
+      const readout = document.getElementById('matrix-readout');
+      const caption = document.getElementById('matrix-caption');
+      const buttons = [...document.querySelectorAll('[data-aud]')];
+      let current = 'all';
+
+      const apply = (id) => {
+        const lit = LIT[id] || LIT.all;
+        const tone = TONE[id];
+        document.querySelectorAll('.matrix [data-col]').forEach((cell) => {
+          const on = lit.includes(cell.dataset.col);
+          cell.classList.toggle('is-lit', on && id !== 'all');
+          cell.classList.toggle('is-dim', !on && id !== 'all');
+          if (tone && on) {
+            cell.style.setProperty('--tone', 'var(' + tone + ')');
+            cell.style.setProperty('--tone-ch', 'var(' + tone + '-ch)');
+          } else {
+            cell.style.removeProperty('--tone');
+            cell.style.removeProperty('--tone-ch');
+          }
+          // Machined hatch is the visual signature of self-host.
+          if (cell.classList.contains('hatch-cell')) {
+            cell.classList.toggle('hatch-on', id === 'host');
+          }
+        });
+        // HOST also lights the ledger's SOURCE column above.
+        document.querySelectorAll('.ledger .col-source').forEach((c) => {
+          c.classList.toggle('is-lit', id === 'host');
+          if (id === 'host') {
+            c.style.setProperty('--tone', 'var(--signal-violet)');
+          } else {
+            c.style.removeProperty('--tone');
+          }
+        });
+        buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.aud === id && id !== 'all')));
+
+        if (readout && caption) {
+          readout.classList.add('swapping');
+          caption.classList.add('swapping');
+          setTimeout(() => {
+            readout.textContent = readout.dataset[id] || readout.dataset.all;
+            caption.textContent = caption.dataset[id] || caption.dataset.all;
+            readout.classList.remove('swapping');
+            caption.classList.remove('swapping');
+          }, 180);
+        }
+        current = id;
+      };
+
+      buttons.forEach((b) => b.addEventListener('click', () => {
+        // Selecting the active position returns to the all-lit state, so there
+        // is always a way back to the full grid without a reload.
+        apply(current === b.dataset.aud ? 'all' : b.dataset.aud);
       }));
     })();
   </script>
