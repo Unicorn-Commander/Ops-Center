@@ -6807,8 +6807,12 @@ async def get_session_info(request: Request):
     
     # No valid session found
     print(f"No valid session found. Token exists: {bool(session_token)}, In sessions: {session_token in sessions if session_token else False}")
+    # 200, not 401. This endpoint's job is to REPORT auth state, which it can do
+    # for anyone; 401 means "authenticate to access this resource", which made every
+    # anonymous visitor to the public marketplace log a console error on the front
+    # door. Callers branch on the authenticated flag, not the status.
     return JSONResponse(
-        status_code=401,
+        status_code=200,
         content={"authenticated": False, "detail": "No valid session"}
     )
 

@@ -64,13 +64,11 @@ export default function RootRedirect() {
       // Check for OAuth session
       try {
         const response = await fetch('/api/v1/auth/session', { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.authenticated) {
-            setAuthenticated(true);
-            setLoading(false);
-            return;
-          }
+        const data = await response.json().catch(() => ({}));
+        if (data.authenticated) {
+          setAuthenticated(true);
+          setLoading(false);
+          return;
         }
       } catch (error) {
         console.error('Failed to check auth session:', error);

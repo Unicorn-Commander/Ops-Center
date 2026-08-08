@@ -14,7 +14,8 @@ export default function CheckoutContinue() {
       }
       try {
         const sessionResponse = await fetch('/api/v1/auth/session', { credentials: 'include' });
-        if (!sessionResponse.ok) {
+        const sessionData = await sessionResponse.json().catch(() => ({}));
+        if (!sessionData.authenticated) {
           const returnUrl = `/checkout/continue?tier=${encodeURIComponent(tier)}`;
           window.location.replace(`/auth/login?signup=1&return_url=${encodeURIComponent(returnUrl)}`);
           return;

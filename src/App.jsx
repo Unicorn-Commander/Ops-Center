@@ -383,12 +383,9 @@ function ProtectedRoute({ children }) {
     // expired, which used to render every admin page as a sea of 401s with
     // stale user data instead of sending the user back to login.
     fetch('/api/v1/auth/session', { credentials: 'include' })
-      .then(res => {
-        if (res.ok) {
-          return res.json();
-        }
-        throw new Error('Not authenticated');
-      })
+      // The session probe answers for anonymous visitors too, so branch on the
+      // payload's authenticated flag rather than the HTTP status.
+      .then(res => res.json().catch(() => ({ authenticated: false })))
       .then(data => {
         if (data.authenticated) {
           if (data.token) {

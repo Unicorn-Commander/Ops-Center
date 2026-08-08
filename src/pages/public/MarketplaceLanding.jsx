@@ -50,7 +50,8 @@ export default function MarketplaceLanding() {
     setStartingTier(tier.tier_code);
     try {
       const sessionResponse = await fetch('/api/v1/auth/session', { credentials: 'include' });
-      if (!sessionResponse.ok) {
+      const sessionData = await sessionResponse.json().catch(() => ({}));
+      if (!sessionData.authenticated) {
         window.location.href = signupUrl(tier.tier_code);
         return;
       }
