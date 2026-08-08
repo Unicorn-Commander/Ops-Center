@@ -50,6 +50,7 @@ never through the admin-injecting sidecar.
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -225,18 +226,109 @@ async def _allowed(bucket: str, identity: str, limit: Tuple[int, int]) -> bool:
         return allowed
 
 
+# ---------------------------------------------------------------------------
+# Client identity for rate limiting.
+#
+# CF-Connecting-IP is just a request header. Cloudflare sets it, but so can
+# anything else that can open a socket to us, and this origin IS reachable
+# without going through Cloudflare (Traefik binds 0.0.0.0:443 and this app
+# publishes 0.0.0.0:8084). Trusting it unconditionally meant one host could
+# rotate a forged value and mint a fresh rate-limit bucket per request, walking
+# straight past the 5/hour + 20/day per-IP caps and using our sending
+# reputation to mail confirmation links to arbitrary third parties.
+#
+# So: only believe CF-Connecting-IP when the hop that actually reached us is
+# Cloudflare. Traefik has no forwardedHeaders.trustedIPs, which means it
+# DISCARDS any inbound X-Forwarded-For and rewrites it from the real TCP peer.
+# That makes the last X-Forwarded-For entry the one address in the request an
+# outsider cannot choose. On the direct :8084 path there is no XFF at all and
+# request.client.host is already the true peer.
+#
+# Override the trusted set with BETA_TRUSTED_PROXY_CIDRS (comma/space list) if
+# the edge ever moves. Empty value = trust nothing = always use the raw peer.
+_CLOUDFLARE_CIDRS_DEFAULT = (
+    # https://www.cloudflare.com/ips-v4 + ips-v6, fetched 2026-08-08.
+    "173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 "
+    "141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 "
+    "197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 "
+    "104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 "
+    "2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 "
+    "2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
+)
+
+
+def _parse_cidrs(raw: str) -> Tuple[ipaddress._BaseNetwork, ...]:
+    nets = []
+    for token in re.split(r"[,\s]+", (raw or "").strip()):
+        if not token:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(token, strict=False))
+        except ValueError:
+            logger.warning("beta-signup: ignoring bad trusted-proxy CIDR %r", token)
+    return tuple(nets)
+
+
+_raw_trusted = os.getenv("BETA_TRUSTED_PROXY_CIDRS")
+if _raw_trusted is None:
+    _raw_trusted = _CLOUDFLARE_CIDRS_DEFAULT
+_TRUSTED_PROXY_NETS = _parse_cidrs(_raw_trusted)
+
+
+def _is_trusted_proxy(addr: str) -> bool:
+    """True if `addr` is one of our known edge proxies (Cloudflare)."""
+    if not _TRUSTED_PROXY_NETS:
+        return False
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(ip in net for net in _TRUSTED_PROXY_NETS)
+
+
+# Our own reverse proxy reaches this app from the docker/host network. Only a
+# request whose TCP peer is in here has an X-Forwarded-For that WE wrote; from
+# anyone else the header is attacker-supplied and must be ignored completely.
+_LOCAL_PROXY_CIDRS_DEFAULT = (
+    "127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7"
+)
+_LOCAL_PROXY_NETS = _parse_cidrs(
+    os.getenv("BETA_LOCAL_PROXY_CIDRS", _LOCAL_PROXY_CIDRS_DEFAULT)
+)
+
+
+def _is_local_proxy(addr: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(ip in net for net in _LOCAL_PROXY_NETS)
+
+
 def _client_ip(request: Request) -> str:
-    # unicorncommander.ai is fronted by Cloudflare and then Traefik, so
-    # request.client.host is the proxy. CF-Connecting-IP is set by Cloudflare
-    # and is the most trustworthy of the three; X-Forwarded-For's FIRST entry
-    # is the client as seen by the outermost proxy.
-    cf = request.headers.get("cf-connecting-ip")
-    if cf:
-        return cf.strip()[:64]
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()[:64]
-    return (request.client.host if request.client else "unknown")[:64]
+    peer = (request.client.host if request.client else "").strip()
+
+    if _is_local_proxy(peer):
+        # Behind our reverse proxy: it discards inbound X-Forwarded-For and
+        # rewrites it from the real TCP peer, so the LAST hop is ours to trust.
+        hops = [h.strip() for h in (request.headers.get("x-forwarded-for") or "").split(",") if h.strip()]
+        edge = hops[-1] if hops else peer
+    else:
+        # Direct hit on the published port. Nothing in the request is
+        # trustworthy except the socket itself.
+        hops = []
+        edge = peer
+
+    if edge and _is_trusted_proxy(edge):
+        cf = (request.headers.get("cf-connecting-ip") or "").strip()
+        if cf:
+            return cf[:64]
+        if hops:
+            return hops[0][:64]
+
+    # Not behind a proxy we trust: the peer is the only honest identity, and a
+    # forged CF-Connecting-IP / X-Forwarded-For is ignored outright.
+    return (edge or "unknown")[:64]
 
 
 # ---------------------------------------------------------------------------
