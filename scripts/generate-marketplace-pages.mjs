@@ -24,10 +24,12 @@ import { LISTINGS, PRICE_TBD, SUITE } from '../src/data/marketplaceListings.js';
 // Everything that is not markup comes from the shared system module, which the
 // SPA twin imports too. That is what keeps the two surfaces from drifting.
 import {
-  AUDIENCES, CREW, CREW_NOTE, CSS_VERSION, GLYPH, LIT, MAST_HEADLINE,
-  MAST_HEADLINE_TEXT, PLAIN_TRUTH, READOUTS, SELF_HOSTABLE, TARGETS,
-  THEME_BOOTSTRAP, TOTAL, accessClass, egressShort, hostOf, isSelfHostable,
-  pad2, priceText, supports,
+  AUDIENCES, BETA_COPY, BETA_SIGNUP_SCRIPT, CREW, CREW_NOTE, CSS_VERSION,
+  GLYPH, LIT, MAST_HEADLINE, MAST_HEADLINE_TEXT, PLAIN_TRUTH, READOUTS,
+  SELF_HOSTABLE, SUITE_AVAILABLE, SUITE_AVAILABLE_LINE, SUITE_BETA_PROGRAM,
+  SUITE_TOTAL, TARGETS, THEME_BOOTSTRAP, TOTAL, accessClass,
+  betaProgramFor, egressShort, hostOf, isSelfHostable, pad2, priceText,
+  supports,
 } from '../src/data/marketplaceSystem.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -143,6 +145,39 @@ const THEME_SCRIPT = `
           try { localStorage.setItem('mu-theme', next); } catch (e) {}
         });
       });`;
+
+// ── BETA SIGNUP BLOCK ───────────────────────────────────────────────────────
+// The only CTA an in-development product can honestly offer. Read the BETA
+// rules in marketplaceSystem.js before changing a word: the access pill, the
+// "does not" sentence and the double-opt-in sentence are the honesty contract
+// here, not decoration. There is deliberately NO count, NO date and NO
+// scarcity in this block.
+//
+// It appears on the two surfaces the catalog itself marks as not available —
+// the Accounting-Ops listing and the Suite bundle page — and nowhere else.
+// The index and the SPA twin do not carry a form, so the twins cannot drift
+// on it: a visitor reaches it from the row they were already reading.
+const betaSignup = (program, product, access) => `
+        <div class="beta-signup" data-beta-program="${escapeHtml(program)}">
+          <p class="eyebrow beta-eyebrow">${escapeHtml(BETA_COPY.eyebrow)}</p>
+          <p><span class="pill pill-${accessClass(access)}">${escapeHtml(access)}</span></p>
+          <h3 class="beta-heading">${escapeHtml(BETA_COPY.heading(product))}</h3>
+          <p class="beta-body">${escapeHtml(BETA_COPY.body(product))}</p>
+          <p class="beta-body">${escapeHtml(BETA_COPY.optin)}</p>
+          <form class="beta-form" novalidate>
+            <label class="beta-label" for="beta-email-${escapeHtml(program)}">${escapeHtml(BETA_COPY.label)}</label>
+            <div class="beta-row">
+              <input class="beta-input" id="beta-email-${escapeHtml(program)}" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com">
+              <button class="btn btn-primary" type="submit">${escapeHtml(BETA_COPY.button)}</button>
+            </div>
+            <div class="beta-hp" aria-hidden="true">
+              <label for="beta-company-${escapeHtml(program)}">Company</label>
+              <input id="beta-company-${escapeHtml(program)}" name="company" type="text" tabindex="-1" autocomplete="off">
+            </div>
+          </form>
+          <p class="beta-status" data-beta-status role="status" aria-live="polite"></p>
+          <p class="micro">${escapeHtml(BETA_COPY.privacy)} <a href="/legal/privacy-policy.html">Privacy</a>.</p>
+        </div>`;
 
 // ── LEDGER ──────────────────────────────────────────────────────────────────
 
@@ -403,10 +438,12 @@ ${pageHead({
         <h2 class="section-title" id="suite-title">${escapeHtml(SUITE.name)}</h2>
         <p class="lede">${escapeHtml(SUITE.tagline)}</p>
         <p style="margin-top:var(--s-5)"><span class="pill pill-development">${escapeHtml(SUITE.access)}</span></p>
+        <p class="mono small">${escapeHtml(priceText(SUITE))}${SUITE.price_annual ? ` · ${escapeHtml(SUITE.price_annual)}` : ''}</p>
         <div class="rail-cells" style="margin-top:var(--s-6)">
           ${SUITE.includes.map((name) => `<span class="rail-cell">${escapeHtml(name)}</span>`).join('')}
         </div>
-        <p style="margin-top:var(--s-6)"><a class="btn btn-secondary" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(SUITE.cta.label)}</a></p>
+        <p class="small">${escapeHtml(SUITE_AVAILABLE_LINE)}</p>
+        <p style="margin-top:var(--s-6)"><a class="btn btn-primary" href="/marketplace/${escapeHtml(SUITE.slug)}">See what is in the Suite</a> <a class="btn btn-secondary" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(SUITE.cta.label)}</a></p>
       </div>
     </section>
   </main>
@@ -561,7 +598,7 @@ ${pageHead({
     </section>
   </main>
   ${footer()}
-  <script>(() => {${THEME_SCRIPT}})();</script>
+  <script>(() => {${THEME_SCRIPT}${BETA_SIGNUP_SCRIPT}})();</script>
 </body>
 </html>`;
 
@@ -672,9 +709,18 @@ ${pageHead({
       </div>
     </section>
 
-    <section class="section-block">
+    ${betaProgramFor(listing) ? `
+    <section class="section-block" aria-labelledby="beta-title-${escapeHtml(listing.slug)}">
       <div class="shell railed">
         <span class="rail-num">02</span>
+        <h2 class="section-title" id="beta-title-${escapeHtml(listing.slug)}">Nothing to open yet.</h2>
+        ${betaSignup(betaProgramFor(listing), listing.name, listing.access)}
+      </div>
+    </section>` : ''}
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">${betaProgramFor(listing) ? '03' : '02'}</span>
         <div class="threshold"${brandStyle(listing)}>
           <p class="eyebrow">Leaving the marketplace</p>
           <a class="hostname mono" href="${escapeHtml(listing.cta.href)}">${escapeHtml(host)}<span class="arrow" aria-hidden="true">${GLYPH.ext}</span></a>
@@ -686,7 +732,7 @@ ${pageHead({
     </section>
   </main>
   ${footer()}
-  <script>(() => {${THEME_SCRIPT}})();</script>
+  <script>(() => {${THEME_SCRIPT}${BETA_SIGNUP_SCRIPT}})();</script>
 </body>
 </html>`;
 
@@ -695,6 +741,160 @@ ${pageHead({
   writeFileSync(resolve(listingDir, 'index.html'), `${detailHtml.replace(/[ \t]+$/gm, '')}\n`);
 }
 
-console.log(`Generated marketplace index, self-host page, and ${LISTINGS.length} listing pages in ${outputRoot}`);
+// ── PAGE N+1: /marketplace/unicorn-commander-suite ──────────────────────────
+// The bundle was billable — three live Stripe SKU pairs — with no page to buy
+// from, so the only place its price existed was inside a checkout. It is a
+// BUNDLE, not a listing, so it is generated here rather than pushed into
+// LISTINGS: the ledger, the matrix, the counts, and the five-listing contract
+// all stay exactly as they were.
+//
+// The honesty skeleton applies unchanged. The member table is derived from the
+// member listings, so it cannot advertise a member as available while that
+// member's own page says otherwise, and the Managed tier's price is printed
+// rather than hidden so no door can surprise a buyer.
+{
+  const suiteOffer = {
+    '@type': 'Offer',
+    // "In development" is a real state and PreOrder is its honest structured
+    // form. A bundle that is priced but not yet on sale must not publish
+    // InStock just because a price now exists.
+    availability: 'https://schema.org/PreOrder',
+    url: `${origin}/marketplace/${SUITE.slug}`,
+    price: SUITE.price.replace(/[^0-9.]/g, ''),
+    priceCurrency: 'USD',
+  };
+
+  const suiteJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: SUITE.name,
+    description: SUITE.tagline,
+    applicationCategory: SUITE.pillar,
+    operatingSystem: 'Web, self-hosted',
+    author: { '@type': 'Organization', name: SUITE.publisher, url: 'https://magicunicorn.tech' },
+    image: absolute(DEFAULT_OG_IMAGE),
+    url: `${origin}/marketplace/${SUITE.slug}`,
+    offers: suiteOffer,
+  };
+
+  const suiteHost = hostOf(SUITE.cta.href);
+
+  const memberRow = (m, i) => `
+              <tr>
+                <td class="cell-index"><span class="chip" aria-hidden="true"></span>${pad2(i + 1)}</td>
+                <td class="cell-name">
+                  <h3 class="product-name">${m.slug
+    ? `<a href="/marketplace/${escapeHtml(m.slug)}">${escapeHtml(m.name)}</a>`
+    : escapeHtml(m.name)}</h3>
+                  ${m.note ? `<p class="row-tagline">${escapeHtml(m.note)}</p>` : ''}
+                </td>
+                <td><span class="pill pill-${accessClass(m.access)}">${escapeHtml(m.access)}</span></td>
+              </tr>`;
+
+  const suiteHtml = `<!doctype html>
+<html lang="en">
+${pageHead({
+  title: `${SUITE.name} | Unicorn Commander Marketplace`,
+  description: SUITE.tagline,
+  canonical: `${origin}/marketplace/${SUITE.slug}`,
+  image: DEFAULT_OG_IMAGE,
+  jsonLd: suiteJsonLd,
+})}
+<body>
+  ${header()}
+  <main>
+    <section class="hero">
+      <div class="shell detail-hero">
+        <div class="detail-copy">
+          <a class="back" href="/marketplace">${'←'} Marketplace</a>
+          <p class="eyebrow">${escapeHtml(SUITE.pillar)} ${'·'} ${escapeHtml(SUITE.part)} ${'·'} by ${escapeHtml(SUITE.publisher)}</p>
+          <h1 class="page-title">${escapeHtml(SUITE.name)}</h1>
+          <p class="lede">${escapeHtml(SUITE.tagline)}</p>
+          <p><span class="pill pill-${accessClass(SUITE.access)}">${escapeHtml(SUITE.access)}</span>${SUITE.dogfood ? ' <span class="pill pill-open">We run our company on this</span>' : ''}</p>
+          <p class="mono small">${escapeHtml(priceText(SUITE))} ${'·'} ${escapeHtml(SUITE.price_annual)}</p>
+          <p class="small" style="max-width:68ch">${escapeHtml(SUITE.price_note)}</p>
+        </div>
+        <div>
+          <div class="plate"><img src="${escapeHtml(SUITE.mascot)}" alt="${escapeHtml(SUITE.mascot_alt)}" width="240" height="240"></div>
+          <span class="partno mono">${escapeHtml(SUITE.part)} ${'·'} BUNDLE</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">01</span>
+        <h2 class="section-title">What is in the bundle,<br>and what is not yet.</h2>
+        <p class="lede">${escapeHtml(SUITE_AVAILABLE_LINE)}</p>
+        <div class="ledger-scroll">
+          <table class="ledger">
+            <caption class="sr-only">Every member of the Unicorn Commander Suite with its current access state.</caption>
+            <thead>
+              <tr>
+                <th class="colhead" scope="col">#<span class="colhead-note">index, not rank</span></th>
+                <th class="colhead" scope="col">Member</th>
+                <th class="colhead" scope="col">Access</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${SUITE.members.map(memberRow).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="prose" style="margin-top:var(--s-8)">Available now means the member has its own listing in this catalog, marked available, and you can open it from the row above. In development means it has no listing here yet. This table is derived from those listings when the page is built, so it cannot claim a member is ready while that member's own page says otherwise.</p>
+        ${SUITE.callouts?.length ? `<ul class="runs-list" style="margin-top:var(--s-6)">${SUITE.callouts.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>` : ''}
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">02</span>
+        <h2 class="section-title">What it can touch.<br>Where it runs.</h2>
+        <div class="trust-grid">
+          <article class="trust-card"><h3>What it can do</h3><ul>${SUITE.capabilities.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></article>
+          <article class="trust-card"><h3>What waits for you</h3><p>${escapeHtml(SUITE.approval_boundary)}</p></article>
+          <article class="trust-card"><h3>Where it runs</h3><ul>${SUITE.deployment_options.map((o) => `<li>${escapeHtml(o)}</li>`).join('')}</ul><p>${escapeHtml(SUITE.deployment_note)} <a href="/marketplace/self-host">What self-hosting takes</a>.</p></article>
+          <article class="trust-card"><h3>Does data leave your network?</h3><p>${escapeHtml(SUITE.data_egress)}</p></article>
+          <article class="trust-card"><h3>Source license</h3><p>${escapeHtml(SUITE.source_license)}</p><p class="small">${escapeHtml(SUITE.source_note)}</p></article>
+        </div>
+        <p class="small" style="margin-top:var(--s-8);max-width:68ch">Claims on this page are intentionally narrower than the roadmap. If a capability was not verified in current source or operator documentation, it is not listed.</p>
+      </div>
+    </section>
+
+    ${SUITE.access !== 'Available now' ? `
+    <section class="section-block" aria-labelledby="suite-beta-title">
+      <div class="shell railed">
+        <span class="rail-num">03</span>
+        <h2 class="section-title" id="suite-beta-title">Not on sale yet.</h2>
+        ${betaSignup(SUITE_BETA_PROGRAM, SUITE.name, SUITE.access)}
+      </div>
+    </section>` : ''}
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">${SUITE.access !== 'Available now' ? '04' : '03'}</span>
+        <div class="threshold">
+          <p class="eyebrow">Leaving the marketplace</p>
+          <a class="hostname mono" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(suiteHost)}<span class="arrow" aria-hidden="true">${GLYPH.ext}</span></a>
+          <p class="threshold-note">You are leaving the marketplace. This page is served by Magic Unicorn at the host above, and it runs its own visual system: it will not look like this page.</p>
+          <p><a class="btn btn-primary" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(SUITE.cta.label)}</a>
+          <a class="btn btn-secondary" href="${escapeHtml(SUITE.secondary_cta.href)}">${escapeHtml(SUITE.secondary_cta.label)}</a></p>
+          <p class="small">There is no checkout on this page. The Suite is priced and its tiers exist in billing, but it is not on sale until the members above are ready, so the honest doors are the build log and the ${pad2(SUITE_AVAILABLE)} members you can already use.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+  ${footer()}
+  <script>(() => {${THEME_SCRIPT}${BETA_SIGNUP_SCRIPT}})();</script>
+</body>
+</html>`;
+
+  const suiteDir = resolve(outputRoot, SUITE.slug);
+  mkdirSync(suiteDir, { recursive: true });
+  writeFileSync(resolve(suiteDir, 'index.html'), `${suiteHtml.replace(/[ \t]+$/gm, '')}\n`);
+}
+
+console.log(`Generated marketplace index, self-host page, the Suite bundle page, and ${LISTINGS.length} listing pages in ${outputRoot}`);
+console.log(`  suite: ${SUITE.price} / ${SUITE.price_annual} · ${SUITE_AVAILABLE}/${SUITE_TOTAL} members available`);
 console.log(`  readout(all):  ${READOUTS.all.line}`);
 console.log(`  readout(host): ${READOUTS.host.line}`);

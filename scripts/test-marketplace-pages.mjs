@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LISTINGS, SUITE } from '../src/data/marketplaceListings.js';
 import {
-  MAST_HEADLINE, MAST_HEADLINE_TEXT, SELF_HOSTABLE, TOTAL, isSelfHostable,
+  MAST_HEADLINE, MAST_HEADLINE_TEXT, SELF_HOSTABLE, SUITE_AVAILABLE,
+  SUITE_AVAILABLE_LINE, SUITE_TOTAL, TOTAL, isSelfHostable,
 } from '../src/data/marketplaceSystem.js';
 
 const root = resolve(import.meta.dirname, '../public/marketplace');
@@ -127,6 +128,78 @@ for (const l of LISTINGS) {
     assert.ok(detail.includes(l.source_url), `${l.slug} must link its source_url`);
   }
 }
+
+// ── THE SUITE BUNDLE PAGE ───────────────────────────────────────────────────
+// The bundle carried three live Stripe SKU pairs at three different prices and
+// had NO page at all: /marketplace/unicorn-commander-suite was a 404 while the
+// thing was billable. These assertions keep the page real, prerendered, linked,
+// and honest about what you can actually use.
+const suite = readFileSync(resolve(root, SUITE.slug, 'index.html'), 'utf8');
+
+// Genuinely prerendered, exactly like its siblings — not an SPA shell.
+assert.doesNotMatch(suite, /id="root"/, 'the Suite page shipped an SPA mount point');
+assert.doesNotMatch(suite, /\/assets\/index-[A-Za-z0-9_-]+\.js/, 'the Suite page shipped a JS bundle');
+assert.doesNotMatch(suite, /Loading Ops-Center/);
+assert.match(suite, /<h1 class="page-title">Unicorn Commander Suite<\/h1>/);
+
+// Same instrument as the other listing pages: one stylesheet, the five trust
+// cards, the declared seam.
+assert.match(suite, /\/marketplace\/marketplace\.css/);
+assert.match(suite, /You are leaving the marketplace/);
+for (const heading of ['What it can do', 'What waits for you', 'Where it runs',
+  'Does data leave your network?', 'Source license']) {
+  assert.ok(suite.includes(`<h3>${heading}</h3>`), `the Suite page is missing the "${heading}" trust card`);
+}
+
+// A page nothing links to is still a 404 in practice. The catalog must reach it.
+assert.match(index, new RegExp(`/marketplace/${SUITE.slug}`),
+  'the catalog page does not link to the Suite listing');
+
+// PRICE. One decided number, rendered, and matching the SKU the locked price
+// sheet chose. The whole defect was three live prices and no page saying which.
+assert.equal(SUITE.price, '$49/month');
+assert.equal(SUITE.price_annual, '$490/year');
+assert.doesNotMatch(suite, /\{\{PRICE_TBD\}\}/);
+assert.match(suite, /\$49\/month/);
+// The Managed rung is NAMED with its number, so no door can surprise a buyer.
+assert.match(suite, /\$65\/month/, 'the Suite page hides the Managed tier price');
+// The superseded $35 SKU must never be advertised.
+assert.doesNotMatch(suite, /\$35\/month|\$350\/year/, 'the superseded $35 Suite SKU is being advertised');
+
+// JSON-LD must agree with the visible price and must NOT claim InStock for a
+// bundle that is priced but not yet on sale.
+const suiteLd = [...suite.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+  .map((m) => JSON.parse(m[1].replaceAll('\\u003c', '<')));
+assert.equal(suiteLd.length, 1);
+assert.equal(suiteLd[0].offers.price, '49');
+assert.equal(suiteLd[0].offers.priceCurrency, 'USD');
+assert.equal(suiteLd[0].offers.availability, 'https://schema.org/PreOrder');
+
+// BUNDLE HONESTY. Members are derived from their own listings, so the page can
+// never sell eight names while implying all eight are usable.
+assert.ok(SUITE.members.length === SUITE_TOTAL && SUITE_TOTAL > 0);
+assert.ok(SUITE_AVAILABLE > 0 && SUITE_AVAILABLE < SUITE_TOTAL,
+  'the Suite member split is all-or-nothing; re-check the derivation');
+assert.match(suite, new RegExp(SUITE_AVAILABLE_LINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.match(index, new RegExp(SUITE_AVAILABLE_LINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+  'the catalog and the bundle page disagree on how much of the Suite is available');
+for (const m of SUITE.members) {
+  assert.ok(suite.includes(m.name), `the Suite page omits member ${m.name}`);
+  const listed = LISTINGS.find((l) => l.slug === m.slug);
+  if (m.slug) {
+    assert.ok(listed, `Suite member ${m.slug} links to a listing that does not exist`);
+    assert.equal(m.access, listed.access,
+      `Suite member ${m.slug} says "${m.access}" but its listing says "${listed.access}"`);
+    assert.ok(suite.includes(`/marketplace/${m.slug}`));
+  } else {
+    // No listing means no link — never a link to a page that would 404.
+    assert.notEqual(m.access, 'Available now',
+      `Suite member ${m.name} claims "Available now" with no listing to prove it`);
+  }
+}
+// No blanket license claim for a bundle that does not have one.
+assert.doesNotMatch(suite, /AGPL at the core/i);
+assert.match(suite, /each listing states its own/i);
 
 // Self-host is a real destination and a top-level nav peer.
 const selfHost = readFileSync(resolve(root, 'self-host', 'index.html'), 'utf8');

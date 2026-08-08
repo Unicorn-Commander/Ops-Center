@@ -15,7 +15,7 @@
 // renderers should only decide how to draw what this module already decided.
 // ============================================================================
 
-import { LISTINGS, PRICE_TBD } from './marketplaceListings.js';
+import { LISTINGS, PRICE_TBD, SUITE } from './marketplaceListings.js';
 
 // Bump on every stylesheet change. ONE copy, imported by both renderers, so
 // the SPA and the SSR pages can never request different cached stylesheets.
@@ -104,6 +104,17 @@ export const HOSTED = LISTINGS.filter(
 ).length;
 export const AVAILABLE = LISTINGS.filter((l) => l.access === 'Available now').length;
 export const OPEN_STALLS = 1; // deliberate, and it stays
+
+// ── THE SUITE BUNDLE ────────────────────────────────────────────────────────
+// The bundle is the one listing that can lie by omission: it is easy to sell
+// eight names and quietly let a reader assume all eight are usable. So the
+// "how much of this can I use today" number is DERIVED from the member access
+// states (which are themselves derived from each member's own listing), and
+// both the index section and the bundle page render this same string.
+export const SUITE_MEMBERS = SUITE.members || [];
+export const SUITE_TOTAL = SUITE_MEMBERS.length;
+export const SUITE_AVAILABLE = SUITE_MEMBERS.filter((m) => m.access === 'Available now').length;
+export const SUITE_AVAILABLE_LINE = `${pad2(SUITE_AVAILABLE)} of ${pad2(SUITE_TOTAL)} members are available now. The rest are in development, which is why the Suite is priced but not yet on sale.`;
 
 // ── THE THREE AUDIENCES ─────────────────────────────────────────────────────
 // The accent chord IS the audiences: three peers of comparable chroma and
@@ -256,6 +267,101 @@ export const PLAIN_TRUTH = `${WORDS[TOTAL] || TOTAL} real products. No empty she
 // directions, with no flash of the wrong theme.
 export const THEME_BOOTSTRAP = `(function(){try{var t=localStorage.getItem('mu-theme');var d=t||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.dataset.theme=d;document.documentElement.style.colorScheme=d;}catch(e){}})()`;
 
+// ── BETA SIGNUP ─────────────────────────────────────────────────────────────
+// An in-development product has no CTA that means anything: there is nothing
+// to open, download, or buy. Until now the only thing those rows could offer
+// was a link to the build log, and four Listmonk lists sat at zero because no
+// surface anywhere submitted to them.
+//
+// This is the announcement list, and the copy is written so it CANNOT be read
+// as availability. Rules it has to keep, in the same spirit as the price
+// contract and the empty stall:
+//
+//   1. The "In development" pill stays, above the form, in the same block.
+//   2. No date. Not "soon", not "this quarter", not "early access starts".
+//   3. No scarcity. No seat count, no "limited spots", no waitlist position,
+//      no subscriber count — a number here would be the fake-popularity
+//      signal this page exists to refuse, and the honest number is zero.
+//   4. Say what the form does and does not do, in the form, before the field.
+//   5. Double opt-in is stated as a fact of the flow, not buried: you are not
+//      on the list until you click the link in the mail.
+//
+// `program` is the server-side allowlist key in backend/beta_signup_api.py.
+// The browser cannot name a Listmonk list; it names a programme, and the
+// server resolves it.
+export const BETA_ENDPOINT = '/api/v1/public/beta/signup';
+
+export const BETA_COPY = {
+  eyebrow: 'In development · not available yet',
+  // Deliberately a verb about being TOLD, not about getting or joining. "Get
+  // early access" would be a promise; this is a notification.
+  heading: (product) => `Hear about ${product} when it opens`,
+  body: (product) => `${product} is not available today. This form does not create an account, reserve a place, start a trial, or grant early access. It adds your address to one announcement list for this product, and nothing else. We have not set a release date, so we are not going to imply one.`,
+  optin: 'We will send you a confirmation link. You are not on the list until you click it. Every email carries an unsubscribe link.',
+  label: 'Email address',
+  button: 'Notify me',
+  busy: 'Sending…',
+  // The success line is the server's neutral answer: identical whether the
+  // address was new, already subscribed, or already confirmed. Anything more
+  // specific would make this endpoint an oracle for list membership.
+  invalid: 'That does not look like an email address.',
+  failed: 'Something went wrong on our end and nothing was recorded. Please try again in a minute.',
+  privacy: 'One list, one product. You can unsubscribe from any email we send.',
+};
+
+// One implementation, shipped byte-identical to the SSR pages and the SPA, for
+// the same reason every other constant in this file is shared: the two
+// renderers drift the moment either one carries its own copy.
+export const BETA_SIGNUP_SCRIPT = `
+      document.querySelectorAll('[data-beta-program]').forEach(function (block) {
+        var form = block.querySelector('form');
+        var status = block.querySelector('[data-beta-status]');
+        var button = block.querySelector('button[type="submit"]');
+        if (!form || !status || !button) return;
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var data = new FormData(form);
+          var email = String(data.get('email') || '').trim();
+          if (!email || email.indexOf('@') < 1) {
+            status.dataset.state = 'error';
+            status.textContent = ${JSON.stringify(BETA_COPY.invalid)};
+            return;
+          }
+          var original = button.textContent;
+          button.disabled = true;
+          button.textContent = ${JSON.stringify(BETA_COPY.busy)};
+          status.dataset.state = 'busy';
+          status.textContent = '';
+          fetch(${JSON.stringify(BETA_ENDPOINT)}, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              program: block.dataset.betaProgram,
+              email: email,
+              company: String(data.get('company') || '')
+            })
+          }).then(function (response) {
+            return response.json().then(function (payload) { return { ok: response.ok, payload: payload }; });
+          }).then(function (result) {
+            if (result.ok) {
+              status.dataset.state = 'done';
+              status.textContent = result.payload.message;
+              form.hidden = true;
+            } else {
+              status.dataset.state = 'error';
+              status.textContent = (result.payload && (result.payload.detail || result.payload.message)) || ${JSON.stringify(BETA_COPY.failed)};
+              button.disabled = false;
+              button.textContent = original;
+            }
+          }).catch(function () {
+            status.dataset.state = 'error';
+            status.textContent = ${JSON.stringify(BETA_COPY.failed)};
+            button.disabled = false;
+            button.textContent = original;
+          });
+        });
+      });`;
+
 export const applyTheme = (next) => {
   document.documentElement.dataset.theme = next;
   document.documentElement.style.colorScheme = next;
@@ -266,4 +372,4 @@ export const toggleTheme = () => {
   applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
 };
 
-export { LISTINGS, PRICE_TBD };
+export { LISTINGS, PRICE_TBD, SUITE };

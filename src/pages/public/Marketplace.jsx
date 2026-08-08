@@ -17,8 +17,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { LISTINGS, SUITE } from '../../data/marketplaceListings.js';
 import {
   AUDIENCES, CREW, CREW_NOTE, CSS_VERSION, GLYPH, LIT, MAST_HEADLINE,
-  MAST_HEADLINE_TEXT, PLAIN_TRUTH, READOUTS, TARGETS, TONE_BY_AUDIENCE,
-  accessClass, egressShort, hostOf, pad2, supports, toggleTheme,
+  MAST_HEADLINE_TEXT, PLAIN_TRUTH, READOUTS, SUITE_AVAILABLE_LINE, TARGETS,
+  TONE_BY_AUDIENCE, accessClass, egressShort, hostOf, pad2, priceText,
+  supports, toggleTheme,
 } from '../../data/marketplaceSystem.js';
 
 // ── SHARED FRAGMENTS ────────────────────────────────────────────────────────
@@ -422,10 +423,15 @@ export default function Marketplace() {
             <h2 className="section-title" id="suite-title">{SUITE.name}</h2>
             <p className="lede">{SUITE.tagline}</p>
             <p style={{ marginTop: 'var(--s-5)' }}><span className="pill pill-development">{SUITE.access}</span></p>
+            {/* TWIN: mirrors the same block in generate-marketplace-pages.mjs. */}
+            <p className="mono small">{priceText(SUITE)}{SUITE.price_annual ? ` · ${SUITE.price_annual}` : ''}</p>
             <div className="rail-cells" style={{ marginTop: 'var(--s-6)' }}>
               {SUITE.includes.map((name) => <span className="rail-cell" key={name}>{name}</span>)}
             </div>
+            <p className="small">{SUITE_AVAILABLE_LINE}</p>
             <p style={{ marginTop: 'var(--s-6)' }}>
+              <a className="btn btn-primary" href={`/marketplace/${SUITE.slug}`}>See what is in the Suite</a>
+              {' '}
               <a className="btn btn-secondary" href={SUITE.cta.href}>{SUITE.cta.label}</a>
             </p>
           </div>

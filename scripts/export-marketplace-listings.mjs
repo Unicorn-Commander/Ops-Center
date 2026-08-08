@@ -335,29 +335,123 @@ const LISTINGS = Object.entries(OVERLAY).map(([slug, o]) => {
 // The Unicorn Commander Suite bundle (spine §4). Names come from
 // products-data where present so chips track the source of truth.
 const suiteSlugs = ['project-ops', 'contact-ops', 'customer-ops', 'email-ops', 'knowledge-ops', 'center-deep-research', 'stable', 'meeting-ops'];
+
+// ── PRICE PROVENANCE ────────────────────────────────────────────────────────
+// READ THIS BEFORE CHANGING THE NUMBER.
+//
+// The Suite carries THREE live Stripe SKU pairs for one bundle, which is how a
+// customer could be quoted three different amounts depending which door they
+// came through (all livemode, all active, verified read-only 2026-08-08):
+//
+//   prod_Ud0Mf9oqRAN7Qq  "Unicorn Commander Suite"           $35 /mo  $350 /yr
+//   prod_UlHyxTDQgLCTJQ  "Unicorn Commander Suite - BYOK"    $49 /mo  $490 /yr
+//   prod_UlHyYAsvaRdhZa  "Unicorn Commander Suite - Managed" $65 /mo  $650 /yr
+//
+// The page advertises $49 / $490 (BYOK). Reasons, in order of weight:
+//
+//  1. backend/migrations/update_pricing_sheet_2026.sql is the LOCKED price
+//     sheet — "decision 2026-06-24, project P-00107 ... Free $0 / App $15 /
+//     Suite-BYOK $49 / Suite-Managed $65" — and it sets the byok tier to
+//     49.00 / 490.00 explicitly.
+//  2. It is the only live number that also matches the written decision ($49).
+//  3. subscription_tiers.stripe_price_monthly for tier_code='byok' points at
+//     exactly this SKU, so display price and charged price already agree.
+//  4. $35 / $350 PREDATES that decision (metadata product_tier:
+//     'suite_v2_2026', created 2026-06-02), has no row in subscription_tiers,
+//     and is superseded. It is the orphan, not the answer.
+//  5. There are ZERO subscriptions on this Stripe account, so no existing
+//     subscriber anchors any of the three.
+//
+// $65 Managed is NOT a rival price for the same thing — it is the
+// hosted-inference rung of the same ladder (same migration, same second). It
+// is therefore NAMED ON THE PAGE with its own number, so that no door can
+// surprise a buyer. Hiding it would have created a fresh honesty problem while
+// fixing the old one.
+//
+// This decides only what the PAGE advertises. It archives and edits nothing in
+// Stripe, and it does not flip any tier's is_active.
+const SUITE_PRICE_MONTHLY = '$49/month';
+const SUITE_PRICE_ANNUAL = '$490/year';
+
+// Members carry the access state of their OWN catalog listing, derived here at
+// build time rather than typed, so the bundle page can never claim a member is
+// available while that member's listing says otherwise.
+const suiteMembers = suiteSlugs.map((s) => {
+  // Prefer the products-data name unless it is just the slug echoed back
+  // (the stable entry does this in some checkouts).
+  const proper = { 'knowledge-ops': 'Knowledge-Ops', stable: 'Unicorn Stable' };
+  const src = bySlug[s];
+  const n = src?.name;
+  const name = (n && n.toLowerCase() !== s.toLowerCase()) ? n : (proper[s] || n || s);
+  const listed = LISTINGS.find((l) => l.slug === s) || null;
+  return {
+    name,
+    // A listing link is emitted ONLY for a member that actually has a page in
+    // this catalog. Everything else gets no link rather than a 404.
+    slug: listed ? listed.slug : null,
+    access: listed ? listed.access : 'In development',
+    note: listed ? null : 'No listing in this catalog yet.',
+  };
+});
+
 const SUITE = {
   slug: 'unicorn-commander-suite',
   name: 'Unicorn Commander Suite',
   publisher: 'Magic Unicorn',
+  pillar: 'AI Employees',
+  part: 'UC-00',
   listing_type: 'hosted',
   access: 'In development',
-  price: PRICE_TBD,
+  // A real, decided number now exists, so the price contract permits rendering
+  // it. See PRICE PROVENANCE above.
+  price: SUITE_PRICE_MONTHLY,
+  price_annual: SUITE_PRICE_ANNUAL,
+  price_note: 'That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is priced at $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. The Suite is not on sale yet, so neither tier has an open checkout on this page.',
   entitlement_sku: null,
   dogfood: true,
   tagline: 'The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.',
-  includes: suiteSlugs.map((s) => {
-    // Prefer the products-data name unless it is just the slug echoed back
-    // (the stable entry does this in some checkouts).
-    const proper = { 'knowledge-ops': 'Knowledge-Ops', stable: 'Unicorn Stable' };
-    const n = bySlug[s]?.name;
-    return (n && n.toLowerCase() !== s.toLowerCase()) ? n : (proper[s] || n || s);
-  }),
+  // The Suite is the platform itself, so it wears the system signal colour
+  // rather than a product hue. brand_primary is deliberately unset: every
+  // var(--b) in the stylesheet falls back to var(--signal).
+  mascot: '/logos/The_Colonel.png',
+  mascot_alt: 'The Colonel, the Unicorn Commander mark: a white unicorn in a navy beret with a rainbow mane and a gold horn',
+  canonical_url: 'https://unicorncommander.ai/marketplace/unicorn-commander-suite',
+  og_image: null,
+  includes: suiteMembers.map((m) => m.name),
+  members: suiteMembers,
+  capabilities: [
+    'Entitles every Suite app under one Unicorn Commander account and one credit balance',
+    'Includes each app’s MCP tool surface, under the caller’s own role',
+    'BYOK tier calls model providers with keys you supply',
+    'Managed tier substitutes UC-hosted inference credits and priority support',
+  ],
+  approval_boundary: 'The bundle grants entitlements; it does not widen them. Every member keeps the approval boundary printed on its own listing — Meeting-Ops still proposes rather than writes, and Project-Ops still holds AI-proposed work in a Triage queue until a human approves, routes, or rejects it. Buying the Suite never gives an agent a permission the owning app would refuse on its own.',
+  deployment_options: ['Unicorn Cloud', 'BYOK'],
+  deployment_note: 'The Suite is a hosted entitlement across Unicorn Cloud, with BYOK as the tier that points the apps at your own model provider keys. Self-hosting is decided per member rather than by the bundle, because the members do not all ship the same way — see what self-hosting takes.',
+  data_egress: 'Depends on the tier and the member. On BYOK, model calls go to the provider whose keys you supply. On Managed, inference is processed on Magic Unicorn infrastructure. Each member listing states its own answer, and the bundle does not override it.',
+  source_license: 'Per member — each listing states its own',
+  source_url: null,
+  source_note: 'The Suite is a commercial bundle, not a single codebase, so it has no license of its own and there is no blanket claim to make. Members with a listing in this catalog state their exact license there. Members without one have not had a license published yet.',
   callouts: [
     'Meeting-Ops is also sold standalone.',
     'Accounting-Ops is a standalone add-on, in or out of the bundle.',
   ],
   cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log?project=unicorn-commander-suite' },
+  secondary_cta: { label: 'Start with Meeting-Ops', href: 'https://meeting-ops.unicorncommander.ai/' },
 };
+
+// Hard rule: the bundle page must never advertise a member as available while
+// that member's own listing says otherwise. The states are derived above, so
+// this asserts the derivation actually ran rather than trusting it.
+for (const m of SUITE.members) {
+  const listed = LISTINGS.find((l) => l.slug === m.slug);
+  if (m.slug && listed && m.access !== listed.access) {
+    throw new Error(`Suite member ${m.slug} claims "${m.access}" but its listing says "${listed.access}".`);
+  }
+  if (!m.slug && m.access === 'Available now') {
+    throw new Error(`Suite member ${m.name} is "Available now" with no listing to prove it.`);
+  }
+}
 
 // Hard rule (spine §4): the literal placeholder must never be renderable copy.
 for (const l of [...LISTINGS, SUITE]) {
@@ -373,8 +467,10 @@ for (const l of [...LISTINGS, SUITE]) {
 // meeting-ops (approval_boundary: null) silently shipped a 4-of-5 panel on the
 // flagship listing. A missing answer to "what waits for a human?" is not a
 // smaller panel, it is an unanswered trust question, so it fails the build.
+// The Suite is in this loop too: it renders the same five-card panel as any
+// listing, so it owes the same five answers.
 const TRUST_FIELDS = ['capabilities', 'approval_boundary', 'deployment_options', 'source_license', 'data_egress'];
-for (const l of LISTINGS) {
+for (const l of [...LISTINGS, SUITE]) {
   for (const f of TRUST_FIELDS) {
     const v = l[f];
     const empty = v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '');

@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
 // Source of product facts: products-data.js @ 2026-08-07 instrument
-// Generated: 2026-08-07T23:28:44.937Z
+// Generated: 2026-08-08T21:45:16.366Z
 // Access states follow the confirmed catalog (2026-08-07, five listings).
 // price === '{{PRICE_TBD}}' means: render NO number.
 
@@ -189,6 +189,7 @@ export const LISTINGS = [
     "deployment_note": "Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.",
     "source_license": "AGPL-3.0",
     "source_url": "https://github.com/Unicorn-Commander/project-ops-community",
+    "source_note": "This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.",
     "data_egress": "Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.",
     "cta": {
       "label": "Request access",
@@ -254,12 +255,20 @@ export const SUITE = {
   "slug": "unicorn-commander-suite",
   "name": "Unicorn Commander Suite",
   "publisher": "Magic Unicorn",
+  "pillar": "AI Employees",
+  "part": "UC-00",
   "listing_type": "hosted",
   "access": "In development",
-  "price": "{{PRICE_TBD}}",
+  "price": "$49/month",
+  "price_annual": "$490/year",
+  "price_note": "That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is priced at $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. The Suite is not on sale yet, so neither tier has an open checkout on this page.",
   "entitlement_sku": null,
   "dogfood": true,
   "tagline": "The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.",
+  "mascot": "/logos/The_Colonel.png",
+  "mascot_alt": "The Colonel, the Unicorn Commander mark: a white unicorn in a navy beret with a rainbow mane and a gold horn",
+  "canonical_url": "https://unicorncommander.ai/marketplace/unicorn-commander-suite",
+  "og_image": null,
   "includes": [
     "Project-Ops",
     "Contact-Ops",
@@ -270,6 +279,72 @@ export const SUITE = {
     "Unicorn Stable",
     "Meeting-Ops"
   ],
+  "members": [
+    {
+      "name": "Project-Ops",
+      "slug": "project-ops",
+      "access": "Available now",
+      "note": null
+    },
+    {
+      "name": "Contact-Ops",
+      "slug": null,
+      "access": "In development",
+      "note": "No listing in this catalog yet."
+    },
+    {
+      "name": "Customer-Ops",
+      "slug": null,
+      "access": "In development",
+      "note": "No listing in this catalog yet."
+    },
+    {
+      "name": "Email-Ops",
+      "slug": null,
+      "access": "In development",
+      "note": "No listing in this catalog yet."
+    },
+    {
+      "name": "Knowledge-Ops",
+      "slug": null,
+      "access": "In development",
+      "note": "No listing in this catalog yet."
+    },
+    {
+      "name": "Center Deep Research",
+      "slug": "center-deep-research",
+      "access": "Available now",
+      "note": null
+    },
+    {
+      "name": "Unicorn Stable",
+      "slug": null,
+      "access": "In development",
+      "note": "No listing in this catalog yet."
+    },
+    {
+      "name": "Meeting-Ops",
+      "slug": "meeting-ops",
+      "access": "Available now",
+      "note": null
+    }
+  ],
+  "capabilities": [
+    "Entitles every Suite app under one Unicorn Commander account and one credit balance",
+    "Includes each app’s MCP tool surface, under the caller’s own role",
+    "BYOK tier calls model providers with keys you supply",
+    "Managed tier substitutes UC-hosted inference credits and priority support"
+  ],
+  "approval_boundary": "The bundle grants entitlements; it does not widen them. Every member keeps the approval boundary printed on its own listing — Meeting-Ops still proposes rather than writes, and Project-Ops still holds AI-proposed work in a Triage queue until a human approves, routes, or rejects it. Buying the Suite never gives an agent a permission the owning app would refuse on its own.",
+  "deployment_options": [
+    "Unicorn Cloud",
+    "BYOK"
+  ],
+  "deployment_note": "The Suite is a hosted entitlement across Unicorn Cloud, with BYOK as the tier that points the apps at your own model provider keys. Self-hosting is decided per member rather than by the bundle, because the members do not all ship the same way — see what self-hosting takes.",
+  "data_egress": "Depends on the tier and the member. On BYOK, model calls go to the provider whose keys you supply. On Managed, inference is processed on Magic Unicorn infrastructure. Each member listing states its own answer, and the bundle does not override it.",
+  "source_license": "Per member — each listing states its own",
+  "source_url": null,
+  "source_note": "The Suite is a commercial bundle, not a single codebase, so it has no license of its own and there is no blanket claim to make. Members with a listing in this catalog state their exact license there. Members without one have not had a license published yet.",
   "callouts": [
     "Meeting-Ops is also sold standalone.",
     "Accounting-Ops is a standalone add-on, in or out of the bundle."
@@ -277,6 +352,10 @@ export const SUITE = {
   "cta": {
     "label": "Read the build log",
     "href": "https://magicunicorn.dev/log?project=unicorn-commander-suite"
+  },
+  "secondary_cta": {
+    "label": "Start with Meeting-Ops",
+    "href": "https://meeting-ops.unicorncommander.ai/"
   }
 };
 
