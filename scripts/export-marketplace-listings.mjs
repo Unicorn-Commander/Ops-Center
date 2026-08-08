@@ -409,7 +409,7 @@ const SUITE = {
   price_note: 'That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is priced at $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. The Suite is not on sale yet, so neither tier has an open checkout on this page.',
   entitlement_sku: null,
   dogfood: true,
-  tagline: 'The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.',
+  tagline: 'The whole AI staff, hired together. One account and one credit pool; cross-app handoffs are rolling out — not every app already knows what the others are doing yet.',
   // The Suite is the platform itself, so it wears the system signal colour
   // rather than a product hue. brand_primary is deliberately unset: every
   // var(--b) in the stylesheet falls back to var(--signal).
