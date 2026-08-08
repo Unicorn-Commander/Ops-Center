@@ -25,7 +25,7 @@
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/plex-sans-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-7">
+    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260808-instrument-8">
 
   </head>
 <body>
@@ -164,6 +164,54 @@
           document.documentElement.dataset.theme = next;
           document.documentElement.style.colorScheme = next;
           try { localStorage.setItem('mu-theme', next); } catch (e) {}
+        });
+      });
+      document.querySelectorAll('[data-beta-program]').forEach(function (block) {
+        var form = block.querySelector('form');
+        var status = block.querySelector('[data-beta-status]');
+        var button = block.querySelector('button[type="submit"]');
+        if (!form || !status || !button) return;
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var data = new FormData(form);
+          var email = String(data.get('email') || '').trim();
+          if (!email || email.indexOf('@') < 1) {
+            status.dataset.state = 'error';
+            status.textContent = "That does not look like an email address.";
+            return;
+          }
+          var original = button.textContent;
+          button.disabled = true;
+          button.textContent = "Sending…";
+          status.dataset.state = 'busy';
+          status.textContent = '';
+          fetch("/api/v1/public/beta/signup", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              program: block.dataset.betaProgram,
+              email: email,
+              company: String(data.get('company') || '')
+            })
+          }).then(function (response) {
+            return response.json().then(function (payload) { return { ok: response.ok, payload: payload }; });
+          }).then(function (result) {
+            if (result.ok) {
+              status.dataset.state = 'done';
+              status.textContent = result.payload.message;
+              form.hidden = true;
+            } else {
+              status.dataset.state = 'error';
+              status.textContent = (result.payload && (result.payload.detail || result.payload.message)) || "Something went wrong on our end and nothing was recorded. Please try again in a minute.";
+              button.disabled = false;
+              button.textContent = original;
+            }
+          }).catch(function () {
+            status.dataset.state = 'error';
+            status.textContent = "Something went wrong on our end and nothing was recorded. Please try again in a minute.";
+            button.disabled = false;
+            button.textContent = original;
+          });
         });
       });})();</script>
 </body>

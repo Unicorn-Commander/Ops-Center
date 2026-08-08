@@ -819,6 +819,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/account/uc-api-keys/revoke-self",  # uc_-key-authed self-revoke at app sign-out (P10), not forms
         "/api/v1/uuda/",  # UUDA control plane
         "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
+        "/api/v1/public/",  # Public unauthenticated surfaces (pricing, beta signup) - no session, so no double-submit cookie exists
+        "/mail/",  # Listmonk opt-in/unsubscribe pages proxied for anonymous subscribers
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -1657,6 +1659,17 @@ app.include_router(dynamic_pricing_router)
 # Pricing Packages API (public pricing information)
 from pricing_packages_api import router as pricing_packages_router
 app.include_router(pricing_packages_router)
+
+# Public beta-signup front door + the narrow public Listmonk surface.
+# The browser never talks to Listmonk (127.0.0.1-bound by design, and its
+# nginx sidecar injects an ADMIN header on every path). It talks to this,
+# which talks to Listmonk over the docker network. Double opt-in stays on.
+# NOTE: mail_router claims /mail/*, so it MUST be included before the SPA
+# catch-all @app.get("/{full_path:path}") at the bottom of this file.
+from beta_signup_api import router as beta_signup_router, mail_router as listmonk_public_router
+app.include_router(beta_signup_router)
+app.include_router(listmonk_public_router)
+logger.info("Beta signup registered at /api/v1/public/beta; Listmonk public opt-in surface at /mail")
 logger.info("Dynamic Pricing Management API endpoints registered at /api/v1/pricing")
 
 # The Colonel AI Command System

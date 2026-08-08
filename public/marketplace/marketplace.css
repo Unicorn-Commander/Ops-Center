@@ -1266,3 +1266,77 @@ body:has(.marketplace-page) {
   font-family: var(--text);
 }
 .marketplace-page { background: var(--canvas); color: var(--ink); font-family: var(--text); }
+
+/* ── BETA SIGNUP ────────────────────────────────────────────────────────────
+   The block an in-development listing carries instead of a CTA. It is a panel
+   in the same square, hairlined language as .threshold — deliberately NOT a
+   highlighted "offer" card, because it is not an offer. No radius past 8px,
+   no shadow, no glass: same rules as everything else on this sheet.
+   The honeypot input is hidden from sight AND from assistive tech, but is a
+   real focusable-by-nobody field a form-filling bot will populate. */
+.beta-signup {
+  border: 1px solid var(--line-strong);
+  padding: var(--s-7);
+  margin-top: var(--s-6);
+  max-width: 68ch;
+}
+.beta-eyebrow { color: var(--muted); }
+.beta-heading {
+  font-family: var(--display);
+  font-size: clamp(1.25rem, 2.4vw, 1.6rem);
+  line-height: 1.15;
+  margin: var(--s-4) 0 var(--s-4);
+}
+.beta-body {
+  color: var(--ink-soft);
+  max-width: 62ch;
+  margin-bottom: var(--s-4);
+}
+.beta-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--s-2);
+}
+.beta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: stretch;
+}
+.beta-input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: var(--s-3) var(--s-4);
+}
+.beta-input::placeholder { color: var(--quiet); }
+.beta-input:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+.beta-form .btn { flex: 0 0 auto; }
+.beta-form .btn[disabled] { opacity: 0.6; cursor: progress; }
+.beta-hp {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.beta-status {
+  margin-top: var(--s-4);
+  max-width: 62ch;
+  min-height: 1.2em;
+}
+.beta-status[data-state='done'] { color: var(--signal); }
+.beta-status[data-state='error'] { color: var(--signal-warm); }
+.beta-signup .micro { margin-top: var(--s-4); }

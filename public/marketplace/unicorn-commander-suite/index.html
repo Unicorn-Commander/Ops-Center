@@ -25,7 +25,7 @@
     <link rel="preload" href="/marketplace/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/plex-sans-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/marketplace/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260807-instrument-7">
+    <link rel="stylesheet" href="/marketplace/marketplace.css?v=20260808-instrument-8">
     <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Unicorn Commander Suite","description":"The whole AI staff, hired together. One account, one credit pool, and every app already knows what the others are doing.","applicationCategory":"AI Employees","operatingSystem":"Web, self-hosted","author":{"@type":"Organization","name":"Magic Unicorn","url":"https://magicunicorn.tech"},"image":"https://unicorncommander.ai/logos/uc-og-card.png","url":"https://unicorncommander.ai/marketplace/unicorn-commander-suite","offers":{"@type":"Offer","availability":"https://schema.org/PreOrder","url":"https://unicorncommander.ai/marketplace/unicorn-commander-suite","price":"49","priceCurrency":"USD"}}</script>
   </head>
 <body>
@@ -169,9 +169,38 @@
       </div>
     </section>
 
-    <section class="section-block">
+
+    <section class="section-block" aria-labelledby="suite-beta-title">
       <div class="shell railed">
         <span class="rail-num">03</span>
+        <h2 class="section-title" id="suite-beta-title">Not on sale yet.</h2>
+
+        <div class="beta-signup" data-beta-program="unicorn-commander-suite">
+          <p class="eyebrow beta-eyebrow">In development · not available yet</p>
+          <p><span class="pill pill-development">In development</span></p>
+          <h3 class="beta-heading">Hear about Unicorn Commander Suite when it opens</h3>
+          <p class="beta-body">Unicorn Commander Suite is not available today. This form does not create an account, reserve a place, start a trial, or grant early access. It adds your address to one announcement list for this product, and nothing else. We have not set a release date, so we are not going to imply one.</p>
+          <p class="beta-body">We will send you a confirmation link. You are not on the list until you click it. Every email carries an unsubscribe link.</p>
+          <form class="beta-form" novalidate>
+            <label class="beta-label" for="beta-email-unicorn-commander-suite">Email address</label>
+            <div class="beta-row">
+              <input class="beta-input" id="beta-email-unicorn-commander-suite" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com">
+              <button class="btn btn-primary" type="submit">Notify me</button>
+            </div>
+            <div class="beta-hp" aria-hidden="true">
+              <label for="beta-company-unicorn-commander-suite">Company</label>
+              <input id="beta-company-unicorn-commander-suite" name="company" type="text" tabindex="-1" autocomplete="off">
+            </div>
+          </form>
+          <p class="beta-status" data-beta-status role="status" aria-live="polite"></p>
+          <p class="micro">One list, one product. You can unsubscribe from any email we send. <a href="/legal/privacy-policy.html">Privacy</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="shell railed">
+        <span class="rail-num">04</span>
         <div class="threshold">
           <p class="eyebrow">Leaving the marketplace</p>
           <a class="hostname mono" href="https://magicunicorn.dev/log?project=unicorn-commander-suite">magicunicorn.dev<span class="arrow" aria-hidden="true">↗</span></a>
@@ -209,6 +238,54 @@
           document.documentElement.dataset.theme = next;
           document.documentElement.style.colorScheme = next;
           try { localStorage.setItem('mu-theme', next); } catch (e) {}
+        });
+      });
+      document.querySelectorAll('[data-beta-program]').forEach(function (block) {
+        var form = block.querySelector('form');
+        var status = block.querySelector('[data-beta-status]');
+        var button = block.querySelector('button[type="submit"]');
+        if (!form || !status || !button) return;
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var data = new FormData(form);
+          var email = String(data.get('email') || '').trim();
+          if (!email || email.indexOf('@') < 1) {
+            status.dataset.state = 'error';
+            status.textContent = "That does not look like an email address.";
+            return;
+          }
+          var original = button.textContent;
+          button.disabled = true;
+          button.textContent = "Sending…";
+          status.dataset.state = 'busy';
+          status.textContent = '';
+          fetch("/api/v1/public/beta/signup", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              program: block.dataset.betaProgram,
+              email: email,
+              company: String(data.get('company') || '')
+            })
+          }).then(function (response) {
+            return response.json().then(function (payload) { return { ok: response.ok, payload: payload }; });
+          }).then(function (result) {
+            if (result.ok) {
+              status.dataset.state = 'done';
+              status.textContent = result.payload.message;
+              form.hidden = true;
+            } else {
+              status.dataset.state = 'error';
+              status.textContent = (result.payload && (result.payload.detail || result.payload.message)) || "Something went wrong on our end and nothing was recorded. Please try again in a minute.";
+              button.disabled = false;
+              button.textContent = original;
+            }
+          }).catch(function () {
+            status.dataset.state = 'error';
+            status.textContent = "Something went wrong on our end and nothing was recorded. Please try again in a minute.";
+            button.disabled = false;
+            button.textContent = original;
+          });
         });
       });})();</script>
 </body>

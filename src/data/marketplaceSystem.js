@@ -22,7 +22,7 @@ import { LISTINGS, PRICE_TBD, SUITE } from './marketplaceListings.js';
 // NOTE: marketplace.css must stay hyphen-free in its filename. The backend's
 // cache middleware marks any .css path containing a hyphen as immutable for a
 // year, so renaming it would freeze it in browsers.
-export const CSS_VERSION = '20260807-instrument-7';
+export const CSS_VERSION = '20260808-instrument-8';
 
 export const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -290,6 +290,26 @@ export const THEME_BOOTSTRAP = `(function(){try{var t=localStorage.getItem('mu-t
 // The browser cannot name a Listmonk list; it names a programme, and the
 // server resolves it.
 export const BETA_ENDPOINT = '/api/v1/public/beta/signup';
+
+// Which surfaces carry a form. marketplaceListings.js is GENERATED from
+// products-data.js, so this mapping lives here rather than as a hand-added
+// field in a generated file.
+//
+// betaProgramFor() re-reads listing.access instead of trusting this table, so
+// flipping a product to "Available now" removes its signup form on the next
+// build rather than leaving a "hear about it when it opens" block sitting on
+// a shipping product.
+export const BETA_PROGRAM_BY_SLUG = {
+  'accounting-ops': 'accounting-ops',
+};
+
+export const SUITE_BETA_PROGRAM = 'unicorn-commander-suite';
+
+export const betaProgramFor = (listing) => (
+  listing && listing.access !== 'Available now'
+    ? BETA_PROGRAM_BY_SLUG[listing.slug] || null
+    : null
+);
 
 export const BETA_COPY = {
   eyebrow: 'In development · not available yet',
