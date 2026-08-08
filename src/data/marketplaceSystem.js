@@ -312,7 +312,11 @@ export const betaProgramFor = (listing) => (
 );
 
 export const BETA_COPY = {
-  eyebrow: 'In development · not available yet',
+  // NOT a second copy of the access pill that sits right under it. The pill
+  // carries the state; this line carries what the state MEANS to a reader who
+  // came here to buy something. Shipping both as "In development" put the same
+  // two words on screen twice, stacked.
+  eyebrow: 'There is nothing to buy on this page',
   // Deliberately a verb about being TOLD, not about getting or joining. "Get
   // early access" would be a promise; this is a notification.
   heading: (product) => `Hear about ${product} when it opens`,
