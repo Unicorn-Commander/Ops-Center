@@ -448,8 +448,8 @@ export default function Marketplace() {
           </nav>
           <nav className="footer-plinth" aria-label="More">
             <a href="https://magicunicorn.dev/log">Build log</a>
-            <a href="/privacy">Privacy</a>
-            <a href="/terms">Terms</a>
+            <a href="/legal/privacy-policy.html">Privacy</a>
+            <a href="/legal/terms-of-service.html">Terms</a>
           </nav>
         </div>
       </footer>

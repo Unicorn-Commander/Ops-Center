@@ -189,7 +189,6 @@ export const LISTINGS = [
     "deployment_note": "Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.",
     "source_license": "AGPL-3.0",
     "source_url": "https://github.com/Unicorn-Commander/project-ops-community",
-    "source_note": "This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.",
     "data_egress": "Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.",
     "cta": {
       "label": "Request access",
