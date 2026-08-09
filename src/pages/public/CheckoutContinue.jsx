@@ -5,6 +5,10 @@ export default function CheckoutContinue() {
   const [searchParams] = useSearchParams();
   const [message, setMessage] = useState('Preparing secure checkout…');
   const tier = searchParams.get('tier');
+  // The cycle the buyer chose on the pricing page, carried across the login
+  // round-trip. This used to be hardcoded 'monthly', which silently downgraded
+  // every annual selection back to monthly at the last step.
+  const cycle = searchParams.get('cycle') === 'yearly' ? 'yearly' : 'monthly';
 
   useEffect(() => {
     const continueCheckout = async () => {
@@ -16,7 +20,7 @@ export default function CheckoutContinue() {
         const sessionResponse = await fetch('/api/v1/auth/session', { credentials: 'include' });
         const sessionData = await sessionResponse.json().catch(() => ({}));
         if (!sessionData.authenticated) {
-          const returnUrl = `/checkout/continue?tier=${encodeURIComponent(tier)}`;
+          const returnUrl = `/checkout/continue?tier=${encodeURIComponent(tier)}&cycle=${encodeURIComponent(cycle)}`;
           window.location.replace(`/auth/login?signup=1&return_url=${encodeURIComponent(returnUrl)}`);
           return;
         }
@@ -24,7 +28,7 @@ export default function CheckoutContinue() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tier_id: tier, billing_cycle: 'monthly' })
+          body: JSON.stringify({ tier_id: tier, billing_cycle: cycle })
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.checkout_url) {
@@ -36,7 +40,7 @@ export default function CheckoutContinue() {
       }
     };
     continueCheckout();
-  }, [tier]);
+  }, [tier, cycle]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">

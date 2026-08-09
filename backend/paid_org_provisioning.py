@@ -93,11 +93,26 @@ async def provision_paid_org(
     out["bare_id"], out["org_key"] = bare_id, org_key
 
     # 1. Set the org's tier (non-exempt paid tier → billing engages).
+    #    The UPDATE's row count is the whole point: organizations.plan_tier is what the
+    #    entitlements API reads, so "UPDATE 0" means the buyer got NOTHING. This used to
+    #    report tier_set=True regardless of rows matched, which turned a mis-resolved
+    #    org id into a silent no-op on a paid purchase (2026-08-08).
     try:
         from database import get_db_connection
         async with await get_db_connection() as conn:
-            await conn.execute("UPDATE organizations SET plan_tier = $1 WHERE id = $2", tier_code, bare_id)
-        out["tier_set"] = True
+            status = await conn.execute(
+                "UPDATE organizations SET plan_tier = $1 WHERE id = $2", tier_code, bare_id
+            )
+        # asyncpg returns the command tag, e.g. "UPDATE 1"
+        rows = int(str(status).rsplit(" ", 1)[-1]) if str(status).startswith("UPDATE") else 0
+        out["tier_rows"] = rows
+        out["tier_set"] = rows > 0
+        if rows == 0:
+            out["error"] = f"no organizations row with id={bare_id} — tier NOT granted"
+            logger.error(
+                "[provision_paid_org] PAID BUT NOT PROVISIONED: no org row id=%s (tier=%s source=%s)",
+                bare_id, tier_code, source,
+            )
     except Exception as e:
         out["tier_error"] = str(e)
         logger.warning("[provision_paid_org] tier set failed org=%s: %s", bare_id, e)

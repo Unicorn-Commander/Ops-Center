@@ -30,6 +30,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/public/pricing", tags=["Public Pricing"])
 
+# The tiers a member of the public may actually buy, in catalog order. This is an
+# explicit allowlist rather than "every active tier" on purpose: subscription_tiers
+# also holds invite-only rungs (vip_founder, founder_friend), retired rungs, and
+# $0 internal rungs (professional) that must never render as a purchasable card.
+#
+# 2026-08-08: the Suite rungs were added here. They were withheld ("suite deferred")
+# while byok sat is_active=false and could not be sold; both Suite rungs are now
+# active with live, correctly-priced Stripe prices (byok $49/$490,
+# managed $65/$650), so the pricing surface must show what checkout accepts.
+# A tier that is listed here but inactive in the DB is still filtered out by the
+# is_active predicate below — this list only narrows, never widens.
+PUBLIC_TIER_CODES = ['free', 'app', 'byok', 'managed']
+
 
 # ============================================================================
 # Pydantic Models for Response
@@ -134,7 +147,7 @@ async def get_public_pricing_tiers(
                 WHERE is_active = true
                   AND tier_code = ANY($1::text[])
                 ORDER BY sort_order, price_monthly
-            """, ['free', 'app'])  # Meeting-Ops standalone launch: Free + $15 only; suite ($49/$65) deferred
+            """, PUBLIC_TIER_CODES)
 
             tiers = []
             for tier_row in tiers_rows:

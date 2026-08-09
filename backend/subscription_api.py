@@ -166,6 +166,12 @@ async def _fetch_purchasable_tiers() -> List[Dict]:
             FROM subscription_tiers
             WHERE is_active = true
               AND tier_code != ALL($1::text[])
+              -- A $0 tier has no Stripe price and the checkout endpoint rejects it
+              -- ("the free tier does not require checkout"), so listing it as
+              -- PURCHASABLE renders a card whose button can only ever error.
+              -- (2026-08-08: this is what put a $0.00 "Professional" next to the
+              -- $49 Suite in the in-app upgrade grid.)
+              AND price_monthly > 0
             ORDER BY sort_order ASC, price_monthly ASC
             """,
             list(NON_PURCHASABLE_TIERS)

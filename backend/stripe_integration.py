@@ -21,9 +21,24 @@ logger = logging.getLogger(__name__)
 # Initialize Stripe - read credentials from database first, then environment
 STRIPE_SECRET_KEY = get_credential("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = get_credential("STRIPE_WEBHOOK_SECRET")
-# Redirect back to signup-flow page after payment (success or cancel)
-STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://unicorncommander.ai/signup-flow.html?success=true")
-STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "https://unicorncommander.ai/signup-flow.html?canceled=true")
+# Where Stripe Checkout returns the buyer. These MUST be routes the SPA actually
+# serves: /signup-flow.html has no route and no file, so it resolved to the SPA's
+# index shell (a 200 that renders nothing about the purchase) — a customer who had
+# just paid landed on a dead page. Both are now real routes.
+STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://unicorncommander.ai/checkout/success")
+STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "https://unicorncommander.ai/pricing?canceled=true")
+
+
+def _with_query(url: str, extra: str) -> str:
+    """Append a query fragment to a URL that may ALREADY carry a query string.
+
+    The old code did f"{URL}?session_id=..." unconditionally. The configured
+    success URL already contained "?success=true", so every live session was built
+    with "...?success=true?session_id={CHECKOUT_SESSION_ID}" — a second '?' is an
+    ordinary character, so the whole thing became the VALUE of `success` and the
+    landing page could never read session_id.
+    """
+    return f"{url}{'&' if '?' in url else '?'}{extra}"
 LAGO_API_URL = os.getenv("LAGO_API_URL", "http://lago-api:3000")
 LAGO_API_KEY = get_credential("LAGO_API_KEY")
 
@@ -123,7 +138,7 @@ class StripeIntegration:
                     'quantity': 1,
                 }],
                 mode='subscription',
-                success_url=f"{STRIPE_SUCCESS_URL}?session_id={{CHECKOUT_SESSION_ID}}",
+                success_url=_with_query(STRIPE_SUCCESS_URL, "session_id={CHECKOUT_SESSION_ID}"),
                 cancel_url=STRIPE_CANCEL_URL,
                 metadata={
                     'suite': OPS_CENTER_STRIPE_SUITE,  # REQUIRED: webhook ignores events without this

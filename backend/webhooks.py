@@ -39,17 +39,79 @@ email_service = EmailNotificationService()
 
 
 async def _resolve_org_by_email(email: str) -> Optional[str]:
-    """Map a Stripe customer email -> the org_<uuid> the gateway/Lago use."""
+    """Map a Stripe customer email -> the org_<uuid> the gateway/Lago use.
+
+    2026-08-08 fix. This used to read a Keycloak `org_id` user attribute and, when
+    that attribute was absent, fall back to `org_<keycloak_user_id>`. NO user in the
+    uchub realm carries an org_id attribute — SSO signup (auto_provision_user_org)
+    creates the org row and the membership row but never writes the attribute back —
+    so EVERY self-serve purchase took the fallback and produced an id that is not any
+    organization's id. provision_paid_org then ran `UPDATE organizations SET plan_tier
+    WHERE id = <keycloak user id>`, matched zero rows, and reported success. The buyer
+    paid and their org stayed on `free`.
+
+    Postgres membership is the authoritative mapping (it is what the entitlements API
+    reads), so resolve there and treat the Keycloak attribute as a hint only. Returns a
+    bare org uuid; provision_paid_org normalizes to both the bare and org_-prefixed
+    forms. Returns None when the buyer cannot be mapped to an org — the caller reports
+    that as an error rather than provisioning into the void.
+    """
     if not email:
         return None
+
+    # 1. Postgres: the org this buyer actually owns/belongs to. organization_members
+    #    .user_id is written as users.id by the invite path and as the Keycloak user id
+    #    by the SSO auto-provision path, so match either.
+    try:
+        from database.connection import get_db_pool
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            candidates = [
+                r["id"] for r in await conn.fetch(
+                    "SELECT id::text AS id FROM users WHERE lower(email) = lower($1)", email
+                )
+            ]
+            kc_id = await _keycloak_user_id(email)
+            if kc_id and kc_id not in candidates:
+                candidates.append(kc_id)
+            if candidates:
+                row = await conn.fetchrow(
+                    """
+                    SELECT om.org_id::text AS org_id
+                    FROM organization_members om
+                    WHERE om.user_id = ANY($1::text[])
+                    ORDER BY (om.role = 'owner') DESC, om.joined_at ASC
+                    LIMIT 1
+                    """,
+                    candidates,
+                )
+                if row and row["org_id"]:
+                    return row["org_id"]
+    except Exception as e:
+        logger.error(f"org resolve (postgres) failed for {email}: {e}")
+
+    # 2. Keycloak org_id attribute, if some other path ever sets it. No
+    #    org_<user_id> fabrication — an unresolvable buyer must surface, not silently
+    #    provision an org that does not exist.
     try:
         user = await get_user_by_email(email)
-        if not user:
-            return None
-        user_id = user.get("id")
-        return user.get("attributes", {}).get("org_id", [f"org_{user_id}"])[0]
+        if user:
+            attr = (user.get("attributes", {}) or {}).get("org_id")
+            if attr:
+                return attr[0] if isinstance(attr, list) else str(attr)
     except Exception as e:
-        logger.error(f"org resolve by email failed for {email}: {e}")
+        logger.error(f"org resolve (keycloak) failed for {email}: {e}")
+
+    logger.error("org resolve FAILED for %s — paid customer has no resolvable org", email)
+    return None
+
+
+async def _keycloak_user_id(email: str) -> Optional[str]:
+    """Keycloak user id for an email, or None. Never raises."""
+    try:
+        user = await get_user_by_email(email)
+        return (user or {}).get("id")
+    except Exception:
         return None
 
 
@@ -105,8 +167,15 @@ async def handle_stripe_webhook(
                 return {"status": "ignored", "reason": "missing tier/email metadata"}
             org_id = await _resolve_org_by_email(email)
             if not org_id:
+                logger.error("PAID BUT UNPROVISIONED: no org for %s (tier=%s, session=%s)",
+                             email, tier, obj.get("id"))
                 return {"status": "error", "reason": "org not found for " + email}
             r = await provision_paid_org(org_id, tier, email=email, source="stripe")
+            if r.get("error"):
+                # A paid customer who did not get their tier is an incident, not a log line.
+                logger.error("PAID BUT UNPROVISIONED: %s tier=%s org=%s session=%s err=%s",
+                             email, tier, org_id, obj.get("id"), r["error"])
+                return {"status": "provision_failed", "org_id": org_id, "result": r}
             return {"status": "provisioned", "org_id": org_id, "result": r}
 
         if etype == "customer.subscription.deleted":

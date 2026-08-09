@@ -215,6 +215,7 @@ const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const MarketplaceLanding = lazy(() => import('./pages/public/MarketplaceLanding'));
 const CheckoutContinue = lazy(() => import('./pages/public/CheckoutContinue'));
+const CheckoutSuccess = lazy(() => import('./pages/public/CheckoutSuccess'));
 const RedeemTrial = lazy(() => import('./pages/public/RedeemTrial'));
 
 // Apps Marketplace pages (user-facing) - lazy loaded
@@ -528,6 +529,8 @@ function AppRoutes() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/pricing" element={<MarketplaceLanding />} />
           <Route path="/checkout/continue" element={<CheckoutContinue />} />
+          {/* Stripe Checkout returns here. Must stay in sync with STRIPE_SUCCESS_URL. */}
+          <Route path="/checkout/success" element={<CheckoutSuccess />} />
           {/* Public trial-code redemption (requires a logged-in session; the page
               itself handles 401 by showing a "Sign in to redeem" CTA) */}
           <Route path="/redeem/:code" element={<RedeemTrial />} />

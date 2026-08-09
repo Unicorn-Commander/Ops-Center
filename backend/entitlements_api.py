@@ -102,13 +102,21 @@ async def _resolve_membership(claims: dict, conn, requested_org_id: Optional[str
     sub = claims.get("sub")
     if not sub:
         return None, None
+    # organization_members.user_id is NOT written consistently: the invite/signup path
+    # writes users.id, while SSO auto-provisioning (auto_provision_user_org) writes the
+    # Keycloak user id and creates no `users` row at all. Matching only via
+    # users.zitadel_id therefore resolved NO org for every SSO-provisioned account —
+    # they could buy a tier and still read an empty entitlement set (2026-08-08).
+    # Accept either shape. Both are still membership rows belonging to THIS caller's
+    # own sub, so this widens recognition, never authority — the IDOR guard on
+    # requested_org_id is unchanged.
     if requested_org_id:
         row = await conn.fetchrow(
             """
             SELECT om.org_id, om.role
-            FROM users u
-            JOIN organization_members om ON u.id::text = om.user_id
-            WHERE u.zitadel_id = $1 AND om.org_id::text = $2
+            FROM organization_members om
+            LEFT JOIN users u ON u.id::text = om.user_id
+            WHERE (u.zitadel_id = $1 OR om.user_id = $1) AND om.org_id::text = $2
             LIMIT 1
             """,
             str(sub), str(requested_org_id),
@@ -119,9 +127,10 @@ async def _resolve_membership(claims: dict, conn, requested_org_id: Optional[str
     row = await conn.fetchrow(
         """
         SELECT om.org_id, om.role
-        FROM users u
-        JOIN organization_members om ON u.id::text = om.user_id
-        WHERE u.zitadel_id = $1
+        FROM organization_members om
+        LEFT JOIN users u ON u.id::text = om.user_id
+        WHERE u.zitadel_id = $1 OR om.user_id = $1
+        ORDER BY (om.role = 'owner') DESC, om.joined_at ASC
         LIMIT 1
         """,
         str(sub),
