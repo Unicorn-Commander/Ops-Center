@@ -114,7 +114,7 @@ export const OPEN_STALLS = 1; // deliberate, and it stays
 export const SUITE_MEMBERS = SUITE.members || [];
 export const SUITE_TOTAL = SUITE_MEMBERS.length;
 export const SUITE_AVAILABLE = SUITE_MEMBERS.filter((m) => m.access === 'Available now').length;
-export const SUITE_AVAILABLE_LINE = `${pad2(SUITE_AVAILABLE)} of ${pad2(SUITE_TOTAL)} members are available now. The rest are in development, which is why the Suite is priced but not yet on sale.`;
+export const SUITE_AVAILABLE_LINE = `${pad2(SUITE_AVAILABLE)} of ${pad2(SUITE_TOTAL)} members are available now. The rest are in development. Buying the Suite today entitles you to every member as it lands, at no extra charge.`;
 
 // ── THE THREE AUDIENCES ─────────────────────────────────────────────────────
 // The accent chord IS the audiences: three peers of comparable chroma and

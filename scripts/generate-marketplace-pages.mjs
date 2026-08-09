@@ -438,7 +438,7 @@ ${pageHead({
         <p class="eyebrow">The bundle</p>
         <h2 class="section-title" id="suite-title">${escapeHtml(SUITE.name)}</h2>
         <p class="lede">${escapeHtml(SUITE.tagline)}</p>
-        <p style="margin-top:var(--s-5)"><span class="pill pill-development">${escapeHtml(SUITE.access)}</span></p>
+        <p style="margin-top:var(--s-5)"><span class="pill pill-${accessClass(SUITE.access)}">${escapeHtml(SUITE.access)}</span></p>
         <p class="mono small">${escapeHtml(priceText(SUITE))}${SUITE.price_annual ? ` · ${escapeHtml(SUITE.price_annual)}` : ''}</p>
         <div class="rail-cells" style="margin-top:var(--s-6)">
           ${SUITE.includes.map((name) => `<span class="rail-cell">${escapeHtml(name)}</span>`).join('')}
@@ -757,10 +757,14 @@ ${pageHead({
 {
   const suiteOffer = {
     '@type': 'Offer',
-    // "In development" is a real state and PreOrder is its honest structured
-    // form. A bundle that is priced but not yet on sale must not publish
-    // InStock just because a price now exists.
-    availability: 'https://schema.org/PreOrder',
+    // Derived from the access state, never hardcoded: a bundle that is on
+    // sale must publish InStock, and one that is not must publish PreOrder.
+    // Hardcoding either one lets the structured data drift away from the
+    // visible page (it did: the page said "nothing to buy" while /pricing
+    // sold the same Suite through live Stripe prices).
+    availability: SUITE.access === 'Available now'
+      ? 'https://schema.org/InStock'
+      : 'https://schema.org/PreOrder',
     url: `${origin}/marketplace/${SUITE.slug}`,
     price: SUITE.price.replace(/[^0-9.]/g, ''),
     priceCurrency: 'USD',
@@ -881,7 +885,9 @@ ${pageHead({
           <p class="threshold-note">You are leaving the marketplace. This page is served by Magic Unicorn at the host above, and it runs its own visual system: it will not look like this page.</p>
           <p><a class="btn btn-primary" href="${escapeHtml(SUITE.cta.href)}">${escapeHtml(SUITE.cta.label)}</a>
           <a class="btn btn-secondary" href="${escapeHtml(SUITE.secondary_cta.href)}">${escapeHtml(SUITE.secondary_cta.label)}</a></p>
-          <p class="small">There is no checkout on this page. The Suite is priced and its tiers exist in billing, but it is not on sale until the members above are ready, so the honest doors are the build log and the ${pad2(SUITE_AVAILABLE)} members you can already use.</p>
+          <p class="small">${SUITE.access === 'Available now'
+            ? `Checkout for both tiers is on the pricing page. ${pad2(SUITE_AVAILABLE)} of ${pad2(SUITE_TOTAL)} members are usable the day you subscribe; the rest are marked in the table above and arrive at no extra charge.`
+            : `There is no checkout on this page. The Suite is priced and its tiers exist in billing, but it is not on sale until the members above are ready, so the honest doors are the build log and the ${pad2(SUITE_AVAILABLE)} members you can already use.`}</p>
         </div>
       </div>
     </section>

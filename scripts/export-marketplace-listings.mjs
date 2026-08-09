@@ -438,12 +438,12 @@ const SUITE = {
   pillar: 'AI Employees',
   part: 'UC-00',
   listing_type: 'hosted',
-  access: 'In development',
+  access: 'Available now',
   // A real, decided number now exists, so the price contract permits rendering
   // it. See PRICE PROVENANCE above.
   price: SUITE_PRICE_MONTHLY,
   price_annual: SUITE_PRICE_ANNUAL,
-  price_note: 'That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is priced at $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. The Suite is not on sale yet, so neither tier has an open checkout on this page.',
+  price_note: 'That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. Both tiers have an open checkout on the pricing page. Members still in development are marked in the table below, and you are not charged extra for them when they land.',
   entitlement_sku: null,
   dogfood: true,
   tagline: 'The whole AI staff, hired together. One account and one credit pool; cross-app handoffs are rolling out — not every app already knows what the others are doing yet.',
@@ -473,8 +473,8 @@ const SUITE = {
     'Meeting-Ops is also sold standalone.',
     'Accounting-Ops is a standalone add-on, in or out of the bundle.',
   ],
-  cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log?project=unicorn-commander-suite' },
-  secondary_cta: { label: 'Start with Meeting-Ops', href: 'https://meeting-ops.unicorncommander.ai/' },
+  cta: { label: 'See Suite pricing', href: 'https://unicorncommander.ai/pricing' },
+  secondary_cta: { label: 'Read the build log', href: 'https://magicunicorn.dev/log?project=unicorn-commander-suite' },
 };
 
 // Hard rule: the bundle page must never advertise a member as available while

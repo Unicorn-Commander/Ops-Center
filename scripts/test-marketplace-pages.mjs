@@ -204,7 +204,7 @@ const suiteLd = [...suite.matchAll(/<script type="application\/ld\+json">([\s\S]
 assert.equal(suiteLd.length, 1);
 assert.equal(suiteLd[0].offers.price, '49');
 assert.equal(suiteLd[0].offers.priceCurrency, 'USD');
-assert.equal(suiteLd[0].offers.availability, 'https://schema.org/PreOrder');
+assert.equal(suiteLd[0].offers.availability, 'https://schema.org/InStock');
 
 // BUNDLE HONESTY. Members are derived from their own listings, so the page can
 // never sell eight names while implying all eight are usable.
