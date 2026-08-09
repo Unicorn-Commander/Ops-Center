@@ -43,6 +43,21 @@ const deDash = (s) => (s || '').replace(/\s*—\s*/g, ': ').replace(/—/g, '-')
 
 const PRICE_TBD = '{{PRICE_TBD}}'; // machine value; NEVER rendered literally
 
+// ── MEETING-OPS PRICE (decided 2026-08-08) ──────────────────────────────────
+// See the block on the meeting-ops listing below for provenance. The saving is
+// COMPUTED from the two real prices so it can never drift into a false claim:
+// change either number and the sentence follows.
+const MEETING_OPS_MONTHLY_USD = 22;
+const MEETING_OPS_ANNUAL_USD = 216;
+const MEETING_OPS_PRICE_MONTHLY = `$${MEETING_OPS_MONTHLY_USD}/month`;
+const MEETING_OPS_PRICE_ANNUAL = `$${MEETING_OPS_ANNUAL_USD}/year`;
+const MEETING_OPS_ANNUAL_PER_MONTH = MEETING_OPS_ANNUAL_USD / 12;
+const MEETING_OPS_ANNUAL_SAVING = MEETING_OPS_MONTHLY_USD * 12 - MEETING_OPS_ANNUAL_USD;
+if (!Number.isInteger(MEETING_OPS_ANNUAL_PER_MONTH) || MEETING_OPS_ANNUAL_SAVING <= 0) {
+  throw new Error('Meeting-Ops annual price no longer divides into whole months, or is not cheaper than monthly. Rewrite the note before shipping it.');
+}
+const MEETING_OPS_PRICE_NOTE = `That is $${MEETING_OPS_MONTHLY_USD} a month, or $${MEETING_OPS_ANNUAL_USD} for a year. Paying yearly works out to $${MEETING_OPS_ANNUAL_PER_MONTH} a month, which is $${MEETING_OPS_ANNUAL_SAVING} less than twelve monthly payments. That is the only price comparison on this page: it is arithmetic between the two prices you can actually buy, not a discount off some former price. There is also a free tier that runs on your own device, forever, and it does not expire.`;
+
 /**
  * Marketplace overlay: the five confirmed products, what kind of listing each
  * is, and where its CTAs go today. Canonical URLs follow the shared-spine
@@ -56,7 +71,29 @@ const OVERLAY = {
     bundle: 'suite',
     sold_standalone: true,
     dogfood: true,
-    price: PRICE_TBD,
+    // ── MEETING-OPS PRICE PROVENANCE ──────────────────────────────────────
+    // Repriced 2026-08-08. Aaron: "Shouldn't meeting-ops be more? We didn't
+    // want a race to the bottom." His written decision in
+    // DECISIONS-2026-08-07.txt is "$18/seat/mo annual, $22 monthly", and
+    // $18 x 12 = $216. That sits at the TOP of the sourced competitor band
+    // (Granola $14, Otter $16.99, Fireflies $18-19, Fathom $20-34) instead
+    // of under it.
+    //
+    // These two strings are the SAME numbers the customer is charged. The
+    // live Stripe prices, both livemode + active on prod_UborP589krk3ur:
+    //   $22/mo   price_1U2LVNDzk9HqAZnHVvaNigJ0   (STRIPE_PRO_PRICE_ID)
+    //   $216/yr  price_1U2LVrDzk9HqAZnH4dL6Oypc   (STRIPE_PRO_ANNUAL_PRICE_ID)
+    // and subscription_tiers.tier_code='app' carries the same pair, so the
+    // marketplace, the app, and the charge cannot disagree.
+    //
+    // NO ANCHOR. The previous standing price was $15/$150 and it is archived,
+    // but the account has never had a single subscription at ANY price, so
+    // striking $15 through to make $22 look like a deal would be a fabricated
+    // discount. The annual saving below is the only comparison on this page
+    // and it is arithmetic between two real prices, not a former price.
+    price: MEETING_OPS_PRICE_MONTHLY,
+    price_annual: MEETING_OPS_PRICE_ANNUAL,
+    price_note: MEETING_OPS_PRICE_NOTE,
     free_tier: true,
     canonical_url: 'https://meeting-ops.unicorncommander.ai/',
     learn_more_url: 'https://meeting-ops.unicorncommander.ai/',

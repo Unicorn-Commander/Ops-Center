@@ -157,6 +157,37 @@ assert.match(index, new RegExp(`/marketplace/${SUITE.slug}`),
 
 // PRICE. One decided number, rendered, and matching the SKU the locked price
 // sheet chose. The whole defect was three live prices and no page saying which.
+// ── MEETING-OPS PRICE CONTRACT (2026-08-08 reprice) ────────────────────────
+// The flagship listing rendered NO price at all while a live checkout charged
+// for it. Now it renders both cycles, and these assertions are what stop the
+// page and the charge drifting apart again.
+const meetingOps = LISTINGS.find((l) => l.slug === 'meeting-ops');
+assert.equal(meetingOps.price, '$22/month');
+assert.equal(meetingOps.price_annual, '$216/year');
+{
+  const mo = readFileSync(resolve(root, 'meeting-ops', 'index.html'), 'utf8');
+  assert.match(mo, /\$22\/month/, 'the Meeting-Ops page does not render its monthly price');
+  assert.match(mo, /\$216\/year/, 'the Meeting-Ops page does not render its annual price');
+  assert.match(index, /\$22\/month/, 'the catalog page does not render the Meeting-Ops price');
+  // The saving must be arithmetic between the two real prices, never an anchor.
+  const monthly = Number(meetingOps.price.replace(/[^0-9.]/g, ''));
+  const annual = Number(meetingOps.price_annual.replace(/[^0-9.]/g, ''));
+  assert.ok(annual < monthly * 12, 'the annual price is not actually cheaper');
+  assert.match(meetingOps.price_note, new RegExp(`\\$${monthly * 12 - annual} less`),
+    'the Meeting-Ops price note states a saving that is not monthly*12 - annual');
+  const moLd = [...mo.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+    .map((m) => JSON.parse(m[1].replaceAll('\\u003c', '<')));
+  assert.equal(moLd[0].offers.price, String(monthly),
+    'JSON-LD price disagrees with the visible Meeting-Ops price');
+  assert.equal(moLd[0].offers.priceCurrency, 'USD');
+}
+// No surface may still advertise a retired Meeting-Ops price. $15/$150 and the
+// $7.99/$79 Basic rung were archived in Stripe on 2026-08-08; $20 was never
+// charged to anyone and must never come back as a struck-through anchor.
+for (const dead of ['$15/month', '$15/mo', '$150/year', '$7.99', '$79/year', '$20/month', '$20/mo']) {
+  assert.ok(!index.includes(dead), `the catalog page still advertises ${dead}`);
+}
+
 assert.equal(SUITE.price, '$49/month');
 assert.equal(SUITE.price_annual, '$490/year');
 assert.doesNotMatch(suite, /\{\{PRICE_TBD\}\}/);

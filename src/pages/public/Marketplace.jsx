@@ -252,6 +252,15 @@ export default function Marketplace() {
                         <p className="row-subline mono">
                           {(l.deployment_options || []).join(' · ')} | {l.source_license} | Data leaves: {egressShort(l)}
                         </p>
+                        {/* Twin markup with scripts/generate-marketplace-pages.mjs: the SSR
+                            ledger row prints the same price line. If you change one, change
+                            the other, or /pricing and /marketplace/<slug> quote different
+                            amounts for the same product. */}
+                        {priceText(l) && (
+                          <p className="row-subline mono">
+                            {priceText(l)}{l.price_annual ? ` · ${l.price_annual}` : ''}
+                          </p>
+                        )}
                       </td>
                       <td><span className={`pill pill-${accessClass(l.access)}`}>{l.access}</span></td>
                       <td className="col-runs">

@@ -210,6 +210,7 @@ const ledgerRow = (listing, i) => {
             <h3 class="product-name"><a href="/marketplace/${escapeHtml(listing.slug)}">${escapeHtml(listing.name)}</a></h3>
             <p class="row-tagline">${escapeHtml(listing.tagline)}</p>
             <p class="row-subline mono">${escapeHtml((listing.deployment_options || []).join(' \u00B7 '))} | ${escapeHtml(listing.source_license)} | Data leaves: ${escapeHtml(egressShort(listing))}</p>
+            ${priceText(listing) ? `<p class="row-subline mono">${escapeHtml(priceText(listing))}${listing.price_annual ? ` ${'\u00B7'} ${escapeHtml(listing.price_annual)}` : ''}</p>` : ''}
           </td>
           <td><span class="pill pill-${accessClass(listing.access)}">${escapeHtml(listing.access)}</span></td>
           <td class="col-runs">${runsCell(listing)}</td>
@@ -681,7 +682,8 @@ ${pageHead({
           <h1 class="page-title">${escapeHtml(listing.name)}</h1>
           <p class="lede">${escapeHtml(listing.tagline)}</p>
           <p><span class="pill pill-${accessClass(listing.access)}">${escapeHtml(listing.access)}</span>${listing.dogfood ? ' <span class="pill pill-open">We run our company on this</span>' : ''}</p>
-          ${price ? `<p class="mono small">${escapeHtml(price)}</p>` : ''}
+          ${price ? `<p class="mono small">${escapeHtml(price)}${listing.price_annual ? ` ${'\u00B7'} ${escapeHtml(listing.price_annual)}` : ''}</p>` : ''}
+          ${price && listing.price_note ? `<p class="small" style="max-width:68ch">${escapeHtml(listing.price_note)}</p>` : ''}
         </div>
         <div>
           <div class="plate"><img src="${escapeHtml(listing.mascot)}" alt="${escapeHtml(listing.mascot_alt || '')}" width="240" height="240"></div>

@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
 // Source of product facts: products-data.js @ 2026-08-07 instrument
-// Generated: 2026-08-08T21:45:16.366Z
+// Generated: 2026-08-09T01:40:55.569Z
 // Access states follow the confirmed catalog (2026-08-07, five listings).
 // price === '{{PRICE_TBD}}' means: render NO number.
 
@@ -113,7 +113,9 @@ export const LISTINGS = [
     "bundle": "suite",
     "sold_standalone": true,
     "dogfood": true,
-    "price": "{{PRICE_TBD}}",
+    "price": "$22/month",
+    "price_annual": "$216/year",
+    "price_note": "That is $22 a month, or $216 for a year. Paying yearly works out to $18 a month, which is $48 less than twelve monthly payments. That is the only price comparison on this page: it is arithmetic between the two prices you can actually buy, not a discount off some former price. There is also a free tier that runs on your own device, forever, and it does not expire.",
     "free_tier": true,
     "canonical_url": "https://meeting-ops.unicorncommander.ai/",
     "learn_more_url": "https://meeting-ops.unicorncommander.ai/",
@@ -264,7 +266,7 @@ export const SUITE = {
   "price_note": "That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is priced at $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. The Suite is not on sale yet, so neither tier has an open checkout on this page.",
   "entitlement_sku": null,
   "dogfood": true,
-  "tagline": "The whole AI staff, hired together. One account and one credit pool; cross-app handoffs are rolling out — not every app already knows what the others are doing.",
+  "tagline": "The whole AI staff, hired together. One account and one credit pool; cross-app handoffs are rolling out — not every app already knows what the others are doing yet.",
   "mascot": "/logos/The_Colonel.png",
   "mascot_alt": "The Colonel, the Unicorn Commander mark: a white unicorn in a navy beret with a rainbow mane and a gold horn",
   "canonical_url": "https://unicorncommander.ai/marketplace/unicorn-commander-suite",
