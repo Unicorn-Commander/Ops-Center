@@ -214,6 +214,7 @@ const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const MarketplaceLanding = lazy(() => import('./pages/public/MarketplaceLanding'));
+const PublicMarketplace = lazy(() => import('./pages/public/Marketplace'));
 const CheckoutContinue = lazy(() => import('./pages/public/CheckoutContinue'));
 const CheckoutSuccess = lazy(() => import('./pages/public/CheckoutSuccess'));
 const RedeemTrial = lazy(() => import('./pages/public/RedeemTrial'));
@@ -527,6 +528,11 @@ function AppRoutes() {
         <Routes>
           {/* Root Route - Smart redirect based on auth status and landing page mode */}
           <Route path="/" element={<RootRedirect />} />
+          {/* The public storefront as a stable deep-link. Deliberately no auth
+              gate: anonymous visitors see the same page the root gate shows
+              them, and signed-in users can browse the storefront without
+              logging out (the root path still sends them to /dashboard). */}
+          <Route path="/marketplace" element={<PublicMarketplace />} />
           <Route path="/pricing" element={<MarketplaceLanding />} />
           <Route path="/checkout/continue" element={<CheckoutContinue />} />
           {/* Stripe Checkout returns here. Must stay in sync with STRIPE_SUCCESS_URL. */}

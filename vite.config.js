@@ -65,6 +65,15 @@ export default defineConfig({
         // Increase cache size limit for large bundles
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB
 
+        // The SPA navigation fallback must NEVER swallow backend-rendered
+        // routes. /auth/* are real server endpoints (logout redirect chain,
+        // OIDC callbacks, the logged-out confirmation page): serving the
+        // cached shell for them breaks logout in installed-PWA sessions —
+        // the backend never runs, the session cookie survives, and the user
+        // bounces straight back to the dashboard. Same for /api/*.
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/auth\//, /^\/api\//],
+
         // Cache all static assets (exclude bundle analyzer stats)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff,ttf,eot}'],
         globIgnores: ['**/stats.html', '**/node_modules/**'],

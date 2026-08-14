@@ -1,60 +1,11 @@
 // GENERATED FILE - do not edit by hand.
 // Built by scripts/export-marketplace-listings.mjs
-// Source of product facts: products-data.js @ 2026-08-07 instrument
-// Generated: 2026-08-09T03:34:58.959Z
+// Source of product facts: 2874bb4
+// Generated: 2026-08-14T01:21:09.313Z
 // Access states follow the confirmed catalog (2026-08-07, five listings).
 // price === '{{PRICE_TBD}}' means: render NO number.
 
 export const LISTINGS = [
-  {
-    "slug": "center-deep-research",
-    "name": "Center Deep Research",
-    "tagline": "Ask a hard question, get a cited report with per-claim confidence, synthesized on hardware you own. Your AI agents can use it too.",
-    "pillar": "Discovery",
-    "publisher": "Magic Unicorn",
-    "entitlement_sku": null,
-    "access": "Available now",
-    "listing_type": "hosted",
-    "bundle": "suite",
-    "dogfood": false,
-    "price": "{{PRICE_TBD}}",
-    "canonical_url": "https://centerdeep.ai/",
-    "learn_more_url": "https://magicunicorn.tech/products/center-deep-research/",
-    "icon": "/logos/tile-center-deep.png",
-    "mascot": "/marketplace/media/mascot-center-deep-research.webp",
-    "mascot_alt": "The Center Deep diver, suited up in the dark water",
-    "mascot_role": "The diver",
-    "plate": "#072745",
-    "brand_primary": "#0891b2",
-    "brand_accent": "#22d3ee",
-    "screenshot": null,
-    "screenshot_alt": null,
-    "og_image": "/marketplace/media/og-center-deep-research.png",
-    "capabilities": [
-      "Searches configured providers",
-      "Reranks and normalizes results",
-      "Produces research with citations"
-    ],
-    "approval_boundary": "Its verified MCP surface is research-only: search and deep_research. No mail, payment, or account-writing tool is listed.",
-    "deployment_options": [
-      "Local app",
-      "Unicorn Cloud",
-      "Self-host"
-    ],
-    "deployment_note": "Self-hosting controls the application and history. Web searches still contact the providers you configure.",
-    "source_license": "AGPL-3.0 (Core)",
-    "source_url": "https://github.com/Unicorn-Commander/Center-Deep",
-    "data_egress": "Yes. Search queries and selected filters go to each configured search provider.",
-    "cta": {
-      "label": "Open Center Deep",
-      "href": "https://centerdeep.ai/"
-    },
-    "secondary_cta": {
-      "label": "Self-host Core (AGPL)",
-      "href": "https://github.com/Unicorn-Commander/Center-Deep"
-    },
-    "part": "UC-01"
-  },
   {
     "slug": "majiks-studio",
     "name": "Majiks Studio",
@@ -99,7 +50,7 @@ export const LISTINGS = [
       "label": "Download free",
       "href": "https://majiks.studio/download"
     },
-    "part": "UC-02"
+    "part": "UC-01"
   },
   {
     "slug": "meeting-ops",
@@ -151,7 +102,7 @@ export const LISTINGS = [
       "label": "View AGPL source",
       "href": "https://github.com/Unicorn-Commander/Meeting-Ops-OSS"
     },
-    "part": "UC-03"
+    "part": "UC-02"
   },
   {
     "slug": "project-ops",
@@ -191,14 +142,14 @@ export const LISTINGS = [
     "deployment_note": "Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.",
     "source_license": "AGPL-3.0",
     "source_url": "https://github.com/Unicorn-Commander/project-ops-community",
-    "source_note": "This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.",
+    "source_note": "This is the public community edition, and its LICENSE file is AGPL-3.0.",
     "data_egress": "Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.",
     "cta": {
       "label": "Request access",
       "href": "https://projectops.unicorncommander.ai/"
     },
     "secondary_cta": null,
-    "part": "UC-04"
+    "part": "UC-03"
   },
   {
     "slug": "accounting-ops",
@@ -249,6 +200,55 @@ export const LISTINGS = [
       "href": "https://magicunicorn.dev/log?project=accounting-ops"
     },
     "note": "Standalone add-on. In development, with no signup list.",
+    "part": "UC-04"
+  },
+  {
+    "slug": "center-deep-research",
+    "name": "Center Deep Research",
+    "tagline": "Ask a hard question, get a cited report with per-claim confidence, synthesized on hardware you own. Your AI agents can use it too.",
+    "pillar": "Discovery",
+    "publisher": "Magic Unicorn",
+    "entitlement_sku": null,
+    "access": "In development",
+    "listing_type": "hosted",
+    "bundle": "suite",
+    "dogfood": false,
+    "price": "{{PRICE_TBD}}",
+    "canonical_url": "https://centerdeep.ai/",
+    "learn_more_url": "https://magicunicorn.tech/products/center-deep-research/",
+    "icon": "/logos/tile-center-deep.png",
+    "mascot": "/marketplace/media/mascot-center-deep-research.webp",
+    "mascot_alt": "The Center Deep diver, suited up in the dark water",
+    "mascot_role": "The diver",
+    "plate": "#072745",
+    "brand_primary": "#0891b2",
+    "brand_accent": "#22d3ee",
+    "screenshot": null,
+    "screenshot_alt": null,
+    "og_image": "/marketplace/media/og-center-deep-research.png",
+    "capabilities": [
+      "Searches configured providers",
+      "Reranks and normalizes results",
+      "Produces research with citations"
+    ],
+    "approval_boundary": "Its verified MCP surface is research-only: search and deep_research. No mail, payment, or account-writing tool is listed.",
+    "deployment_options": [
+      "Local app",
+      "Unicorn Cloud",
+      "Self-host"
+    ],
+    "deployment_note": "Self-hosting controls the application and history. Web searches still contact the providers you configure.",
+    "source_license": "AGPL-3.0 (Core)",
+    "source_url": "https://github.com/Unicorn-Commander/Center-Deep",
+    "data_egress": "Yes. Search queries and selected filters go to each configured search provider.",
+    "cta": {
+      "label": "Request an invite",
+      "href": "https://centerdeep.ai/"
+    },
+    "secondary_cta": {
+      "label": "Self-host Core (AGPL)",
+      "href": "https://github.com/Unicorn-Commander/Center-Deep"
+    },
     "part": "UC-05"
   }
 ];
@@ -315,7 +315,7 @@ export const SUITE = {
     {
       "name": "Center Deep Research",
       "slug": "center-deep-research",
-      "access": "Available now",
+      "access": "In development",
       "note": null
     },
     {

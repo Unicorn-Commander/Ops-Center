@@ -145,7 +145,12 @@ const OVERLAY = {
     secondary_cta: { label: 'View AGPL source', href: 'https://github.com/Unicorn-Commander/Meeting-Ops-OSS' },
   },
   'center-deep-research': {
-    access: 'Available now',
+    // Re-measured 2026-08-13: centerdeep.ai itself says "Early access — by
+    // invite" and research.unicorncommander.ai 302s to Keycloak with no
+    // signup path. Per the shared vocabulary (no numbered private-beta
+    // capacity => In development), this cannot read Available now until
+    // invites open or a checkout exists.
+    access: 'In development',
     listing_type: 'hosted',
     bundle: 'suite',
     dogfood: false,
@@ -179,7 +184,7 @@ const OVERLAY = {
     source_license: 'AGPL-3.0 (Core)',
     source_url: 'https://github.com/Unicorn-Commander/Center-Deep',
     data_egress: 'Yes. Search queries and selected filters go to each configured search provider.',
-    cta: { label: 'Open Center Deep', href: 'https://centerdeep.ai/' },
+    cta: { label: 'Request an invite', href: 'https://centerdeep.ai/' },
     secondary_cta: { label: 'Self-host Core (AGPL)', href: 'https://github.com/Unicorn-Commander/Center-Deep' },
   },
   'majiks-studio': {
@@ -333,7 +338,10 @@ const OVERLAY = {
     // may quietly pick a winner for, so source_note says so in plain words.
     source_license: 'AGPL-3.0',
     source_url: 'https://github.com/Unicorn-Commander/project-ops-community',
-    source_note: 'This is the public community edition, and its LICENSE file is AGPL-3.0. The repository description still says Apache-2.0, which is the license of our internal tree. We are reconciling the two, and this line will say so until we have.',
+    // 2026-08-13: reconciled. The GitHub description now reads "AGPL-3.0 +
+    // commercial" (re-verified via the API), so the self-expiring note that
+    // lived here was retired exactly as it promised it would be.
+    source_note: 'This is the public community edition, and its LICENSE file is AGPL-3.0.',
     data_egress: 'Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.',
     cta: { label: 'Request access', href: 'https://projectops.unicorncommander.ai/' },
     secondary_cta: null,
