@@ -201,8 +201,12 @@ export default function MarketplaceLanding() {
                     {annual && paid && !showAnnual && (
                       <p className="mt-1 text-sm text-slate-400">Monthly billing only</p>
                     )}
+                    {/* Render the FULL feature list. A slice(0, 6) here once hid
+                        priority support and most of the Suite's apps from the
+                        card while the blurb claimed them — the page must show
+                        exactly what the tier grants, nothing less. */}
                     <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-200">
-                      {(tier.features || []).slice(0, 6).map((feature) => (
+                      {(tier.features || []).map((feature) => (
                         <li key={feature} className="flex gap-2">
                           <span className="text-emerald-400">✓</span>
                           <span>{feature}</span>

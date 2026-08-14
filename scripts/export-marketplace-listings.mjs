@@ -451,7 +451,7 @@ const SUITE = {
   // it. See PRICE PROVENANCE above.
   price: SUITE_PRICE_MONTHLY,
   price_annual: SUITE_PRICE_ANNUAL,
-  price_note: 'That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply. A Managed tier is $65/month or $650/year and swaps your keys for UC-hosted inference credits, priority support, and 3 seats. Both tiers have an open checkout on the pricing page. Members still in development are marked in the table below, and you are not charged extra for them when they land.',
+  price_note: 'That is the Suite — BYOK tier: every Suite app plus its MCP surface, calling model providers with keys you supply, at no platform markup. A Managed tier is $65/month or $650/year and swaps your keys for Unicorn-hosted inference, 3 seats, and priority plus dedicated support. Both tiers have an open checkout on the pricing page. Members still in development are marked in the table below, and you are not charged extra for them when they land.',
   entitlement_sku: null,
   dogfood: true,
   tagline: 'The whole AI staff, hired together. One account and one credit pool; cross-app handoffs are rolling out — not every app already knows what the others are doing yet.',
