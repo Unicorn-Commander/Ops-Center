@@ -138,8 +138,17 @@ from routers.inference_proxy import router as inference_proxy_router
 from routers.compute_api import router as compute_api_router
 try:
     from routers.uuda import router as uuda_router
-except ImportError:
-    uuda_router = None
+    from routers.uuda_mcp import router as uuda_mcp_router
+    from routers.uuda_drift_api import router as uuda_drift_router
+    from routers import uuda_scheduler as uuda_scheduler_mod
+except ImportError as _uuda_err:
+    # Do NOT swallow this silently. In April the router file was dropped by a
+    # deploy that re-synced the tree, this except fired, and the entire UUDA
+    # control plane ceased to exist with no log line for four months.
+    uuda_router = uuda_mcp_router = uuda_drift_router = uuda_scheduler_mod = None
+    _UUDA_IMPORT_ERROR = _uuda_err
+else:
+    _UUDA_IMPORT_ERROR = None
 
 # Billing Events API - April 2026
 from routers.billing_events import router as billing_events_router
@@ -377,7 +386,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+
+def uuda_aware_rate_limit_key(request):
+    """slowapi key function.
+
+    Every UUDA agent reaches ops-center through the docker bridge gateway
+    (172.25.0.1), so get_remote_address collapsed the entire fleet into ONE
+    1000/hour bucket. Nine agents heartbeating every 30s is ~1080 req/hour,
+    which exhausted the window partway through each hour and 429'd the rest of
+    it. Heartbeats stopped landing, last_heartbeat_at went stale, and the fleet
+    looked dead to anything reading that column, while the requests were in
+    fact arriving perfectly well.
+
+    Authenticated agent traffic is keyed per agent instead, so each device gets
+    its own budget and one chatty device cannot starve the others. Everything
+    else keeps the original per-IP behaviour. Falls back to the IP when the
+    header is absent, so an unauthenticated caller cannot dodge limiting just
+    by guessing the path prefix.
+    """
+    try:
+        if request.url.path.startswith("/api/v1/uuda/"):
+            agent_key = request.headers.get("x-agent-key")
+            if agent_key:
+                return "uuda-agent:" + hashlib.sha256(agent_key.encode()).hexdigest()[:32]
+    except Exception:
+        pass
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=uuda_aware_rate_limit_key, default_limits=["1000/hour"])
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
@@ -742,7 +779,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+limiter = Limiter(key_func=uuda_aware_rate_limit_key, default_limits=["1000/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logger.info("Rate limiting enabled (1000 requests/hour default)")
@@ -1402,7 +1439,13 @@ logger.info("GPU Compute Fabric endpoints registered at /api/v1/compute")
 # UUDA control plane (Phase 1) — April 2026
 if uuda_router is not None:
     app.include_router(uuda_router)
-    logger.info("UUDA control-plane endpoints registered at /api/v1/uuda")
+    app.include_router(uuda_mcp_router)
+    app.include_router(uuda_drift_router)
+    app.include_router(uuda_scheduler_mod.router)
+    uuda_scheduler_mod.attach(app)
+    logger.info("UUDA control plane registered at /api/v1/uuda (core, mcp, drift, scheduler)")
+else:
+    logger.error("UUDA control plane NOT mounted - import failed: %s", _UUDA_IMPORT_ERROR)
 
 
 # Billing Events API - April 2026
@@ -6260,7 +6303,12 @@ async def oauth_login(request: Request):
         f"&scope=openid%20profile%20email"
         f"&state={state}"
     )
-    if signup:
+    if signup and os.getenv("KEYCLOAK_REGISTRATION_ENABLED", "").lower() in ("1", "true", "yes"):
+        # prompt=create asks Keycloak for its local registration page. The uchub
+        # realm keeps registrationAllowed=false (2026-08-13), so requesting it
+        # renders "Registration not allowed" and kills the storefront funnel.
+        # New users self-provision through the brokered IdPs on the plain login
+        # page instead; state still carries return_url so checkout continues.
         auth_url += "&prompt=create"
     return RedirectResponse(url=auth_url)
 
