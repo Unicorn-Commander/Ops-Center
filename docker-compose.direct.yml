@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # Direct routing to ops-center backend
   ops-center-direct:
-    image: uc-1-pro-ops-center
+    image: uc-1-pro-ops-center:live-20260814
     container_name: ops-center-direct
     restart: unless-stopped
     ports:
