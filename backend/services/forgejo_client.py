@@ -10,6 +10,7 @@ Created: November 8, 2025
 
 import httpx
 from typing import Optional, List, Dict, Any
+import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ class ForgejoClient:
     def __init__(
         self,
         base_url: str = "https://git.unicorncommander.ai",
-        admin_token: Optional[str] = "REMOVED",
+        admin_token: Optional[str] = None,
         timeout: int = 10
     ):
         """
@@ -32,7 +33,7 @@ class ForgejoClient:
             timeout: Request timeout in seconds
         """
         self.base_url = base_url.rstrip('/')
-        self.admin_token = admin_token
+        self.admin_token = admin_token or os.environ.get("FORGEJO_ADMIN_TOKEN", "")
         self.timeout = timeout
 
     def _get_headers(self, user_token: Optional[str] = None) -> Dict[str, str]:
