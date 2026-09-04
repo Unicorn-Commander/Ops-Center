@@ -81,10 +81,11 @@ TOKEN_FILE = Path(os.getenv("FLEET_MAP_INGEST_TOKEN_FILE") or (DATA_DIR / "fleet
 STALE_SECONDS = int(os.getenv("FLEET_MAP_STALE_SECONDS", "1200"))
 MAX_BYTES = int(os.getenv("FLEET_MAP_MAX_BYTES", str(16 * 1024 * 1024)))
 
-_VIEWER_FILES = {
-    "index.html": ("text/html; charset=utf-8", "no-cache, must-revalidate"),
-    "d3.v7.min.js": ("application/javascript", "public, max-age=86400"),
-    "fleet3d.bundle.js": ("application/javascript", "public, max-age=86400"),
+# Viewer files are served by extension; the path is confined to the viewer dir (no "..", no symlink escape).
+_VIEWER_TYPES = {
+    ".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
+    ".webp": "image/webp", ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg",
+    ".json": "application/json", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
 }
 _VIEWER_DIRS = (
     _BACKEND_DIR / "public" / "fleet-map",          # container: backend=/app, public bind-mounted at /app/public
@@ -301,15 +302,25 @@ async def fleet_map_js(user: Dict = Depends(require_admin_user)):
 
 
 # --------------------------------------------------------------------------- viewer (admin)
-@router.get("/viewer/{filename}")
-async def fleet_map_viewer(filename: str, user: Dict = Depends(require_admin_user)):
-    """The vendored D3/three.js viewer (public/fleet-map/). Whitelisted filenames only."""
-    spec = _VIEWER_FILES.get(filename)
-    if not spec:
+@router.get("/viewer/{path:path}")
+async def fleet_map_viewer(path: str, user: Dict = Depends(require_admin_user)):
+    """The vendored viewer (public/fleet-map/, see scripts/vendor-fleet-map.sh): index.html, d3,
+    the 3D bundle and assets/agents/*.webp avatars. Path is confined to the viewer directory."""
+    rel = path.strip("/") or "index.html"
+    if rel.endswith("/"):
+        rel += "index.html"
+    parts = rel.split("/")
+    if any(p in ("", ".", "..") or p.startswith(".") for p in parts):
+        raise HTTPException(status_code=404, detail="Not Found")
+    media_type = _VIEWER_TYPES.get(Path(rel).suffix.lower())
+    if not media_type:
         raise HTTPException(status_code=404, detail="Not Found")
     for d in _VIEWER_DIRS:
-        p = d / filename
-        if p.is_file():
-            media_type, cache = spec
+        if not d.is_dir():
+            continue
+        root = d.resolve()
+        p = (root / rel).resolve()
+        if p.is_file() and root in p.parents:
+            cache = "no-cache, must-revalidate" if rel.endswith(".html") else "public, max-age=86400"
             return FileResponse(str(p), media_type=media_type, headers={"Cache-Control": cache})
-    raise HTTPException(status_code=404, detail="Viewer not installed (public/fleet-map missing)")
+    raise HTTPException(status_code=404, detail="Not Found")
