@@ -23,6 +23,13 @@ GET  /api/v1/fleet/map.js   admin session. Same payload as `window.FLEET = ...;`
                             plain <script src> so the session cookie rides along.
 GET  /api/v1/fleet/status   admin session. Metadata only (age, counts, whether
                             ingest is configured) - what the React page polls.
+GET  /api/v1/fleet/viewer/{file}
+                            admin session. The vendored viewer itself
+                            (public/fleet-map/{index.html,d3.v7.min.js,
+                            fleet3d.bundle.js}). Served under /api/ on purpose:
+                            on the multi-site rings only /admin, /api, /assets...
+                            reach ops-center - the apex path space belongs to the
+                            marketing site - so /fleet-map/... would 404 there.
 
 Configuration (env)
 -------------------
@@ -59,7 +66,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from auth_dependencies import require_admin_user
 
@@ -73,6 +80,17 @@ STORE_PATH = DATA_DIR / "fleet_map.json"
 TOKEN_FILE = Path(os.getenv("FLEET_MAP_INGEST_TOKEN_FILE") or (DATA_DIR / "fleet_map_ingest.token"))
 STALE_SECONDS = int(os.getenv("FLEET_MAP_STALE_SECONDS", "1200"))
 MAX_BYTES = int(os.getenv("FLEET_MAP_MAX_BYTES", str(16 * 1024 * 1024)))
+
+_VIEWER_FILES = {
+    "index.html": ("text/html; charset=utf-8", "no-cache, must-revalidate"),
+    "d3.v7.min.js": ("application/javascript", "public, max-age=86400"),
+    "fleet3d.bundle.js": ("application/javascript", "public, max-age=86400"),
+}
+_VIEWER_DIRS = (
+    _BACKEND_DIR / "public" / "fleet-map",          # container: backend=/app, public bind-mounted at /app/public
+    _BACKEND_DIR.parent / "public" / "fleet-map",   # source tree / local runs
+    Path("public") / "fleet-map",                   # cwd-relative, like server.py's FileResponse("public/...")
+)
 
 _REQUIRED_KEYS = ("hosts", "containers")
 _JS_PREFIX = re.compile(r"^\s*(?:window\.)?FLEET\s*=\s*", re.DOTALL)
@@ -280,3 +298,18 @@ async def fleet_map_js(user: Dict = Depends(require_admin_user)):
             json.dumps(fleet, separators=(",", ":")), json.dumps(_status_doc(fleet, meta)))
     return Response(content=js, media_type="application/javascript",
                     headers={"Cache-Control": "no-store"})
+
+
+# --------------------------------------------------------------------------- viewer (admin)
+@router.get("/viewer/{filename}")
+async def fleet_map_viewer(filename: str, user: Dict = Depends(require_admin_user)):
+    """The vendored D3/three.js viewer (public/fleet-map/). Whitelisted filenames only."""
+    spec = _VIEWER_FILES.get(filename)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Not Found")
+    for d in _VIEWER_DIRS:
+        p = d / filename
+        if p.is_file():
+            media_type, cache = spec
+            return FileResponse(str(p), media_type=media_type, headers={"Cache-Control": cache})
+    raise HTTPException(status_code=404, detail="Viewer not installed (public/fleet-map missing)")

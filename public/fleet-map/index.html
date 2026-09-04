@@ -92,7 +92,7 @@ h1 small{-webkit-text-fill-color:var(--muted);color:var(--muted)}
 <aside id="right"><div id="detail"><h3>Click anything</h3><div class="k">Hosts show their inner layers: hardware, OS, runtime, and every service grouped by function (AI models, apps, data, ingress…). Containers show image, ports, public hostnames. Links show what flows over them.</div></div></aside>
 </div>
 <!-- Ops-Center build: data comes from the console API (admin session cookie rides on the <script src>),
-     not a static data.js. Source of this viewer: ~/Projects/fleet-map/index.html - keep the two in sync. -->
+     not a static data.js. Source of this viewer: ~/Projects/fleet-map/index.html - keep the two in sync. Served at /api/v1/fleet/viewer/index.html (sibling files resolve relatively). -->
 <script src="d3.v7.min.js"></script><script src="fleet3d.bundle.js"></script><script src="/api/v1/fleet/map.js"></script>
 <script>
 if(!window.FLEET){

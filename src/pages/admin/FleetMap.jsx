@@ -4,7 +4,7 @@
  * bigboy every 5 minutes and pushed to POST /api/v1/fleet/ingest.
  *
  * The map itself is the self-contained D3/three.js viewer vendored at
- * /fleet-map/index.html (public/fleet-map/); it loads its data from
+ * public/fleet-map/ (served at /api/v1/fleet/viewer/index.html); it loads its data from
  * GET /api/v1/fleet/map.js with the admin session cookie. This page is the
  * console frame around it: freshness, counts, refresh, full-screen.
  */
@@ -14,7 +14,9 @@ import { Box, Button, Chip, Alert, AlertTitle, CircularProgress, Typography, Sta
 import { Refresh as RefreshIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import PageHeader from '../../components/admin/PageHeader';
 
-const VIEWER_URL = '/fleet-map/index.html';
+// Served by the backend under /api/ (session-gated) because the apex path space on the
+// multi-site rings belongs to the marketing site; see fleet_map_api.fleet_map_viewer.
+const VIEWER_URL = '/api/v1/fleet/viewer/index.html';
 const STATUS_URL = '/api/v1/fleet/status';
 const POLL_MS = 60000;
 
