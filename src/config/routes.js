@@ -615,6 +615,14 @@ export const routes = {
             name: 'Forgejo Git Server',
             nav: false
           },
+          fleetMap: {
+            path: '/admin/infra/fleet-map',
+            component: 'FleetMap',
+            roles: ['admin'],
+            name: 'Fleet Map',
+            icon: 'ServerIcon',
+            description: 'Live topology of every host, container, route and link in the fleet'
+          },
           federation: {
             path: '/admin/infra/federation',
             component: 'FederationSettings',

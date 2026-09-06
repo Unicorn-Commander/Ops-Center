@@ -194,6 +194,9 @@ from routers.umami import router as umami_dashboard_router
 # Website Uptime Monitor (January 2026)
 from routers.website_monitor import router as website_monitor_router
 
+# Fleet Map (live fleet topology pushed by the bigboy fleet-map collector) - September 2026
+from fleet_map_api import router as fleet_map_router
+
 # Alerts Management API (January 2026)
 from routers.alerts_api import router as alerts_router
 from routers.federation import router as federation_router
@@ -819,6 +822,7 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/internal/llm/",  # Gateway local-pricing preflight - service-key m2m, not forms
         "/api/v1/uuda/",  # UUDA control plane
         "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
+        "/api/v1/fleet/ingest",  # Fleet Map collector push - bearer-token m2m (fleet_map_api), not forms
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -1525,6 +1529,10 @@ logger.info("Umami Dashboard API endpoints registered at /api/v1/umami")
 
 # Website Uptime Monitor (January 2026)
 app.include_router(website_monitor_router)
+
+# Fleet Map: POST /api/v1/fleet/ingest (bearer m2m) + admin GET /map, /map.js, /status
+app.include_router(fleet_map_router)
+logger.info("Fleet Map endpoints registered at /api/v1/fleet")
 logger.info("Website Monitor API endpoints registered at /api/v1/website-monitor")
 
 # Prometheus Monitoring API (Epic 3.1)
