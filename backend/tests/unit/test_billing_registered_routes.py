@@ -40,12 +40,18 @@ def subscription(org=ORG_B, customer="cus_b", subscription_id="sub_b"):
 
 @pytest.fixture
 def routes(monkeypatch):
+    import billing_org_identity as identity
+    # Provider tests authenticate one subject with persisted membership in both
+    # fixture tenants. Selected context still chooses exactly one tenant.
+    monkeypatch.setattr(identity, "_membership_orgs", AsyncMock(return_value=[
+        {"org_id": ORG_A, "role": "owner"}, {"org_id": ORG_B, "role": "owner"},
+    ]))
     import stripe
     customers = {
         "cus_a": {"id": "cus_a", "email": EMAIL, "metadata": {"org_id": ORG_A}},
         "cus_b": {"id": "cus_b", "email": EMAIL, "metadata": {"org_id": ORG_B}},
     }
-    selected = {"user": {"email": EMAIL, "org_id": ORG_B}}
+    selected = {"user": {"sub": "subject", "email": EMAIL, "org_id": ORG_B}}
     get_user = AsyncMock(return_value={"id": "subject", "email": EMAIL,
                                      "attributes": {"org_id": [ORG_B]}})
     fake_module(monkeypatch, "get_credential", get_credential=lambda name: None)

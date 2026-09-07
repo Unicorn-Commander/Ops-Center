@@ -112,21 +112,31 @@ async def get_current_user_email(request: Request) -> str:
     return user_email
 
 
-async def get_current_billing_org(request: Request) -> str:
+async def _resolve_request_billing_org(request: Request, *, require_write: bool) -> str:
     token = request.cookies.get("session_token")
     session = redis_session_manager.get(token) if token else None
     if not session or not session.get("user"):
         raise HTTPException(status_code=401, detail="Invalid session")
     return await resolve_billing_org(
-        session["user"], session, getattr(request.app.state, "db_pool", None)
+        session["user"], session, getattr(request.app.state, "db_pool", None),
+        require_write=require_write
     )
+
+
+async def get_current_billing_org(request: Request) -> str:
+    return await _resolve_request_billing_org(request, require_write=False)
+
+
+async def get_writable_billing_org(request: Request) -> str:
+    """Require billing authority within the selected active organization."""
+    return await _resolve_request_billing_org(request, require_write=True)
 
 
 @router.post("/subscriptions/checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
     request: CheckoutSessionRequest,
     user_email: str = Depends(get_current_user_email),
-    org_id: str = Depends(get_current_billing_org)
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Create a Stripe Checkout session for subscription purchase
@@ -226,7 +236,7 @@ async def create_checkout_session(
 @router.post("/portal/create", response_model=PortalSessionResponse)
 async def create_portal_session(
     user_email: str = Depends(get_current_user_email),
-    org_id: str = Depends(get_current_billing_org)
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Create a Stripe Customer Portal session for subscription management
@@ -375,7 +385,7 @@ async def get_subscription_status(
 async def cancel_subscription(
     request: CancelSubscriptionRequest,
     user_email: str = Depends(get_current_user_email),
-    org_id: str = Depends(get_current_billing_org)
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Cancel a subscription
@@ -431,7 +441,7 @@ async def cancel_subscription(
 async def upgrade_subscription(
     request: UpgradeSubscriptionRequest,
     user_email: str = Depends(get_current_user_email),
-    org_id: str = Depends(get_current_billing_org)
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Upgrade or downgrade subscription tier

@@ -76,7 +76,7 @@ async def get_current_user(request: Request):
     return user
 
 # Helper to get org_id from user session
-async def get_user_org_id(request: Request) -> str:
+async def get_user_org_id(request: Request, *, require_write: bool = False) -> str:
     """Resolve the trusted organization before any billing or usage call."""
     session_token = request.cookies.get("session_token")
     if not session_token:
@@ -86,7 +86,8 @@ async def get_user_org_id(request: Request) -> str:
     if not session or not session.get("user"):
         raise HTTPException(status_code=401, detail="Invalid session")
     return await resolve_billing_org(
-        session["user"], session, getattr(request.app.state, "db_pool", None)
+        session["user"], session, getattr(request.app.state, "db_pool", None),
+        require_write=require_write
     )
 
 
@@ -413,6 +414,7 @@ async def upgrade_subscription(request: Request):
     # Authenticate (defense in depth; the global session gate also covers this
     # path). No subscription is created and no email is sent on any code path.
     await get_current_user(request)
+    await get_user_org_id(request, require_write=True)
 
     raise HTTPException(
         status_code=402,
@@ -430,7 +432,7 @@ async def change_subscription(request: Request):
     Takes effect at end of current billing period.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
 
     body = await request.json()
     target_tier = body.get("target_tier")
@@ -497,7 +499,7 @@ async def cancel_subscription(request: Request):
     Access continues until end of billing period.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
 
     logger.info(f"Canceling subscription for org {org_id}")
 
@@ -565,7 +567,7 @@ async def initiate_upgrade(
     Returns Stripe Checkout session URL for payment.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
     target_tier = upgrade_req.target_tier
 
     logger.info(f"Initiating upgrade for org {org_id} to {target_tier}")
@@ -663,7 +665,7 @@ async def initiate_downgrade(
     No immediate payment required.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
     target_tier = downgrade_req.target_tier
 
     logger.info(f"Initiating downgrade for org {org_id} to {target_tier}")
@@ -830,7 +832,7 @@ async def preview_subscription_change(
 async def confirm_upgrade(request: Request, checkout_session_id: str):
     """Confirm a paid checkout only within its authorized selected organization."""
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
     from stripe_org_identity import resolve_event_org, require_provisioning_complete
     from stripe_integration import OPS_CENTER_STRIPE_SUITE
     from paid_org_provisioning import provision_paid_org

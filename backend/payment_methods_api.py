@@ -189,7 +189,7 @@ async def create_setup_intent(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -251,7 +251,7 @@ async def set_default_payment_method(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -317,7 +317,7 @@ async def remove_payment_method(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -388,7 +388,7 @@ async def update_billing_address(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(

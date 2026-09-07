@@ -16,6 +16,12 @@ ORG_B = "22222222-2222-4222-8222-222222222222"
 
 @pytest.fixture
 def billing(monkeypatch):
+    import billing_org_identity as identity
+    # Provider tests authenticate one subject with persisted membership in both
+    # fixture tenants. Selected context still chooses exactly one tenant.
+    monkeypatch.setattr(identity, "_membership_orgs", AsyncMock(return_value=[
+        {"org_id": ORG_A, "role": "owner"}, {"org_id": ORG_B, "role": "owner"},
+    ]))
     # Execute the complete modules and mount their real router; only import-time
     # credential access and provider I/O are replaced, so no services are used.
     credentials = ModuleType("get_credential")
@@ -41,7 +47,7 @@ def billing(monkeypatch):
     monkeypatch.setattr(api, "lago_get_invoice", AsyncMock(return_value=invoice))
     monkeypatch.setattr(api, "lago_download_invoice_pdf", AsyncMock(return_value=b"pdf"))
     monkeypatch.setattr(api, "lago_retry_invoice_payment", AsyncMock(return_value={"ok": True, "detail": "retried"}))
-    session = {"org_id": ORG_B, "user": {"email": "same@example.test"}}
+    session = {"org_id": ORG_B, "user": {"sub": "subject", "email": "same@example.test"}}
     monkeypatch.setattr(api, "_load_session", lambda request: session)
     app = FastAPI()
     app.include_router(api.router)

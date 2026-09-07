@@ -47,8 +47,11 @@ ORG_B = "22222222-2222-4222-8222-222222222222"
 @pytest.mark.asyncio
 @pytest.mark.parametrize("module", ["subscription_api", "usage_api"])
 @pytest.mark.parametrize("org", [ORG_A, f"org_{ORG_A}"])
-async def test_routes_use_canonical_lago_namespace(module, org):
-    assert await load_org_helper(module)(request_for({"org_id": org})) == f"org_{ORG_A}"
+async def test_routes_use_canonical_lago_namespace(module, org, monkeypatch):
+    import billing_org_identity as identity
+    monkeypatch.setattr(identity, "_membership_orgs", AsyncMock(return_value=[
+        {"org_id": ORG_A, "role": "member"}]))
+    assert await load_org_helper(module)(request_for({"sub": "subject-a", "org_id": org})) == f"org_{ORG_A}"
 
 
 @pytest.mark.asyncio
@@ -70,22 +73,24 @@ async def test_invalid_identity_rejected(value):
 
 
 @pytest.mark.asyncio
-async def test_session_and_keycloak_attributes(monkeypatch):
+async def test_session_and_keycloak_attributes_require_persisted_membership(monkeypatch):
     import billing_org_identity as identity
-    lookup = AsyncMock()
+    lookup = AsyncMock(return_value=[
+        {"org_id": ORG_A, "role": "member"}, {"org_id": ORG_B, "role": "owner"}])
     monkeypatch.setattr(identity, "_membership_orgs", lookup)
-    assert await identity.resolve_billing_org({"attributes": {"org_id": [ORG_A]}}) == f"org_{ORG_A}"
-    assert await identity.resolve_billing_org({}, {"org_id": ORG_B}) == f"org_{ORG_B}"
-    lookup.assert_not_called()
+    assert await identity.resolve_billing_org({"sub": "subject-a", "attributes": {"org_id": [ORG_A]}}) == f"org_{ORG_A}"
+    assert await identity.resolve_billing_org({"sub": "subject-a"}, {"org_id": ORG_B}) == f"org_{ORG_B}"
+    assert lookup.await_count == 2
+    assert all(call.args[0] == "subject-a" for call in lookup.await_args_list)
     with pytest.raises(HTTPException) as exc:
-        await identity.resolve_billing_org({"org_id": ORG_A}, {"org_id": ORG_B})
+        await identity.resolve_billing_org({"sub": "subject-a", "org_id": ORG_A}, {"org_id": ORG_B})
     assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_fallback_is_subject_scoped_not_email_or_other_local_id(monkeypatch):
     import billing_org_identity as identity
-    lookup = AsyncMock(side_effect=[[{"org_id": ORG_A}], [{"org_id": ORG_B}]])
+    lookup = AsyncMock(side_effect=[[{"org_id": ORG_A, "role": "member"}], [{"org_id": ORG_B, "role": "member"}]])
     monkeypatch.setattr(identity, "_membership_orgs", lookup)
     for subject, expected in [("subject-a", ORG_A), ("subject-b", ORG_B)]:
         assert await identity.resolve_billing_org({"sub": subject, "id": "unrelated", "email": "same@example.test"}) == f"org_{expected}"
@@ -112,14 +117,19 @@ async def test_database_failure_is_retryable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_membership_query_uses_subject_and_singular_user_mapping(monkeypatch):
+async def test_membership_query_uses_direct_subject_without_user_table(monkeypatch):
     import billing_org_identity as identity
-    conn = SimpleNamespace(fetch=AsyncMock(return_value=[{"org_id": ORG_A}]), close=AsyncMock())
+    conn = SimpleNamespace(fetch=AsyncMock(return_value=[{"org_id": ORG_A, "role": "member"}]),
+                           fetchval=AsyncMock(side_effect=AssertionError("Direct membership needs no legacy schema")),
+                           close=AsyncMock())
     monkeypatch.setattr(identity.asyncpg, "connect", AsyncMock(return_value=conn))
     assert await identity.resolve_billing_org({"sub": "subject-a"}) == f"org_{ORG_A}"
     query, subject = conn.fetch.await_args.args
     assert subject == "subject-a"
-    assert 'FROM "user" WHERE oauth_sub = $1' in query
+    assert 'om.user_id = $1' in query
+    assert 'public."user"' not in query
+    assert 'o.status = \'active\'' in query
+    conn.fetchval.assert_not_awaited()
     assert 'organization_members' in query
     assert 'LIMIT 1' not in query
     assert 'email' not in query
@@ -299,7 +309,7 @@ async def test_billing_checkout_route_threads_authenticated_org():
     conn = SimpleNamespace(fetchrow=AsyncMock(return_value={"price_monthly": 1, "stripe_price_monthly": "price_example"}), close=AsyncMock())
     import os
     namespace = {"CheckoutSessionRequest": object, "Depends": lambda x: None,
-                 "get_current_user_email": None, "get_current_billing_org": None,
+                 "get_current_user_email": None, "get_writable_billing_org": None,
                  "HTTPException": HTTPException, "asyncpg": SimpleNamespace(connect=AsyncMock(return_value=conn)),
                  "os": os, "stripe_integration": integration, "logger": logging.getLogger(__name__),
                  "CheckoutSessionResponse": Mock()}
@@ -334,7 +344,10 @@ async def test_upgrade_route_threads_authenticated_org(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("module", ["subscription_api", "usage_api"])
-async def test_http_boundary_rejects_missing_org_and_ignores_query_override(module):
+async def test_http_boundary_rejects_missing_org_and_ignores_query_override(module, monkeypatch):
+    import billing_org_identity as identity_module
+    monkeypatch.setattr(identity_module, "_membership_orgs", AsyncMock(return_value=[
+        {"org_id": ORG_A, "role": "member"}, {"org_id": ORG_B, "role": "member"}]))
     from fastapi import FastAPI, Request
     import httpx
     app = FastAPI()
@@ -348,7 +361,7 @@ async def test_http_boundary_rejects_missing_org_and_ignores_query_override(modu
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test", cookies={"session_token": "test-session"}) as client:
         response = await client.get(f"/billing-identity?org_id={ORG_B}")
         assert response.status_code == 409
-        app.state.sessions["test-session"]["user"]["org_id"] = ORG_A
+        app.state.sessions["test-session"]["user"].update({"sub": "subject-a", "org_id": ORG_A})
         response = await client.get(f"/billing-identity?org_id={ORG_B}")
         assert response.status_code == 200
         assert response.json() == {"org_id": f"org_{ORG_A}"}

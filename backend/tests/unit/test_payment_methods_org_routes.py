@@ -13,6 +13,12 @@ ORG_B = "22222222-2222-4222-8222-222222222222"
 
 @pytest.fixture
 def payment_routes(monkeypatch):
+    import billing_org_identity as identity
+    # Provider tests authenticate one subject with persisted membership in both
+    # fixture tenants. Selected context still chooses exactly one tenant.
+    monkeypatch.setattr(identity, "_membership_orgs", AsyncMock(return_value=[
+        {"org_id": ORG_A, "role": "owner"}, {"org_id": ORG_B, "role": "owner"},
+    ]))
     import payment_methods_api as api
     import payment_methods_manager as manager_module
     manager = manager_module.PaymentMethodsManager()
@@ -28,7 +34,7 @@ def payment_routes(monkeypatch):
     manager.update_billing_address = AsyncMock(return_value=True)
     manager.get_upcoming_invoice = AsyncMock(return_value=None)
     manager.get_payment_method_details = AsyncMock(return_value={"id": "pm_b", "customer": "cus_b"})
-    session = {"user": {"email": "same@example.test", "org_id": ORG_B}, "org_id": ORG_B}
+    session = {"user": {"sub": "subject", "email": "same@example.test", "org_id": ORG_B}, "org_id": ORG_B}
     app = FastAPI()
     app.include_router(api.router)
     app.dependency_overrides[api.get_current_user] = lambda: session

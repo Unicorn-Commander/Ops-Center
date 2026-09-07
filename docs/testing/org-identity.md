@@ -1,24 +1,57 @@
-# Billing organization identity verification
+# Billing identity and release verification
 
-This change uses the trusted server-side session/user org ID (including Keycloak
-attributes), or the sole active persisted membership for the authenticated subject.
-Membership resolution includes both the subject directly and its `"user".oauth_sub`
-to local primary-key mapping. `user_org_access` is a view over the same
-`organization_members` rows. It never resolves a tenant by email or creates an ID.
-Ambiguous/conflicting identity requires organization selection (409); membership
-lookup failure returns 503. A bare UUID and `org_<uuid>` normalize to the same Lago
-external customer ID.
+## Current authorization contract
 
-Both checkout callers capture that identity in Stripe session and subscription
-metadata. Stripe customer lookup is scoped by org metadata; customer creation uses
-an org-scoped idempotency key. Completed checkout uses the captured org, and failed
-synchronization is returned as an error so Stripe can retry. Lago POST retries keep
-the same external ID; Stripe customer ID remains in billing configuration.
+Every user-facing billing selection is checked against current active persisted
+membership. Session and Keycloak org attributes express selection only. Neither
+session-wide admin claims nor ownership of another organization grant billing
+rights in the selected organization. An absent selection can resolve only when
+there is exactly one active membership.
 
-## Run without services
+The default SQL reads `public.organization_members` directly by authenticated
+uchub subject (`user_id` varchar), joins `public.organizations` (`id` UUID), and
+requires `status = 'active'`. It does not depend on `public."user"`, which the
+orchestrator's live schema check found absent in both dogfood and production.
+Only when direct membership is empty does a catalog capability check inspect
+whether the optional legacy table has both `id` and `oauth_sub`; SQL referencing
+that table is never parsed unless the capability exists. There is no email lookup
+or locally created identity. Selected non-membership returns 403, missing or
+conflicting selection returns 409, and lookup outages return 503.
 
-On bigboy, Python 3.12 could not build the pinned dependency set (`distutils` error).
-The installed Python 3.11 successfully installed the unchanged requirements:
+Mutation routes require the selected membership's `owner`, `admin`, or
+`billing_admin` role. Ordinary members retain reads. Checkout, portal, subscription
+cancel/upgrade/change/downgrade/confirmation, invoice retry, payment setup/default/
+remove/address, and org-billing subscription creation/upgrade and credit add/allocation apply these checks
+before provider or mutation calls. Target org IDs must agree with the selected
+organization. Duplicate conflicting membership roles cannot promote privilege.
+
+## Stripe and Lago identity
+
+Lago keys normalize to `org_<uchub UUID>`. Stripe customer IDs remain billing
+provider linkage, never tenant identity. Customer search considers bare and
+prefixed UUID metadata together and rejects duplicates; subscription management
+rejects foreign/missing metadata and incomplete paginated results. Invoice reads,
+PDF and retry do not fall back to email or bypass the selected org for an admin.
+
+The canonical `/api/v1/webhooks/stripe` dispatcher and compatibility aliases
+validate event/customer organization consistency. Checkout and cancellation are
+pinned independently of the browser's current selection. Confirmation rejects a
+paid checkout belonging to a different selected org. Partial provisioning failures
+return 503 for retry.
+
+`customer.subscription.updated` fetches the latest subscription to avoid replaying
+a delayed event's old price. Event/current-subscription/customer organization,
+customer and suite must agree. Exactly one complete item price must map to exactly
+one active `subscription_tiers` row via `stripe_price_monthly` or
+`stripe_price_yearly`. Tier metadata is deliberately ignored. Conflicting/unmapped
+prices return 409; provider/database/provisioning failures are retryable. Canceled
+or unpaid subscriptions downgrade; incomplete, expired-incomplete, past-due,
+paused and trialing states do not grant new paid entitlements.
+
+## Reproduce without application services
+
+Python 3.12 failed to build the repository's pinned dependency set. Python 3.11
+installed the unchanged requirements in this worktree:
 
 ```sh
 python3.11 -m venv .venv311
@@ -27,99 +60,39 @@ python3.11 -m venv .venv311
 ```
 
 The runner redirects the legacy org-manager singleton's import-time `/app/data`
-path to temporary storage. It explicitly selects backend pytest configuration and
-clears its default addopts: existing Stripe tests use unregistered markers, and
-coverage is unnecessary for this bounded pass. It starts no application services and reads no
-production credentials; one regression owns a temporary loopback HTTP test fixture. The new tests isolate import-time credential access and
-use mocked membership, Stripe, and Lago operations. Route helpers/callers are loaded
-from their actual source via AST to avoid unrelated application startup effects.
+path to temporary storage. It selects the backend pytest config and clears legacy
+coverage/strict-marker addopts. Providers and DB calls are mocked. A test-owned
+loopback HTTP fixture verifies serialized Lago payloads; imported FastAPI routers
+are exercised through HTTPX ASGI transport. No application services, live billing
+operations, or deployment are involved.
 
-For just the new regressions:
+## Evidence
 
-```sh
-PYTHONPATH=backend .venv311/bin/python -m pytest -c backend/pytest.ini -o addopts= backend/tests/unit/test_billing_org_identity.py
-```
+- Original base `0a7968b8`: 93 passed / 3 existing failures.
+- Initial identity commit `f2d8db6b`: 122 passed / same 3 failures.
+- Registered-route follow-up `ee8bd34c`: 219 passed / same 3 failures.
+- This release-blocker follow-up: 345 passed / the same 3 failures (126 added regressions).
+- Before fixes: two membership tests reproduced missing-table failure and trusted
+  selection bypass; four mutation-router tests reproduced member access despite
+  insufficient org role; two actual subscription-update route tests reproduced
+  silently ignored entitlement changes.
+- Membership tests cover missing optional schema, capability gating, active-only
+  SQL, revoked membership, role changes and cross-org privilege isolation.
+- Actual router tests cover same-email tenants, selection changes, metadata/price
+  conflicts, role denial before provider calls and retries after partial failures.
+- The three inherited failures remain promo active validation, organization
+  default tier, and concurrent membership addition; this is not a green legacy suite.
+- Final full run log: `/tmp/astra-billing-release-suite.log` on bigboy.
 
-## Results on 2026-09-07
+## Remaining release gates
 
-- Baseline at `0a7968b8092bd0ae2c6de743b8f6aa1e11dc2288`: 93 passed, 3 failed.
-- Fabrication reproduction before implementation: 2 failed (one per route helper).
-- After implementation: 122 passed, the same 3 failed; all 29 new regressions pass.
-- Existing failures: promo-code active validation, organization default tier, and
-  concurrent membership addition. These are outside this identity change.
-- HTTP verification uses FastAPI and HTTPX ASGI transport: missing org returns 409;
-  a selected org returns 200 with its canonical ID despite another query-string org.
-  This is in-process verification, not a deployed endpoint or browser inspection.
-  A test-owned loopback HTTP server also receives two actual Lago POST requests
-  and verifies their serialized canonical external IDs and Stripe billing linkage.
-- PostgreSQL/Redis integration tests were deliberately not run. The fallback SQL
-  was reviewed against the checked-in schema/view; no live DB verification occurred.
-
-## Review and rollout limits
-
-No deploy or existing-customer migration is included. Old checkout events without
-org metadata now fail closed. Existing Stripe customers without canonical org
-metadata are not inferred from email; review legacy customer linkage before rollout.
-The fallback cannot repair orphan membership rows that match neither the subject
-nor its mapped local user ID. Dogfood verification against real uchub membership,
-Stripe, and Lago remains for the deployment owner.
-
-## Registered-route follow-up (2026-09-07)
-
-The initial commit did not cover the canonical registered Stripe dispatcher or
-all customer-management callers. The follow-up traces `server.py` registrations
-and the BillingDashboard, OrganizationBilling, SubscriptionPlan, PaymentMethods,
-AddPaymentMethodDialog and UpcomingInvoiceCard callers. The actual route surfaces
-now share the org boundary:
-
-- `/api/v1/webhooks/stripe`: paid checkout and cancellation resolve the event's
-  Stripe customer, require its canonical org metadata and reject conflicting
-  event metadata. They never query current Keycloak org by email. The checkout
-  and subscription-updated compatibility aliases delegate to this dispatcher.
-- `/api/v1/billing`: portal, payment methods, subscription status/cancel/upgrade
-  select the org's Stripe customer. Subscription metadata and customer references
-  must agree; multiple active subscriptions and truncated history fail closed.
-- `/api/v1/payment-methods`: all seven routes use org-scoped lookup. Details,
-  default and detach validate payment-method ownership before exposing/mutating
-  it; SetupIntent org metadata overrides untrusted input.
-- `/api/v1/billing` invoices/cycle/summary/PDF/retry and Lago read helpers no longer
-  fall back to email. PDF/retry require the selected org even for an admin.
-- `/api/v1/subscriptions/confirm-upgrade` verifies suite, payment and event/customer
-  identity against the selected org before idempotent paid-org provisioning.
-  It cannot provision org B using a paid checkout from org A.
-
-The two Stripe webhook functions in stripe_api.py are undecorated legacy callables
-at this baseline, not registered webhook routes; they now delegate to the canonical
-handler as well. The first subscription `/upgrade` route is a payment-required
-guard and shadows a later duplicate. Tests now mount the actual imported routers,
-rather than relying only on extracted functions. The dormant
-`StripeIntegration.process_webhook_event` and private email-oriented lifecycle
-methods have no production callers in this checkout and were not expanded into
-another active dispatch path.
-
-Customer search treats bare UUID and `org_<uuid>` metadata as equivalent and
-rejects duplicates across either form. Provider lookup failures return 503;
-subscription history beyond the requested 100 records returns 409 rather than
-making an ownership/uniqueness decision on an incomplete page. Explicit partial
-provisioning failures return 503 for retry, including failed Lago subscription
-creation and failed application of a finite cloud cap.
-
-Follow-up results: 122 passed / 3 baseline failures before; 219 passed / the same
-3 failures after. This adds 97 passing regressions: 48 actual canonical/billing
-router cases, 23 payment-method cases, 20 invoice/helper cases, and 6 customer/
-subscription lookup cases. Representative pre-fix runs recorded 32 failures in
-the first 33 canonical/billing route cases, 18 payment-method failures, and 20
-billing-read failures. Tests use the unchanged runner above; all provider/DB calls
-are mocked and no live billing/customer mutations occurred. Existing loopback
-payload tests remain included. All changed Python modules compile and diff checks
-pass. The full service-free run log is
-`/tmp/ops-center-astra-route-full-tests.log` on bigboy.
-
-Current rollout limits supersede the initial event-metadata note: a legacy event
-without org metadata may use a uniquely org-tagged Stripe customer; untagged or
-conflicting customer/event metadata requires explicit reconciliation. Legacy
-email-keyed Lago records remain inaccessible through org-scoped reads. Admin
-invoice actions now require org selection. Subscription-updated aliases no longer
-write email-wide Keycloak tiers; checkout and cancellation drive org provisioning.
-No deployed endpoint/browser, real Stripe/Lago, Postgres or Redis verification is
-claimed. Deployment and dogfood verification remain with the orchestrator.
+The orchestrator owns deployment and dogfood verification. No live Stripe/Lago,
+Postgres/Redis integration, or deployed browser verification is claimed here.
+Confirm real membership roles and active price mappings in the deployment ring.
+Untagged/conflicting legacy Stripe customers and email-keyed Lago records require
+explicit reconciliation; no migration or customer mutation is included.
+Latest-state retrieval reduces stale-event replay but adds no distributed lock
+for concurrently executing webhooks. Trial/past-due grace behavior is preserved.
+Dedicated system-admin configuration/provisioning policy is not broadened by this
+user-facing mutation change. Unrelated `.env.test.example` and `.venv311` are
+preserved, and no local orchestrator draft or checkout UI files are touched.

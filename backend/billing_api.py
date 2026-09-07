@@ -424,7 +424,7 @@ async def retry_invoice(invoice_id: str, request: Request):
     """
     session_data = _load_session(request)
     user = session_data.get("user", {}) or {}
-    org_id = await resolve_billing_org(user, session_data)
+    org_id = await resolve_billing_org(user, session_data, require_write=True)
     email = user.get("email") or session_data.get("email")
 
     # Ownership check: find the invoice among the caller's invoices

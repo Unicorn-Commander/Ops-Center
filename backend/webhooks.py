@@ -85,6 +85,10 @@ async def handle_stripe_webhook(
             require_provisioning_complete(r)
             return {"status": "provisioned", "org_id": org_id, "result": r}
 
+        if etype == "customer.subscription.updated":
+            from stripe_subscription_entitlements import sync_subscription_entitlements
+            return await sync_subscription_entitlements(obj, OPS_CENTER_SUITE)
+
         if etype == "customer.subscription.deleted":
             # Suite guard: only downgrade our own subscriptions (shared account).
             if ((obj.get("metadata", {}) or {}).get("suite") or "") != OPS_CENTER_SUITE:
@@ -121,7 +125,7 @@ async def handle_stripe_subscription_updated(
     request: Request,
     stripe_signature: str = Header(None, alias="stripe-signature"),
 ):
-    """Compatibility alias; subscription updates do not change user-wide tiers."""
+    """Compatibility alias for the same org-pinned entitlement dispatcher."""
     return await handle_stripe_webhook(request, stripe_signature)
 
 

@@ -1,4 +1,4 @@
-"""Resolve billing identity from trusted session context or persisted membership.
+"""Authorize billing identity against current active organization membership.
 
 The uchub organization UUID is the identity; ``org_`` is only Lago's namespace.
 Never derive an organization from an email, Stripe customer, or a new UUID.
@@ -28,24 +28,39 @@ def lago_org_id(value):
 
 
 async def _membership_orgs(subject, pool=None):
-    # Memberships can use the uchub sub directly or the local user's primary key.
-    # user_org_access is a view over these same membership rows. Do not join the
-    # nonexistent `users` table, nor resolve identity through mutable email.
-    query = '''
-        WITH identities AS (
-            SELECT $1::text AS id
-            UNION
-            SELECT id::text FROM "user" WHERE oauth_sub = $1 OR id::text = $1
-        )
-        SELECT DISTINCT om.org_id::text AS org_id
-        FROM organization_members om
-        JOIN organizations o ON o.id = om.org_id
-        WHERE om.user_id::text IN (SELECT id FROM identities)
-          AND COALESCE(o.status, 'active') = 'active'
-    '''
+    """Read the deployed direct-sub schema before considering optional mapping."""
+    direct_query = """
+        SELECT DISTINCT om.org_id::text AS org_id, om.role
+        FROM public.organization_members om
+        JOIN public.organizations o ON o.id = om.org_id
+        WHERE om.user_id = $1 AND o.status = 'active'
+    """
+
+    async def fetch_memberships(conn):
+        rows = await conn.fetch(direct_query, subject)
+        if rows:
+            return rows
+        # Some older installations have a local identity map. Introspect its
+        # exact capability before parsing any query that references that table.
+        # Dogfood/production without public."user" take the direct path safely.
+        has_mapping = await conn.fetchval("""
+            SELECT COUNT(*) = 2 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'user'
+              AND column_name IN ('id', 'oauth_sub')
+        """)
+        if not has_mapping:
+            return []
+        return await conn.fetch("""
+            SELECT DISTINCT om.org_id::text AS org_id, om.role
+            FROM public."user" u
+            JOIN public.organization_members om ON om.user_id = u.id::text
+            JOIN public.organizations o ON o.id = om.org_id
+            WHERE u.oauth_sub::text = $1 AND o.status = 'active'
+        """, subject)
+
     if pool is not None:
         async with pool.acquire() as conn:
-            return await conn.fetch(query, subject)
+            return await fetch_memberships(conn)
     conn = await asyncpg.connect(
         host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
         port=int(os.getenv("POSTGRES_PORT", "5432")),
@@ -55,37 +70,52 @@ async def _membership_orgs(subject, pool=None):
         timeout=5,
     )
     try:
-        return await conn.fetch(query, subject)
+        return await fetch_memberships(conn)
     finally:
         await conn.close()
 
 
-async def resolve_billing_org(user, session=None, pool=None):
-    """Return one trusted selected org, or the sole persisted membership.
+async def resolve_billing_org(user, session=None, pool=None, *, require_write=False):
+    """Authorize the selected org against current active persisted membership.
 
-    Inputs must come from the authenticated server-side session, never request
-    parameters. Missing/ambiguous identity fails closed before any billing call.
+    Session/Keycloak attributes express selection, never membership or billing
+    privilege. A sole membership can supply a missing selection. Mutation roles
+    are taken only from that org's membership row, never global/session claims.
     """
     session = session or {}
     selected = [v for v in (user.get("org_id"), session.get("org_id")) if v]
-    attr = user.get("attributes", {}).get("org_id")
+    attr = (user.get("attributes") or {}).get("org_id")
     if attr:
         selected.extend(attr if isinstance(attr, list) else [attr])
+    selected_org = None
     if selected:
         orgs = {lago_org_id(value) for value in selected}
         if len(orgs) != 1:
             raise HTTPException(409, "Conflicting organization context; select an organization")
-        return orgs.pop()
+        selected_org = orgs.pop()
 
     subject = user.get("sub") or user.get("user_id") or user.get("id")
     if not isinstance(subject, str) or not subject:
-        raise HTTPException(409, "Select an organization before billing")
+        raise HTTPException(409, "Authenticated subject required for billing")
     try:
         rows = await _membership_orgs(subject, pool)
     except Exception:
         logger.warning("Billing organization membership lookup failed")
         raise HTTPException(503, "Organization lookup unavailable") from None
-    orgs = {lago_org_id(row["org_id"]) for row in rows}
-    if len(orgs) != 1:
+    memberships = {}
+    for row in rows:
+        org = lago_org_id(row["org_id"])
+        memberships.setdefault(org, set()).add(str(row.get("role") or "").lower())
+    if selected_org is not None:
+        if selected_org not in memberships:
+            raise HTTPException(403, "No active membership in selected organization")
+    elif len(memberships) != 1:
         raise HTTPException(409, "Select an organization before billing")
-    return orgs.pop()
+    else:
+        selected_org = next(iter(memberships))
+    if require_write:
+        roles = memberships[selected_org]
+        # Conflicting duplicate rows must not silently grant a higher privilege.
+        if len(roles) != 1 or not roles.issubset({"owner", "admin", "billing_admin"}):
+            raise HTTPException(403, "Organization billing role required")
+    return selected_org
