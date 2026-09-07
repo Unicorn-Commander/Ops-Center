@@ -164,14 +164,72 @@ async def test_checkout_pins_org_on_session_and_subscription(stripe_module, monk
 @pytest.mark.asyncio
 async def test_stripe_customer_lookup_is_org_scoped(stripe_module, monkeypatch):
     from unittest.mock import Mock
-    search = Mock(return_value=SimpleNamespace(data=[{"id": "cus_example"}]))
+    search = Mock()
     monkeypatch.setattr(stripe_module.stripe.Customer, "search", search)
     for org in [ORG_A, ORG_B]:
-        await stripe_module.stripe_integration.get_customer_for_org(org)
-        assert search.call_args.kwargs["query"] == f"metadata['org_id']:'org_{org}'"
-    search.return_value.data = [{"id": "cus_a"}, {"id": "cus_b"}]
-    with pytest.raises(ValueError):
+        search.return_value = stripe_module.stripe.StripeObject.construct_from({
+            "data": [{"id": "cus_example", "metadata": {"org_id": org}}], "has_more": False}, None)
+        customer = await stripe_module.stripe_integration.get_customer_for_org(org)
+        assert customer["metadata"]["org_id"] == org
+        assert search.call_args.kwargs["query"] == (
+            f"metadata['org_id']:'org_{org}' OR metadata['org_id']:'{org}'")
+    search.return_value = stripe_module.stripe.StripeObject.construct_from({"data": [
+        {"id": "cus_a", "metadata": {"org_id": ORG_A}},
+        {"id": "cus_b", "metadata": {"org_id": f"org_{ORG_A}"}}], "has_more": False}, None)
+    with pytest.raises(HTTPException) as exc:
+        await stripe_module.stripe_integration.get_customer_for_org(ORG_A, allow_create=True)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_more", [False, True])
+async def test_customer_lookup_requires_explicit_creation_and_complete_results(stripe_module, monkeypatch, has_more):
+    from unittest.mock import Mock
+    monkeypatch.setattr(stripe_module.stripe.Customer, "search", Mock(return_value=
+        stripe_module.stripe.StripeObject.construct_from({"data": [], "has_more": has_more}, None)))
+    with pytest.raises(HTTPException) as exc:
         await stripe_module.stripe_integration.get_customer_for_org(ORG_A)
+    assert exc.value.status_code == 409
+    if not has_more:
+        assert await stripe_module.stripe_integration.get_customer_for_org(ORG_A, allow_create=True) is None
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await stripe_module.stripe_integration.get_customer_for_org(ORG_A, allow_create=True)
+        assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_more", [False, True])
+async def test_subscription_lookup_never_uses_partial_history(stripe_module, monkeypatch, has_more):
+    from unittest.mock import Mock
+    subscriptions = [{"id": "sub_example", "customer": "cus_example", "metadata": {"org_id": ORG_A}}]
+    listing = Mock(return_value=stripe_module.stripe.StripeObject.construct_from(
+        {"data": subscriptions, "has_more": has_more}, None))
+    monkeypatch.setattr(stripe_module.stripe.Subscription, "list", listing)
+    if has_more:
+        with pytest.raises(HTTPException) as exc:
+            await stripe_module.stripe_integration.get_customer_subscriptions("cus_example")
+        assert exc.value.status_code == 409
+    else:
+        result = await stripe_module.stripe_integration.get_customer_subscriptions("cus_example")
+        assert [sub["id"] for sub in result] == ["sub_example"]
+    listing.assert_called_once_with(customer="cus_example", status="all", limit=100)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["customer", "subscription"])
+async def test_provider_lookup_failure_is_retryable_not_empty(stripe_module, monkeypatch, operation):
+    from unittest.mock import Mock
+    failure = Mock(side_effect=stripe_module.stripe.error.APIConnectionError("offline test provider"))
+    if operation == "customer":
+        monkeypatch.setattr(stripe_module.stripe.Customer, "search", failure)
+        call = stripe_module.stripe_integration.get_customer_for_org(ORG_A, allow_create=True)
+    else:
+        monkeypatch.setattr(stripe_module.stripe.Subscription, "list", failure)
+        call = stripe_module.stripe_integration.get_customer_subscriptions("cus_example")
+    with pytest.raises(HTTPException) as exc:
+        await call
+    assert exc.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -247,7 +305,7 @@ async def test_billing_checkout_route_threads_authenticated_org():
                  "CheckoutSessionResponse": Mock()}
     exec(compile(ast.Module(body=[node], type_ignores=[]), "stripe_api.py", "exec"), namespace)
     await namespace["create_checkout_session"](SimpleNamespace(billing_cycle="monthly", tier_id="professional"), "member@example.test", f"org_{ORG_A}")
-    integration.get_customer_for_org.assert_awaited_once_with(f"org_{ORG_A}")
+    integration.get_customer_for_org.assert_awaited_once_with(f"org_{ORG_A}", allow_create=True)
     assert integration.create_checkout_session.await_args.kwargs["org_id"] == f"org_{ORG_A}"
 
 
@@ -270,7 +328,7 @@ async def test_upgrade_route_threads_authenticated_org(monkeypatch):
                  "logger": logging.getLogger(__name__)}
     exec(compile(ast.Module(body=[node], type_ignores=[]), "subscription_api.py", "exec"), namespace)
     await namespace["initiate_upgrade"](request_for({"org_id": ORG_A}), SimpleNamespace(target_tier="professional"))
-    integration.get_customer_for_org.assert_awaited_once_with(f"org_{ORG_A}")
+    integration.get_customer_for_org.assert_awaited_once_with(f"org_{ORG_A}", allow_create=True)
     assert integration.create_checkout_session.await_args.kwargs["org_id"] == f"org_{ORG_A}"
 
 

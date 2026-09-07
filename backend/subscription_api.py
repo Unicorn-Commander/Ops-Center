@@ -340,7 +340,7 @@ async def get_current_subscription(request: Request):
     try:
         # Canonical key is org_id (external_id == org_id), consistent with the write
         # path + the gateway's org-keyed metering events; fall back to the legacy
-        # email-keyed lookup only if no org-keyed subscription exists.
+        # Email never establishes tenant ownership.
         subscription = await get_subscription_for(org_id, email)
 
         if not subscription:
@@ -605,7 +605,7 @@ async def initiate_upgrade(
 
         # 5. Get or create Stripe customer
         customer_email = user.get("email")
-        stripe_customer = await stripe_integration.get_customer_for_org(org_id)
+        stripe_customer = await stripe_integration.get_customer_for_org(org_id, allow_create=True)
 
         if not stripe_customer:
             # Create new Stripe customer
@@ -827,86 +827,38 @@ async def preview_subscription_change(
 
 
 @router.post("/confirm-upgrade")
-async def confirm_upgrade(
-    request: Request,
-    checkout_session_id: str
-):
-    """
-    Confirm upgrade after successful Stripe payment.
-    Called by webhook or redirect after checkout.
-    """
+async def confirm_upgrade(request: Request, checkout_session_id: str):
+    """Confirm a paid checkout only within its authorized selected organization."""
     user = await get_current_user(request)
     org_id = await get_user_org_id(request)
-
-    logger.info(f"Confirming upgrade for org {org_id}, session {checkout_session_id}")
+    from stripe_org_identity import resolve_event_org, require_provisioning_complete
+    from stripe_integration import OPS_CENTER_STRIPE_SUITE
+    from paid_org_provisioning import provision_paid_org
+    import stripe
 
     try:
-        # 1. Verify Stripe checkout session
-        from stripe_integration import stripe_integration
-        import stripe
-
         session = stripe.checkout.Session.retrieve(checkout_session_id)
-
-        if session.payment_status != "paid":
-            raise HTTPException(
-                status_code=400,
-                detail="Payment not completed"
-            )
-
-        # 2. Get target tier from session metadata
-        target_tier = session.metadata.get("tier_id") or session.metadata.get("tier_name")
-
+        if session.get("payment_status") != "paid":
+            raise HTTPException(400, "Payment not completed")
+        metadata = session.get("metadata") or {}
+        if metadata.get("suite") != OPS_CENTER_STRIPE_SUITE:
+            raise HTTPException(409, "Checkout belongs to another billing suite")
+        if resolve_event_org(session) != org_id:
+            raise HTTPException(403, "Checkout belongs to another organization")
+        target_tier = metadata.get("tier_id") or metadata.get("tier_name")
         if not target_tier:
-            raise HTTPException(status_code=400, detail="Tier information missing from session")
-
-        # 3. Get current subscription
-        current_subscription = await get_subscription(org_id)
-        old_tier = "trial"
-
-        if current_subscription:
-            old_tier = current_subscription.get("plan_code", "").split("_")[0]
-
-            # Terminate old subscription
-            subscription_id = current_subscription.get("lago_id")
-            await terminate_subscription(org_id, subscription_id)
-
-        # 4. Create new subscription in Lago
-        lago_plan_code = f"{target_tier}_monthly"
-        new_subscription = await create_subscription(org_id, lago_plan_code)
-
-        # 5. Update user tier in Keycloak
-        from keycloak_integration import update_user_attributes
-
-        await update_user_attributes(
-            user.get("email"),
-            {
-                "subscription_tier": [target_tier],
-                "subscription_status": ["active"]
-            }
+            raise HTTPException(409, "Checkout tier metadata missing")
+        # Use the same idempotent org-scoped path as the canonical webhook.
+        # Never terminate/recreate a different org's subscription or update an
+        # email-wide Keycloak tier because the browser switched organizations.
+        result = await provision_paid_org(
+            org_id, target_tier, email=user.get("email", ""), source="stripe-confirm"
         )
-
-        # 6. Send upgrade confirmation email
-        try:
-            await email_service.send_tier_upgrade_notification(
-                user_id=user.get("id"),
-                old_tier=old_tier,
-                new_tier=target_tier
-            )
-        except Exception as e:
-            logger.error(f"Failed to send confirmation email: {e}")
-
-        logger.info(f"Upgrade confirmed: {org_id} from {old_tier} to {target_tier}")
-
-        return {
-            "success": True,
-            "old_tier": old_tier,
-            "new_tier": target_tier,
-            "subscription_id": new_subscription.get("lago_id"),
-            "message": f"Successfully upgraded to {target_tier}"
-        }
-
+        require_provisioning_complete(result)
+        return {"success": True, "org_id": org_id, "new_tier": target_tier,
+                "message": f"Successfully upgraded to {target_tier}"}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error confirming upgrade: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to confirm upgrade: {str(e)}")
+    except Exception:
+        logger.exception("Checkout confirmation failed")
+        raise HTTPException(503, "Checkout confirmation unavailable") from None

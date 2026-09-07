@@ -7,6 +7,8 @@ import os
 import logging
 import stripe
 from billing_org_identity import lago_org_id
+from stripe_org_identity import customer_org
+from fastapi import HTTPException
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import httpx
@@ -102,15 +104,29 @@ class StripeIntegration:
             logger.error(f"Failed to fetch customer for {email}: {e}")
             return None
 
-    async def get_customer_for_org(self, org_id: str) -> Optional[Dict[str, Any]]:
+    async def get_customer_for_org(self, org_id: str, *, allow_create: bool = False) -> Optional[Dict[str, Any]]:
         """Find the Stripe customer for this org, including multi-org users."""
         canonical = lago_org_id(org_id)
-        customers = stripe.Customer.search(
-            query=f"metadata['org_id']:'{canonical}'", limit=2
-        )
-        if len(customers.data) > 1:
-            raise ValueError("Multiple Stripe customers for organization")
-        return customers.data[0] if customers.data else None
+        # Bare uchub UUID metadata and Lago-prefixed metadata denote one org.
+        # Search both forms together so migrations cannot hide duplicate customers.
+        try:
+            customers = stripe.Customer.search(
+                query=f"metadata['org_id']:'{canonical}' OR metadata['org_id']:'{canonical[4:]}'",
+                limit=2,
+            )
+        except stripe.error.StripeError:
+            logger.exception("Stripe customer lookup unavailable")
+            raise HTTPException(503, "Organization billing customer lookup unavailable") from None
+        if len(customers.data) > 1 or getattr(customers, "has_more", False):
+            raise HTTPException(409, "Multiple Stripe customers for organization")
+        if not customers.data and allow_create:
+            return None
+        if not customers.data:
+            raise HTTPException(409, "Organization billing customer requires reconciliation")
+        customer = customers.data[0]
+        if customer_org(customer) != canonical:
+            raise HTTPException(409, "Stripe customer organization mismatch")
+        return customer
 
     async def create_checkout_session(
         self,
@@ -235,12 +251,16 @@ class StripeIntegration:
         try:
             subscriptions = stripe.Subscription.list(
                 customer=customer_id,
-                status='all'
+                status='all',
+                limit=100,
             )
+            # Never decide ownership or uniqueness from a truncated collection.
+            if subscriptions.get("has_more", False):
+                raise HTTPException(409, "Subscription history requires reconciliation")
             return subscriptions.data
-        except stripe.error.StripeError as e:
-            logger.error(f"Failed to fetch subscriptions: {e}")
-            return []
+        except stripe.error.StripeError:
+            logger.exception("Stripe subscription lookup unavailable")
+            raise HTTPException(503, "Subscriptions unavailable") from None
 
     async def cancel_subscription(
         self,

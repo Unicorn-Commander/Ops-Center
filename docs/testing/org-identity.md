@@ -63,3 +63,63 @@ metadata are not inferred from email; review legacy customer linkage before roll
 The fallback cannot repair orphan membership rows that match neither the subject
 nor its mapped local user ID. Dogfood verification against real uchub membership,
 Stripe, and Lago remains for the deployment owner.
+
+## Registered-route follow-up (2026-09-07)
+
+The initial commit did not cover the canonical registered Stripe dispatcher or
+all customer-management callers. The follow-up traces `server.py` registrations
+and the BillingDashboard, OrganizationBilling, SubscriptionPlan, PaymentMethods,
+AddPaymentMethodDialog and UpcomingInvoiceCard callers. The actual route surfaces
+now share the org boundary:
+
+- `/api/v1/webhooks/stripe`: paid checkout and cancellation resolve the event's
+  Stripe customer, require its canonical org metadata and reject conflicting
+  event metadata. They never query current Keycloak org by email. The checkout
+  and subscription-updated compatibility aliases delegate to this dispatcher.
+- `/api/v1/billing`: portal, payment methods, subscription status/cancel/upgrade
+  select the org's Stripe customer. Subscription metadata and customer references
+  must agree; multiple active subscriptions and truncated history fail closed.
+- `/api/v1/payment-methods`: all seven routes use org-scoped lookup. Details,
+  default and detach validate payment-method ownership before exposing/mutating
+  it; SetupIntent org metadata overrides untrusted input.
+- `/api/v1/billing` invoices/cycle/summary/PDF/retry and Lago read helpers no longer
+  fall back to email. PDF/retry require the selected org even for an admin.
+- `/api/v1/subscriptions/confirm-upgrade` verifies suite, payment and event/customer
+  identity against the selected org before idempotent paid-org provisioning.
+  It cannot provision org B using a paid checkout from org A.
+
+The two Stripe webhook functions in stripe_api.py are undecorated legacy callables
+at this baseline, not registered webhook routes; they now delegate to the canonical
+handler as well. The first subscription `/upgrade` route is a payment-required
+guard and shadows a later duplicate. Tests now mount the actual imported routers,
+rather than relying only on extracted functions. The dormant
+`StripeIntegration.process_webhook_event` and private email-oriented lifecycle
+methods have no production callers in this checkout and were not expanded into
+another active dispatch path.
+
+Customer search treats bare UUID and `org_<uuid>` metadata as equivalent and
+rejects duplicates across either form. Provider lookup failures return 503;
+subscription history beyond the requested 100 records returns 409 rather than
+making an ownership/uniqueness decision on an incomplete page. Explicit partial
+provisioning failures return 503 for retry, including failed Lago subscription
+creation and failed application of a finite cloud cap.
+
+Follow-up results: 122 passed / 3 baseline failures before; 219 passed / the same
+3 failures after. This adds 97 passing regressions: 48 actual canonical/billing
+router cases, 23 payment-method cases, 20 invoice/helper cases, and 6 customer/
+subscription lookup cases. Representative pre-fix runs recorded 32 failures in
+the first 33 canonical/billing route cases, 18 payment-method failures, and 20
+billing-read failures. Tests use the unchanged runner above; all provider/DB calls
+are mocked and no live billing/customer mutations occurred. Existing loopback
+payload tests remain included. All changed Python modules compile and diff checks
+pass. The full service-free run log is
+`/tmp/ops-center-astra-route-full-tests.log` on bigboy.
+
+Current rollout limits supersede the initial event-metadata note: a legacy event
+without org metadata may use a uniquely org-tagged Stripe customer; untagged or
+conflicting customer/event metadata requires explicit reconciliation. Legacy
+email-keyed Lago records remain inaccessible through org-scoped reads. Admin
+invoice actions now require org selection. Subscription-updated aliases no longer
+write email-wide Keycloak tiers; checkout and cancellation drive org provisioning.
+No deployed endpoint/browser, real Stripe/Lago, Postgres or Redis verification is
+claimed. Deployment and dogfood verification remain with the orchestrator.

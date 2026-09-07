@@ -4,6 +4,7 @@ Provides invoice history, billing cycle info, and payment management
 """
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from billing_org_identity import resolve_billing_org
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
@@ -103,24 +104,14 @@ def _load_session(request: Request) -> dict:
 
 
 async def get_user_org_id(request: Request) -> str:
-    """Get organization ID from user session (Redis-backed)"""
+    """Resolve the canonical org from trusted session context or membership."""
     session_data = _load_session(request)
-
-    # org_id is at the top level of the session data
-    org_id = session_data.get("org_id")
-
-    if not org_id:
-        raise HTTPException(status_code=400, detail="User not assigned to organization. Please contact support.")
-
-    return org_id
+    return await resolve_billing_org(session_data.get("user") or {}, session_data)
 
 
 async def get_user_email(request: Request) -> str:
     """
-    Get the user's email from the session for Lago billing lookups.
-
-    The Lago billing customer (invoices, subscription, billing cycle) is keyed by
-    EMAIL (external_id == email), not org_id, so billing-UI lookups resolve by email.
+    Get contact email from the session; it is never a billing identity key.
     """
     session_data = _load_session(request)
     user = session_data.get("user", {}) or {}
@@ -180,7 +171,7 @@ async def get_invoices_list(request: Request, limit: int = 50):
     logger.info(f"Fetching invoices for org={org_id} (email={email}), limit={limit}")
 
     try:
-        # Canonical org_id key first, legacy email fallback.
+        # Scope every billing read to the canonical selected org.
         invoices = await get_invoices_for(org_id, email, limit=limit)
 
         # Format invoice data for frontend
@@ -227,7 +218,7 @@ async def get_billing_cycle(request: Request):
     logger.info(f"Fetching billing cycle for org={org_id} (email={email})")
 
     try:
-        # Canonical org_id key first, legacy email fallback.
+        # Scope every billing read to the canonical selected org.
         subscription = await get_subscription_for(org_id, email)
 
         if not subscription:
@@ -272,24 +263,20 @@ async def get_invoice_pdf(invoice_id: str, request: Request):
     """
     Download an invoice's PDF (proxied from Lago).
 
-    Access: the invoice must belong to the caller's org/email (same scoping as
-    the invoice list), OR the caller must be an admin (Revenue Dashboard).
+    Access: the invoice must belong to the caller's selected canonical org,
+    including when the caller administers an organization.
     The PDF bytes are proxied because Lago's file_url points at the internal
     Lago host, which the browser cannot reach.
     """
     session_data = _load_session(request)
     user = session_data.get("user", {}) or {}
-    is_admin = bool(user.get("is_admin")) or user.get("role") == "admin"
-    org_id = session_data.get("org_id")
+    org_id = await resolve_billing_org(user, session_data)
     email = user.get("email") or session_data.get("email")
 
-    if not is_admin and not org_id and not email:
-        raise HTTPException(status_code=400, detail="No billing identity on session")
-
     # Ownership check: find the invoice among the caller's invoices
-    # (canonical org_id key first, legacy email fallback — same as the list endpoint)
+    # (canonical selected org only, same as the list endpoint)
     target_invoice = None
-    if org_id or email:
+    if org_id:
         try:
             invoices = await get_invoices_for(org_id, email, limit=200)
             for invoice in invoices:
@@ -298,10 +285,6 @@ async def get_invoice_pdf(invoice_id: str, request: Request):
                     break
         except Exception as e:
             logger.error(f"Error scoping invoice {invoice_id} to caller: {e}", exc_info=True)
-
-    # Admins may fetch any invoice directly (Revenue Dashboard)
-    if not target_invoice and is_admin:
-        target_invoice = await lago_get_invoice(invoice_id)
 
     if not target_invoice:
         # Deliberately identical for "doesn't exist" and "not yours"
@@ -344,7 +327,7 @@ async def download_invoice(invoice_id: str, request: Request):
     logger.info(f"Requesting download for invoice {invoice_id}, user {email}")
 
     try:
-        # Canonical org_id key first, legacy email fallback.
+        # Scope every billing read to the canonical selected org.
         invoices = await get_invoices_for(org_id, email, limit=100)
 
         target_invoice = None
@@ -387,7 +370,7 @@ async def get_billing_summary(request: Request):
     logger.info(f"Fetching billing summary for org={org_id} (email={email})")
 
     try:
-        # Canonical org_id key first, legacy email fallback.
+        # Scope every billing read to the canonical selected org.
         invoices = await get_invoices_for(org_id, email, limit=12)
 
         # Calculate statistics
@@ -437,22 +420,17 @@ async def retry_invoice(invoice_id: str, request: Request):
     """
     Retry payment collection for a failed invoice (via Lago retry_payment).
 
-    Access: same scoping as GET /invoices/{id}/pdf — the invoice must belong
-    to the caller's org/email, OR the caller must be an admin.
+    Access: same selected canonical org scoping as GET /invoices/{id}/pdf.
     """
     session_data = _load_session(request)
     user = session_data.get("user", {}) or {}
-    is_admin = bool(user.get("is_admin")) or user.get("role") == "admin"
-    org_id = session_data.get("org_id")
+    org_id = await resolve_billing_org(user, session_data)
     email = user.get("email") or session_data.get("email")
 
-    if not is_admin and not org_id and not email:
-        raise HTTPException(status_code=400, detail="No billing identity on session")
-
     # Ownership check: find the invoice among the caller's invoices
-    # (canonical org_id key first, legacy email fallback — same as the PDF endpoint)
+    # (canonical selected org only, same as the PDF endpoint)
     target_invoice = None
-    if org_id or email:
+    if org_id:
         try:
             invoices = await get_invoices_for(org_id, email, limit=200)
             for invoice in invoices:
@@ -461,10 +439,6 @@ async def retry_invoice(invoice_id: str, request: Request):
                     break
         except Exception as e:
             logger.error(f"Error scoping invoice {invoice_id} for retry: {e}", exc_info=True)
-
-    # Admins may retry any invoice directly (Billing Dashboard)
-    if not target_invoice and is_admin:
-        target_invoice = await lago_get_invoice(invoice_id)
 
     if not target_invoice:
         # Deliberately identical for "doesn't exist" and "not yours"
