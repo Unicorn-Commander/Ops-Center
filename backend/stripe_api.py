@@ -12,6 +12,7 @@ import os
 import stripe
 import asyncpg
 
+from billing_org_identity import resolve_billing_org
 from stripe_integration import stripe_integration
 from keycloak_integration import get_user_by_email, get_user_tier_info
 from subscription_manager import subscription_manager
@@ -110,10 +111,21 @@ async def get_current_user_email(request: Request) -> str:
     return user_email
 
 
+async def get_current_billing_org(request: Request) -> str:
+    token = request.cookies.get("session_token")
+    session = redis_session_manager.get(token) if token else None
+    if not session or not session.get("user"):
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return await resolve_billing_org(
+        session["user"], session, getattr(request.app.state, "db_pool", None)
+    )
+
+
 @router.post("/subscriptions/checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
     request: CheckoutSessionRequest,
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_current_billing_org)
 ):
     """
     Create a Stripe Checkout session for subscription purchase
@@ -156,7 +168,7 @@ async def create_checkout_session(
             raise HTTPException(status_code=400, detail="The free tier does not require checkout")
 
         # Get or create Stripe customer
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id)
 
         if not customer:
             # Get user info from Keycloak
@@ -168,7 +180,8 @@ async def create_checkout_session(
                 name=name,
                 metadata={
                     "keycloak_id": kc_user.get('id') if kc_user else "",
-                    "source": "ops_center"
+                    "source": "ops_center",
+                    "org_id": org_id
                 }
             )
 
@@ -191,7 +204,8 @@ async def create_checkout_session(
             price_id=price_id,
             customer_email=user_email,
             tier_name=request.tier_id,
-            billing_cycle=request.billing_cycle
+            billing_cycle=request.billing_cycle,
+            org_id=org_id
         )
 
         if not checkout_url:

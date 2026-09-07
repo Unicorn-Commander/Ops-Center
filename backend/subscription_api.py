@@ -3,6 +3,8 @@ Subscription Management API Endpoints
 Integrates with Lago for billing and subscription management
 """
 
+from billing_org_identity import resolve_billing_org
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import List, Dict, Optional
 from pydantic import BaseModel
@@ -75,22 +77,18 @@ async def get_current_user(request: Request):
 
 # Helper to get org_id from user session
 async def get_user_org_id(request: Request) -> str:
-    """Get organization ID from user session for Lago billing"""
-    user = await get_current_user(request)
+    """Resolve the trusted organization before any billing or usage call."""
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    sessions = getattr(request.app.state, "sessions", {})
+    session = sessions.get(session_token)
+    if not session or not session.get("user"):
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return await resolve_billing_org(
+        session["user"], session, getattr(request.app.state, "db_pool", None)
+    )
 
-    # Get org_id - this is the customer identifier in Lago
-    org_id = user.get("org_id")
-    if not org_id:
-        # Fallback: create org_id from user email
-        email = user.get("email")
-        if not email:
-            raise HTTPException(status_code=400, detail="User has no org_id or email")
-
-        # Generate org_id from email (for single-user orgs)
-        org_id = f"org_{email.split('@')[0]}_{user.get('id', 'unknown')}"
-        logger.warning(f"No org_id found for user {email}, using generated: {org_id}")
-
-    return org_id
 
 async def require_admin(request: Request):
     """Require admin role"""
@@ -607,7 +605,7 @@ async def initiate_upgrade(
 
         # 5. Get or create Stripe customer
         customer_email = user.get("email")
-        stripe_customer = await stripe_integration.get_customer_by_email(customer_email)
+        stripe_customer = await stripe_integration.get_customer_for_org(org_id)
 
         if not stripe_customer:
             # Create new Stripe customer
@@ -630,7 +628,8 @@ async def initiate_upgrade(
             price_id=target_plan.stripe_price_id,
             customer_email=customer_email,
             tier_name=target_tier,
-            billing_cycle="monthly"
+            billing_cycle="monthly",
+            org_id=org_id
         )
 
         if not checkout_url:

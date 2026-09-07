@@ -7,6 +7,8 @@ and usage statistics for the current user.
 Integrates with both Keycloak (user attributes) and Lago (metered usage).
 """
 
+from billing_org_identity import resolve_billing_org
+
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from datetime import datetime, timedelta
@@ -55,29 +57,17 @@ async def get_current_user_email(request: Request) -> str:
 
 
 async def get_user_org_id(request: Request) -> str:
-    """Get organization ID from user session"""
+    """Resolve the trusted organization before any billing or usage call."""
     session_token = request.cookies.get("session_token")
     if not session_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-
     sessions = getattr(request.app.state, "sessions", {})
-    session_data = sessions.get(session_token)
-    if not session_data:
+    session = sessions.get(session_token)
+    if not session or not session.get("user"):
         raise HTTPException(status_code=401, detail="Invalid session")
-
-    user = session_data.get("user", {})
-    org_id = user.get("org_id")
-
-    if not org_id:
-        # Fallback: generate org_id from email
-        email = user.get("email")
-        if email:
-            org_id = f"org_{email.split('@')[0]}_{user.get('id', 'unknown')}"
-            logger.warning(f"No org_id found, using generated: {org_id}")
-        else:
-            raise HTTPException(status_code=400, detail="Cannot determine org_id")
-
-    return org_id
+    return await resolve_billing_org(
+        session["user"], session, getattr(request.app.state, "db_pool", None)
+    )
 
 
 async def get_user_tier_data(user_email: str) -> Dict:
