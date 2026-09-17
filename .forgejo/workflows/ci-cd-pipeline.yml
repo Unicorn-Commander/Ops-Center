@@ -180,7 +180,7 @@ jobs:
       - name: Analyze bundle size
         run: |
           du -sh dist/
-          find dist -type f -exec du -h {} + | sort -rh | head -10
+          find dist -type f -exec du -h {} + | sort -rh | sed -n '1,10p'
 
   # ============================================
   # DOCKER BUILD
