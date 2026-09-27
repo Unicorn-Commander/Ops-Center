@@ -233,6 +233,87 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/subscriptions/checkout/{session_id}")
+async def get_checkout_session_status(
+    session_id: str,
+    user_email: str = Depends(get_current_user_email)
+):
+    """What did this checkout session actually buy?
+
+    Backs the /checkout/success page. Stripe's redirect is NOT proof of payment and
+    provisioning is driven by the webhook, so the page needs a server-side read of
+    the real session plus the org's CURRENT tier — that pair is what lets the page
+    say "you're on Suite - BYOK now" instead of guessing, and lets it keep polling
+    honestly while the webhook is still in flight.
+
+    Scoped to the caller: a session that belongs to a different customer is a 404,
+    so a guessed cs_live_ id leaks nothing.
+    """
+    try:
+        session = stripe.checkout.Session.retrieve(session_id, expand=["line_items"])
+    except Exception as e:
+        logger.warning(f"checkout session lookup failed ({session_id}): {e}")
+        raise HTTPException(status_code=404, detail="Checkout session not found")
+
+    md = session.get("metadata") or {}
+    session_email = (
+        session.get("customer_email")
+        or (session.get("customer_details") or {}).get("email")
+        or md.get("user_email")
+    )
+    if not session_email or session_email.lower() != user_email.lower():
+        raise HTTPException(status_code=404, detail="Checkout session not found")
+
+    tier_code = md.get("tier_id") or md.get("tier_name")
+    tier_name = tier_code
+    current_tier = None
+    try:
+        conn = await asyncpg.connect(
+            host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            user=os.getenv("POSTGRES_USER", "unicorn"),
+            password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+            database=os.getenv("POSTGRES_DB", "unicorn_db"),
+        )
+        try:
+            if tier_code:
+                row = await conn.fetchrow(
+                    "SELECT tier_name FROM subscription_tiers WHERE tier_code = $1", tier_code
+                )
+                if row:
+                    tier_name = row["tier_name"]
+            # Same resolver the Stripe webhook provisions through, so this page can
+            # never disagree with what provisioning actually targeted.
+            from webhooks import _resolve_org_by_email
+            org_id = await _resolve_org_by_email(user_email)
+            if org_id:
+                bare = org_id[4:] if str(org_id).startswith("org_") else str(org_id)
+                org_row = await conn.fetchrow(
+                    "SELECT plan_tier FROM organizations WHERE id::text = $1", bare
+                )
+                if org_row:
+                    current_tier = org_row["plan_tier"]
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning(f"checkout status tier lookup failed: {e}")
+
+    return {
+        "session_id": session.get("id"),
+        "payment_status": session.get("payment_status"),
+        "status": session.get("status"),
+        "tier_code": tier_code,
+        "tier_name": tier_name,
+        "billing_cycle": md.get("billing_cycle") or "monthly",
+        "amount_total": session.get("amount_total"),
+        "currency": session.get("currency"),
+        # The org's tier right now. Equal to tier_code once the webhook has landed;
+        # the page polls on this rather than assuming the redirect means provisioned.
+        "current_tier": current_tier,
+        "provisioned": bool(tier_code and current_tier == tier_code),
+    }
+
+
 @router.post("/portal/create", response_model=PortalSessionResponse)
 async def create_portal_session(
     user_email: str = Depends(get_current_user_email),

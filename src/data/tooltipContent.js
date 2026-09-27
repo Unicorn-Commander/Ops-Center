@@ -62,7 +62,13 @@ const tooltips = {
   organizations: {
     teamManagement: {
       title: 'Team Management',
-      content: 'Invite team members, assign roles, and manage access. Professional tier supports 3 members, Enterprise tier supports 5+ (additional seats $15/mo each).'
+      // 2026-08-08: this used to quote "additional seats $15/mo each". There is
+      // no per-seat add-on SKU on the Stripe account -- not archived, never
+      // created -- so that was a price nobody could buy, and it collided with
+      // the retired $15 Meeting-Ops price in every search for stale numbers.
+      // Seat counts are real (they come from subscription_tiers.team_seats);
+      // the add-on price is not, so the number is gone rather than guessed.
+      content: 'Invite team members, assign roles, and manage access. Seat limits come from the plan on the organization; ask us about additional seats.'
     },
     roleAssignment: {
       title: 'Role Assignment',

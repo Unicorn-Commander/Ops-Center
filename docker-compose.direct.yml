@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # Direct routing to ops-center backend
   ops-center-direct:
-    image: uc-1-pro-ops-center
+    image: uc-1-pro-ops-center:live-20260814
     container_name: ops-center-direct
     restart: unless-stopped
     ports:
@@ -20,6 +20,14 @@ services:
     env_file:
       - .env.auth
     environment:
+      - CREDIT_MARKUP_MULTIPLIER=1.25
+      - LOCAL_PRICING_ENABLED=true
+      - ELEVENLABS_API_KEY=REMOVED
+      # Colonel -> Brigade wiring: when BRIGADE_API_URL is set, Brigade owns
+      # agent memory (Colonel skips its embedded graph, COLONEL_LOCAL_GRAPH=auto)
+      # and the Colonel registers itself as a Brigade agent using the PAT below.
+      - BRIGADE_API_URL=${BRIGADE_API_URL:-}
+      - BRIGADE_SERVICE_KEY=${BRIGADE_SERVICE_KEY:-}
       - EXTERNAL_HOST=${EXTERNAL_HOST:-magicunicorn.dev}
       - EXTERNAL_PROTOCOL=https
       - OAUTH_CLIENT_ID=ops-center
@@ -30,12 +38,11 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=REMOVED-KEYCLOAK_ADMIN_PASSWORD
       - SESSION_SECRET_KEY=REMOVED-SESSION_SECRET_KEY
       # Stripe Configuration
-      - SREMOVED
-      - STRIPE_SECRET_KEY=sREMOVED
-      - STRIPE_API_KEY=sREMOVED
-      - SREMOVED
-      - STRIPE_SUCCESS_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/signup-flow.html?success=true
-      - STRIPE_CANCEL_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/signup-flow.html?canceled=true
+      # /signup-flow.html is not a route and not a file — it resolved to the SPA
+      # index shell, so a customer who had just paid landed on a page that said
+      # nothing about the purchase. These are real SPA routes (2026-08-08).
+      - STRIPE_SUCCESS_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/checkout/success
+      - STRIPE_CANCEL_URL=https://${EXTERNAL_HOST:-magicunicorn.dev}/pricing?canceled=true
       # Lago Configuration
       - LAGO_API_URL=http://unicorn-lago-api:3000
       - LAGO_PUBLIC_URL=${LAGO_PUBLIC_URL:-https://billing-api.magicunicorn.dev}

@@ -41,3 +41,7 @@ node_modules
 
 # gitignored test secret (env-ify 2026-07-03) - never commit
 .env.byok-test
+.env
+.env.auth
+.env.*
+!.env.template*

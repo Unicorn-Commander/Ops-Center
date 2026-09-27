@@ -106,6 +106,9 @@ export default function SubscriptionPlan() {
 
   // Dynamic plan loading from backend
   const [availablePlans, setAvailablePlans] = useState([]);
+  // Billing cycle. Annual prices exist in Stripe for every paid tier but no UI
+  // could select them until 2026-08-08 — handleUpgrade sent 'monthly' always.
+  const [billingCycle, setBillingCycle] = useState('monthly');
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState(null);
 
@@ -218,6 +221,7 @@ export default function SubscriptionPlan() {
         tier_code: plan.tier_code || plan.id,
         name: plan.display_name || plan.name,
         price: plan.price_monthly,
+        priceYearly: plan.price_yearly,
         period: 'month',
         description: plan.description || '',
         popular: plan.is_popular || false  // Backend flags the recommended tier
@@ -258,6 +262,12 @@ export default function SubscriptionPlan() {
   };
 
   const handleUpgrade = async (targetTier, attempt = 1) => {
+    // Only bill annually when the tier actually has an annual price; otherwise the
+    // backend answers 409 and the buyer sees a dead button.
+    const planForCycle = safeFind(availablePlans, p => p.tier === targetTier);
+    const cycle = billingCycle === 'yearly' && Number(planForCycle?.priceYearly) > 0
+      ? 'yearly'
+      : 'monthly';
     setCheckoutLoading(true);
     setError(null);
 
@@ -278,7 +288,7 @@ export default function SubscriptionPlan() {
         credentials: 'include',
         body: JSON.stringify({
           tier_id: plan.tier,
-          billing_cycle: 'monthly',
+          billing_cycle: cycle,
           success_url: window.location.origin + '/admin/subscription/success?session_id={CHECKOUT_SESSION_ID}',
           cancel_url: window.location.origin + '/admin/subscription/plan?canceled=true'
         })
@@ -690,6 +700,28 @@ export default function SubscriptionPlan() {
             </div>
           )}
 
+          {/* Billing-cycle selector — drives which Stripe price id checkout uses */}
+          {!loadingPlans && availablePlans.length > 0 && (
+            <div className="flex justify-center mb-6">
+              <div role="radiogroup" aria-label="Billing cycle" className="inline-flex rounded-lg border border-slate-700 p-1">
+                {[{ id: 'monthly', label: 'Monthly' }, { id: 'yearly', label: 'Annual' }].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={billingCycle === opt.id}
+                    onClick={() => setBillingCycle(opt.id)}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      billingCycle === opt.id ? 'bg-purple-600 text-white' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Plan comparison grid */}
           {!loadingPlans && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -718,9 +750,20 @@ export default function SubscriptionPlan() {
 
                 <div className="text-center mb-6">
                   <p className={`text-3xl font-bold ${theme.text.primary}`}>
-                    {formatCurrency(plan.price)}
+                    {billingCycle === 'yearly' && Number(plan.priceYearly) > 0
+                      ? formatCurrency(plan.priceYearly)
+                      : formatCurrency(plan.price)}
                   </p>
-                  <p className={`text-sm ${theme.text.secondary}`}>per {plan.period}</p>
+                  <p className={`text-sm ${theme.text.secondary}`}>
+                    {billingCycle === 'yearly' && Number(plan.priceYearly) > 0
+                      ? 'per year'
+                      : `per ${plan.period}`}
+                  </p>
+                  {billingCycle === 'yearly' && Number(plan.priceYearly) > 0 && (
+                    <p className="text-xs text-emerald-400 mt-1">
+                      {formatCurrency(Number(plan.priceYearly) / 12)}/mo, billed annually
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2 mb-6">

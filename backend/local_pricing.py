@@ -16,8 +16,8 @@ Three modes (per subscription_tiers.local_pricing_mode, migration core/0008):
                           then route to local_overflow_model (billed as cloud). If no
                           overflow model is configured it DEGRADES to free (never denies
                           — denying a paying customer is the cardinal sin; Risk table).
-  metered              -> serve local, priced at local_token_rate_per_1k (counts against
-                          the credit wallet via calculate_cost(local_rate_per_1k=...)).
+  metered              -> serve local, priced through calculate_cost using the model's
+                          llm_models input/output rates.
 
 SAFETY:
   * Hard-gated by env LOCAL_PRICING_ENABLED (default "false"): when off, ALWAYS passthrough
@@ -51,6 +51,7 @@ def _passthrough(model: str, *, is_local: bool, reason: str) -> Dict[str, Any]:
         "model": model,
         "is_local": is_local,
         "local_rate_per_1k": None,
+        "use_catalog_rates": False,
         "meter": False,
         "reason": reason,
     }
@@ -63,8 +64,7 @@ async def _load_tier_pricing(tier_code: str) -> Optional[Dict[str, Any]]:
             """
             SELECT COALESCE(local_pricing_mode, 'free_unlimited') AS mode,
                    local_monthly_token_quota AS quota,
-                   local_overflow_model       AS overflow_model,
-                   COALESCE(local_token_rate_per_1k, 0.0) AS rate
+                   local_overflow_model       AS overflow_model
             FROM subscription_tiers
             WHERE tier_code = $1
             """,
@@ -83,9 +83,9 @@ async def resolve_local_pricing(
 ) -> Dict[str, Any]:
     """Decide how to price/route a (possibly local) inference request.
 
-    Returns a dict: {decision, model, is_local, local_rate_per_1k, meter, reason}.
-      - decision == ALLOW: serve `model`; if `meter` and `local_rate_per_1k` is set,
-        the caller prices it via calculate_cost(is_local=True, local_rate_per_1k=...).
+    Returns a dict including decision, model, locality, and metering instructions.
+      - decision == ALLOW: serve `model`; when `meter` is true, the caller prices it
+        via calculate_cost and use_catalog_rates selects the llm_models split-rate path.
       - decision == OVERFLOW: serve `model` (the paid overflow model); `is_local` is
         False so the caller bills it at the normal cloud rate.
       - decision == DENY: reject with 429.
@@ -109,14 +109,14 @@ async def resolve_local_pricing(
             return _passthrough(requested_model, is_local=True, reason="free_unlimited")
 
         if mode == "metered":
-            rate = float(tier["rate"] or 0.0)
             return {
                 "decision": ALLOW,
                 "model": requested_model,
                 "is_local": True,
-                "local_rate_per_1k": rate,
-                "meter": rate > 0.0,
-                "reason": "metered",
+                "local_rate_per_1k": None,
+                "use_catalog_rates": True,
+                "meter": True,
+                "reason": "metered_catalog",
             }
 
         if mode == "free_quota_overflow":
@@ -134,6 +134,7 @@ async def resolve_local_pricing(
                     "model": overflow_model,
                     "is_local": False,  # served by the paid model -> bill as cloud
                     "local_rate_per_1k": None,
+                    "use_catalog_rates": False,
                     "meter": False,
                     "reason": "quota_exceeded_overflow",
                 }

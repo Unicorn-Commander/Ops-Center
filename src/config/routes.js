@@ -412,6 +412,12 @@ export const routes = {
             component: 'CampaignsManagement',
             roles: ['admin'],
             name: 'Campaigns'
+          },
+          trialCodes: {
+            path: '/admin/growth/trial-codes',
+            component: 'TrialCodes',
+            roles: ['admin'],
+            name: 'Trial Codes'
           }
         }
       },

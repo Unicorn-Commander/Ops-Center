@@ -20,6 +20,7 @@ Date: November 3, 2025
 
 import logging
 import secrets
+import time
 import bcrypt
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -36,6 +37,75 @@ router = APIRouter(prefix="/api/v1/account/uc-api-keys", tags=["UC API Keys"])
 
 
 # ============================================================================
+# Permission scopes
+# ============================================================================
+# llm:* — OpenAI-compatible gateway (chat, models, speech)
+# mcp:* — public MCP servers for customer agents (Claude Desktop, Cursor, …)
+# mcp:<app> — single-app MCP scope (e.g. mcp:accounting-ops)
+DEFAULT_UC_KEY_PERMISSIONS = [
+    "llm:inference",
+    "llm:models",
+    "mcp:accounting-ops",
+]
+
+_LLM_PERMISSIONS = frozenset({"llm:inference", "llm:models", "llm:embeddings", "llm:audio"})
+_MCP_WILDCARD = "mcp:*"
+
+
+def _is_allowed_permission(perm: str) -> bool:
+    """Allow known llm scopes, mcp:*, and mcp:<app-slug> (lowercase slug)."""
+    if not isinstance(perm, str) or not perm:
+        return False
+    if perm in _LLM_PERMISSIONS:
+        return True
+    if perm == _MCP_WILDCARD:
+        return True
+    if perm.startswith("mcp:") and len(perm) > 4:
+        slug = perm[4:]
+        # app slug: lowercase letters, digits, hyphen
+        return bool(slug) and all(c.isalnum() or c == "-" for c in slug) and slug == slug.lower()
+    return False
+
+
+def sanitize_permissions(permissions: Optional[List[str]]) -> List[str]:
+    """Validate and normalize a permissions list. Raises HTTP 400 on unknowns."""
+    if permissions is None:
+        return list(DEFAULT_UC_KEY_PERMISSIONS)
+    if not isinstance(permissions, list) or not permissions:
+        raise HTTPException(
+            status_code=400,
+            detail="permissions must be a non-empty list of scope strings",
+        )
+    cleaned: List[str] = []
+    seen = set()
+    for p in permissions:
+        if not _is_allowed_permission(p):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown permission '{p}'. Allowed: llm:inference, llm:models, "
+                    f"llm:embeddings, llm:audio, mcp:*, mcp:<app> (e.g. mcp:accounting-ops)"
+                ),
+            )
+        if p not in seen:
+            seen.add(p)
+            cleaned.append(p)
+    return cleaned
+
+
+def key_has_mcp_permission(permissions: List[str], app: Optional[str] = None) -> bool:
+    """True if permissions grant MCP access (wildcard or specific app)."""
+    if not permissions:
+        return False
+    if _MCP_WILDCARD in permissions:
+        return True
+    if app:
+        return f"mcp:{app}" in permissions
+    # any mcp:* or mcp:<app>
+    return any(p == _MCP_WILDCARD or p.startswith("mcp:") for p in permissions)
+
+
+# ============================================================================
 # Request/Response Models
 # ============================================================================
 
@@ -43,7 +113,10 @@ class CreateUCAPIKeyRequest(BaseModel):
     """Request to create a new UC API key"""
     name: str = Field(..., description="Descriptive name for the key", min_length=1, max_length=255)
     expires_in_days: Optional[int] = Field(90, description="Days until expiration (default: 90)", ge=1, le=3650)
-    permissions: Optional[List[str]] = Field(["llm:inference", "llm:models"], description="API permissions")
+    permissions: Optional[List[str]] = Field(
+        default_factory=lambda: list(DEFAULT_UC_KEY_PERMISSIONS),
+        description="API permissions (llm:* and/or mcp:*)",
+    )
 
 
 class UCAPIKeyResponse(BaseModel):
@@ -210,6 +283,7 @@ async def create_uc_api_key(
     """
     try:
         user_id = current_user.get("user_id")
+        permissions = sanitize_permissions(key_request.permissions)
 
         # Generate API key
         api_key, prefix = generate_uc_api_key()
@@ -229,16 +303,16 @@ async def create_uc_api_key(
                 VALUES ($1, $2, $3, $4, $5::jsonb, $6)
                 RETURNING id, created_at
             """, user_id, key_request.name, key_hash, prefix,
-                json_lib.dumps(key_request.permissions), expires_at)
+                json_lib.dumps(permissions), expires_at)
 
-        logger.info(f"Created UC API key '{key_request.name}' for user {user_id}")
+        logger.info(f"Created UC API key '{key_request.name}' for user {user_id} perms={permissions}")
 
         return UCAPIKeyCreateResponse(
             key_id=str(result['id']),
             api_key=api_key,  # FULL KEY - shown only once!
             key_name=key_request.name,
             key_preview=mask_api_key(api_key),
-            permissions=key_request.permissions,
+            permissions=permissions,
             created_at=result['created_at'].isoformat(),
             expires_at=expires_at.isoformat()
         )
@@ -497,3 +571,208 @@ async def get_uc_api_key(
     except Exception as e:
         logger.error(f"Error getting UC API key: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get API key")
+
+
+# ============================================================================
+# P10: "Sign in with Unicorn Commander" — mint a key from a Keycloak Bearer
+# ============================================================================
+# Native apps (Majiks DJ copilot) complete an OAuth device flow against the
+# uchub realm and call this endpoint with the resulting access token to mint
+# a uc_ API key for https://api.unicorncommander.ai/api/v1/llm — no Ops-Center
+# session cookie involved. Token verification reuses the entitlements JWKS
+# pattern (RS256, allowlisted uchub issuers, both realms).
+
+from entitlements_api import _verify_bearer as _verify_kc_bearer
+
+_MINT_RATE_LIMIT = 5        # mints
+_MINT_RATE_WINDOW = 3600.0  # per hour, per user (in-process; server runs single-worker)
+_mint_attempts: Dict[str, List[float]] = {}
+
+
+def _check_mint_rate_limit(user_id: str) -> None:
+    """Modest fixed-window per-user limit so key minting stays boring."""
+    now = time.time()
+    attempts = [t for t in _mint_attempts.get(user_id, []) if now - t < _MINT_RATE_WINDOW]
+    if len(attempts) >= _MINT_RATE_LIMIT:
+        retry_after = int(_MINT_RATE_WINDOW - (now - attempts[0])) + 1
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: {_MINT_RATE_LIMIT} key mints per hour. Try again in {retry_after}s.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    attempts.append(now)
+    _mint_attempts[user_id] = attempts
+
+
+class MintViaTokenRequest(BaseModel):
+    """Mint (or replace) the caller's API key for a named app, authed by a KC Bearer."""
+    name: str = Field("majiks-dj", description="App key name (one live key per name)",
+                      min_length=1, max_length=255)
+    expires_in_days: Optional[int] = Field(90, ge=1, le=3650)
+    # Default stays LLM-only for native apps (Majiks DJ); pass mcp:* explicitly
+    # when the client needs Ops MCP. Account-page mint uses DEFAULT_UC_KEY_PERMISSIONS.
+    permissions: Optional[List[str]] = Field(["llm:inference", "llm:models"])
+
+
+class MintViaTokenResponse(UCAPIKeyCreateResponse):
+    """Create response + identity/credits context for the signing-in app."""
+    replaced_key_ids: List[str] = []
+    email: Optional[str] = None
+    credits_remaining: Optional[float] = None
+    tier: Optional[str] = None
+
+
+@router.post("/mint-via-token", response_model=MintViaTokenResponse, status_code=201)
+async def mint_uc_api_key_via_token(
+    request: Request,
+    body: MintViaTokenRequest = MintViaTokenRequest(),
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """
+    Mint a uc_ API key using a Keycloak (uchub realm) Bearer access token.
+
+    Auth: `Authorization: Bearer <KC RS256 access token>` — verified via JWKS
+    against the allowlisted uchub issuers (same pattern as /api/v1/entitlements).
+    No session cookie or CSRF token required (path is exempted; it verifies its
+    own bearer).
+
+    Behavior:
+    - One live key per app name: any active keys with the same `name` owned by
+      the caller are revoked in the same transaction (replaced_key_ids).
+    - First-time users get their org auto-provisioned exactly like SSO login.
+    - Returns the plaintext key ONCE, plus expiry and a best-effort credits
+      snapshot (same source as GET /api/v1/llm/credits).
+    - Rate limited per user (5/hour).
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+
+    claims = _verify_kc_bearer(token)  # 401 on bad signature / untrusted iss / expiry
+    user_id = claims.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token has no sub claim")
+    email = claims.get("email")
+
+    _check_mint_rate_limit(user_id)
+
+    # Resolve/create the local user's org context EXACTLY the way SSO login does
+    # (server.oauth_callback): get_user_org_context, then auto-provision for
+    # first-time non-admin users. Late import — server.py imports this module.
+    from server import get_user_org_context, auto_provision_user_org
+    org_context = await get_user_org_context(user_id, email)
+    realm_roles = (claims.get("realm_access") or {}).get("roles") or []
+    if not org_context.get("org_id") and "admin" not in realm_roles:
+        display_name = claims.get("name") or claims.get("preferred_username") or (email or "user")
+        try:
+            org_context = await auto_provision_user_org(
+                user_id=user_id, email=email, display_name=display_name
+            )
+            logger.info(f"mint-via-token: auto-provisioned org for first-time user {email}")
+        except Exception as provision_error:
+            # Key minting still proceeds — org context is not required for per-user credits.
+            logger.error(f"mint-via-token: auto-provisioning failed for {email}: {provision_error}")
+
+    permissions = sanitize_permissions(body.permissions)
+    api_key, prefix = generate_uc_api_key()
+    key_hash = hash_api_key(api_key)
+    expires_at = datetime.utcnow() + timedelta(days=body.expires_in_days)
+
+    try:
+        async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                replaced = await conn.fetch("""
+                    UPDATE user_api_keys SET is_active = FALSE
+                    WHERE user_id = $1 AND key_name = $2 AND is_active = TRUE
+                    RETURNING id
+                """, user_id, body.name)
+                result = await conn.fetchrow("""
+                    INSERT INTO user_api_keys (
+                        user_id, key_name, key_hash, key_prefix, permissions, expires_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+                    RETURNING id, created_at
+                """, user_id, body.name, key_hash, prefix,
+                    json.dumps(permissions), expires_at)
+    except Exception as db_err:
+        logger.error(f"mint-via-token: DB error for user {user_id}: {db_err}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to mint API key")
+
+    # Credits snapshot — same source as GET /api/v1/llm/credits (best-effort;
+    # also auto-provisions the trial credit account for brand-new users).
+    credits_remaining = None
+    tier = None
+    try:
+        credit_system = getattr(request.app.state, "credit_system", None)
+        if credit_system:
+            credits_remaining = await credit_system.get_user_credits(user_id)
+            tier = await credit_system.get_user_tier(user_id)
+    except Exception as credit_err:
+        logger.warning(f"mint-via-token: credits snapshot failed for {user_id}: {credit_err}")
+
+    if replaced:
+        logger.info(
+            f"mint-via-token: replaced {len(replaced)} prior '{body.name}' key(s) for user {user_id}"
+        )
+    logger.info(
+        f"mint-via-token: minted '{body.name}' key for user {user_id} (expires {expires_at.date()})"
+    )
+
+    return MintViaTokenResponse(
+        key_id=str(result["id"]),
+        api_key=api_key,  # FULL KEY — shown only once!
+        key_name=body.name,
+        key_preview=mask_api_key(api_key),
+        permissions=permissions,
+        created_at=result["created_at"].isoformat(),
+        expires_at=expires_at.isoformat(),
+        replaced_key_ids=[str(r["id"]) for r in replaced],
+        email=email,
+        credits_remaining=credits_remaining,
+        tier=tier,
+    )
+
+
+@router.post("/revoke-self")
+async def revoke_self_uc_api_key(
+    request: Request,
+    db_pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """
+    Revoke exactly the API key presented as the Bearer token.
+
+    Native-app sign-out (P10 \"Sign in with Unicorn Commander\"): the app holds
+    only its own uc_ key, so the key authenticates AND names the row to revoke.
+    No session cookie or CSRF involved; nothing but the presented key is
+    affected. 401 for missing/unknown/expired keys (revoking an already
+    revoked key therefore also 401s, which is fine for a best-effort client).
+    """
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.split(" ", 1)[1].strip()
+    if not token.startswith("uc_"):
+        raise HTTPException(status_code=401, detail="Not an API key")
+
+    from api_key_manager import get_api_key_manager
+    try:
+        manager = get_api_key_manager()
+        info = await manager.validate_api_key(token)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Key manager not ready")
+    if not info:
+        raise HTTPException(status_code=401, detail="Invalid or expired API key")
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE user_api_keys SET is_active = FALSE WHERE id = $1",
+            UUID(info["key_id"]),
+        )
+    logger.info(
+        "revoke-self: key %s revoked by its owner (user %s)",
+        info["key_id"], info["user_id"],
+    )
+    return {"success": True, "key_id": info["key_id"]}

@@ -13,6 +13,7 @@ Date: October 20, 2025
 """
 
 import asyncio
+import os
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -57,61 +58,100 @@ POWER_LEVELS = {
     }
 }
 
-# Cost per 1K tokens (platform markup included)
+# ---------------------------------------------------------------------------
+# COST UNIT (see CREDITS.md)
+# ONE CREDIT = ONE US DOLLAR of metered provider-equivalent cost.
+# amount == cost on the ledger. Do not reintroduce a second unit.
+# ---------------------------------------------------------------------------
+
+# Single named configurable margin lever. Aaron sets this; default 1.0 is
+# pass-through (zero cloud margin). Do not scatter other markups.
+CREDIT_MARKUP_MULTIPLIER = float(os.environ.get("CREDIT_MARKUP_MULTIPLIER", "1.0"))
+
+# When a model is not in llm_models and has no static rate, charge this
+# clearly-labelled conservative default rather than refusing the call.
+# Frontier-class rates so an unknown model is never undercharged into a loss.
+# Logged WARNING every time it fires.
+CONSERVATIVE_DEFAULT_USD_PER_MTOK = {
+    "input": 5.0,
+    "output": 15.0,
+    "label": "conservative_default_unknown_model",
+}
+
+# Legacy provider-prefix table (USD per 1K tokens, blended). Kept only as a
+# last-resort map for ancient callers; calculate_cost no longer uses it for
+# primary pricing. Prefer MODEL_RATES_USD_PER_MTOK / llm_models.
 PRICING = {
-    # Free tier
     "local": 0.0,
     "groq": 0.0,
     "huggingface": 0.0,
-
-    # Paid tier (low cost)
     "together": 0.002,
     "fireworks": 0.002,
     "deepinfra": 0.003,
-
-    # OpenRouter (multi-provider)
     "openrouter:mixtral": 0.003,
     "openrouter:claude-3.5": 0.008,
     "openrouter:gpt-4o": 0.010,
-
-    # Premium (direct)
     "anthropic": 0.015,
     "openai": 0.015,
-
-    # Default fallback
-    "default": 0.01
+    "default": 0.01,
 }
 
-# Model-specific pricing overrides
+# Static per-model rates (USD per 1M tokens), input vs output.
+# Sourced from provider published / OpenRouter catalog prices (2026-08).
+# Runtime prefers llm_models.cost_per_1m_{input,output}_tokens when DB is up.
+MODEL_RATES_USD_PER_MTOK = {
+    # OpenAI
+    "openai/gpt-4o": {"input": 2.50, "output": 10.00, "source": "openai"},
+    "openai/gpt-4o-2024-08-06": {"input": 2.50, "output": 10.00, "source": "openai"},
+    "openai/gpt-4o-2024-11-20": {"input": 2.50, "output": 10.00, "source": "openai"},
+    "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60, "source": "openai"},
+    "openai/gpt-4o-mini-2024-07-18": {"input": 0.15, "output": 0.60, "source": "openai"},
+    "gpt-4o": {"input": 2.50, "output": 10.00, "source": "openai"},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60, "source": "openai"},
+    "gpt-4o-mini-2024-07-18": {"input": 0.15, "output": 0.60, "source": "openai"},
+    # Anthropic
+    "anthropic/claude-3.5-sonnet": {"input": 3.00, "output": 15.00, "source": "anthropic"},
+    "anthropic/claude-3.5-sonnet-20240620": {"input": 3.00, "output": 15.00, "source": "anthropic"},
+    "anthropic/claude-sonnet-4": {"input": 3.00, "output": 15.00, "source": "anthropic"},
+    "anthropic/claude-sonnet-4.5": {"input": 3.00, "output": 15.00, "source": "anthropic"},
+    "claude-3.5-sonnet": {"input": 3.00, "output": 15.00, "source": "anthropic"},
+    "claude-sonnet-4-0": {"input": 3.00, "output": 15.00, "source": "anthropic"},
+    # Meta / OpenRouter small + large
+    "meta-llama/llama-3.2-1b-instruct": {"input": 0.005, "output": 0.010, "source": "openrouter"},
+    "meta-llama/llama-3.1-8b-instruct": {"input": 0.020, "output": 0.030, "source": "openrouter"},
+    "meta-llama/llama-3.3-70b-instruct": {"input": 0.130, "output": 0.380, "source": "openrouter"},
+    # Google
+    "google/gemini-2.0-flash-001": {"input": 0.100, "output": 0.400, "source": "openrouter"},
+    "google/gemini-2.0-flash-exp:free": {"input": 0.0, "output": 0.0, "source": "openrouter-free"},
+    # DeepSeek
+    "deepseek/deepseek-chat-v3.1": {"input": 0.27, "output": 1.10, "source": "openrouter"},
+    # Local / free catalog
+    "uc/chat-default": {"input": 0.0, "output": 0.0, "source": "local"},
+    "qwen/qwen3.6-flash": {"input": 0.1875, "output": 1.125, "source": "openrouter"},
+}
+
+# Back-compat alias used by older tests (blended legacy keys). Prefer MODEL_RATES.
 MODEL_PRICING = {
-    # Local models
     "llama3-8b-local": 0.0,
     "qwen-32b-local": 0.0,
-
-    # Free tier
     "llama3-70b-groq": 0.0,
     "mixtral-8x7b-hf": 0.0,
-
-    # Paid tier
     "mixtral-8x22b-together": 0.002,
     "llama3-70b-deepinfra": 0.003,
     "qwen-72b-fireworks": 0.002,
-
-    # OpenRouter
     "claude-3.5-sonnet-openrouter": 0.008,
     "gpt-4o-openrouter": 0.010,
-
-    # Premium
     "claude-3.5-sonnet": 0.015,
-    "gpt-4o": 0.015
+    "gpt-4o": 0.015,
 }
 
-# Tier-based markup percentages
+# Legacy tier markup map. NOT applied by calculate_cost anymore.
+# Margin is CREDIT_MARKUP_MULTIPLIER only (Aaron-controlled).
 TIER_MARKUP = {
-    "free": 0.0,      # Platform absorbs cost
-    "starter": 0.4,   # 40% markup
-    "professional": 0.6,  # 60% markup
-    "enterprise": 0.8     # 80% markup
+    "free": 0.0,
+    "starter": 0.4,
+    "professional": 0.6,
+    "enterprise": 0.8,
 }
 
 
@@ -557,6 +597,107 @@ class CreditSystem:
             logger.error(f"Error retrieving credit history: {e}")
             return []
 
+    @staticmethod
+    def is_free_model(*model_ids) -> bool:
+        """True if any id is an OpenRouter-style free variant (endswith ':free')."""
+        for mid in model_ids:
+            if mid and str(mid).endswith(":free"):
+                return True
+        return False
+
+    @staticmethod
+    def ledger_attribution(
+        provider_used: Optional[str],
+        request_model: Optional[str],
+        catalog_provider: Optional[str],
+        is_local: bool,
+    ) -> tuple[str, str]:
+        """Return provider/model labels for the existing credit-ledger path.
+
+        Provider responses identify the served backend model, not the catalog
+        provider. Preserve that historical convention for cloud calls, while
+        local calls must be attributable to the local provider and requested
+        catalog alias so local-serve share is measurable.
+        """
+        served = provider_used or "unknown"
+        if is_local:
+            return catalog_provider or "UC Gateway Local", request_model or served
+        return served, served
+
+    async def _lookup_model_rates(self, model: str):
+        """
+        Resolve input/output USD-per-1M rates for a model id.
+        Order: exact llm_models row → static MODEL_RATES → basename aliases.
+        Returns dict with keys input, output, source — or None if unknown.
+        """
+        if not model:
+            return None
+
+        candidates = [model]
+        if model.startswith("openrouter/"):
+            candidates.append(model[len("openrouter/"):])
+        if "/" in model:
+            candidates.append(model.split("/", 1)[1])
+
+        # 1) Database catalog (authoritative when populated)
+        try:
+            async with self.db_pool.acquire() as conn:
+                for cand in candidates:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT name,
+                               cost_per_1m_input_tokens,
+                               cost_per_1m_output_tokens
+                          FROM llm_models
+                         WHERE name = $1
+                         LIMIT 1
+                        """,
+                        cand,
+                    )
+                    if row is None:
+                        row = await conn.fetchrow(
+                            """
+                            SELECT name,
+                                   cost_per_1m_input_tokens,
+                                   cost_per_1m_output_tokens
+                              FROM llm_models
+                             WHERE lower(name) = lower($1)
+                             LIMIT 1
+                            """,
+                            cand,
+                        )
+                    if row is not None:
+                        inn = row["cost_per_1m_input_tokens"]
+                        out = row["cost_per_1m_output_tokens"]
+                        if inn is not None and out is not None:
+                            return {
+                                "input": float(inn),
+                                "output": float(out),
+                                "source": f"llm_models:{row['name']}",
+                            }
+        except Exception as db_err:
+            logger.warning(f"Model rate DB lookup failed for {model}: {db_err}")
+
+        # 2) Static table
+        lower_map = {k.lower(): v for k, v in MODEL_RATES_USD_PER_MTOK.items()}
+        for cand in candidates:
+            if cand in MODEL_RATES_USD_PER_MTOK:
+                rates = MODEL_RATES_USD_PER_MTOK[cand]
+                return {
+                    "input": float(rates["input"]),
+                    "output": float(rates["output"]),
+                    "source": f"static:{rates.get('source', 'MODEL_RATES')}",
+                }
+            if cand.lower() in lower_map:
+                rates = lower_map[cand.lower()]
+                return {
+                    "input": float(rates["input"]),
+                    "output": float(rates["output"]),
+                    "source": f"static:{rates.get('source', 'MODEL_RATES')}",
+                }
+
+        return None
+
     async def calculate_cost(
         self,
         tokens_used: int,
@@ -564,83 +705,108 @@ class CreditSystem:
         power_level: str = "balanced",
         user_tier: str = "vip_founder",
         is_local: bool = False,
-        local_rate_per_1k: Optional[float] = None,
+        use_catalog_local_rates: bool = False,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
+        request_model: Optional[str] = None,
     ) -> float:
         """
-        Calculate cost for LLM request - NOW ASYNC WITH DB LOOKUP
+        Calculate cost for an LLM request in credits (1 credit = $1 USD).
+
+        Pricing is per-model, input vs output, sourced from llm_models (preferred)
+        or MODEL_RATES_USD_PER_MTOK. Power-level multipliers are NOT applied —
+        they previously flattened every cloud call into a ~$2.50–$3.75/Mtok band.
+        Tier markup is NOT applied; the only margin lever is CREDIT_MARKUP_MULTIPLIER.
 
         Args:
-            tokens_used: Total tokens (prompt + completion)
-            model: Model identifier
-            power_level: User's selected power level (eco, balanced, precision)
-            user_tier: User's subscription tier (vip_founder, byok, managed)
-            is_local: True when the request was served by a LOCAL provider. This is
-                the AUTHORITATIVE local/cloud signal — it must come from the resolved
-                provider record (is_local_provider), NEVER inferred from the model
-                string. Real local model names (e.g. ``qwen3.6-35b``, ``Qwen3-30B-Q4_K_M``)
-                do NOT carry an ``ollama/``/``vllm/`` prefix, so ``_extract_provider``
-                would mis-classify them as cloud ($0.01/1k). See Risk B.
-            local_rate_per_1k: Per-1k local rate for the *metered* local-pricing mode.
-                When None, local is free ($0). Ignored unless ``is_local``.
+            tokens_used: Total tokens (prompt + completion). Used when split missing.
+            model: Model identifier used for rate lookup (often the provider echo).
+            power_level: Kept for call-site compatibility; does not affect cost.
+            user_tier: Kept for call-site compatibility; does not affect cost.
+            is_local: Authoritative local/cloud signal from the resolved provider.
+            use_catalog_local_rates: Price local usage through the same llm_models
+                split input/output rate lookup used for cloud models.
+            prompt_tokens / completion_tokens: Preferred split for asymmetric rates.
+            request_model: Original client model id. Required for :free safety when
+                the provider echoes the model WITHOUT the :free suffix.
 
         Returns:
-            Cost in credits (float)
+            Cost in credits (float), rounded to 6 decimal places.
         """
         try:
-            # Get base cost from model pricing
+            # --- Free / local short-circuits ---
+            if self.is_free_model(model, request_model):
+                # OpenRouter free variants cost the provider $0 at every site,
+                # including post-call when the provider drops the :free suffix.
+                return 0.0
+
             if is_local:
-                # Authoritative: local is free by default, or the metered local rate.
-                base_cost_per_1k = (
-                    local_rate_per_1k if local_rate_per_1k is not None else PRICING["local"]
+                if not use_catalog_local_rates:
+                    return 0.0
+
+            # Resolve rates
+            rates = await self._lookup_model_rates(model or "")
+            if rates is None and request_model:
+                rates = await self._lookup_model_rates(request_model)
+
+            if rates is None:
+                # Explicit policy: do NOT flat-guess a provider-prefix rate.
+                # Charge a clearly-labelled conservative default and warn.
+                rates = {
+                    "input": CONSERVATIVE_DEFAULT_USD_PER_MTOK["input"],
+                    "output": CONSERVATIVE_DEFAULT_USD_PER_MTOK["output"],
+                    "source": CONSERVATIVE_DEFAULT_USD_PER_MTOK["label"],
+                }
+                logger.warning(
+                    "UNKNOWN_MODEL_PRICING model=%r request_model=%r — using "
+                    "conservative_default_unknown_model ($%.2f/$%.2f per 1M in/out). "
+                    "Add the model to llm_models or MODEL_RATES_USD_PER_MTOK.",
+                    model,
+                    request_model,
+                    rates["input"],
+                    rates["output"],
                 )
-            elif model in MODEL_PRICING:
-                base_cost_per_1k = MODEL_PRICING[model]
+
+            in_rate = float(rates["input"])
+            out_rate = float(rates["output"])
+
+            # Token split
+            p_tok = int(prompt_tokens) if prompt_tokens is not None else None
+            c_tok = int(completion_tokens) if completion_tokens is not None else None
+
+            if p_tok is not None and c_tok is not None and (p_tok + c_tok) > 0:
+                base_cost = (p_tok / 1_000_000.0) * in_rate + (c_tok / 1_000_000.0) * out_rate
             else:
-                # Extract provider from model name
-                provider = self._extract_provider(model)
-                base_cost_per_1k = PRICING.get(provider, PRICING["default"])
-
-            # Calculate base cost
-            base_cost = (tokens_used / 1000) * base_cost_per_1k
-
-            # Apply power level multiplier
-            power_config = POWER_LEVELS.get(power_level, POWER_LEVELS["balanced"])
-            cost_with_power = base_cost * power_config["cost_multiplier"]
-
-            # FETCH TIER MARKUP FROM DATABASE instead of hardcoded
-            tier_markup_pct = 0.0
-            try:
-                async with self.db_pool.acquire() as conn:
-                    result = await conn.fetchrow(
-                        "SELECT llm_markup_percentage FROM subscription_tiers WHERE tier_code = $1",
-                        user_tier
+                # No split available (common on streaming without usage chunk).
+                # Conservative: price all tokens at the OUTPUT rate so we never
+                # undercharge a completion-heavy call. Prefer wiring prompt/completion.
+                total = max(int(tokens_used or 0), 0)
+                if total == 0:
+                    return 0.0
+                base_cost = (total / 1_000_000.0) * out_rate
+                if in_rate != out_rate:
+                    logger.debug(
+                        "cost_no_token_split model=%s total=%s using output_rate=%.4f "
+                        "(in=%.4f) source=%s",
+                        model, total, out_rate, in_rate, rates.get("source"),
                     )
-                    if result:
-                        tier_markup_pct = float(result['llm_markup_percentage'])
-                        logger.info(f"Tier {user_tier} markup from DB: {tier_markup_pct}%")
-                    else:
-                        logger.warning(f"No tier found for '{user_tier}' in database, using fallback")
-                        # Fallback to hardcoded values only if DB lookup fails
-                        tier_markup_pct = TIER_MARKUP.get(user_tier, 0) * 100
-            except Exception as db_err:
-                logger.error(f"Failed to fetch tier markup from database: {db_err}, using fallback")
-                # Fallback to hardcoded values
-                tier_markup_pct = TIER_MARKUP.get(user_tier, 0) * 100
 
-            # Apply tier markup
-            tier_multiplier = 1 + (tier_markup_pct / 100)
-            final_cost = cost_with_power * tier_multiplier
-
-            # Round to 6 decimal places
+            final_cost = base_cost * float(CREDIT_MARKUP_MULTIPLIER)
             return round(final_cost, 6)
 
         except Exception as e:
-            logger.error(f"Error calculating cost: {e}")
-            # Return safe default — but a LOCAL request must never fall back to a
-            # cloud rate (Risk B): local stays free (or its metered rate).
+            logger.error(f"Error calculating cost: {e}", exc_info=True)
             if is_local:
-                return round((tokens_used / 1000) * (local_rate_per_1k or 0.0), 6)
-            return (tokens_used / 1000) * 0.01
+                # Local pricing fails open: never substitute an unrelated cloud rate.
+                return 0.0
+            # Safe conservative fallback on unexpected errors
+            total = max(int(tokens_used or 0), 0)
+            return round(
+                (total / 1_000_000.0) * CONSERVATIVE_DEFAULT_USD_PER_MTOK["output"]
+                * float(CREDIT_MARKUP_MULTIPLIER),
+                6,
+            )
+
 
     def _extract_provider(self, model: str) -> str:
         """Extract provider from model name"""

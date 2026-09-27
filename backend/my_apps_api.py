@@ -300,7 +300,7 @@ async def get_org_features(org_id: str, conn) -> set:
     try:
         # Query org_features table for explicit feature grants
         feature_rows = await conn.fetch(
-            "SELECT feature_key FROM org_features WHERE org_id = $1 AND enabled = TRUE",
+            "SELECT feature_key FROM org_features WHERE org_id = $1 AND enabled = TRUE AND (expires_at IS NULL OR expires_at > now())",
             org_id
         )
         return {row['feature_key'] for row in feature_rows}

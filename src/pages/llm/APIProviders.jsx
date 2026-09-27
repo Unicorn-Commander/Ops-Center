@@ -30,13 +30,22 @@ export default function APIProviders() {
     <div className="space-y-6">
       {/* Section Header */}
       <div className="mb-4">
-        <h2 className="text-2xl font-bold text-white">API Provider Configuration</h2>
+        <h2 className="text-2xl font-bold text-white">Platform API Providers</h2>
         <p className="text-gray-400 mt-2">
-          Configure API keys for cloud providers or add custom OpenAI-compatible endpoints.
+          Configure <span className="text-white font-medium">platform</span> LLM credentials used by every Ops app, agent, and gateway user.
+          These keys live in the shared provider registry, not on your personal account.
         </p>
+        <div className="mt-4 p-4 bg-amber-900/20 border border-amber-700 rounded-lg space-y-2">
+          <p className="text-sm text-amber-200">
+            <span className="font-semibold">Platform keys only.</span> Keys saved here are available suite-wide and metered through the credit ledger.
+          </p>
+          <p className="text-sm text-amber-200/90">
+            Personal BYOK keys are separate: use <span className="font-semibold">Account → API Keys (BYOK)</span>. Those only affect your user and are never shared.
+          </p>
+        </div>
         <div className="mt-4 p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
           <p className="text-sm text-blue-300">
-            <span className="font-semibold">💡 Tip:</span> After adding or updating API keys, the Model Catalog will automatically refresh to show newly available models.
+            <span className="font-semibold">Tip:</span> After adding or updating platform keys, import or enable models for that provider so they appear in the public catalog.
           </p>
         </div>
       </div>

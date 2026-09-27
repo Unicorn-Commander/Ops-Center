@@ -818,6 +818,8 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/uuda/",  # UUDA control plane
         "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
         "/api/v1/fleet/ingest",  # Fleet Map collector push - bearer-token m2m (fleet_map_api), not forms
+        "/api/v1/public/",  # Public unauthenticated surfaces (pricing, beta signup) - no session, so no double-submit cookie exists
+        "/mail/",  # Listmonk opt-in/unsubscribe pages proxied for anonymous subscribers
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE

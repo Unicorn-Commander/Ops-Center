@@ -176,6 +176,14 @@ PLATFORM_SETTINGS = {
         "test_connection": True
     },
 
+    "SILICONFLOW_API_KEY": {
+        "description": "SiliconFlow API key — cloud bge-m3 embedding + rerank failover/overflow for the infinity proxy",
+        "category": "inference",
+        "is_secret": True,
+        "required": False,
+        "test_connection": False
+    },
+
     # ------------------------------------------------------------------
     # Scalar platform-config keys (non-credential).
     #
@@ -509,19 +517,20 @@ async def update_platform_settings(
         restart_warning = None
         if update.restart_required:
             try:
-                result = subprocess.run(
-                    ["docker", "restart", "ops-center-direct"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
+                # Restart AFTER this response is delivered. Restarting synchronously
+                # here kills the container mid-request -> Starlette "No response
+                # returned" -> the client receives an HTML 500 ("Unexpected token
+                # '<'"). Detach + brief delay so the 200 goes out first, then the
+                # docker daemon restarts the container. (Credentials are read from
+                # the DB at runtime and don't strictly need a restart at all.)
+                subprocess.Popen(
+                    ["sh", "-c", "sleep 3 && docker restart ops-center-direct"],
+                    start_new_session=True,
                 )
-                if result.returncode == 0:
-                    restart_output = "Container restart initiated successfully"
-                    restart_warning = "Container is restarting. This page may disconnect briefly."
-                else:
-                    restart_output = f"Error: {result.stderr}"
+                restart_output = "Container restart scheduled"
+                restart_warning = "Container will restart in a few seconds; this page may disconnect briefly."
             except Exception as e:
-                logger.error(f"Failed to restart container: {e}")
+                logger.error(f"Failed to schedule container restart: {e}")
                 restart_output = f"Error: {str(e)}"
 
         return {

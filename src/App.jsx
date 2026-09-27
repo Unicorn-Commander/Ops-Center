@@ -214,7 +214,10 @@ const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const MarketplaceLanding = lazy(() => import('./pages/public/MarketplaceLanding'));
+const PublicMarketplace = lazy(() => import('./pages/public/Marketplace'));
 const CheckoutContinue = lazy(() => import('./pages/public/CheckoutContinue'));
+const CheckoutSuccess = lazy(() => import('./pages/public/CheckoutSuccess'));
+const RedeemTrial = lazy(() => import('./pages/public/RedeemTrial'));
 
 // Apps Marketplace pages (user-facing) - lazy loaded
 const AppsLauncher = lazy(() => import('./pages/AppsLauncher'));
@@ -287,6 +290,7 @@ const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
 const SubscriptionManagement = lazy(() => import('./pages/admin/SubscriptionManagement'));
 const AppManagement = lazy(() => import('./pages/admin/AppManagement'));
 const CampaignsManagement = lazy(() => import('./pages/admin/CampaignsManagement'));
+const TrialCodes = lazy(() => import('./pages/admin/TrialCodes'));
 const WhiteLabelBuilder = lazy(() => import('./pages/admin/WhiteLabelBuilder'));
 const DynamicPricingManagement = lazy(() => import('./pages/admin/DynamicPricingManagement'));
 // Admin pricing/policy pages (June 2026)
@@ -382,12 +386,9 @@ function ProtectedRoute({ children }) {
     // expired, which used to render every admin page as a sea of 401s with
     // stale user data instead of sending the user back to login.
     fetch('/api/v1/auth/session', { credentials: 'include' })
-      .then(res => {
-        if (res.ok) {
-          return res.json();
-        }
-        throw new Error('Not authenticated');
-      })
+      // The session probe answers for anonymous visitors too, so branch on the
+      // payload's authenticated flag rather than the HTTP status.
+      .then(res => res.json().catch(() => ({ authenticated: false })))
       .then(data => {
         if (data.authenticated) {
           if (data.token) {
@@ -528,8 +529,18 @@ function AppRoutes() {
         <Routes>
           {/* Root Route - Smart redirect based on auth status and landing page mode */}
           <Route path="/" element={<RootRedirect />} />
+          {/* The public storefront as a stable deep-link. Deliberately no auth
+              gate: anonymous visitors see the same page the root gate shows
+              them, and signed-in users can browse the storefront without
+              logging out (the root path still sends them to /dashboard). */}
+          <Route path="/marketplace" element={<PublicMarketplace />} />
           <Route path="/pricing" element={<MarketplaceLanding />} />
           <Route path="/checkout/continue" element={<CheckoutContinue />} />
+          {/* Stripe Checkout returns here. Must stay in sync with STRIPE_SUCCESS_URL. */}
+          <Route path="/checkout/success" element={<CheckoutSuccess />} />
+          {/* Public trial-code redemption (requires a logged-in session; the page
+              itself handles 401 by showing a "Sign in to redeem" CTA) */}
+          <Route path="/redeem/:code" element={<RedeemTrial />} />
 
           {/* User Landing Page - Authenticated users (search bar, apps, user dropdown) */}
           <Route path="/dashboard" element={
@@ -664,6 +675,7 @@ function AppRoutes() {
                   <Route path="billing/credit-packs" element={<CreditPackages />} />
                   <Route path="billing/agent-pricing" element={<AgentPricing />} />
                   <Route path="growth/campaigns" element={<CampaignsManagement />} />
+                  <Route path="growth/trial-codes" element={<TrialCodes />} />
 
                   {/* AI & Models */}
                   <Route path="ai" element={<LLMHub />} />
