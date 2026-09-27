@@ -36,7 +36,10 @@ from ai_model_manager import ai_model_manager, ModelSettingsUpdate, ModelDownloa
 from storage_manager import storage_backup_manager, StorageInfo, BackupConfig, BackupInfo, BackupStatus
 from extension_manager import extension_manager, ExtensionInstallRequest, ExtensionActionRequest, ExtensionConfigUpdate
 from log_manager import log_manager, LogFilter, LogExportRequest
-from auth_manager import auth_manager, UserCreate, UserUpdate, PasswordChange, LoginCredentials, APIKeyCreate
+from auth_manager import (
+    auth_manager, UserCreate, UserUpdate, PasswordChange, LoginCredentials, APIKeyCreate,
+    require_local_auth_enabled,
+)
 from hardware_info import hardware_detector
 from update_manager import github_update_manager
 from fastapi.responses import RedirectResponse
@@ -4395,6 +4398,8 @@ security = HTTPBearer()
 # Legacy JWT-based authentication (kept for backward compatibility if needed)
 async def get_current_user_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get current user from JWT token (legacy)"""
+    if not auth_manager.local_auth_enabled:
+        raise HTTPException(status_code=401, detail="Legacy local authentication is disabled")
     token = credentials.credentials
     user_info = auth_manager.verify_token(token)
 
@@ -4410,7 +4415,11 @@ async def require_admin_jwt(current_user: dict = Depends(get_current_user_jwt)):
     return current_user
 
 @app.post("/api/v1/auth/login")
-async def login(credentials: LoginCredentials, request: Request):
+async def login(
+    credentials: LoginCredentials,
+    request: Request,
+    _local_auth=Depends(require_local_auth_enabled),
+):
     """Login and get access token"""
     # Rate limiting check
     if RATE_LIMIT_ENABLED:
@@ -4907,7 +4916,12 @@ async def delete_user(user_id: str, current_user: dict = Depends(require_admin))
 
 # Password Management
 @app.post("/api/v1/auth/change-password")
-async def change_password(request: Request, password_change: PasswordChange, current_user: dict = Depends(get_current_user)):
+async def change_password(
+    request: Request,
+    password_change: PasswordChange,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Change current user's password
 
@@ -4958,7 +4972,7 @@ async def change_password(request: Request, password_change: PasswordChange, cur
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/auth/password-policy")
-async def get_password_policy():
+async def get_password_policy(_local_auth=Depends(require_local_auth_enabled)):
     """
     Get password policy requirements and examples
 
@@ -4969,7 +4983,10 @@ async def get_password_policy():
 
 # API Key Management
 @app.get("/api/v1/api-keys")
-async def get_api_keys(current_user: dict = Depends(get_current_user)):
+async def get_api_keys(
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Get current user's API keys"""
     try:
         keys = auth_manager.get_user_api_keys(current_user["user_id"])
@@ -4978,7 +4995,11 @@ async def get_api_keys(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/api-keys")
-async def create_api_key(key_create: APIKeyCreate, current_user: dict = Depends(get_current_user)):
+async def create_api_key(
+    key_create: APIKeyCreate,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Create a new API key"""
     try:
         api_key = auth_manager.create_api_key(current_user["user_id"], key_create)
@@ -4987,7 +5008,11 @@ async def create_api_key(key_create: APIKeyCreate, current_user: dict = Depends(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/api-keys/{key_id}")
-async def delete_api_key(key_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_api_key(
+    key_id: str,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Delete an API key"""
     try:
         success = auth_manager.delete_api_key(key_id, current_user["user_id"])
@@ -4999,7 +5024,10 @@ async def delete_api_key(key_id: str, current_user: dict = Depends(get_current_u
 
 # Session Management
 @app.get("/api/v1/sessions")
-async def get_sessions(current_user: dict = Depends(get_current_user)):
+async def get_sessions(
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Get current user's sessions"""
     try:
         sessions = auth_manager.get_user_sessions(current_user["user_id"])
@@ -5008,7 +5036,11 @@ async def get_sessions(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/sessions/{session_id}")
-async def revoke_session(session_id: str, current_user: dict = Depends(get_current_user)):
+async def revoke_session(
+    session_id: str,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Revoke a session"""
     try:
         success = auth_manager.revoke_session(session_id, current_user["user_id"])
@@ -5424,7 +5456,10 @@ async def get_my_organizations(current_user: dict = Depends(get_current_user)):
 
 # User Registration endpoint
 @app.post("/auth/register")
-async def register_user(request: Request):
+async def register_user(
+    request: Request,
+    _local_auth=Depends(require_local_auth_enabled),
+):
     """
     Public user registration endpoint for UC-Cloud signup form.
     Creates user locally, in Keycloak, creates organization, and subscribes to Lago.
