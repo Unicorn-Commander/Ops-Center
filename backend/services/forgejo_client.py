@@ -14,13 +14,14 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
+DEFAULT_BASE_URL = "https://git.unicorncommander.ai"
 
 class ForgejoClient:
     """Async client for Forgejo Git server API"""
 
     def __init__(
         self,
-        base_url: str = "https://git.unicorncommander.ai",
+        base_url: Optional[str] = None,
         admin_token: Optional[str] = None,
         timeout: int = 10
     ):
@@ -32,13 +33,37 @@ class ForgejoClient:
             admin_token: Admin API token for elevated operations
             timeout: Request timeout in seconds
         """
-        self.base_url = base_url.rstrip('/')
-        self.admin_token = admin_token or os.environ.get("FORGEJO_ADMIN_TOKEN", "")
+        self._base_url = base_url.rstrip('/') if base_url else None
+        self._admin_token = admin_token
         self.timeout = timeout
+
+    @staticmethod
+    def _lookup(key: str, default: str = "") -> str:
+        """Resolve settings from platform_settings, then environment."""
+        try:
+            from get_credential import get_credential
+            return (get_credential(key, default) or "").strip()
+        except Exception as exc:
+            logger.warning("Forgejo credential lookup for %s failed: %s", key, exc)
+            return (os.getenv(key, default) or "").strip()
+
+    @property
+    def base_url(self) -> str:
+        if self._base_url is None:
+            self._base_url = (self._lookup("FORGEJO_API_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL).rstrip('/')
+        return self._base_url
+
+    @property
+    def admin_token(self) -> Optional[str]:
+        if self._admin_token is None:
+            self._admin_token = self._lookup("FORGEJO_API_TOKEN") or None
+        return self._admin_token
 
     def _get_headers(self, user_token: Optional[str] = None) -> Dict[str, str]:
         """Get authorization headers for API requests"""
         token = user_token or self.admin_token
+        if not token:
+            raise RuntimeError("Forgejo API token is not configured; refusing an authenticated request")
         return {
             "Authorization": f"token {token}",
             "Content-Type": "application/json"
