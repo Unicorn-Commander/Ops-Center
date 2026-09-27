@@ -8,7 +8,7 @@ import hashlib
 import time
 from typing import Optional, Callable, Set
 from fastapi import Request, HTTPException, status
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.datastructures import MutableHeaders
 import logging
@@ -255,9 +255,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                     f"Cookie token: {'present' if cookie_token else 'missing'}, "
                     f"Session token: {'present' if session_token else 'missing'}"
                 )
-                raise HTTPException(
+                # NOTE: raising HTTPException inside BaseHTTPMiddleware is not
+                # caught by FastAPI's exception handlers and surfaces as a 500.
+                # Return the 403 response directly instead.
+                return JSONResponse(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="CSRF validation failed. Invalid or missing CSRF token."
+                    content={"detail": "CSRF validation failed. Invalid or missing CSRF token."}
                 )
 
         # Process request

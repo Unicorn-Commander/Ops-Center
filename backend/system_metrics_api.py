@@ -45,8 +45,8 @@ class MetricsCache:
     def __init__(self):
         try:
             self.redis = redis.Redis(
-                host='unicorn-redis',
-                port=6379,
+                host=os.getenv("REDIS_HOST", "unicorn-redis"),
+                port=int(os.getenv("REDIS_PORT", "6379")),
                 db=1,
                 password=os.getenv("REDIS_PASSWORD"),
                 decode_responses=True,

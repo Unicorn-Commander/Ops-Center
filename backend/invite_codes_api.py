@@ -17,6 +17,11 @@ import string
 
 # Import Keycloak integration for user tier updates
 from keycloak_integration import update_user_attributes, get_user_by_id
+from feature_grant_utils import (
+    grant_feature_keys_to_org,
+    resolve_org_by_user_identifier,
+    verify_org_exists,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +39,7 @@ user_router = APIRouter(prefix="/api/v1/invite-codes", tags=["invite-codes"])
 class InviteCodeCreate(BaseModel):
     """Create invite code request"""
     tier_code: str = Field(..., description="Target subscription tier code")
+    campaign_id: Optional[str] = Field(None, description="Optional campaign attribution")
     max_uses: Optional[int] = Field(None, ge=1, description="Max uses (null = unlimited)")
     expires_in_days: Optional[int] = Field(None, ge=1, le=365, description="Days until expiry (null = never)")
     notes: Optional[str] = Field(None, max_length=500, description="Admin notes")
@@ -53,6 +59,8 @@ class InviteCodeResponse(BaseModel):
     code: str
     tier_code: str
     tier_name: Optional[str] = None
+    campaign_id: Optional[str] = None
+    campaign_name: Optional[str] = None
     max_uses: Optional[int]
     current_uses: int
     remaining_uses: Optional[int]
@@ -88,6 +96,8 @@ class ValidateCodeResponse(BaseModel):
     code: str
     tier_code: Optional[str] = None
     tier_name: Optional[str] = None
+    campaign_id: Optional[str] = None
+    campaign_name: Optional[str] = None
     message: str
     expires_at: Optional[datetime] = None
     remaining_uses: Optional[int] = None
@@ -197,8 +207,9 @@ async def check_code_validity(code: str, conn: asyncpg.Connection) -> Dict[str, 
             ic.code,
             COALESCE(ic.metadata->>'tier_code', '') AS tier_code,
             st.tier_name,
+            ic.campaign_id::text AS campaign_id,
+            c.name AS campaign_name,
             ic.max_uses,
-            (COALESCE(ic.max_uses, 0) - COALESCE(ic.uses_remaining, 0)) AS current_uses,
             ic.expires_at,
             ic.is_active,
             CASE
@@ -207,6 +218,7 @@ async def check_code_validity(code: str, conn: asyncpg.Connection) -> Dict[str, 
             END as remaining_uses
         FROM invite_codes ic
         LEFT JOIN subscription_tiers st ON (ic.metadata->>'tier_code') = st.tier_code
+        LEFT JOIN campaigns c ON ic.campaign_id = c.id
         WHERE ic.code = $1
     """
 
@@ -237,7 +249,7 @@ async def check_code_validity(code: str, conn: asyncpg.Connection) -> Dict[str, 
         }
 
     # Check if exhausted
-    if row['max_uses'] is not None and row['current_uses'] >= row['max_uses']:
+    if row['max_uses'] is not None and (row['remaining_uses'] or 0) <= 0:
         return {
             "valid": False,
             "message": "This invite code has been fully redeemed",
@@ -252,6 +264,8 @@ async def check_code_validity(code: str, conn: asyncpg.Connection) -> Dict[str, 
         "code": code,
         "tier_code": row['tier_code'],
         "tier_name": row['tier_name'],
+        "campaign_id": row['campaign_id'],
+        "campaign_name": row['campaign_name'],
         "expires_at": row['expires_at'],
         "remaining_uses": row['remaining_uses']
     }
@@ -289,6 +303,15 @@ async def generate_code(
         if not tier_check:
             raise HTTPException(status_code=404, detail=f"Tier '{data.tier_code}' not found")
 
+        campaign_check = None
+        if data.campaign_id:
+            campaign_check = await conn.fetchrow(
+                "SELECT id, name FROM campaigns WHERE id = $1",
+                data.campaign_id
+            )
+            if not campaign_check:
+                raise HTTPException(status_code=404, detail=f"Campaign '{data.campaign_id}' not found")
+
         # Generate unique code
         code = generate_invite_code()
 
@@ -300,17 +323,37 @@ async def generate_code(
         # Insert invite code
         query = """
             INSERT INTO invite_codes (
-                code, tier_code, max_uses, expires_at, created_by, notes
+                code, metadata, campaign_id, max_uses, uses_remaining, expires_at, created_by
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, code, tier_code, max_uses, current_uses, expires_at,
-                      is_active, created_by, created_at, updated_at, notes
+            VALUES (
+                $1,
+                jsonb_strip_nulls(jsonb_build_object('tier_code', $2, 'notes', $7)),
+                $3,
+                $4,
+                CASE WHEN $4 IS NULL THEN NULL ELSE $4 END,
+                $5,
+                $6
+            )
+            RETURNING
+                id,
+                code,
+                COALESCE(metadata->>'tier_code', '') AS tier_code,
+                campaign_id::text AS campaign_id,
+                max_uses,
+                uses_remaining,
+                expires_at,
+                is_active,
+                created_by,
+                created_at,
+                created_at AS updated_at,
+                metadata->>'notes' AS notes
         """
 
         row = await conn.fetchrow(
             query,
             code,
             data.tier_code,
+            data.campaign_id,
             data.max_uses,
             expires_at,
             admin,
@@ -320,11 +363,11 @@ async def generate_code(
         # Calculate derived fields
         remaining_uses = None
         if row['max_uses'] is not None:
-            remaining_uses = row['max_uses'] - row['current_uses']
+            remaining_uses = row['uses_remaining']
 
         is_expired = row['expires_at'] < datetime.now() if row['expires_at'] else False
         is_exhausted = (row['max_uses'] is not None and
-                       row['current_uses'] >= row['max_uses'])
+                       (row['uses_remaining'] or 0) <= 0)
 
         logger.info(f"Admin '{admin}' generated invite code: {code} for tier: {data.tier_code}")
 
@@ -333,8 +376,10 @@ async def generate_code(
             code=row['code'],
             tier_code=row['tier_code'],
             tier_name=tier_check['tier_name'],
+            campaign_id=row['campaign_id'],
+            campaign_name=campaign_check['name'] if campaign_check else None,
             max_uses=row['max_uses'],
-            current_uses=row['current_uses'],
+            current_uses=(row['max_uses'] or 0) - (row['uses_remaining'] or 0),
             remaining_uses=remaining_uses,
             expires_at=row['expires_at'],
             is_active=row['is_active'],
@@ -357,6 +402,7 @@ async def generate_code(
 @admin_router.get("/", response_model=List[InviteCodeResponse])
 async def list_codes(
     tier_code: Optional[str] = None,
+    campaign_id: Optional[str] = None,
     active_only: bool = False,
     conn: asyncpg.Connection = Depends(get_db_connection),
     admin: str = Depends(get_current_admin)
@@ -383,18 +429,24 @@ async def list_codes(
                 ic.code,
                 COALESCE(ic.metadata->>'tier_code', '') AS tier_code,
                 st.tier_name,
+                ic.campaign_id::text AS campaign_id,
+                c.name AS campaign_name,
                 ic.max_uses,
-                (COALESCE(ic.max_uses, 0) - COALESCE(ic.uses_remaining, 0)) AS current_uses,
+                ic.uses_remaining,
                 ic.expires_at,
                 ic.is_active,
                 ic.created_by::text AS created_by,
                 ic.created_at,
                 ic.created_at AS updated_at,
                 ic.metadata->>'notes' AS notes,
-                COUNT(icr.id) as redemption_count
+                (
+                    SELECT COUNT(*)
+                    FROM invite_code_redemptions icr
+                    WHERE icr.invite_code_id = ic.id
+                ) AS redemption_count
             FROM invite_codes ic
             LEFT JOIN subscription_tiers st ON (ic.metadata->>'tier_code') = st.tier_code
-            LEFT JOIN invite_code_redemptions icr ON ic.id = icr.invite_code_id
+            LEFT JOIN campaigns c ON ic.campaign_id = c.id
             WHERE 1=1
         """
 
@@ -406,13 +458,15 @@ async def list_codes(
             params.append(tier_code)
             param_num += 1
 
+        if campaign_id:
+            query += f" AND ic.campaign_id = ${param_num}"
+            params.append(campaign_id)
+            param_num += 1
+
         if active_only:
             query += " AND ic.is_active = TRUE"
 
-        query += """
-            GROUP BY ic.id, st.tier_name
-            ORDER BY ic.created_at DESC
-        """
+        query += " ORDER BY ic.created_at DESC"
 
         rows = await conn.fetch(query, *params)
 
@@ -420,19 +474,21 @@ async def list_codes(
         for row in rows:
             remaining_uses = None
             if row['max_uses'] is not None:
-                remaining_uses = row['max_uses'] - row['current_uses']
+                remaining_uses = row['uses_remaining']
 
             is_expired = row['expires_at'] < datetime.now() if row['expires_at'] else False
             is_exhausted = (row['max_uses'] is not None and
-                           row['current_uses'] >= row['max_uses'])
+                           (row['uses_remaining'] or 0) <= 0)
 
             codes.append(InviteCodeResponse(
                 id=row['id'],
                 code=row['code'],
                 tier_code=row['tier_code'],
                 tier_name=row['tier_name'],
+                campaign_id=row['campaign_id'],
+                campaign_name=row['campaign_name'],
                 max_uses=row['max_uses'],
-                current_uses=row['current_uses'],
+                current_uses=(row['max_uses'] or 0) - (row['uses_remaining'] or 0),
                 remaining_uses=remaining_uses,
                 expires_at=row['expires_at'],
                 is_active=row['is_active'],
@@ -477,60 +533,71 @@ async def update_code(
         if not existing:
             raise HTTPException(status_code=404, detail="Invite code not found")
 
-        # Build update query dynamically
-        update_fields = []
-        params = []
-        param_num = 1
-
-        if data.is_active is not None:
-            update_fields.append(f"is_active = ${param_num}")
-            params.append(data.is_active)
-            param_num += 1
-
-        if data.max_uses is not None:
-            update_fields.append(f"max_uses = ${param_num}")
-            params.append(data.max_uses)
-            param_num += 1
-
-        if data.expires_at is not None:
-            update_fields.append(f"expires_at = ${param_num}")
-            params.append(data.expires_at)
-            param_num += 1
-
-        if data.notes is not None:
-            update_fields.append(f"notes = ${param_num}")
-            params.append(data.notes)
-            param_num += 1
-
-        if not update_fields:
+        if (
+            data.is_active is None
+            and data.max_uses is None
+            and data.expires_at is None
+            and data.notes is None
+        ):
             raise HTTPException(status_code=400, detail="No fields to update")
 
-        params.append(code_id)
-
-        query = f"""
+        row = await conn.fetchrow(
+            """
             UPDATE invite_codes
-            SET {', '.join(update_fields)}
-            WHERE id = ${param_num}
-            RETURNING id, code, tier_code, max_uses, current_uses, expires_at,
-                      is_active, created_by, created_at, updated_at, notes
-        """
-
-        row = await conn.fetchrow(query, *params)
+            SET
+                is_active = COALESCE($1, is_active),
+                max_uses = COALESCE($2, max_uses),
+                uses_remaining = CASE
+                    WHEN $2 IS NULL THEN uses_remaining
+                    ELSE GREATEST($2 - (COALESCE(max_uses, 0) - COALESCE(uses_remaining, 0)), 0)
+                END,
+                expires_at = COALESCE($3, expires_at),
+                metadata = CASE
+                    WHEN $4 IS NULL THEN metadata
+                    ELSE jsonb_set(COALESCE(metadata, '{}'::jsonb), '{notes}', to_jsonb($4::text), true)
+                END
+            WHERE id = $5
+            RETURNING
+                id,
+                code,
+                COALESCE(metadata->>'tier_code', '') AS tier_code,
+                campaign_id::text AS campaign_id,
+                max_uses,
+                uses_remaining,
+                expires_at,
+                is_active,
+                created_by,
+                created_at,
+                created_at AS updated_at,
+                metadata->>'notes' AS notes
+            """,
+            data.is_active,
+            data.max_uses,
+            data.expires_at,
+            data.notes,
+            code_id,
+        )
 
         # Get tier name
         tier = await conn.fetchrow(
             "SELECT tier_name FROM subscription_tiers WHERE tier_code = $1",
             row['tier_code']
         )
+        campaign = None
+        if row['campaign_id']:
+            campaign = await conn.fetchrow(
+                "SELECT name FROM campaigns WHERE id = $1",
+                row['campaign_id']
+            )
 
         # Calculate derived fields
         remaining_uses = None
         if row['max_uses'] is not None:
-            remaining_uses = row['max_uses'] - row['current_uses']
+            remaining_uses = row['uses_remaining']
 
         is_expired = row['expires_at'] < datetime.now() if row['expires_at'] else False
         is_exhausted = (row['max_uses'] is not None and
-                       row['current_uses'] >= row['max_uses'])
+                       (row['uses_remaining'] or 0) <= 0)
 
         logger.info(f"Admin '{admin}' updated invite code {code_id}")
 
@@ -539,8 +606,10 @@ async def update_code(
             code=row['code'],
             tier_code=row['tier_code'],
             tier_name=tier['tier_name'] if tier else None,
+            campaign_id=row['campaign_id'],
+            campaign_name=campaign['name'] if campaign else None,
             max_uses=row['max_uses'],
-            current_uses=row['current_uses'],
+            current_uses=(row['max_uses'] or 0) - (row['uses_remaining'] or 0),
             remaining_uses=remaining_uses,
             expires_at=row['expires_at'],
             is_active=row['is_active'],
@@ -714,7 +783,19 @@ async def redeem_code(
 
         # Get code details
         code_row = await conn.fetchrow(
-            "SELECT id, tier_code FROM invite_codes WHERE code = $1",
+            """
+            SELECT
+                ic.id,
+                COALESCE(ic.metadata->>'tier_code', '') AS tier_code,
+                ic.campaign_id::text AS campaign_id,
+                c.name AS campaign_name,
+                c.comp_tier_code,
+                c.app_feature_keys,
+                ic.expires_at AS code_expires_at
+            FROM invite_codes ic
+            LEFT JOIN campaigns c ON ic.campaign_id = c.id
+            WHERE ic.code = $1
+            """,
             data.code
         )
 
@@ -739,12 +820,57 @@ async def redeem_code(
                 VALUES ($1, $2, $3)
             """, code_row['id'], user_id, user_email)
 
-            # Increment current_uses
+            # Decrement remaining uses for limited codes
             await conn.execute("""
                 UPDATE invite_codes
-                SET current_uses = current_uses + 1
+                SET uses_remaining = CASE
+                    WHEN uses_remaining IS NULL THEN NULL
+                    ELSE GREATEST(uses_remaining - 1, 0)
+                END
                 WHERE id = $1
             """, code_row['id'])
+
+            if code_row['campaign_id']:
+                org_context = await resolve_org_by_user_identifier(
+                    conn,
+                    user_id=user_id,
+                    user_email=user_email,
+                )
+                if org_context:
+                    await grant_feature_keys_to_org(
+                        conn,
+                        str(org_context["org_id"]),
+                        code_row["app_feature_keys"] or [],
+                        user_email,
+                        f"Campaign invite redemption: {data.code}",
+                    )
+                    if code_row["comp_tier_code"]:
+                        await conn.execute(
+                            "UPDATE organizations SET plan_tier = $1 WHERE id = $2",
+                            code_row["comp_tier_code"],
+                            org_context["org_id"],
+                        )
+                    await conn.execute(
+                        """
+                        INSERT INTO campaign_grants (
+                            campaign_id, org_id, user_id, granted_feature_keys,
+                            comp_tier_code, source, status, expires_at, created_by
+                        )
+                        VALUES ($1, $2, $3, $4, $5, 'invite', 'active', $6, $7)
+                        """,
+                        code_row["campaign_id"],
+                        org_context["org_id"],
+                        user_id,
+                        code_row["app_feature_keys"] or [],
+                        code_row["comp_tier_code"],
+                        code_row["code_expires_at"],
+                        user_email,
+                    )
+                else:
+                    logger.warning(
+                        "Campaign invite redemption for %s could not resolve org; features not granted",
+                        user_email,
+                    )
 
             # Update user's subscription tier in Keycloak
             try:

@@ -3,7 +3,7 @@ Platform Settings API - Manage API Keys and Integration Secrets
 Provides secure GUI-based management of platform credentials
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List
 import os
@@ -28,12 +28,20 @@ except Exception as _audit_exc:  # pragma: no cover - environment dependent
 
 router = APIRouter(prefix="/api/v1/platform", tags=["Platform Settings"])
 
-# Security: Only admin role can access platform settings
-def require_admin(user_role: str = "admin"):
-    """Middleware to require admin role"""
-    if user_role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return True
+# Security: Only an authenticated admin session can access platform settings.
+# NOTE: the previous implementation took a plain `user_role: str = "admin"`
+# default, which FastAPI resolved as an always-"admin" query param — so the gate
+# never inspected the caller's identity and every authenticated user could read
+# and overwrite platform secrets. This now delegates to the canonical
+# session+role dependency (401 if unauthenticated, 403 if not admin). Imported
+# hard (not defensively) so a broken import fails CLOSED — the endpoints simply
+# won't mount rather than run ungated.
+from auth_dependencies import require_admin_user
+
+
+async def require_admin(request: Request):
+    """Require an authenticated admin session (real session + role check)."""
+    return await require_admin_user(request)
 
 class PlatformSetting(BaseModel):
     """Platform setting model"""

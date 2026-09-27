@@ -38,6 +38,7 @@ async def get_db_connection():
 
 # Authentication dependencies (fix auth order issue)
 from auth_dependencies import require_authenticated_user, require_admin_user
+from billing_org_identity import resolve_billing_org, lago_org_id
 
 # Rate limiting
 from slowapi import Limiter
@@ -215,6 +216,20 @@ async def check_system_admin(user: Dict) -> bool:
     )
 
 
+async def authorize_org_billing_mutation(request: Request, user: Dict, target_org: str) -> str:
+    """Require the selected active organization's persisted billing role."""
+    token = request.cookies.get("session_token")
+    sessions = getattr(request.app.state, "sessions", {})
+    session = sessions.get(token) or {}
+    org_id = await resolve_billing_org(
+        user.get("user", user), session,
+        getattr(request.app.state, "db_pool", None), require_write=True,
+    )
+    if lago_org_id(target_org) != org_id:
+        raise HTTPException(403, "Billing target differs from selected organization")
+    return org_id[4:]
+
+
 # ==================== Organization Subscription Endpoints ====================
 
 @router.post("/subscriptions", response_model=OrganizationSubscriptionResponse)
@@ -227,7 +242,7 @@ async def create_organization_subscription(
     """
     Create organization-level subscription
 
-    **Required Role**: Org Admin or System Admin
+    **Required Role**: Selected organization's owner, admin, or billing_admin
 
     **Plan Types**:
     - `platform` ($50/mo): Managed credits with 1.5x markup
@@ -238,15 +253,10 @@ async def create_organization_subscription(
     """
     # User is already authenticated via dependency
 
+    subscription.org_id = await authorize_org_billing_mutation(request, user, subscription.org_id)
+
     conn = await get_db_connection()
     try:
-        # Check permissions
-        is_admin = await check_system_admin(user)
-        is_org_admin = await check_org_admin(conn, subscription.org_id, user["user_id"])
-
-        if not is_admin and not is_org_admin:
-            raise HTTPException(status_code=403, detail="Not authorized to create subscription")
-
         # Check if org exists
         org = await conn.fetchrow(
             "SELECT id, name FROM organizations WHERE id = $1",
@@ -385,7 +395,7 @@ async def upgrade_organization_subscription(
     """
     Upgrade organization subscription plan
 
-    **Required Role**: Org Admin or System Admin
+    **Required Role**: Selected organization's owner, admin, or billing_admin
 
     **Upgrade Paths**:
     - BYOK → Platform ($30 → $50)
@@ -394,15 +404,10 @@ async def upgrade_organization_subscription(
     """
     user = await get_current_user(request)
 
+    org_id = await authorize_org_billing_mutation(request, user, org_id)
+
     conn = await get_db_connection()
     try:
-        # Check permissions
-        is_admin = await check_system_admin(user)
-        is_org_admin = await check_org_admin(conn, org_id, user["user_id"])
-
-        if not is_admin and not is_org_admin:
-            raise HTTPException(status_code=403, detail="Not authorized to upgrade subscription")
-
         # Validate plan
         if new_plan not in ['platform', 'byok', 'hybrid']:
             raise HTTPException(status_code=400, detail="Invalid plan")
@@ -541,7 +546,7 @@ async def add_credits_to_pool(
     """
     Add credits to organization pool
 
-    **Required Role**: Org Admin or System Admin
+    **Required Role**: Selected organization's owner, admin, or billing_admin
 
     **Use Cases**:
     - Manual credit purchase
@@ -553,15 +558,10 @@ async def add_credits_to_pool(
     """
     # User is already authenticated via dependency
 
+    org_id = await authorize_org_billing_mutation(request, user, org_id)
+
     conn = await get_db_connection()
     try:
-        # Check permissions
-        is_admin = await check_system_admin(user)
-        is_org_admin = await check_org_admin(conn, org_id, user["user_id"])
-
-        if not is_admin and not is_org_admin:
-            raise HTTPException(status_code=403, detail="Not authorized to add credits")
-
         # Add credits using stored function
         await conn.execute(
             "SELECT add_credits_to_pool($1, $2, $3)",
@@ -612,7 +612,7 @@ async def allocate_credits_to_user(
     """
     Allocate credits from org pool to specific user
 
-    **Required Role**: Org Admin or System Admin
+    **Required Role**: Selected organization's owner, admin, or billing_admin
 
     **Allocation Limits**:
     - Cannot exceed available credits in pool
@@ -623,15 +623,10 @@ async def allocate_credits_to_user(
     """
     # User is already authenticated via dependency
 
+    org_id = await authorize_org_billing_mutation(request, user, org_id)
+
     conn = await get_db_connection()
     try:
-        # Check permissions
-        is_admin = await check_system_admin(user)
-        is_org_admin = await check_org_admin(conn, org_id, user["user_id"])
-
-        if not is_admin and not is_org_admin:
-            raise HTTPException(status_code=403, detail="Not authorized to allocate credits")
-
         # Check if target user is org member
         member = await conn.fetchval(
             "SELECT 1 FROM organization_members WHERE org_id = $1 AND user_id = $2",

@@ -197,11 +197,11 @@ class EmailScheduler:
                     user_id="system",
                     resource_type="scheduled_job",
                     resource_id="daily_low_balance_check",
-                    details={
+                    metadata={
                         "users_checked": len(rows),
                         "emails_sent": sent
                     },
-                    status="success"
+                    result="success"
                 )
 
         except Exception as e:
@@ -211,8 +211,8 @@ class EmailScheduler:
                 user_id="system",
                 resource_type="scheduled_job",
                 resource_id="daily_low_balance_check",
-                details={"error": str(e)},
-                status="failure"
+                metadata={"error": str(e)},
+                result="failure"
             )
 
     async def _send_monthly_reset_notifications(self):
@@ -299,11 +299,11 @@ class EmailScheduler:
                     user_id="system",
                     resource_type="scheduled_job",
                     resource_id="monthly_credit_reset",
-                    details={
+                    metadata={
                         "users_notified": len(rows),
                         "emails_sent": sent
                     },
-                    status="success"
+                    result="success"
                 )
 
         except Exception as e:
@@ -313,8 +313,8 @@ class EmailScheduler:
                 user_id="system",
                 resource_type="scheduled_job",
                 resource_id="monthly_credit_reset",
-                details={"error": str(e)},
-                status="failure"
+                metadata={"error": str(e)},
+                result="failure"
             )
 
     async def _send_weekly_usage_summaries(self):
@@ -443,13 +443,13 @@ class EmailScheduler:
                     user_id="system",
                     resource_type="scheduled_job",
                     resource_id="weekly_usage_summary",
-                    details={
+                    metadata={
                         "users_summarized": len(rows),
                         "emails_sent": sent,
                         "period_start": period_start.isoformat(),
                         "period_end": period_end.isoformat()
                     },
-                    status="success"
+                    result="success"
                 )
 
         except Exception as e:
@@ -459,8 +459,8 @@ class EmailScheduler:
                 user_id="system",
                 resource_type="scheduled_job",
                 resource_id="weekly_usage_summary",
-                details={"error": str(e)},
-                status="failure"
+                metadata={"error": str(e)},
+                result="failure"
             )
 
 

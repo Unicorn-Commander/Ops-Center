@@ -5,6 +5,60 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.4] - 2026-07-09
+
+### Added
+- **Campaigns / promos on the deployed invite-code schema.** Added the admin
+  campaigns surface, shared org-feature grant helpers, and the additive
+  campaigns/campaign_grants migration plus `campaign_id` linkage for invite and
+  coupon codes.
+
+### Fixed
+- **Invite-code minting and redemption now use the deployed metadata model.**
+  Tier is stored in invite-code `metadata`, usage is tracked with
+  `uses_remaining`, campaign-scoped redemptions now record org feature grants
+  and campaign grant ledger rows, and the campaign detail page can filter codes
+  by `campaign_id`.
+
+## [3.12.3] - 2026-07-07
+
+### Fixed
+- **Colonel->Brigade re-registration no longer 500s on reboot.** Brigade assigns
+  its own agent id (name-slug, e.g. "the-colonel"), so the Colonel's GET on the id
+  it submitted (colonel-<id>) 404'd and a blind POST then duplicate-keyed (500) on
+  every boot after the first. Registration now resolves Brigade's real id by listing
+  and matching on source metadata/name, treats an already-present agent as
+  registered (best-effort card refresh; Brigade gates update=admin so an operator
+  service key's 403 is expected and benign), and never falls through to a
+  duplicate create.
+
+## [3.12.2] - 2026-07-06
+
+### Changed
+- **Colonel local graph is now Brigade-aware (COLONEL_LOCAL_GRAPH=auto|true|false).**
+  The embedded Kuzu graph is a standalone fallback; when the deployment is
+  wired to a Unicorn Brigade (BRIGADE_API_URL set), Brigade owns agent memory
+  and the local graph is skipped by default. Standalone deployments (no
+  Brigade) keep the embedded graph. Force either way with COLONEL_LOCAL_GRAPH.
+
+## [3.12.1] - 2026-07-05
+
+### Fixed
+- **Ops-Center backend RSS cut from ~6.6 GB to ~1 GB.** The Colonel's embedded
+  Kuzu graph (colonel/memory/kuzu_client.py) was created with default settings,
+  which size its buffer pool from HOST RAM (~6.5 GB reserved on a 126 GB box to
+  store a few hundred graph nodes) and spawn a worker thread per core. Now
+  capped at 256 MB / 4 threads (env-tunable: COLONEL_GRAPH_BUFFER_MB,
+  COLONEL_GRAPH_THREADS).
+- **Docker polling no longer hammers the socket or blocks the event loop.**
+  metrics_collector + alert_manager created a new docker client every cycle and
+  used containers.list(), which inspects every container individually (~350
+  synchronous socket calls per 5 s cycle on bigboy) on the asyncio event loop.
+  Both now share one low-level client, fetch the one-call container summary,
+  and run all blocking collectors (psutil interval sampling, nvidia-smi,
+  docker) in a worker thread. Also fixes the 1 s event-loop stall from
+  psutil.cpu_percent(interval=1) in the minutely alert check.
+
 ## [3.12.0] - 2026-06-19
 
 ### Added

@@ -6,6 +6,9 @@ Handles customer creation, subscriptions, and webhook processing
 import os
 import logging
 import stripe
+from billing_org_identity import lago_org_id
+from stripe_org_identity import customer_org
+from fastapi import HTTPException
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import httpx
@@ -63,10 +66,18 @@ class StripeIntegration:
             Stripe customer object or None on failure
         """
         try:
+            metadata = dict(metadata or {})
+            options = {}
+            if metadata.get("org_id"):
+                metadata["org_id"] = lago_org_id(metadata["org_id"])
+                # Stripe search is eventually consistent; retries must not
+                # create duplicate customers before the search index catches up.
+                options["idempotency_key"] = f"ops-center-customer-{metadata['org_id']}"
             customer = stripe.Customer.create(
                 email=email,
                 name=name,
-                metadata=metadata or {}
+                metadata=metadata,
+                **options
             )
             logger.info(f"Created Stripe customer: {customer.id} for {email}")
             return customer
@@ -93,13 +104,38 @@ class StripeIntegration:
             logger.error(f"Failed to fetch customer for {email}: {e}")
             return None
 
+    async def get_customer_for_org(self, org_id: str, *, allow_create: bool = False) -> Optional[Dict[str, Any]]:
+        """Find the Stripe customer for this org, including multi-org users."""
+        canonical = lago_org_id(org_id)
+        # Bare uchub UUID metadata and Lago-prefixed metadata denote one org.
+        # Search both forms together so migrations cannot hide duplicate customers.
+        try:
+            customers = stripe.Customer.search(
+                query=f"metadata['org_id']:'{canonical}' OR metadata['org_id']:'{canonical[4:]}'",
+                limit=2,
+            )
+        except stripe.error.StripeError:
+            logger.exception("Stripe customer lookup unavailable")
+            raise HTTPException(503, "Organization billing customer lookup unavailable") from None
+        if len(customers.data) > 1 or getattr(customers, "has_more", False):
+            raise HTTPException(409, "Multiple Stripe customers for organization")
+        if not customers.data and allow_create:
+            return None
+        if not customers.data:
+            raise HTTPException(409, "Organization billing customer requires reconciliation")
+        customer = customers.data[0]
+        if customer_org(customer) != canonical:
+            raise HTTPException(409, "Stripe customer organization mismatch")
+        return customer
+
     async def create_checkout_session(
         self,
         customer_id: str,
         price_id: str,
         customer_email: str,
         tier_name: str,
-        billing_cycle: str = "monthly"
+        billing_cycle: str = "monthly",
+        org_id: Optional[str] = None
     ) -> Optional[str]:
         """
         Create a Stripe Checkout session
@@ -110,10 +146,12 @@ class StripeIntegration:
             customer_email: Customer email
             tier_name: Subscription tier name
             billing_cycle: monthly or yearly
+            org_id: Trusted uchub organization UUID captured by the caller
 
         Returns:
             Checkout session URL or None on failure
         """
+        canonical = lago_org_id(org_id)
         try:
             session = stripe.checkout.Session.create(
                 customer=customer_id,
@@ -126,6 +164,7 @@ class StripeIntegration:
                 success_url=f"{STRIPE_SUCCESS_URL}?session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=STRIPE_CANCEL_URL,
                 metadata={
+                    'org_id': canonical,
                     'suite': OPS_CENTER_STRIPE_SUITE,  # REQUIRED: webhook ignores events without this
                     'customer_email': customer_email,
                     'user_email': customer_email,  # Duplicate for webhook compatibility
@@ -136,6 +175,7 @@ class StripeIntegration:
                 subscription_data={
                     'metadata': {
                         'suite': OPS_CENTER_STRIPE_SUITE,
+                        'org_id': canonical,
                         'tier_id': tier_name,
                         'tier_name': tier_name,
                         'billing_cycle': billing_cycle
@@ -211,12 +251,16 @@ class StripeIntegration:
         try:
             subscriptions = stripe.Subscription.list(
                 customer=customer_id,
-                status='all'
+                status='all',
+                limit=100,
             )
+            # Never decide ownership or uniqueness from a truncated collection.
+            if subscriptions.get("has_more", False):
+                raise HTTPException(409, "Subscription history requires reconciliation")
             return subscriptions.data
-        except stripe.error.StripeError as e:
-            logger.error(f"Failed to fetch subscriptions: {e}")
-            return []
+        except stripe.error.StripeError:
+            logger.exception("Stripe subscription lookup unavailable")
+            raise HTTPException(503, "Subscriptions unavailable") from None
 
     async def cancel_subscription(
         self,
@@ -337,7 +381,8 @@ class StripeIntegration:
         email: str,
         tier: str,
         customer_id: str,
-        subscription_id: Optional[str] = None
+        subscription_id: Optional[str] = None,
+        org_id: Optional[str] = None
     ) -> bool:
         """
         Sync subscription data to Lago billing platform
@@ -347,10 +392,12 @@ class StripeIntegration:
             tier: Subscription tier
             customer_id: Stripe customer ID
             subscription_id: Stripe subscription ID
+            org_id: Trusted uchub organization UUID (required for billing)
 
         Returns:
             True if successful, False otherwise
         """
+        canonical = lago_org_id(org_id)
         try:
             # Create or update customer in Lago
             async with httpx.AsyncClient() as client:
@@ -362,7 +409,7 @@ class StripeIntegration:
                     },
                     json={
                         "customer": {
-                            "external_id": customer_id,
+                            "external_id": canonical,
                             "email": email,
                             "name": email,
                             "billing_configuration": {
@@ -453,8 +500,12 @@ class StripeIntegration:
 
         logger.info(f"Checkout completed for {customer_email}, tier: {tier_name}")
 
+        # Signed checkout metadata is captured at checkout creation; never use
+        # the user's currently selected org or an email lookup on a retry.
+        org_id = lago_org_id(session.get('metadata', {}).get('org_id'))
+
         # Sync to Keycloak
-        await self.sync_to_keycloak(
+        keycloak_ok = await self.sync_to_keycloak(
             email=customer_email,
             tier=tier_name,
             status='active',
@@ -463,13 +514,16 @@ class StripeIntegration:
         )
 
         # Sync to Lago
-        await self.sync_to_lago(
+        lago_ok = await self.sync_to_lago(
             email=customer_email,
             tier=tier_name,
             customer_id=customer_id,
-            subscription_id=subscription_id
+            subscription_id=subscription_id,
+            org_id=org_id
         )
 
+        if not keycloak_ok or not lago_ok:
+            return {"status": "error", "message": "Checkout synchronization failed; retry required"}
         return {"status": "success", "customer_email": customer_email}
 
     async def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:

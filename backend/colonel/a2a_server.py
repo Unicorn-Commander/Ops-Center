@@ -626,6 +626,34 @@ def _extract_skill_call(text: str) -> tuple:
 _brigade_registered = False
 
 
+async def _find_brigade_agent_id(client, headers, config, submitted_id):
+    """Return Brigade's real id for the Colonel agent if it already exists, else None.
+
+    Brigade assigns its own id (a name-slug), so we cannot GET by the id we submit.
+    List the roster and match on our source metadata first, then the name, then the
+    submitted id / its slug — resilient to whatever id scheme Brigade uses.
+    """
+    try:
+        resp = await client.get(f"{BRIGADE_API_URL}/api/v1/agents", headers=headers)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        agents = data if isinstance(data, list) else data.get("agents", data.get("items", []))
+        want_name = (config.name or "The Colonel").strip().lower()
+        slug = want_name.replace(" ", "-")
+        for a in agents:
+            meta = a.get("metadata") or {}
+            if meta.get("source") == "ops-center-colonel":
+                return a.get("id")
+            if (a.get("name") or "").strip().lower() == want_name:
+                return a.get("id")
+            if a.get("id") in (submitted_id, slug):
+                return a.get("id")
+    except Exception:
+        return None
+    return None
+
+
 async def register_with_brigade(base_url: str = ""):
     """
     Register Colonel as an agent with Brigade's A2A agent catalog.
@@ -713,33 +741,37 @@ async def register_with_brigade(base_url: str = ""):
                 headers["X-API-Key"] = BRIGADE_SERVICE_KEY
 
             async with httpx.AsyncClient(timeout=15.0) as client:
-                # First, try to check if agent already exists
                 agent_id = f"colonel-{config.id}"
-                check_url = f"{BRIGADE_API_URL}/api/v1/agents/{agent_id}"
 
-                try:
-                    check_resp = await client.get(check_url, headers=headers)
-                    if check_resp.status_code == 200:
-                        # Agent exists — update it
-                        update_url = f"{BRIGADE_API_URL}/api/v1/agents/{agent_id}"
-                        resp = await client.put(
-                            update_url,
-                            json=registration_payload,
-                            headers=headers,
+                # Resolve whether we're already registered. Brigade assigns its OWN
+                # agent id (it slugifies the name — "The Colonel" -> "the-colonel"),
+                # so a GET on the id we submit 404s and a blind POST then duplicate-
+                # keys (500) on every reboot. List + match on our source metadata,
+                # then PUT to Brigade's real id so re-registration is idempotent.
+                existing_id = await _find_brigade_agent_id(client, headers, config, agent_id)
+
+                if existing_id:
+                    # We are already registered. Best-effort refresh the card, but
+                    # never fall through to create (that duplicate-keys / 500s).
+                    # Brigade gates create=operator but update=admin, so our operator
+                    # service key gets a 403 on PUT — that's fine, the record from the
+                    # initial create is already correct.
+                    update_url = f"{BRIGADE_API_URL}/api/v1/agents/{existing_id}"
+                    resp = await client.put(
+                        update_url, json=registration_payload, headers=headers
+                    )
+                    _brigade_registered = True
+                    if resp.status_code in (200, 201):
+                        logger.info(
+                            f"Colonel '{config.name}' updated in Brigade "
+                            f"(agent_id={existing_id}, skills={len(skills)})"
                         )
-                        if resp.status_code in (200, 201):
-                            _brigade_registered = True
-                            logger.info(
-                                f"Colonel '{config.name}' updated in Brigade "
-                                f"(agent_id={agent_id}, skills={len(skills)})"
-                            )
-                            return
-                        else:
-                            logger.warning(
-                                f"Brigade agent update failed: {resp.status_code} — {resp.text[:200]}"
-                            )
-                except httpx.HTTPError:
-                    pass  # Agent doesn't exist or Brigade unreachable — try create
+                    else:
+                        logger.info(
+                            f"Colonel '{config.name}' already registered in Brigade "
+                            f"(agent_id={existing_id}; card refresh skipped: {resp.status_code})"
+                        )
+                    return
 
                 # Create agent in Brigade
                 create_url = f"{BRIGADE_API_URL}/api/v1/agents"
@@ -756,11 +788,16 @@ async def register_with_brigade(base_url: str = ""):
                         f"(agent_id={agent_id}, skills={len(skills)})"
                     )
                     return
-                elif resp.status_code == 409:
-                    # Conflict — agent already exists (race condition)
+                elif resp.status_code == 409 or (
+                    resp.status_code >= 500
+                    and any(s in resp.text.lower() for s in ("duplicate", "already exists", "unique"))
+                ):
+                    # Race: the agent was created concurrently (Brigade's create isn't
+                    # idempotent). It exists — treat as registered, leave as-is.
                     _brigade_registered = True
                     logger.info(
-                        f"Colonel '{config.name}' already registered in Brigade (409 Conflict)"
+                        f"Colonel '{config.name}' already registered in Brigade "
+                        f"(create conflict, left as-is)"
                     )
                     return
                 else:

@@ -163,8 +163,18 @@ export default function AccountProfile() {
       });
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'Profile updated successfully' });
-        setTimeout(() => setMessage(null), 3000);
+        // Confirm with the server-persisted state (returns the saved avatar URL)
+        const data = await response.json().catch(() => null);
+        if (data?.user?.avatar) {
+          setAvatarPreview(data.user.avatar);
+        }
+        setMessage({
+          type: 'success',
+          text: profile.avatar instanceof File
+            ? 'Profile updated. Your photo becomes your picture in all Unicorn Commander apps on your next sign-in.'
+            : 'Profile updated successfully'
+        });
+        setTimeout(() => setMessage(null), 6000);
       } else {
         const error = await response.json();
         setMessage({ type: 'error', text: error.detail || 'Failed to update profile' });
@@ -265,6 +275,9 @@ export default function AccountProfile() {
                 <p className={`font-medium ${themeClasses.text}`}>Profile Picture</p>
                 <p className={`text-sm ${themeClasses.subtext} mt-1`}>
                   Upload a profile picture (max 2MB)
+                </p>
+                <p className={`text-xs ${themeClasses.subtext} mt-1`}>
+                  Used across all UC apps &mdash; changes propagate on your next sign-in or token refresh.
                 </p>
               </div>
             </div>

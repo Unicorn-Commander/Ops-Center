@@ -12,6 +12,8 @@ import os
 import stripe
 import asyncpg
 
+from billing_org_identity import resolve_billing_org
+from stripe_org_identity import validate_subscription_org
 from stripe_integration import stripe_integration
 from keycloak_integration import get_user_by_email, get_user_tier_info
 from subscription_manager import subscription_manager
@@ -110,10 +112,31 @@ async def get_current_user_email(request: Request) -> str:
     return user_email
 
 
+async def _resolve_request_billing_org(request: Request, *, require_write: bool) -> str:
+    token = request.cookies.get("session_token")
+    session = redis_session_manager.get(token) if token else None
+    if not session or not session.get("user"):
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return await resolve_billing_org(
+        session["user"], session, getattr(request.app.state, "db_pool", None),
+        require_write=require_write
+    )
+
+
+async def get_current_billing_org(request: Request) -> str:
+    return await _resolve_request_billing_org(request, require_write=False)
+
+
+async def get_writable_billing_org(request: Request) -> str:
+    """Require billing authority within the selected active organization."""
+    return await _resolve_request_billing_org(request, require_write=True)
+
+
 @router.post("/subscriptions/checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
     request: CheckoutSessionRequest,
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Create a Stripe Checkout session for subscription purchase
@@ -156,7 +179,7 @@ async def create_checkout_session(
             raise HTTPException(status_code=400, detail="The free tier does not require checkout")
 
         # Get or create Stripe customer
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id, allow_create=True)
 
         if not customer:
             # Get user info from Keycloak
@@ -168,7 +191,8 @@ async def create_checkout_session(
                 name=name,
                 metadata={
                     "keycloak_id": kc_user.get('id') if kc_user else "",
-                    "source": "ops_center"
+                    "source": "ops_center",
+                    "org_id": org_id
                 }
             )
 
@@ -191,7 +215,8 @@ async def create_checkout_session(
             price_id=price_id,
             customer_email=user_email,
             tier_name=request.tier_id,
-            billing_cycle=request.billing_cycle
+            billing_cycle=request.billing_cycle,
+            org_id=org_id
         )
 
         if not checkout_url:
@@ -210,7 +235,8 @@ async def create_checkout_session(
 
 @router.post("/portal/create", response_model=PortalSessionResponse)
 async def create_portal_session(
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Create a Stripe Customer Portal session for subscription management
@@ -223,7 +249,7 @@ async def create_portal_session(
     """
     try:
         # Get Stripe customer
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id)
 
         if not customer:
             raise HTTPException(
@@ -250,7 +276,8 @@ async def create_portal_session(
 
 @router.get("/payment-methods", response_model=List[PaymentMethod])
 async def get_payment_methods(
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_current_billing_org)
 ):
     """
     Get user's saved payment methods
@@ -263,7 +290,7 @@ async def get_payment_methods(
     """
     try:
         # Get Stripe customer
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id)
 
         if not customer:
             return []
@@ -282,14 +309,17 @@ async def get_payment_methods(
             for pm in methods
         ]
 
-    except Exception as e:
-        logger.error(f"Error fetching payment methods: {e}")
-        return []
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error fetching payment methods")
+        raise HTTPException(503, "Payment methods unavailable") from None
 
 
 @router.get("/subscription-status", response_model=SubscriptionStatusResponse)
 async def get_subscription_status(
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_current_billing_org)
 ):
     """
     Get user's current subscription status
@@ -301,22 +331,23 @@ async def get_subscription_status(
         Subscription status information
     """
     try:
-        # Get tier info from Keycloak
-        tier_info = await get_user_tier_info(user_email)
+        # Status belongs to the selected org, not an email-wide Keycloak tier.
 
         # Get Stripe customer
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id)
 
         if not customer:
             return SubscriptionStatusResponse(
                 has_subscription=False,
-                current_tier=tier_info.get('subscription_tier', 'trial'),
-                status=tier_info.get('subscription_status', 'active'),
+                current_tier='trial',
+                status='none',
                 subscriptions=[]
             )
 
         # Get subscriptions
         subscriptions = await stripe_integration.get_customer_subscriptions(customer['id'])
+        for subscription in subscriptions:
+            validate_subscription_org(subscription, org_id, customer['id'])
 
         subscription_list = []
         for sub in subscriptions:
@@ -333,13 +364,18 @@ async def get_subscription_status(
                 amount=sub['items']['data'][0]['price']['unit_amount'] / 100  # Convert cents to dollars
             ))
 
+        active = [sub for sub in subscription_list if sub.status in {"active", "trialing"}]
+        if len(active) > 1:
+            raise HTTPException(409, "Multiple active subscriptions; reconciliation required")
         return SubscriptionStatusResponse(
             has_subscription=len(subscription_list) > 0,
-            current_tier=tier_info.get('subscription_tier', 'trial'),
-            status=tier_info.get('subscription_status', 'active'),
+            current_tier=active[0].tier_name if active else 'trial',
+            status=active[0].status if active else 'none',
             subscriptions=subscription_list
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching subscription status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -348,7 +384,8 @@ async def get_subscription_status(
 @router.post("/subscription/cancel")
 async def cancel_subscription(
     request: CancelSubscriptionRequest,
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Cancel a subscription
@@ -362,11 +399,13 @@ async def cancel_subscription(
     """
     try:
         # Verify subscription belongs to user
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id)
         if not customer:
             raise HTTPException(status_code=404, detail="Customer not found")
 
         subscriptions = await stripe_integration.get_customer_subscriptions(customer['id'])
+        for subscription in subscriptions:
+            validate_subscription_org(subscription, org_id, customer['id'])
         subscription_ids = [sub['id'] for sub in subscriptions]
 
         if request.subscription_id not in subscription_ids:
@@ -401,7 +440,8 @@ async def cancel_subscription(
 @router.post("/subscription/upgrade")
 async def upgrade_subscription(
     request: UpgradeSubscriptionRequest,
-    user_email: str = Depends(get_current_user_email)
+    user_email: str = Depends(get_current_user_email),
+    org_id: str = Depends(get_writable_billing_org)
 ):
     """
     Upgrade or downgrade subscription tier
@@ -420,11 +460,13 @@ async def upgrade_subscription(
             raise HTTPException(status_code=400, detail=f"Invalid tier: {request.new_tier_id}")
 
         # Get customer and current subscription
-        customer = await stripe_integration.get_customer_by_email(user_email)
+        customer = await stripe_integration.get_customer_for_org(org_id)
         if not customer:
             raise HTTPException(status_code=404, detail="Customer not found")
 
         subscriptions = await stripe_integration.get_customer_subscriptions(customer['id'])
+        for subscription in subscriptions:
+            validate_subscription_org(subscription, org_id, customer['id'])
         active_subs = [sub for sub in subscriptions if sub['status'] == 'active']
 
         if not active_subs:
@@ -432,6 +474,9 @@ async def upgrade_subscription(
                 status_code=404,
                 detail="No active subscription found. Please create a new subscription."
             )
+
+        if len(active_subs) != 1:
+            raise HTTPException(409, "Multiple active subscriptions; reconciliation required")
 
         # Get new price ID based on billing cycle
         if request.billing_cycle == "yearly":
@@ -475,207 +520,18 @@ async def upgrade_subscription(
 
 async def stripe_webhook(
     request: Request,
-    stripe_signature: str = Header(None, alias="stripe-signature")
+    stripe_signature: str = Header(None, alias="stripe-signature"),
 ):
-    """
-    Handle Stripe webhook events
-
-    This endpoint is called by Stripe to notify about subscription events.
-    It's exempt from CSRF protection.
-
-    Args:
-        request: FastAPI request with webhook payload
-        stripe_signature: Stripe signature header for verification
-
-    Returns:
-        Webhook processing result
-    """
-    try:
-        # Get raw body
-        payload = await request.body()
-
-        if not stripe_signature:
-            raise HTTPException(status_code=400, detail="Missing Stripe signature")
-
-        # Process webhook event
-        result = await stripe_integration.process_webhook_event(
-            payload=payload,
-            signature=stripe_signature
-        )
-
-        if result.get('status') == 'error':
-            raise HTTPException(status_code=400, detail=result.get('message', 'Webhook processing failed'))
-
-        logger.info(f"Processed webhook: {result}")
-
-        return WebhookResponse(
-            status=result.get('status', 'success'),
-            message=result.get('message')
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Legacy callable shares the canonical signature-verified dispatcher."""
+    from webhooks import handle_stripe_webhook
+    result = await handle_stripe_webhook(request, stripe_signature)
+    return WebhookResponse(status=result["status"])
 
 
 async def stripe_checkout_webhook(request: Request):
-    """
-    Handle Stripe checkout.session.completed webhook
-
-    This is called by Stripe when a payment is successful.
-    We need to:
-    1. Verify webhook signature
-    2. Extract checkout session data
-    3. Create Lago customer (if doesn't exist)
-    4. Create Lago subscription
-    5. Update Keycloak user tier
-
-    This endpoint is exempt from authentication - Stripe calls it directly.
-    """
-    try:
-        payload = await request.body()
-        sig_header = request.headers.get('stripe-signature')
-
-        # Get webhook secret from environment
-        webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
-        if not webhook_secret:
-            logger.error("STRIPE_WEBHOOK_SECRET not configured")
-            raise HTTPException(status_code=500, detail="Webhook secret not configured")
-
-        # Verify webhook signature
-        import stripe
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, webhook_secret
-            )
-        except ValueError as e:
-            # Invalid payload
-            logger.error(f"Invalid webhook payload: {e}")
-            raise HTTPException(status_code=400, detail="Invalid payload")
-        except stripe.error.SignatureVerificationError as e:
-            # Invalid signature
-            logger.error(f"Invalid webhook signature: {e}")
-            raise HTTPException(status_code=400, detail="Invalid signature")
-
-        # Handle the event
-        if event['type'] == 'checkout.session.completed':
-            session = event['data']['object']
-
-            # Extract metadata
-            tier_id = session['metadata'].get('tier_id') or session['metadata'].get('tier_name')
-            billing_cycle = session['metadata'].get('billing_cycle', 'monthly')
-            user_email = session['metadata'].get('user_email') or session.get('customer_email')
-
-            if not user_email:
-                logger.error("No user email found in checkout session")
-                return WebhookResponse(
-                    status="error",
-                    message="No user email found"
-                )
-
-            logger.info(f"Processing checkout completion for {user_email}, tier: {tier_id}")
-
-            # Get Keycloak user
-            try:
-                from keycloak_integration import get_user_by_email, set_subscription_tier
-                user = await get_user_by_email(user_email)
-                if not user:
-                    logger.error(f"User not found in Keycloak: {user_email}")
-                    return WebhookResponse(
-                        status="error",
-                        message="User not found"
-                    )
-
-                user_id = user['id']
-            except Exception as e:
-                logger.error(f"Failed to get Keycloak user: {e}")
-                return WebhookResponse(
-                    status="error",
-                    message=f"Failed to get user: {str(e)}"
-                )
-
-            # Create or get Lago customer
-            try:
-                lago_customer = await create_lago_customer_if_not_exists(
-                    user_email=user_email,
-                    user_id=user_id
-                )
-            except Exception as e:
-                logger.error(f"Failed to create Lago customer: {e}")
-                return WebhookResponse(
-                    status="error",
-                    message=f"Failed to create Lago customer: {str(e)}"
-                )
-
-            # Create Lago subscription
-            try:
-                plan = subscription_manager.get_plan(tier_id)
-                if not plan:
-                    logger.error(f"Invalid tier_id: {tier_id}")
-                    return WebhookResponse(
-                        status="error",
-                        message=f"Invalid plan: {tier_id}"
-                    )
-
-                # Map tier_id to Lago plan code (they use same naming)
-                lago_plan_code = tier_id  # trial, starter, professional, enterprise
-
-                lago_subscription = await create_lago_subscription(
-                    customer_id=user_email,  # Lago uses email as external_id
-                    plan_code=lago_plan_code,
-                    billing_cycle=billing_cycle
-                )
-
-                logger.info(f"Created Lago subscription: {lago_subscription.get('lago_id')}")
-            except Exception as e:
-                logger.error(f"Failed to create Lago subscription: {e}")
-                return WebhookResponse(
-                    status="error",
-                    message=f"Failed to create subscription: {str(e)}"
-                )
-
-            # Update Keycloak user tier
-            try:
-                await set_subscription_tier(user_id, tier_id)
-                logger.info(f"Updated Keycloak tier for {user_email} to {tier_id}")
-            except Exception as e:
-                logger.error(f"Failed to update Keycloak tier: {e}")
-                # Don't fail the webhook - subscription was created
-
-            # Log to audit
-            try:
-                from audit_logger import audit_logger
-                audit_logger.log_event(
-                    event_type="subscription.created",
-                    user_id=user_id,
-                    details={
-                        "tier": tier_id,
-                        "billing_cycle": billing_cycle,
-                        "stripe_session_id": session['id'],
-                        "lago_subscription_id": lago_subscription.get('lago_id')
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Audit logging failed: {e}")
-
-            return WebhookResponse(
-                status="success",
-                message=f"Subscription created for {user_email}"
-            )
-
-        # Other event types can be handled here
-        return WebhookResponse(
-            status="ignored",
-            message=f"Event type {event['type']} not handled"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Webhook processing error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Legacy callable delegates to the canonical signature-verified route."""
+    from webhooks import handle_stripe_webhook
+    return await handle_stripe_webhook(request, request.headers.get("stripe-signature"))
 
 
 async def create_lago_customer_if_not_exists(user_email: str, user_id: str):

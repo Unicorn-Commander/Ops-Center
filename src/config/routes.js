@@ -159,11 +159,19 @@ export const routes = {
           roles: ['admin', 'power_user', 'user', 'viewer'],
           name: 'Billing History'
         },
+        // Hidden from nav (2026-07-04) until live billing is turned on. Nothing
+        // in the product charges a saved card today (all purchases are hosted
+        // Stripe Checkout redirects), so this page is inert. TODO: when live
+        // billing turns on, replace the PaymentMethods page body with a
+        // "Manage billing" button that opens the existing Stripe Customer Portal
+        // (POST /api/v1/billing/portal/create) — no embedded card management,
+        // no PCI surface. Route kept so deep-links still resolve.
         payment: {
           path: '/admin/subscription/payment',
           component: 'PaymentMethods',
           roles: ['admin', 'power_user', 'user', 'viewer'],
-          name: 'Payment Methods'
+          name: 'Payment Methods',
+          nav: false
         },
         creditsAndTiers: {
           path: '/admin/billing/tiers/compare',
@@ -390,6 +398,20 @@ export const routes = {
             roles: ['admin'],
             name: 'Tier Comparison',
             nav: false
+          }
+        }
+      },
+
+      growth: {
+        section: 'Growth',
+        icon: 'TicketIcon',
+        roles: ['admin'],
+        children: {
+          campaigns: {
+            path: '/admin/growth/campaigns',
+            component: 'CampaignsManagement',
+            roles: ['admin'],
+            name: 'Campaigns'
           }
         }
       },
@@ -902,6 +924,7 @@ export const routes = {
     { from: '/admin/system/subscription-management', to: '/admin/billing/tiers', type: 'permanent' },
     { from: '/admin/system/app-management', to: '/admin/billing/apps', type: 'permanent' },
     { from: '/admin/system/pricing-management', to: '/admin/billing/pricing', type: 'permanent' },
+    { from: '/admin/system/campaigns', to: '/admin/growth/campaigns', type: 'permanent' },
     { from: '/admin/system/billing', to: '/admin/billing/system', type: 'permanent' },
     { from: '/admin/billing/dashboard', to: '/admin/billing/revenue', type: 'permanent' },
     // NOTE: /admin/credits is a real page (CreditDashboard), not a redirect

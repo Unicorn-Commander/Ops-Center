@@ -155,6 +155,7 @@ from model_list_api import public_router as model_list_public_router
 # Invite Code System (VIP Founder)
 from invite_codes_api import admin_router as invite_codes_admin_router
 from invite_codes_api import user_router as invite_codes_user_router
+from campaigns_api import router as campaigns_router
 
 # Email Notification System (Epic 2.3)
 from email_scheduler import EmailScheduler
@@ -583,12 +584,18 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
                 def slugify(value: str) -> str:
                     return re.sub(r"[^a-z0-9-]", "", value.lower().replace(" ", "-"))
 
+                # Postgres organizations.id is a bare uuid column; the JSON
+                # store (org_manager) uses an 'org_'-prefixed id. Strip the
+                # prefix for the Postgres rows (matches existing org rows).
+                pg_org_id = org_id[4:] if org_id.startswith("org_") else org_id
+
                 org_values = {
-                    "id": org_id,
+                    "id": pg_org_id,
                     "name": org_name,
                     "display_name": org_name,
                     "slug": slugify(org_name) if "slug" in org_column_names else None,
                     "plan_tier": "free",
+                    "subscription_tier": "free",
                     "status": "active",
                     "is_active": True,
                     "max_seats": 1,
@@ -625,7 +632,7 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
 
                 if org_id_column and "user_id" in member_column_names and "role" in member_column_names:
                     member_values = {
-                        org_id_column: org_id,
+                        org_id_column: pg_org_id,
                         "user_id": user_id,
                         "role": "owner",
                         "joined_at": datetime.utcnow(),
@@ -660,25 +667,10 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
         except Exception as keycloak_error:
             logger.error(f"Failed to update Keycloak attributes for {email}: {keycloak_error}")
 
-    # Create Lago subscription for the organization (best-effort)
-    try:
-        from lago_integration import subscribe_org_to_plan, LagoIntegrationError
-        subscription = await subscribe_org_to_plan(
-            org_id=org_id,
-            plan_code="free",
-            org_name=org_name,
-            email=email or "",
-            user_id=user_id
-        )
-        if subscription and subscription.get("lago_id"):
-            org_manager.update_org_billing_ids(
-                org_id=org_id,
-                lago_id=subscription.get("lago_id")
-            )
-    except LagoIntegrationError as lago_error:
-        logger.error(f"Failed to create Lago subscription for org {org_id}: {lago_error}")
-    except Exception as lago_error:
-        logger.error(f"Unexpected error creating Lago subscription for org {org_id}: {lago_error}")
+    # Lago subscription intentionally skipped for auto-provisioned free-tier
+    # orgs: Lago has no 'free' plan, so subscription creation 404s with
+    # plan_not_found. Paid upgrade flows create the Lago customer+subscription.
+    logger.info(f"Skipping Lago subscription creation for free-tier org {org_id}")
 
     # Provision the per-org gateway key (metered-inference billing keystone).
     # Best-effort + failure-isolated: never blocks provisioning.
@@ -692,8 +684,11 @@ async def auto_provision_user_org(user_id: str, email: Optional[str], display_na
     try:
         from credit_system import credit_manager
         await credit_manager.initialize()
+        # user_credits.user_id is a uuid referencing the Keycloak sub /
+        # users.id — never the email (the lazy on-read path in
+        # credit_manager.get_balance also uses the Keycloak user id).
         await credit_manager.create_user_credits(
-            user_id=email or user_id,
+            user_id=user_id,
             tier="free"
         )
     except Exception as credit_error:
@@ -1296,6 +1291,8 @@ app.include_router(invite_codes_admin_router)
 logger.info("Invite Codes Admin API endpoints registered at /api/v1/admin/invite-codes")
 app.include_router(invite_codes_user_router)
 logger.info("Invite Codes User API endpoints registered at /api/v1/invite-codes")
+app.include_router(campaigns_router)
+logger.info("Campaigns API endpoints registered at /api/v1/admin/campaigns")
 
 # Alerts Management (January 2026)
 app.include_router(alerts_router)
@@ -4651,6 +4648,23 @@ async def update_profile(
                 # Non-fatal: the file is saved and the session is updated; durability
                 # is best-effort so a DB hiccup doesn't break the profile update.
                 logger.error(f"Failed to persist avatar_url for {user_email}: {avatar_db_err}")
+
+            # Suite-wide avatar spine: stamp the ABSOLUTE public URL into the
+            # Keycloak user's `picture` attribute. The uchub `profile` client
+            # scope's picture mapper flows it into every suite app's tokens /
+            # userinfo, making this upload the canonical photo suite-wide.
+            # /avatars/* is served unauthenticated at the public edge (verified),
+            # so any app/browser can render the URL without auth.
+            try:
+                from keycloak_integration import set_user_picture
+                public_avatar_url = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}{avatar_url}"
+                if await set_user_picture(user_email, public_avatar_url):
+                    logger.info(f"Stamped Keycloak picture for {user_email}: {public_avatar_url}")
+                else:
+                    logger.warning(f"Keycloak picture stamp FAILED for {user_email} (avatar still saved locally)")
+            except Exception as kc_pic_err:
+                # Non-fatal: the local avatar works; only suite-wide propagation degrades.
+                logger.error(f"Keycloak picture stamp error for {user_email}: {kc_pic_err}")
 
         # Handle name update
         if name:

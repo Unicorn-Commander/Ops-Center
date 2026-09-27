@@ -32,7 +32,10 @@ async def initialize_openrouter_key():
 
         if count == 0:
             # Encrypt the API key
-            api_key = "REMOVED"
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if not api_key:
+                print("ERROR: OPENROUTER_API_KEY not set - aborting (no hardcoded key)")
+                sys.exit(1)
             encrypted_key = fernet.encrypt(api_key.encode()).decode()
 
             # Insert the key

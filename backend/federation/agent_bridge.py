@@ -78,6 +78,43 @@ async def _agent_unit_price(agent_id: str, db_pool) -> float:
         return 1.0
 
 
+async def _resolve_remote_agent_node(agent_id: str, db_pool) -> Optional[Dict[str, Any]]:
+    """If a REMOTE federation node (is_self=false) advertises this agent in an
+    'agents' service, return its dispatch info; else None (=> serve locally).
+
+    `auth_credential` is stored plaintext, so it is the literal X-API-Key. Only an
+    ONLINE api_key node is returned, so a sleeping laptop node falls back to the
+    local Brigade path rather than erroring.
+    """
+    if db_pool is None:
+        return None
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT n.endpoint_url, s.endpoint_path, n.auth_credential,
+                       n.node_id AS remote_node_id, n.auth_method
+                FROM federation_services s
+                JOIN federation_nodes n ON s.node_id = n.id
+                WHERE s.service_type = 'agents'
+                  AND n.is_self = false
+                  AND n.status = 'online'
+                  AND s.models @> $1::jsonb
+                ORDER BY s.updated_at DESC
+                LIMIT 1
+                """,
+                json.dumps([agent_id]),
+            )
+    except Exception as exc:
+        logger.warning("Remote agent resolution failed for '%s': %s", agent_id, exc)
+        return None
+    if not row or not row["endpoint_url"] or not row["auth_credential"]:
+        return None
+    if (row["auth_method"] or "api_key") != "api_key":
+        return None
+    return dict(row)
+
+
 async def _resolve_lago_creds(db_pool) -> tuple:
     """Canonical Lago target for federation agent billing.
 
@@ -199,21 +236,14 @@ async def serve_federated_agent_invoke(
             f"'{agent_id}': {reason}"
         )
 
-    # 2. Forward to the local Brigade (A2A protocol).
-    brigade_url = (
-        brigade_url
-        or os.getenv("BRIGADE_API_URL")
-        or "http://unicorn-brigade:8100"
-    ).rstrip("/")
-    brigade_key = brigade_key or os.getenv("BRIGADE_API_KEY") or os.getenv("BRIGADE_ADMIN_KEY")
-    if not brigade_key:
-        raise AgentBackendUnavailable("No Brigade credential configured on this node")
-
+    # 2. Resolve the target: a REMOTE node that owns this agent (dispatch there
+    #    with its own credential), else fall back to the local Brigade (A2A).
     payload: Dict[str, Any] = {"task": task}
     if context:
         payload["context"] = context
     timeout = float(os.getenv("FEDERATION_AGENT_TIMEOUT", "300"))
-    url = f"{brigade_url}/api/v1/a2a/agents/{agent_id}/invoke"
+
+    remote = await _resolve_remote_agent_node(agent_id, db_pool)
 
     start = time.monotonic()
     own_client = False
@@ -221,16 +251,47 @@ async def serve_federated_agent_invoke(
         http_client = httpx.AsyncClient(timeout=timeout)
         own_client = True
     try:
-        response = await http_client.post(
-            url, json=payload,
-            headers={"X-API-Key": brigade_key, "Content-Type": "application/json"},
-        )
-    except httpx.TimeoutException as exc:
-        raise GatewayUpstreamError(
-            f"Brigade timed out invoking agent '{agent_id}' after {timeout:.0f}s"
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise AgentBackendUnavailable(f"Brigade unreachable: {exc}") from exc
+        if remote is not None:
+            req_body: Dict[str, Any] = dict(payload)
+            if org_id:
+                req_body["org_id"] = org_id
+            url = (
+                remote["endpoint_url"].rstrip("/")
+                + remote["endpoint_path"].replace("{id}", agent_id)
+            )
+            headers = {
+                "X-API-Key": remote["auth_credential"],
+                "Content-Type": "application/json",
+            }
+            target_desc = f"remote node '{remote['remote_node_id']}'"
+        else:
+            brigade_url2 = (
+                brigade_url
+                or os.getenv("BRIGADE_API_URL")
+                or "http://unicorn-brigade:8100"
+            ).rstrip("/")
+            brigade_key2 = (
+                brigade_key
+                or os.getenv("BRIGADE_API_KEY")
+                or os.getenv("BRIGADE_ADMIN_KEY")
+            )
+            if not brigade_key2:
+                raise AgentBackendUnavailable(
+                    "No Brigade credential configured on this node"
+                )
+            req_body = payload
+            url = f"{brigade_url2}/api/v1/a2a/agents/{agent_id}/invoke"
+            headers = {"X-API-Key": brigade_key2, "Content-Type": "application/json"}
+            target_desc = "local Brigade"
+        try:
+            response = await http_client.post(url, json=req_body, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise GatewayUpstreamError(
+                f"{target_desc} timed out invoking agent '{agent_id}' "
+                f"after {timeout:.0f}s"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise AgentBackendUnavailable(f"{target_desc} unreachable: {exc}") from exc
     finally:
         if own_client:
             await http_client.aclose()
@@ -240,7 +301,7 @@ async def serve_federated_agent_invoke(
         raise BadFederatedRequest(f"Agent '{agent_id}' not found on this node")
     if response.status_code >= 400:
         raise AgentBackendUnavailable(
-            f"Brigade returned HTTP {response.status_code} for agent '{agent_id}'"
+            f"{target_desc} returned HTTP {response.status_code} for agent '{agent_id}'"
         )
     data = response.json()
     invoke_status = data.get("status", "unknown")

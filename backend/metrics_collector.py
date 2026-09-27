@@ -33,8 +33,8 @@ class MetricsCollector:
         self,
         collection_interval: int = 5,
         retention_hours: int = 24,
-        redis_host: str = 'unicorn-redis',
-        redis_port: int = 6379,
+        redis_host: str = os.getenv("REDIS_HOST", "unicorn-redis"),
+        redis_port: int = int(os.getenv("REDIS_PORT", "6379")),
         redis_db: int = 1
     ):
         """
@@ -55,6 +55,12 @@ class MetricsCollector:
         # In-memory fallback if Redis unavailable
         self.memory_storage: List[Dict] = []
         self.max_memory_items = 1000
+
+        # Shared low-level Docker client (lazy). A new docker.from_env() per
+        # cycle plus containers.list()'s per-container inspect (~350 socket
+        # calls / 5s on this host) was the main source of the multi-GB heap
+        # high-water mark — the summary endpoint is one call and has all we need.
+        self._docker_api = None
 
         # Initialize Redis connection
         try:
@@ -136,13 +142,11 @@ class MetricsCollector:
         """
         timestamp = datetime.utcnow()
 
-        # Collect all metrics
-        cpu_metrics = self._collect_cpu_metrics()
-        memory_metrics = self._collect_memory_metrics()
-        disk_metrics = self._collect_disk_metrics()
-        network_metrics = self._collect_network_metrics()
-        gpu_metrics = self._collect_gpu_metrics()
-        docker_metrics = await self._collect_docker_metrics()
+        # Collect all metrics in a worker thread — every collector below is
+        # blocking (psutil interval sampling, nvidia-smi subprocess, Docker
+        # socket I/O) and must stay off the event loop.
+        (cpu_metrics, memory_metrics, disk_metrics,
+         network_metrics, gpu_metrics, docker_metrics) = await asyncio.to_thread(self._collect_all_sync)
 
         return {
             "timestamp": timestamp.isoformat(),
@@ -154,6 +158,17 @@ class MetricsCollector:
             "gpu": gpu_metrics,
             "docker": docker_metrics
         }
+
+    def _collect_all_sync(self):
+        """Run all blocking collectors in one worker thread."""
+        return (
+            self._collect_cpu_metrics(),
+            self._collect_memory_metrics(),
+            self._collect_disk_metrics(),
+            self._collect_network_metrics(),
+            self._collect_gpu_metrics(),
+            self._collect_docker_metrics(),
+        )
 
     def _collect_cpu_metrics(self) -> Dict:
         """Collect CPU metrics."""
@@ -252,14 +267,15 @@ class MetricsCollector:
         except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
             return {"available": False}
 
-    async def _collect_docker_metrics(self) -> Dict:
-        """Collect Docker container metrics."""
+    def _collect_docker_metrics(self) -> Dict:
+        """Collect Docker container metrics via one summary API call."""
         try:
-            client = docker.from_env()
-            containers = client.containers.list()
+            if self._docker_api is None:
+                self._docker_api = docker.APIClient(base_url='unix://var/run/docker.sock')
+            containers = self._docker_api.containers(all=True)
 
-            running = len([c for c in containers if c.status == 'running'])
-            total = len(client.containers.list(all=True))
+            total = len(containers)
+            running = sum(1 for c in containers if c.get('State') == 'running')
 
             return {
                 "running": running,
@@ -268,6 +284,7 @@ class MetricsCollector:
             }
         except Exception as e:
             logger.debug(f"Docker metrics error: {e}")
+            self._docker_api = None  # force reconnect next cycle
             return {"running": 0, "total": 0, "stopped": 0}
 
     async def store_metrics(self, metrics: Dict):

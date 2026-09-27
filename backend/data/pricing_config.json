@@ -1,0 +1,261 @@
+{
+  "credit_value_usd": 0.01,
+  "default_markup_pct": 20.0,
+  "buffer_pct": 10.0,
+  "local": {
+    "strategy": "bundled",
+    "rate_per_million_usd": 0.0,
+    "label": "Self-hosted (Unicorn GPUs)"
+  },
+  "providers": {
+    "anthropic": {
+      "label": "Anthropic",
+      "markup_pct": null,
+      "source_url": "https://openrouter.ai/api/v1/models (live)",
+      "as_of": "2026-07-02",
+      "models": {
+        "claude-opus-4-8": {
+          "input_per_million_usd": 5.0,
+          "output_per_million_usd": 25.0,
+          "override_markup_pct": null,
+          "openrouter_id": "anthropic/claude-opus-4.8"
+        },
+        "claude-sonnet-4-6": {
+          "input_per_million_usd": 3.0,
+          "output_per_million_usd": 15.0,
+          "override_markup_pct": null,
+          "openrouter_id": "anthropic/claude-sonnet-4.6"
+        },
+        "claude-haiku-4-5": {
+          "input_per_million_usd": 1.0,
+          "output_per_million_usd": 5.0,
+          "override_markup_pct": null,
+          "openrouter_id": "anthropic/claude-haiku-4.5"
+        }
+      }
+    },
+    "openai": {
+      "label": "OpenAI",
+      "markup_pct": null,
+      "source_url": "https://openrouter.ai/api/v1/models (live)",
+      "as_of": "2026-07-02",
+      "models": {
+        "gpt-4o": {
+          "input_per_million_usd": 2.5,
+          "output_per_million_usd": 10.0,
+          "override_markup_pct": null
+        },
+        "gpt-4o-mini": {
+          "input_per_million_usd": 0.15,
+          "output_per_million_usd": 0.6,
+          "override_markup_pct": null
+        },
+        "gpt-4.1": {
+          "input_per_million_usd": 2.0,
+          "output_per_million_usd": 8.0,
+          "override_markup_pct": null,
+          "openrouter_id": "openai/gpt-4.1"
+        },
+        "gpt-4.1-mini": {
+          "input_per_million_usd": 0.4,
+          "output_per_million_usd": 1.6,
+          "override_markup_pct": null
+        },
+        "o3": {
+          "input_per_million_usd": 2.0,
+          "output_per_million_usd": 8.0,
+          "override_markup_pct": null,
+          "openrouter_id": "openai/o3"
+        },
+        "o4-mini": {
+          "input_per_million_usd": 1.1,
+          "output_per_million_usd": 4.4,
+          "override_markup_pct": null,
+          "openrouter_id": "openai/o4-mini"
+        },
+        "gpt-5.5": {
+          "openrouter_id": "openai/gpt-5.5",
+          "override_markup_pct": null,
+          "input_per_million_usd": 5.0,
+          "output_per_million_usd": 30.0
+        },
+        "gpt-5.5-pro": {
+          "openrouter_id": "openai/gpt-5.5-pro",
+          "override_markup_pct": null,
+          "input_per_million_usd": 30.0,
+          "output_per_million_usd": 180.0
+        },
+        "gpt-5-mini": {
+          "openrouter_id": "openai/gpt-5-mini",
+          "override_markup_pct": null,
+          "input_per_million_usd": 0.25,
+          "output_per_million_usd": 2.0
+        }
+      }
+    },
+    "deepseek": {
+      "label": "DeepSeek",
+      "markup_pct": null,
+      "source_url": "https://openrouter.ai/api/v1/models (live)",
+      "as_of": "2026-07-02",
+      "models": {
+        "deepseek-v4-flash": {
+          "input_per_million_usd": 0.089,
+          "output_per_million_usd": 0.18,
+          "override_markup_pct": null,
+          "openrouter_id": "deepseek/deepseek-v4-flash"
+        },
+        "deepseek-v4-pro": {
+          "input_per_million_usd": 0.435,
+          "output_per_million_usd": 0.87,
+          "override_markup_pct": null,
+          "openrouter_id": "deepseek/deepseek-v4-pro"
+        },
+        "deepseek-chat": {
+          "input_per_million_usd": 0.27,
+          "output_per_million_usd": 1.1,
+          "override_markup_pct": null
+        }
+      }
+    },
+    "google": {
+      "label": "Google Gemini",
+      "markup_pct": null,
+      "source_url": "https://openrouter.ai/api/v1/models (live)",
+      "as_of": "2026-07-02",
+      "models": {
+        "gemini-2.5-pro": {
+          "input_per_million_usd": 1.25,
+          "output_per_million_usd": 10.0,
+          "override_markup_pct": null,
+          "openrouter_id": "google/gemini-2.5-pro"
+        },
+        "gemini-2.5-flash": {
+          "input_per_million_usd": 0.3,
+          "output_per_million_usd": 2.5,
+          "override_markup_pct": null,
+          "openrouter_id": "google/gemini-2.5-flash"
+        },
+        "gemini-2.5-flash-lite": {
+          "input_per_million_usd": 0.1,
+          "output_per_million_usd": 0.4,
+          "override_markup_pct": null,
+          "openrouter_id": "google/gemini-2.5-flash-lite"
+        }
+      }
+    },
+    "mistral": {
+      "label": "Mistral",
+      "markup_pct": null,
+      "source_url": "https://openrouter.ai/api/v1/models (live)",
+      "as_of": "2026-07-02",
+      "models": {
+        "mistral-large-latest": {
+          "input_per_million_usd": 0.5,
+          "output_per_million_usd": 1.5,
+          "override_markup_pct": null,
+          "openrouter_id": "mistralai/mistral-large-2512"
+        },
+        "mistral-small-latest": {
+          "input_per_million_usd": 0.1,
+          "output_per_million_usd": 0.3,
+          "override_markup_pct": null
+        },
+        "codestral-latest": {
+          "input_per_million_usd": 0.3,
+          "output_per_million_usd": 0.9,
+          "override_markup_pct": null,
+          "openrouter_id": "mistralai/codestral-2508"
+        }
+      }
+    },
+    "xai": {
+      "label": "xAI Grok",
+      "markup_pct": null,
+      "source_url": "https://openrouter.ai/api/v1/models (live)",
+      "as_of": "2026-07-02",
+      "models": {
+        "grok-4.3": {
+          "input_per_million_usd": 1.25,
+          "output_per_million_usd": 2.5,
+          "override_markup_pct": null,
+          "openrouter_id": "x-ai/grok-4.3"
+        },
+        "grok-build-0.1": {
+          "input_per_million_usd": 1.0,
+          "output_per_million_usd": 2.0,
+          "override_markup_pct": null
+        }
+      }
+    },
+    "together": {
+      "label": "Together (hosted OSS)",
+      "markup_pct": null,
+      "source_url": "https://www.together.ai/pricing",
+      "as_of": "2026-06-08",
+      "models": {
+        "llama-4-maverick": {
+          "input_per_million_usd": 0.27,
+          "output_per_million_usd": 0.85,
+          "override_markup_pct": null
+        },
+        "qwen3-235b-a22b": {
+          "input_per_million_usd": 0.2,
+          "output_per_million_usd": 0.6,
+          "override_markup_pct": null
+        },
+        "deepseek-v3-0324": {
+          "input_per_million_usd": 1.25,
+          "output_per_million_usd": 1.25,
+          "override_markup_pct": null
+        }
+      }
+    },
+    "fireworks": {
+      "label": "Fireworks (hosted OSS)",
+      "markup_pct": null,
+      "source_url": "https://docs.fireworks.ai/serverless/pricing",
+      "as_of": "2026-06-08",
+      "models": {
+        "deepseek-v4-pro": {
+          "input_per_million_usd": 1.74,
+          "output_per_million_usd": 3.48,
+          "override_markup_pct": null
+        },
+        "qwen-3.6-plus": {
+          "input_per_million_usd": 0.5,
+          "output_per_million_usd": 3.0,
+          "override_markup_pct": null
+        },
+        "gpt-oss-120b": {
+          "input_per_million_usd": 0.15,
+          "output_per_million_usd": 0.6,
+          "override_markup_pct": null
+        }
+      }
+    }
+  },
+  "_refresh_meta": {
+    "last_refresh_at": "2026-07-02T14:04:41.703620+00:00",
+    "last_attempt_at": "2026-07-02T14:04:41.703620+00:00",
+    "last_ok": true,
+    "last_error": null,
+    "last_reason": "scheduled",
+    "last_changed": 1,
+    "last_hikes": [
+      {
+        "model": "deepseek/deepseek-v4-flash",
+        "pct": 24.4,
+        "exceeds_buffer_by": 14.4,
+        "old": {
+          "input": 0.09,
+          "output": 0.18
+        },
+        "new": {
+          "input": 0.089,
+          "output": 0.224
+        }
+      }
+    ]
+  }
+}

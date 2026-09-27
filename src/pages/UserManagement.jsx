@@ -64,6 +64,8 @@ import {
   ExpandLess as ExpandLessIcon,
   CalendarToday as CalendarIcon,
   Visibility as VisibilityIcon,
+  PhotoCamera as PhotoCameraIcon,
+  NoPhotography as NoPhotographyIcon,
   InfoOutlined as InfoOutlinedIcon,
 } from '@mui/icons-material';
 import CreateUserModal from '../components/CreateUserModal';
@@ -512,6 +514,49 @@ const UserManagement = () => {
       setSessionModalOpen(false);
       setCurrentUser(null);
       setUserSessions([]);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Admin photo management (suite-wide: stamps the Keycloak `picture`
+  // attribute, so the photo propagates to every UC app's tokens/userinfo)
+  const handleUploadUserPhoto = async (user, file) => {
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Photo must be less than 2MB', 'error');
+      return;
+    }
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const response = await fetch(`/api/v1/admin/users/${encodeURIComponent(user.email || user.id)}/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to upload photo');
+      }
+      showToast('Photo updated - propagates to all UC apps on next sign-in');
+      fetchUsers();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handleRemoveUserPhoto = async (user) => {
+    try {
+      const response = await fetch(`/api/v1/admin/users/${encodeURIComponent(user.email || user.id)}/avatar`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to remove photo');
+      }
+      showToast('Photo removed');
+      fetchUsers();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -1163,7 +1208,7 @@ const UserManagement = () => {
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
+                        <Avatar src={user.picture || undefined} sx={{ bgcolor: 'primary.main' }}>
                           {getUserInitials(user)}
                         </Avatar>
                       </TableCell>
@@ -1263,6 +1308,40 @@ const UserManagement = () => {
                             <VpnKeyIcon />
                           </IconButton>
                         </Tooltip>
+                        <Tooltip title={user.picture ? 'Change Photo (applies suite-wide)' : 'Upload Photo (applies suite-wide)'}>
+                          <IconButton
+                            size="small"
+                            component="label"
+                            onClick={(e) => e.stopPropagation()}
+                            color="primary"
+                          >
+                            <PhotoCameraIcon fontSize="small" />
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.gif,.webp"
+                              hidden
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (file) handleUploadUserPhoto(user, file);
+                              }}
+                            />
+                          </IconButton>
+                        </Tooltip>
+                        {user.picture && (
+                          <Tooltip title="Remove Photo (suite-wide)">
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveUserPhoto(user);
+                              }}
+                              color="default"
+                            >
+                              <NoPhotographyIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <Tooltip title="View Sessions">
                           <IconButton
                             size="small"

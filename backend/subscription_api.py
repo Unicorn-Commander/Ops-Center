@@ -3,6 +3,8 @@ Subscription Management API Endpoints
 Integrates with Lago for billing and subscription management
 """
 
+from billing_org_identity import resolve_billing_org
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import List, Dict, Optional
 from pydantic import BaseModel
@@ -74,23 +76,20 @@ async def get_current_user(request: Request):
     return user
 
 # Helper to get org_id from user session
-async def get_user_org_id(request: Request) -> str:
-    """Get organization ID from user session for Lago billing"""
-    user = await get_current_user(request)
+async def get_user_org_id(request: Request, *, require_write: bool = False) -> str:
+    """Resolve the trusted organization before any billing or usage call."""
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    sessions = getattr(request.app.state, "sessions", {})
+    session = sessions.get(session_token)
+    if not session or not session.get("user"):
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return await resolve_billing_org(
+        session["user"], session, getattr(request.app.state, "db_pool", None),
+        require_write=require_write
+    )
 
-    # Get org_id - this is the customer identifier in Lago
-    org_id = user.get("org_id")
-    if not org_id:
-        # Fallback: create org_id from user email
-        email = user.get("email")
-        if not email:
-            raise HTTPException(status_code=400, detail="User has no org_id or email")
-
-        # Generate org_id from email (for single-user orgs)
-        org_id = f"org_{email.split('@')[0]}_{user.get('id', 'unknown')}"
-        logger.warning(f"No org_id found for user {email}, using generated: {org_id}")
-
-    return org_id
 
 async def require_admin(request: Request):
     """Require admin role"""
@@ -342,7 +341,7 @@ async def get_current_subscription(request: Request):
     try:
         # Canonical key is org_id (external_id == org_id), consistent with the write
         # path + the gateway's org-keyed metering events; fall back to the legacy
-        # email-keyed lookup only if no org-keyed subscription exists.
+        # Email never establishes tenant ownership.
         subscription = await get_subscription_for(org_id, email)
 
         if not subscription:
@@ -396,79 +395,34 @@ async def get_current_subscription(request: Request):
 @router.post("/upgrade")
 async def upgrade_subscription(request: Request):
     """
-    Upgrade subscription to a higher tier.
-    Creates Stripe checkout session and redirects user to payment.
+    Self-service tier upgrade — MUST go through paid Stripe Checkout.
+
+    SECURITY (2026-07-04): this handler previously provisioned a paid tier
+    directly in Lago (and emailed a confirmation) WITHOUT taking payment — the
+    Stripe checkout step was an unfinished ``# TODO``. Because it is registered
+    before the real Stripe-backed ``/upgrade`` handler later in this router, it
+    won runtime dispatch, so ANY authenticated caller could
+    ``POST {"target_tier": "managed"}`` and receive a free upgrade.
+
+    It is now FAIL-CLOSED: it authenticates, then refuses (402) without
+    provisioning anything. Real, paid upgrades go through
+    ``POST /api/v1/billing/subscriptions/checkout`` (stripe_api.py), which opens
+    a Stripe Checkout session and provisions the org only after the webhook
+    confirms payment. The route is retained so callers still get a defined
+    response, but it can no longer grant entitlements.
     """
-    user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    # Authenticate (defense in depth; the global session gate also covers this
+    # path). No subscription is created and no email is sent on any code path.
+    await get_current_user(request)
+    await get_user_org_id(request, require_write=True)
 
-    # Get request body
-    body = await request.json()
-    target_tier = body.get("target_tier")
-
-    if not target_tier:
-        raise HTTPException(status_code=400, detail="target_tier required")
-
-    logger.info(f"Upgrading org {org_id} to tier: {target_tier}")
-
-    try:
-        # Get target plan details
-        target_plan = subscription_manager.get_plan(target_tier)
-        if not target_plan:
-            raise HTTPException(status_code=404, detail=f"Plan {target_tier} not found")
-
-        # Check if user is actually upgrading (not downgrading)
-        current_subscription = await get_subscription(org_id)
-        if current_subscription:
-            current_tier = current_subscription.get("plan_code", "").split("_")[0]
-            from subscription_api import getTierLevel
-            if getTierLevel(target_tier) <= getTierLevel(current_tier):
-                raise HTTPException(status_code=400, detail="Use /change endpoint for downgrades")
-
-        # Create Stripe checkout session - read credentials from database first, then environment
-        stripe_key = get_credential("STRIPE_SECRET_KEY")
-        if not stripe_key:
-            raise HTTPException(status_code=500, detail="Stripe not configured")
-
-        # TODO: Create Stripe checkout session
-        # For now, create subscription directly in Lago
-        lago_plan_code = f"{target_tier}_monthly"
-
-        # Ensure customer exists in Lago
-        await get_or_create_customer(
-            org_id=org_id,
-            org_name=user.get("org_name", f"{user.get('email')} Org"),
-            email=user.get("email"),
-            user_id=user.get("id")
-        )
-
-        # Create subscription in Lago
-        new_subscription = await create_subscription(org_id, lago_plan_code)
-
-        logger.info(f"Created subscription {new_subscription.get('lago_id')} for org {org_id}")
-
-        # Send tier upgrade email (don't fail if email fails)
-        try:
-            old_tier = current_subscription.get("plan_code", "").split("_")[0] if current_subscription else "trial"
-            await email_service.send_tier_upgrade_notification(
-                user_id=user.get("id"),
-                old_tier=old_tier,
-                new_tier=target_tier
-            )
-            logger.info(f"Tier upgrade email sent to user {user.get('id')}")
-        except Exception as e:
-            logger.error(f"Failed to send tier upgrade email: {e}")
-
-        return {
-            "success": True,
-            "subscription": new_subscription,
-            "message": f"Upgraded to {target_tier}",
-            # TODO: Add checkout_url when Stripe is integrated
-        }
-
-    except Exception as e:
-        logger.error(f"Error upgrading subscription: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to upgrade: {str(e)}")
+    raise HTTPException(
+        status_code=402,
+        detail=(
+            "Self-service upgrades must go through checkout. Start a paid "
+            "Stripe Checkout session via POST /api/v1/billing/subscriptions/checkout."
+        ),
+    )
 
 
 @router.post("/change")
@@ -478,7 +432,7 @@ async def change_subscription(request: Request):
     Takes effect at end of current billing period.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
 
     body = await request.json()
     target_tier = body.get("target_tier")
@@ -545,7 +499,7 @@ async def cancel_subscription(request: Request):
     Access continues until end of billing period.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
 
     logger.info(f"Canceling subscription for org {org_id}")
 
@@ -613,7 +567,7 @@ async def initiate_upgrade(
     Returns Stripe Checkout session URL for payment.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
     target_tier = upgrade_req.target_tier
 
     logger.info(f"Initiating upgrade for org {org_id} to {target_tier}")
@@ -653,7 +607,7 @@ async def initiate_upgrade(
 
         # 5. Get or create Stripe customer
         customer_email = user.get("email")
-        stripe_customer = await stripe_integration.get_customer_by_email(customer_email)
+        stripe_customer = await stripe_integration.get_customer_for_org(org_id, allow_create=True)
 
         if not stripe_customer:
             # Create new Stripe customer
@@ -676,7 +630,8 @@ async def initiate_upgrade(
             price_id=target_plan.stripe_price_id,
             customer_email=customer_email,
             tier_name=target_tier,
-            billing_cycle="monthly"
+            billing_cycle="monthly",
+            org_id=org_id
         )
 
         if not checkout_url:
@@ -710,7 +665,7 @@ async def initiate_downgrade(
     No immediate payment required.
     """
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
+    org_id = await get_user_org_id(request, require_write=True)
     target_tier = downgrade_req.target_tier
 
     logger.info(f"Initiating downgrade for org {org_id} to {target_tier}")
@@ -874,86 +829,38 @@ async def preview_subscription_change(
 
 
 @router.post("/confirm-upgrade")
-async def confirm_upgrade(
-    request: Request,
-    checkout_session_id: str
-):
-    """
-    Confirm upgrade after successful Stripe payment.
-    Called by webhook or redirect after checkout.
-    """
+async def confirm_upgrade(request: Request, checkout_session_id: str):
+    """Confirm a paid checkout only within its authorized selected organization."""
     user = await get_current_user(request)
-    org_id = await get_user_org_id(request)
-
-    logger.info(f"Confirming upgrade for org {org_id}, session {checkout_session_id}")
+    org_id = await get_user_org_id(request, require_write=True)
+    from stripe_org_identity import resolve_event_org, require_provisioning_complete
+    from stripe_integration import OPS_CENTER_STRIPE_SUITE
+    from paid_org_provisioning import provision_paid_org
+    import stripe
 
     try:
-        # 1. Verify Stripe checkout session
-        from stripe_integration import stripe_integration
-        import stripe
-
         session = stripe.checkout.Session.retrieve(checkout_session_id)
-
-        if session.payment_status != "paid":
-            raise HTTPException(
-                status_code=400,
-                detail="Payment not completed"
-            )
-
-        # 2. Get target tier from session metadata
-        target_tier = session.metadata.get("tier_id") or session.metadata.get("tier_name")
-
+        if session.get("payment_status") != "paid":
+            raise HTTPException(400, "Payment not completed")
+        metadata = session.get("metadata") or {}
+        if metadata.get("suite") != OPS_CENTER_STRIPE_SUITE:
+            raise HTTPException(409, "Checkout belongs to another billing suite")
+        if resolve_event_org(session) != org_id:
+            raise HTTPException(403, "Checkout belongs to another organization")
+        target_tier = metadata.get("tier_id") or metadata.get("tier_name")
         if not target_tier:
-            raise HTTPException(status_code=400, detail="Tier information missing from session")
-
-        # 3. Get current subscription
-        current_subscription = await get_subscription(org_id)
-        old_tier = "trial"
-
-        if current_subscription:
-            old_tier = current_subscription.get("plan_code", "").split("_")[0]
-
-            # Terminate old subscription
-            subscription_id = current_subscription.get("lago_id")
-            await terminate_subscription(org_id, subscription_id)
-
-        # 4. Create new subscription in Lago
-        lago_plan_code = f"{target_tier}_monthly"
-        new_subscription = await create_subscription(org_id, lago_plan_code)
-
-        # 5. Update user tier in Keycloak
-        from keycloak_integration import update_user_attributes
-
-        await update_user_attributes(
-            user.get("email"),
-            {
-                "subscription_tier": [target_tier],
-                "subscription_status": ["active"]
-            }
+            raise HTTPException(409, "Checkout tier metadata missing")
+        # Use the same idempotent org-scoped path as the canonical webhook.
+        # Never terminate/recreate a different org's subscription or update an
+        # email-wide Keycloak tier because the browser switched organizations.
+        result = await provision_paid_org(
+            org_id, target_tier, email=user.get("email", ""), source="stripe-confirm"
         )
-
-        # 6. Send upgrade confirmation email
-        try:
-            await email_service.send_tier_upgrade_notification(
-                user_id=user.get("id"),
-                old_tier=old_tier,
-                new_tier=target_tier
-            )
-        except Exception as e:
-            logger.error(f"Failed to send confirmation email: {e}")
-
-        logger.info(f"Upgrade confirmed: {org_id} from {old_tier} to {target_tier}")
-
-        return {
-            "success": True,
-            "old_tier": old_tier,
-            "new_tier": target_tier,
-            "subscription_id": new_subscription.get("lago_id"),
-            "message": f"Successfully upgraded to {target_tier}"
-        }
-
+        require_provisioning_complete(result)
+        return {"success": True, "org_id": org_id, "new_tier": target_tier,
+                "message": f"Successfully upgraded to {target_tier}"}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error confirming upgrade: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to confirm upgrade: {str(e)}")
+    except Exception:
+        logger.exception("Checkout confirmation failed")
+        raise HTTPException(503, "Checkout confirmation unavailable") from None

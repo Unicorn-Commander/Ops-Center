@@ -15,12 +15,11 @@ Author: Ops-Center Team
 Created: 2026-01-31
 """
 
-import os
 import sys
 import logging
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 # Add parent directory to path
@@ -29,6 +28,11 @@ if '/app' not in sys.path:
 
 from database.connection import get_db_pool
 from auth_dependencies import require_admin_user
+from feature_grant_utils import (
+    grant_feature_keys_to_org,
+    revoke_feature_keys_from_org,
+    verify_org_exists,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +85,6 @@ class RevokeSuccessResponse(BaseModel):
 # =============================================================================
 # Helper Functions
 # =============================================================================
-
-async def verify_org_exists(pool, org_id: str) -> bool:
-    """Check if organization exists in database"""
-    async with pool.acquire() as conn:
-        result = await conn.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM organizations WHERE id = $1)",
-            org_id
-        )
-        return result
-
 
 async def verify_feature_key_exists(pool, feature_key: str) -> bool:
     """Check if feature_key exists in add_ons table"""
@@ -149,11 +143,10 @@ async def list_org_features(
     """
     pool = await get_db_pool()
 
-    # Verify org exists
-    if not await verify_org_exists(pool, org_id):
-        raise HTTPException(status_code=404, detail=f"Organization not found: {org_id}")
-
     async with pool.acquire() as conn:
+        if not await verify_org_exists(conn, org_id):
+            raise HTTPException(status_code=404, detail=f"Organization not found: {org_id}")
+
         # Query org_features with LEFT JOIN to add_ons for app names
         rows = await conn.fetch(
             """
@@ -220,40 +213,30 @@ async def grant_org_feature(
     """
     pool = await get_db_pool()
 
-    # Verify org exists
-    if not await verify_org_exists(pool, org_id):
-        raise HTTPException(status_code=404, detail=f"Organization not found: {org_id}")
-
-    # Verify feature_key exists in add_ons
-    if not await verify_feature_key_exists(pool, grant_data.feature_key):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid feature_key: '{grant_data.feature_key}'. Feature must exist in add_ons table."
-        )
-
-    # Get admin email for audit
-    admin_email = admin_user.get('email') or admin_user.get('user_id') or 'unknown'
-
     async with pool.acquire() as conn:
         try:
+            if not await verify_org_exists(conn, org_id):
+                raise HTTPException(status_code=404, detail=f"Organization not found: {org_id}")
+
+            # Verify feature_key exists in add_ons
+            if not await verify_feature_key_exists(pool, grant_data.feature_key):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid feature_key: '{grant_data.feature_key}'. Feature must exist in add_ons table."
+                )
+
+            # Get admin email for audit
+            admin_email = admin_user.get('email') or admin_user.get('user_id') or 'unknown'
+
             # Insert or update the feature grant (upsert)
-            row = await conn.fetchrow(
-                """
-                INSERT INTO org_features (org_id, feature_key, enabled, granted_by, notes)
-                VALUES ($1, $2, TRUE, $3, $4)
-                ON CONFLICT (org_id, feature_key)
-                DO UPDATE SET
-                    enabled = TRUE,
-                    granted_by = EXCLUDED.granted_by,
-                    granted_at = CURRENT_TIMESTAMP,
-                    notes = EXCLUDED.notes
-                RETURNING id, org_id, feature_key, enabled, granted_by, granted_at, notes
-                """,
+            rows = await grant_feature_keys_to_org(
+                conn,
                 org_id,
-                grant_data.feature_key,
+                [grant_data.feature_key],
                 admin_email,
                 grant_data.notes
             )
+            row = rows[0]
 
             # Get app name
             app_name = await get_app_name_for_feature(pool, grant_data.feature_key)
@@ -279,6 +262,9 @@ async def grant_org_feature(
                 grant=grant
             )
 
+        except HTTPException:
+            # Preserve intended 404 (org not found) / 400 (invalid feature_key) responses
+            raise
         except Exception as e:
             logger.error(f"Error granting feature to org {org_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to grant feature: {str(e)}")
@@ -312,25 +298,12 @@ async def revoke_org_feature(
     """
     pool = await get_db_pool()
 
-    # Verify org exists
-    if not await verify_org_exists(pool, org_id):
-        raise HTTPException(status_code=404, detail=f"Organization not found: {org_id}")
-
-    admin_email = admin_user.get('email') or admin_user.get('user_id') or 'unknown'
-
     async with pool.acquire() as conn:
-        # Delete the feature grant
-        result = await conn.execute(
-            """
-            DELETE FROM org_features
-            WHERE org_id = $1 AND feature_key = $2
-            """,
-            org_id,
-            feature_key
-        )
+        if not await verify_org_exists(conn, org_id):
+            raise HTTPException(status_code=404, detail=f"Organization not found: {org_id}")
 
-        # Check if anything was deleted
-        rows_affected = int(result.split()[-1])
+        admin_email = admin_user.get('email') or admin_user.get('user_id') or 'unknown'
+        rows_affected = await revoke_feature_keys_from_org(conn, org_id, [feature_key])
 
         if rows_affected == 0:
             raise HTTPException(
