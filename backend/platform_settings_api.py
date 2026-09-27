@@ -12,6 +12,8 @@ import subprocess
 from datetime import datetime
 import logging
 
+from key_encryption import decrypt_if_encrypted, encrypt_if_plaintext
+
 logger = logging.getLogger(__name__)
 
 # Audit logging for config writes. Imported defensively so this module still
@@ -310,7 +312,7 @@ def get_current_env_value(key: str) -> Optional[str]:
         conn.close()
 
         if result:
-            return result['value']
+            return decrypt_if_encrypted(result['value'])
 
     except Exception as e:
         # If database fails, fall back to environment
@@ -465,8 +467,10 @@ async def update_platform_settings(
         for key, value in update.settings.items():
             config = PLATFORM_SETTINGS[key]
 
-            # Update environment variable (immediate effect in current process)
+            # Keep the live process value plaintext; encrypt only durable storage.
             os.environ[key] = value
+
+            stored_value = encrypt_if_plaintext(value) if config['is_secret'] else value
 
             # Store in database (persistent across restarts)
             cursor.execute("""
@@ -475,8 +479,10 @@ async def update_platform_settings(
                 ON CONFLICT (key)
                 DO UPDATE SET
                     value = EXCLUDED.value,
+                    category = EXCLUDED.category,
+                    is_secret = EXCLUDED.is_secret,
                     updated_at = CURRENT_TIMESTAMP
-            """, (key, value, config['category'], config['is_secret']))
+            """, (key, stored_value, config['category'], config['is_secret']))
 
             updated_count += 1
 

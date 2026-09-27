@@ -25,7 +25,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 import asyncpg
-from key_encryption import get_encryption
+from key_encryption import get_encryption, decrypt_if_encrypted
 
 logger = logging.getLogger(__name__)
 
@@ -317,7 +317,7 @@ async def list_platform_keys(
                 source = "database"
                 has_key = True
                 try:
-                    decrypted = encryption.decrypt_key(db_encrypted)
+                    decrypted = decrypt_if_encrypted(db_encrypted)
                     preview = mask_api_key(decrypted)
                 except Exception as e:
                     logger.error(f"Error decrypting {key_name}: {e}")
@@ -796,7 +796,7 @@ async def get_openrouter_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             # Fall back to environment
@@ -841,7 +841,7 @@ async def get_provisioning_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             # Fall back to environment
@@ -885,7 +885,7 @@ async def get_openai_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("OPENAI_API_KEY")
@@ -1165,8 +1165,7 @@ async def _resolve_platform_key(db_pool: asyncpg.Pool, key_type: str):
     key_name = TESTABLE_KEY_TYPES[key_type]
     db_encrypted = await get_platform_key_from_db(db_pool, key_name)
     if db_encrypted:
-        encryption = get_encryption()
-        return encryption.decrypt_key(db_encrypted), "database"
+        return decrypt_if_encrypted(db_encrypted), "database"
 
     env_var = PLATFORM_KEYS[key_name]["env_var"]
     env_value = os.getenv(env_var)
