@@ -26,6 +26,7 @@ Author: Backend Development Team Lead
 Date: October 23, 2025
 """
 
+import json
 import os
 import logging
 import httpx
@@ -211,7 +212,7 @@ class CredentialManager:
                     WHERE user_id = $4 AND service = $5 AND credential_type = $6
                     """,
                     encrypted_data["encrypted_value"],
-                    metadata or {},
+                    json.dumps(metadata or {}),
                     now,
                     user_id,
                     service,
@@ -232,7 +233,7 @@ class CredentialManager:
                     service,
                     credential_type,
                     encrypted_data["encrypted_value"],
-                    metadata or {},
+                    json.dumps(metadata or {}),
                     now,
                     now,
                     True

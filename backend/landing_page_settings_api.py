@@ -16,6 +16,7 @@ Author: Claude Code
 Date: November 29, 2025
 """
 
+import json
 import logging
 from typing import Dict, Optional, Any
 from datetime import datetime
@@ -256,12 +257,16 @@ async def update_landing_settings(
                 for field, value in settings.dict(exclude_unset=True).items():
                     if value is not None:
                         if field == 'branding':
-                            # Convert Pydantic model to dict for JSON storage
+                            # jsonb column: asyncpg needs a JSON string, not a dict
                             update_fields.append(f"{field} = ${param_counter}")
-                            update_values.append(value.dict())
+                            update_values.append(json.dumps(value.dict()))
                         else:
                             update_fields.append(f"{field} = ${param_counter}")
-                            update_values.append(value)
+                            # Any dict/list here also targets a jsonb column
+                            # (e.g. announcement_banner) and must be serialized.
+                            update_values.append(
+                                json.dumps(value) if isinstance(value, (dict, list)) else value
+                            )
                         param_counter += 1
 
                 if update_fields:
@@ -310,14 +315,14 @@ async def update_landing_settings(
                     RETURNING *
                 """,
                     settings_dict.get('landing_page_mode', 'direct_sso'),
-                    settings_dict.get('branding'),
+                    json.dumps(settings_dict['branding']) if settings_dict.get('branding') is not None else None,
                     settings_dict.get('sso_enabled', True),
                     settings_dict.get('allow_registration', False),
                     settings_dict.get('show_pricing', True),
                     settings_dict.get('show_features', True),
                     settings_dict.get('custom_css_url'),
                     settings_dict.get('custom_js_url'),
-                    settings_dict.get('announcement_banner'),
+                    json.dumps(settings_dict['announcement_banner']) if settings_dict.get('announcement_banner') is not None else None,
                     user_id
                 )
 
@@ -386,7 +391,7 @@ async def reset_landing_settings(
                 RETURNING *
             """,
                 defaults.landing_page_mode,
-                defaults.branding.dict(),
+                json.dumps(defaults.branding.dict()),
                 defaults.sso_enabled,
                 defaults.allow_registration,
                 defaults.show_pricing,

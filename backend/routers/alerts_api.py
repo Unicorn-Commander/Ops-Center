@@ -12,6 +12,7 @@ Author: Ops-Center Backend Team
 Created: 2026-01-31
 """
 
+import json
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field
@@ -333,7 +334,7 @@ async def sync_prometheus_alerts(pool) -> int:
                     severity.value,
                     message,
                     "prometheus",
-                    labels
+                    json.dumps(labels)
                 )
                 synced += 1
                 fired_alerts.append({

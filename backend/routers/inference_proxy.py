@@ -111,6 +111,7 @@ async def _proxy_request(
     user_info: Dict[str, Any] | None = None,
     stream_response: bool = False,
     is_multipart: bool = False,
+    billable: bool = True,
 ) -> Response:
     """Forward request to inference service with auth + credit tracking.
 
@@ -136,7 +137,10 @@ async def _proxy_request(
     # ------------------------------------------------------------------
     # 1. Credit pre-check (non-exempt tiers only)
     # ------------------------------------------------------------------
-    credit_cost = SERVICE_CREDIT_COSTS.get(service_type, 0)
+    # Status polls and artifact downloads are NOT separately billable: the
+    # generation request itself already charged the full service cost. Charging
+    # per poll billed a 120s job ~60x while the actual result was free.
+    credit_cost = SERVICE_CREDIT_COSTS.get(service_type, 0) if billable else 0
     exempt = _is_credit_exempt(user_tier)
     credit_system = await _get_credit_system(request)
 
@@ -356,6 +360,7 @@ async def music_job_status(
         service_key=MAJIKS_SERVICE_KEY,
         method="GET",
         service_type="music_gen",
+        billable=False,
         user_info=user,
     )
 
@@ -373,6 +378,7 @@ async def music_download(
         service_key=MAJIKS_SERVICE_KEY,
         method="GET",
         service_type="music_gen",
+        billable=False,
         user_info=user,
         stream_response=True,
     )
@@ -412,6 +418,7 @@ async def image_status(
         service_key=ARTWORK_SERVICE_KEY,
         method="GET",
         service_type="image_gen",
+        billable=False,
         user_info=user,
     )
 
@@ -429,6 +436,7 @@ async def image_download(
         service_key=ARTWORK_SERVICE_KEY,
         method="GET",
         service_type="image_gen",
+        billable=False,
         user_info=user,
         stream_response=True,
     )
@@ -469,6 +477,7 @@ async def audio_status(
         service_key=ARTWORK_SERVICE_KEY,
         method="GET",
         service_type="audio_align",
+        billable=False,
         user_info=user,
     )
 
@@ -486,6 +495,7 @@ async def audio_download(
         service_key=ARTWORK_SERVICE_KEY,
         method="GET",
         service_type="audio_align",
+        billable=False,
         user_info=user,
         stream_response=True,
     )

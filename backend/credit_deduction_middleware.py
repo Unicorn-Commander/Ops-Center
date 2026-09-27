@@ -358,8 +358,14 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 logger.debug("BYOK manager not yet initialized; skipping BYOK check")
                 return False, None
 
-            # Check if user has any BYOK keys configured
-            user_providers = await byok_manager.get_user_providers(user_id)
+            # Check if user has any BYOK keys configured.
+            # BYOKManager exposes list_user_providers() -> List[Dict]; reduce it to the
+            # set of ENABLED provider names so the `provider in user_providers` test below
+            # compares strings to strings (it previously compared a str against dicts).
+            provider_rows = await byok_manager.list_user_providers(user_id)
+            user_providers = {
+                row['provider'] for row in provider_rows if row.get('enabled')
+            }
 
             if not user_providers:
                 return False, None
