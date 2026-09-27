@@ -133,6 +133,7 @@ from routers.granite_keys import router as granite_keys_router
 
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 from routers.inference_proxy import router as inference_proxy_router
+from routers.audio_proxy import router as audio_proxy_router
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
@@ -1388,6 +1389,7 @@ logger.info("Granite API Keys endpoints registered at /api/v1/granite-keys")
 
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 app.include_router(inference_proxy_router)
+app.include_router(audio_proxy_router)
 logger.info("Inference Proxy endpoints registered at /api/v1/inference")
 
 # GPU Compute Fabric Control Plane - April 2026

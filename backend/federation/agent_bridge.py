@@ -40,6 +40,8 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from key_encryption import decrypt_if_encrypted
+
 logger = logging.getLogger("federation.agent_bridge")
 
 AGENT_EVENT_CODE = os.getenv("FEDERATION_AGENT_EVENT_CODE", "agent_invocation")
@@ -133,6 +135,7 @@ async def _resolve_lago_creds(db_pool) -> tuple:
                         "SELECT value FROM platform_settings WHERE key = $1", setting
                     )
                     if val:
+                        val = decrypt_if_encrypted(val)
                         if current == "url":
                             url = val.rstrip("/")
                         else:
