@@ -8,10 +8,19 @@ This module provides admin-only endpoints for managing system-level provider API
 
 These are DIFFERENT from user BYOK keys (user_api_keys.py) and UC API keys (uc_api_keys.py).
 
-Platform keys are stored in the platform_settings table with encryption.
+Platform keys are stored in the platform_settings table, Fernet-encrypted at rest
+via key_encryption.get_encryption() (ENCRYPTION_KEY).
+
+Reads go through decrypt_if_encrypted() rather than decrypt_key(), because the
+column holds a MIX during the transition: this API's own writes have always
+encrypted, but platform_settings_api.py (the settings GUI) wrote every secret in
+the CLEAR until that was fixed, and those rows stay plaintext until
+scripts/encrypt_platform_settings.py backfills them. A strict decrypt would turn
+every one of those legacy rows into a 500.
 
 Database Table: platform_settings
-Columns: id, key, value (encrypted), description, category, is_encrypted, created_at, updated_at
+Columns: id, key, value (Fernet ciphertext when is_secret), description, category,
+         is_secret, created_at, updated_at
 
 Author: Backend API Developer
 Date: November 3, 2025
@@ -25,7 +34,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 import asyncpg
-from key_encryption import get_encryption, decrypt_if_encrypted
+from key_encryption import get_encryption
 
 logger = logging.getLogger(__name__)
 
@@ -164,13 +173,19 @@ async def set_platform_key_in_db(
         True if successful
     """
     async with db_pool.acquire() as conn:
-        # Upsert (insert or update)
+        # Upsert (insert or update).
+        # category/is_secret are re-asserted on conflict: get_platform_key_from_db
+        # filters on `is_secret = TRUE`, so a row that already existed with the
+        # flag unset would be written but then never read back — the key would
+        # silently look "not set" in the UI right after being saved.
         await conn.execute("""
             INSERT INTO platform_settings (key, value, category, is_secret, updated_at)
             VALUES ($1, $2, 'api_keys', TRUE, NOW())
             ON CONFLICT (key)
             DO UPDATE SET
                 value = EXCLUDED.value,
+                category = EXCLUDED.category,
+                is_secret = EXCLUDED.is_secret,
                 updated_at = NOW()
         """, key_name, encrypted_value)
 
@@ -317,7 +332,7 @@ async def list_platform_keys(
                 source = "database"
                 has_key = True
                 try:
-                    decrypted = decrypt_if_encrypted(db_encrypted)
+                    decrypted = encryption.decrypt_if_encrypted(db_encrypted)
                     preview = mask_api_key(decrypted)
                 except Exception as e:
                     logger.error(f"Error decrypting {key_name}: {e}")
@@ -796,7 +811,7 @@ async def get_openrouter_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = decrypt_if_encrypted(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             # Fall back to environment
@@ -841,7 +856,7 @@ async def get_provisioning_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = decrypt_if_encrypted(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             # Fall back to environment
@@ -885,7 +900,7 @@ async def get_openai_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = decrypt_if_encrypted(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("OPENAI_API_KEY")
@@ -928,7 +943,7 @@ async def get_anthropic_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -971,7 +986,7 @@ async def get_huggingface_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("HUGGINGFACE_API_KEY")
@@ -1014,7 +1029,7 @@ async def get_groq_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("GROQ_API_KEY")
@@ -1057,7 +1072,7 @@ async def get_xai_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("XAI_API_KEY")
@@ -1100,7 +1115,7 @@ async def get_google_key_decrypted(
 
         if db_encrypted:
             encryption = get_encryption()
-            api_key = encryption.decrypt_key(db_encrypted)
+            api_key = encryption.decrypt_if_encrypted(db_encrypted)
             source = "database"
         else:
             api_key = os.getenv("GOOGLE_AI_API_KEY")
@@ -1165,7 +1180,8 @@ async def _resolve_platform_key(db_pool: asyncpg.Pool, key_type: str):
     key_name = TESTABLE_KEY_TYPES[key_type]
     db_encrypted = await get_platform_key_from_db(db_pool, key_name)
     if db_encrypted:
-        return decrypt_if_encrypted(db_encrypted), "database"
+        encryption = get_encryption()
+        return encryption.decrypt_if_encrypted(db_encrypted), "database"
 
     env_var = PLATFORM_KEYS[key_name]["env_var"]
     env_value = os.getenv(env_var)
