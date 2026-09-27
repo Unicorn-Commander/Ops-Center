@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../contexts/ThemeContext';
+import { getKeycloakAccountSignInUrl } from '../utils/keycloak';
 import {
   ShieldCheckIcon,
   ArrowPathIcon,
@@ -57,18 +58,12 @@ export default function Security() {
 
   // Application Security State (existing functionality)
   const [users, setUsers] = useState([]);
-  const [apiKeys, setApiKeys] = useState([]);
-  const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
     if (activeTab === 'overview') {
       loadAuditLogs();
     } else if (activeTab === 'users') {
       loadUsers();
-    } else if (activeTab === 'apikeys') {
-      loadApiKeys();
-    } else if (activeTab === 'sessions') {
-      loadSessions();
     }
   }, [activeTab]);
 
@@ -105,52 +100,18 @@ export default function Security() {
     }
   };
 
-  const loadApiKeys = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/v1/api-keys', { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        setApiKeys(data.api_keys || []);
-      }
-    } catch (err) {
-      setError('Failed to load API keys');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSessions = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/v1/sessions', { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        setSessions(data.sessions || []);
-      }
-    } catch (err) {
-      setError('Failed to load sessions');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const refreshData = async () => {
     setRefreshing(true);
     if (activeTab === 'overview') {
       await loadAuditLogs();
     } else if (activeTab === 'users') {
       await loadUsers();
-    } else if (activeTab === 'apikeys') {
-      await loadApiKeys();
-    } else if (activeTab === 'sessions') {
-      await loadSessions();
     }
     setRefreshing(false);
   };
 
   const openKeycloakSettings = () => {
-    window.open('https://auth.unicorncommander.ai/if/user/', '_blank');
+    window.open(getKeycloakAccountSignInUrl(), '_blank', 'noopener,noreferrer');
   };
 
   const formatTimestamp = (timestamp) => {
@@ -331,22 +292,6 @@ export default function Security() {
           </button>
 
           <button
-            onClick={() => setActiveTab('apikeys')}
-            className={`
-              flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all
-              ${activeTab === 'apikeys'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg'
-                : `${theme.text.secondary} hover:bg-gray-700/50`
-              }
-            `}
-          >
-            <div className="flex items-center justify-center gap-2">
-              <KeyIcon className="h-5 w-5" />
-              API Keys
-            </div>
-          </button>
-
-          <button
             onClick={() => setActiveTab('sessions')}
             className={`
               flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all
@@ -460,27 +405,6 @@ export default function Security() {
               <ShieldCheckIcon className="h-5 w-5" />
               Manage Users in Keycloak
             </motion.button>
-          </div>
-        </motion.div>
-      )}
-
-      {activeTab === 'apikeys' && (
-        <motion.div
-          variants={itemVariants}
-          className={`
-            p-6 rounded-2xl
-            bg-gradient-to-br from-gray-800/40 to-gray-900/40
-            border border-gray-700/50 backdrop-blur-xl
-          `}
-        >
-          <div className="text-center py-12">
-            <KeyIcon className="h-16 w-16 mx-auto text-gray-500 mb-4" />
-            <h3 className={`${theme.text.primary} text-lg font-semibold mb-2`}>
-              API Key Management
-            </h3>
-            <p className={`${theme.text.secondary} text-sm max-w-md mx-auto`}>
-              API key management features are coming soon. You will be able to create and manage API keys for programmatic access to UC-1 Pro services.
-            </p>
           </div>
         </motion.div>
       )}
