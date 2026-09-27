@@ -65,6 +65,52 @@ jobs:
       image: python:3.10-bookworm
     timeout-minutes: 15
     steps:
+      - name: Bootstrap Node 20 for checkout in the Python image
+        run: |
+          python3 - <<'PY_NODE'
+          #!/usr/bin/env python3
+          """Supply checkout's Node 20 runtime in the Python 3.10 job image.
+          Checksums: https://nodejs.org/dist/v20.20.2/SHASUMS256.txt (2026-09-17).
+          """
+          import hashlib
+          import io
+          import os
+          import pathlib
+          import platform
+          import tarfile
+          import urllib.request
+
+          RELEASE = 'v20.20.2'
+          ARCHIVES = {
+              'x86_64': ('x64', 'df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d'),
+              'aarch64': ('arm64', '73093db209e4e9e09dd7d15a47aeaab1b74833830df03efa5f942a1122c5fa71'),
+          }
+
+          def main():
+              architecture, expected = ARCHIVES[platform.machine()]
+              archive_name = f'node-{RELEASE}-linux-{architecture}'
+              with urllib.request.urlopen(f'https://nodejs.org/dist/{RELEASE}/{archive_name}.tar.xz', timeout=60) as response:
+                  archive = response.read()
+              if hashlib.sha256(archive).hexdigest() != expected:
+                  raise RuntimeError('Official Node archive checksum mismatch')
+              destination = pathlib.Path(os.environ.get('RUNNER_TEMP', '/tmp')) / 'ops-center-ci-node'
+              destination.mkdir(parents=True, exist_ok=True)
+              with tarfile.open(fileobj=io.BytesIO(archive), mode='r:xz') as bundle:
+                  # Extract only the checked Node executable, never archive paths/links.
+                  member = bundle.getmember(f'{archive_name}/bin/node')
+                  if not member.isfile():
+                      raise RuntimeError('Node executable is not a regular archive member')
+                  executable = destination / 'node'
+                  executable.write_bytes(bundle.extractfile(member).read())
+                  executable.chmod(0o755)
+              with open(os.environ['GITHUB_PATH'], 'a') as path_file:
+                  path_file.write(str(destination) + '\n')
+              print(f'Installed checksum-verified Node {RELEASE} for checkout')
+
+          if __name__ == '__main__':
+              main()
+          PY_NODE
+
       - name: Checkout
         uses: actions/checkout@v4
 

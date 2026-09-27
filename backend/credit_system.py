@@ -312,6 +312,89 @@ class CreditManager:
 
         return await self.get_balance(user_id)
 
+    async def allocate_credits_on_conn(
+        self,
+        conn: asyncpg.Connection,
+        user_id: str,
+        amount: Decimal,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
+        """
+        Grant credits on a CALLER-SUPPLIED connection so the grant participates in the
+        caller's transaction (exactly-once semantics).
+
+        This is the connection-scoped core of allocate_credits(). Unlike allocate_credits(),
+        it does NOT open its own transaction and does NOT re-read via get_balance() - the
+        caller owns the transaction boundary. It is used by the credit-purchase webhook so
+        the balance grant and the credit_purchases status flip commit atomically: if either
+        step fails, BOTH roll back and a Stripe retry can safely re-attempt.
+
+        Returns the new balance.
+        """
+        if amount <= 0:
+            raise ValueError("Allocation amount must be positive")
+
+        # Lock the user's credit row inside the caller's transaction
+        current = await conn.fetchrow(
+            "SELECT balance FROM user_credits WHERE user_id::text = $1 FOR UPDATE",
+            user_id
+        )
+
+        if not current:
+            # Ensure a credit row exists on THIS connection so the grant stays atomic
+            # (create_user_credits() would open its own transaction and break atomicity).
+            await conn.execute(
+                """
+                INSERT INTO user_credits (user_id, balance, tier, monthly_cap, monthly_reset_at)
+                VALUES ($1::uuid, 0, 'trial', 0, $2)
+                ON CONFLICT (user_id) DO NOTHING
+                """,
+                user_id, datetime.utcnow() + timedelta(days=30)
+            )
+            current_balance = Decimal("0.00")
+        else:
+            current_balance = current["balance"] or Decimal("0.00")
+
+        new_balance = current_balance + amount
+
+        # Update balance (uses actual DB column names)
+        await conn.execute(
+            """
+            UPDATE user_credits
+            SET balance = $1,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE user_id::text = $2
+            """,
+            new_balance, user_id
+        )
+
+        # Log transaction (participates in the same transaction)
+        await self._log_transaction(
+            conn, user_id, amount, new_balance,
+            "allocation", metadata={
+                "source": source,
+                **(metadata or {})
+            }
+        )
+
+        # Audit log
+        await audit_logger.log(
+            action="credit.allocate",
+            user_id=user_id,
+            resource_type="user_credits",
+            resource_id=user_id,
+            details={
+                "amount": float(amount),
+                "source": source,
+                "new_balance": float(new_balance),
+                "metadata": metadata
+            },
+            status="success"
+        )
+
+        return new_balance
+
     async def deduct_credits(
         self,
         user_id: str,

@@ -325,6 +325,7 @@ const FederationNodes = lazy(() => import('./pages/admin/FederationNodes'));
 const FederationContracts = lazy(() => import('./pages/admin/FederationContracts'));
 const NetworkVPNKeys = lazy(() => import('./pages/admin/NetworkVPNKeys'));
 const FederationTopology = lazy(() => import('./pages/admin/FederationTopology'));
+const FleetMap = lazy(() => import('./pages/admin/FleetMap'));
 const FederationServiceCatalog = lazy(() => import('./pages/admin/FederationServiceCatalog'));
 
 // Colonel AI Command System (Phase 1)
@@ -703,6 +704,7 @@ function AppRoutes() {
                   <Route path="infra/federation/nodes" element={<FederationNodes />} />
                   <Route path="infra/federation/contracts" element={<FederationContracts />} />
                   <Route path="infra/federation/topology" element={<FederationTopology />} />
+                  <Route path="infra/fleet-map" element={<FleetMap />} />
                   <Route path="infra/federation/services" element={<FederationServiceCatalog />} />
 
                   {/* Platform */}
