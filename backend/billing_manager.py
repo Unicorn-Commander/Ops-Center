@@ -115,8 +115,10 @@ def get_current_user(request: Request) -> Dict[str, Any]:
     """Get current user from request (mock for now, integrate with Authentik later)"""
     # TODO: Integrate with Authentik JWT validation
     # For now, check if admin based on header or session
-    is_admin = request.headers.get("X-Admin-Token") == os.getenv("ADMIN_TOKEN", "admin-secret")
-
+    # No default: an unset ADMIN_TOKEN must never match (the old code shipped a
+    # hardcoded fallback token). This module is not mounted by server.py today.
+    _admin_token = os.getenv("ADMIN_TOKEN")
+    is_admin = bool(_admin_token) and secrets.compare_digest(request.headers.get("X-Admin-Token") or "", _admin_token)
     return {
         "user_id": "admin" if is_admin else "user-" + secrets.token_hex(4),
         "email": "admin@unicorncommander.ai" if is_admin else "user@example.com",
