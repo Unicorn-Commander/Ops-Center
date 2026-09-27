@@ -26,6 +26,7 @@ KILL SWITCH: set `AUTH_MIDDLEWARE_ENABLED=false` and recreate the container to d
 """
 
 import logging
+from auth_manager import local_auth_enabled
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from fastapi import HTTPException
@@ -56,40 +57,57 @@ PUBLIC_EXACT = {
 }
 
 # Public path PREFIXES (startswith match)
-PUBLIC_PREFIXES = (
-    # --- auth handshake (login / logout / oauth callback) ---
+def build_public_prefixes(local_auth_is_enabled: bool) -> tuple[str, ...]:
+    """Build the startup allowlist without exposing legacy login when disabled."""
+    auth_prefixes = (
+        ("/api/v1/auth/login",) if local_auth_is_enabled else ()
+    )
+    return auth_prefixes + (
+        # --- auth handshake (logout / oauth callback) ---
+        "/api/v1/auth/logout",
+        "/api/v1/auth/callback",
+        # --- truly public surfaces ---
+        "/api/v1/public/",
+        "/api/v1/branding/",
+        "/api/v1/landing/",
+        "/api/v1/pricing/",               # public pricing calc + packages
+        "/api/v1/billing/webhooks/",      # Stripe/Lago signed webhooks
+        "/api/v1/analytics/web-vitals",   # high-frequency public web-vitals ingest
+        "/api/v1/tier-check/",
+        # --- machine-to-machine (own key/agent auth, no session cookie) ---
+        "/api/v1/federation/",
+        "/api/v1/compute/",
+        "/api/v1/inference/",
+        "/api/v1/uuda/",
+        "/api/v1/entitlements",  # token-authed cross-app entitlement endpoint (verifies its own KC Bearer)
+        "/api/v1/account/uc-api-keys/mint-via-token",  # KC-Bearer-authed key mint for native apps (P10; verifies its own KC Bearer)
+        "/api/v1/account/uc-api-keys/revoke-self",       # uc_-key-authed self-revoke at app sign-out (P10)
+        "/api/v1/metered/",               # metered compute: /report is service-key m2m;
+                                          # /embeddings & /rerank still enforce session via
+                                          # their own require_authenticated_user dependency
+        "/api/v1/internal/llm/",          # gateway local-pricing preflight: service-key (X-Internal-Key) m2m
+        "/api/v1/audio/",                 # OpenAI-compatible TTS proxy: uc_-key auth via its own get_user_id dependency
+        "/api/v1/mcp/",                   # MCP meter: uc_-key auth inside the handler
+        "/v1/",                           # OpenAI /v1 alias (rewrites to /api/v1/llm or /api/v1/audio)
+        "/api/v1/llm/",                   # API-key (Brigade/Open-WebUI/Bolt). Admin subpaths
+                                          # (usage/providers/costs/routing/...) get their own
+                                          # per-endpoint require_admin_user.
+        "/api/llmcall",                   # Bolt.diy m2m proxy
+        "/api/github-template",           # Bolt.diy m2m
+        "/api/v1/webhooks/",
+    )
+
+
+PUBLIC_PREFIXES = build_public_prefixes(
+    local_auth_enabled()
+)
+
+LEGACY_LOCAL_AUTH_PATHS = (
     "/api/v1/auth/login",
-    "/api/v1/auth/logout",
-    "/api/v1/auth/callback",
-    # --- truly public surfaces ---
-    "/api/v1/public/",
-    "/api/v1/branding/",
-    "/api/v1/landing/",
-    "/api/v1/pricing/",               # public pricing calc + packages
-    "/api/v1/billing/webhooks/",      # Stripe/Lago signed webhooks
-    "/api/v1/analytics/web-vitals",   # high-frequency public web-vitals ingest
-    "/api/v1/tier-check/",
-    # --- machine-to-machine (own key/agent auth, no session cookie) ---
-    "/api/v1/federation/",
-    "/api/v1/compute/",
-    "/api/v1/inference/",
-    "/api/v1/uuda/",
-    "/api/v1/entitlements",  # token-authed cross-app entitlement endpoint (verifies its own KC Bearer)
-    "/api/v1/account/uc-api-keys/mint-via-token",  # KC-Bearer-authed key mint for native apps (P10; verifies its own KC Bearer)
-    "/api/v1/account/uc-api-keys/revoke-self",       # uc_-key-authed self-revoke at app sign-out (P10)
-    "/api/v1/metered/",               # metered compute: /report is service-key m2m;
-                                      # /embeddings & /rerank still enforce session via
-                                      # their own require_authenticated_user dependency
-    "/api/v1/internal/llm/",          # gateway local-pricing preflight: service-key (X-Internal-Key) m2m
-    "/api/v1/audio/",                 # OpenAI-compatible TTS proxy: uc_-key auth via its own get_user_id dependency
-    "/api/v1/mcp/",                   # MCP meter: uc_-key auth inside the handler
-    "/v1/",                           # OpenAI /v1 alias (rewrites to /api/v1/llm or /api/v1/audio)
-    "/api/v1/llm/",                   # API-key (Brigade/Open-WebUI/Bolt). Admin subpaths
-                                      # (usage/providers/costs/routing/...) get their own
-                                      # per-endpoint require_admin_user.
-    "/api/llmcall",                   # Bolt.diy m2m proxy
-    "/api/github-template",           # Bolt.diy m2m
-    "/api/v1/webhooks/",
+    "/api/v1/auth/change-password",
+    "/api/v1/auth/password-policy",
+    "/api/v1/api-keys",
+    "/api/v1/sessions",
 )
 
 
@@ -115,6 +133,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         return any(path.startswith(p) for p in PUBLIC_PREFIXES)
 
     async def dispatch(self, request, call_next):
+        if not local_auth_enabled() and any(
+            request.url.path == path or request.url.path.startswith(f"{path}/")
+            for path in LEGACY_LOCAL_AUTH_PATHS
+        ):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+
         if not self.enabled:
             return await call_next(request)
 

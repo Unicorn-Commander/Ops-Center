@@ -14,8 +14,23 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field, validator
 import bcrypt
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from password_policy import validate_password
+
+logger = logging.getLogger(__name__)
+
+
+def local_auth_enabled() -> bool:
+    """Return whether the legacy local-user authentication surface is enabled."""
+    return os.getenv("LEGACY_LOCAL_AUTH_ENABLED", "false").lower() == "true"
+
+
+async def require_local_auth_enabled():
+    """Dependency for endpoints backed by the legacy local auth store."""
+    if not local_auth_enabled():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not found")
 
 class User(BaseModel):
     """User model"""
@@ -115,6 +130,7 @@ class AuthManager:
     """Manages authentication and user management"""
     
     def __init__(self):
+        self.local_auth_enabled = local_auth_enabled()
         self.base_dir = Path(os.getenv("AUTH_DATA_DIR", "/tmp/ops-center-auth"))
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir = self.base_dir
@@ -135,7 +151,7 @@ class AuthManager:
         self.api_keys = self._load_api_keys()
         self.sessions = self._load_sessions()
         
-        # Create default admin user if none exists
+        # Local auth is opt-in. Never create a local admin while it is disabled.
         self._ensure_admin_user()
     
     def _generate_secret_key(self) -> str:
@@ -198,11 +214,18 @@ class AuthManager:
     
     def _ensure_admin_user(self):
         """Ensure at least one admin user exists"""
+        if not self.local_auth_enabled:
+            return
+
         has_admin = any(user.get('role') == 'admin' for user in self.users.values())
         
         if not has_admin:
-            # Create default admin user
-            admin_password = os.getenv("ADMIN_PASSWORD", "MagicUnicorn!8-)")
+            admin_password = os.getenv("ADMIN_PASSWORD")
+            if not admin_password or len(admin_password) < 16:
+                logger.warning(
+                    "Legacy local auth is enabled but ADMIN_PASSWORD is unset or shorter than 16 characters; no admin user was created"
+                )
+                return
             admin_user = UserCreate(
                 username="ucadmin",
                 email="admin@unicorncommander.com",
@@ -211,7 +234,7 @@ class AuthManager:
                 role="admin"
             )
             self.create_user(admin_user)
-            print("Created default admin user: ucadmin")
+            logger.info("Created configured local admin user: ucadmin")
     
     def _hash_password(self, password: str) -> str:
         """Hash a password using bcrypt"""
@@ -308,6 +331,8 @@ class AuthManager:
     
     async def login(self, credentials: LoginCredentials, request_info: Dict[str, str]) -> Token:
         """Login and create access token"""
+        if not self.local_auth_enabled:
+            raise ValueError("Legacy local authentication is disabled")
         user = await self.authenticate_user(credentials)
         if not user:
             raise ValueError("Invalid username or password")
@@ -343,6 +368,8 @@ class AuthManager:
     
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Verify and decode a JWT token"""
+        if not self.local_auth_enabled:
+            return None
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             user_id = payload.get("sub")
@@ -376,7 +403,8 @@ class AuthManager:
             return None
         except jwt.PyJWTError:
             return None
-    
+
+
     def logout(self, session_id: str):
         """Logout and invalidate session"""
         if session_id in self.sessions:
