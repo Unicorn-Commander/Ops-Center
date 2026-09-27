@@ -1,0 +1,118 @@
+/* Legal documents, on the marketplace design system.
+   Tokens, fonts and both theme mechanisms come from marketplace.css, which
+   must be linked first. This file only sets prose layout. */
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--body, 'IBM Plex Sans', system-ui, sans-serif);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 68ch;              /* reading measure, not a layout width */
+  margin-inline: auto;
+  padding: var(--s-9, 56px) var(--s-5, 20px) var(--s-11, 104px);
+  display: flow-root;
+}
+
+.draft-banner {
+  background: rgb(var(--signal-warm-ch) / 0.12);
+  border-bottom: 1px solid rgb(var(--signal-warm-ch) / 0.4);
+  color: var(--signal-warm);
+  font-family: var(--mono, 'DM Mono', ui-monospace, monospace);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--s-3, 12px) var(--s-5, 20px);
+  text-align: center;
+}
+
+header { margin-block-end: var(--s-9, 56px); }
+
+h1 {
+  font-family: var(--display, 'Fraunces', Georgia, serif);
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin-block-end: var(--s-4, 16px);
+}
+
+.subtitle {
+  font-size: 1.125rem;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+  margin-block-end: var(--s-4, 16px);
+}
+
+.meta {
+  font-family: var(--mono, 'DM Mono', ui-monospace, monospace);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--s-3, 12px);
+}
+
+h2 {
+  font-family: var(--display, 'Fraunces', Georgia, serif);
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin-block: var(--s-9, 56px) var(--s-4, 16px);
+  padding-block-start: var(--s-5, 20px);
+  border-block-start: 1px solid var(--line);
+}
+header + h2 { margin-block-start: 0; border-block-start: 0; padding-block-start: 0; }
+
+.section-number {
+  font-family: var(--mono, 'DM Mono', ui-monospace, monospace);
+  font-size: 0.72em;
+  font-weight: 500;
+  color: var(--quiet);
+  margin-inline-end: 0.6em;
+  font-variant-numeric: tabular-nums;
+}
+
+p, li { color: var(--ink-soft); text-wrap: pretty; }
+p { margin-block-end: var(--s-4, 16px); }
+ul, ol { margin-block-end: var(--s-4, 16px); padding-inline-start: var(--s-6, 24px); }
+li { margin-block-end: var(--s-2, 8px); }
+strong { color: var(--ink); font-weight: 600; }
+
+.highlight {
+  background: rgb(var(--signal-ch) / 0.08);
+  border-inline-start: 2px solid var(--signal);
+  padding: var(--s-4, 16px) var(--s-5, 20px);
+  margin-block: var(--s-6, 24px);
+  border-radius: 0 4px 4px 0;
+}
+.highlight :last-child { margin-block-end: 0; }
+
+a { color: var(--signal); text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover { color: var(--ink); }
+a:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 2px; }
+
+table { width: 100%; border-collapse: collapse; margin-block-end: var(--s-5, 20px); }
+th, td { text-align: start; padding: var(--s-2, 8px) var(--s-3, 12px); border-block-end: 1px solid var(--line); }
+th { font-family: var(--mono, 'DM Mono', ui-monospace, monospace); font-size: 12px;
+     letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+.legal-back {
+  display: inline-block;
+  margin-block-end: var(--s-6, 24px);
+  font-family: var(--mono, 'DM Mono', ui-monospace, monospace);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .container { padding-block-start: var(--s-7, 32px); }
+  h2 { margin-block-start: var(--s-7, 32px); }
+}

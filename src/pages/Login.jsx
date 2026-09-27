@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -42,6 +42,41 @@ export default function Login() {
       ? `/auth/login?return_url=${encodeURIComponent(safeNext)}`
       : '/auth/login';
   };
+
+  // ---------------------------------------------------------------------------
+  // Skip the chooser: when SSO is enabled, go STRAIGHT to the Keycloak page
+  // (the purple uc-1-pro theme) instead of making every sign-in click through
+  // an interstitial. Aaron 2026-07-21: the chooser was a regression -- "how it
+  // used to be" is landing directly on the branded Keycloak login.
+  //
+  // Two deliberate escape hatches, do not remove:
+  //   * ?local=1        -- break-glass. If Keycloak is down (it was, tonight,
+  //                        when the srv981531 boot deadlock took out
+  //                        auth.unicorncommander.ai), a forced SSO redirect
+  //                        would lock admins out of the console entirely.
+  //                        /admin/login?local=1 always shows the local form.
+  //   * loop guard      -- if the SSO round-trip bounces us back here within
+  //                        15s (Keycloak up but the callback failing), we do
+  //                        NOT redirect again; we render the chooser so the
+  //                        user sees what is happening instead of looping.
+  // ---------------------------------------------------------------------------
+  const wantsLocal =
+    new URLSearchParams(window.location.search).get('local') === '1';
+  const AUTO_SSO_TS = 'oc_sso_auto_ts';
+  const [autoRedirecting, setAutoRedirecting] = useState(false);
+
+  useEffect(() => {
+    // Branding decides ssoEnabled; while it is loading the default would be
+    // "enabled", so wait rather than redirect on a value that may flip.
+    if (brandingLoading) return;
+    if (!ssoEnabled || wantsLocal || showLocalLogin) return;
+    const last = Number(sessionStorage.getItem(AUTO_SSO_TS) || 0);
+    if (Date.now() - last < 15000) return; // just bounced back -- show UI
+    sessionStorage.setItem(AUTO_SSO_TS, String(Date.now()));
+    setAutoRedirecting(true);
+    handleSSOLogin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandingLoading, ssoEnabled, wantsLocal, showLocalLogin]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -124,8 +159,24 @@ export default function Login() {
           </motion.div>
         )}
 
-        {/* SSO Button */}
-        {ssoEnabled && !showLocalLogin && (
+        {/* Redirecting straight to Keycloak -- minimal surface, with a
+            manual link in case the browser blocked the navigation. */}
+        {autoRedirecting && (
+          <div className="text-center space-y-4 py-4">
+            <p className="text-purple-200/80">
+              Taking you to {upstreamName} sign-in&hellip;
+            </p>
+            <button
+              onClick={handleSSOLogin}
+              className="text-sm text-purple-300 hover:text-purple-200 underline transition-colors"
+            >
+              Continue if you are not redirected
+            </button>
+          </div>
+        )}
+
+        {/* SSO Button (only reachable on SSO bounce-back or ?local=1) */}
+        {!autoRedirecting && ssoEnabled && !showLocalLogin && (
           <div className="space-y-4">
             <button
               onClick={handleSSOLogin}
@@ -170,13 +221,13 @@ export default function Login() {
           </div>
         )}
 
-        {/* Local Login Form */}
-        {(!ssoEnabled || showLocalLogin) && (
+        {/* Local Login Form (always reachable via ?local=1) */}
+        {!autoRedirecting && (!ssoEnabled || showLocalLogin || wantsLocal) && (
           <form onSubmit={handleSubmit} className="space-y-6">
-            {showLocalLogin && (
+            {(showLocalLogin || (ssoEnabled && wantsLocal)) && (
               <button
                 type="button"
-                onClick={() => setShowLocalLogin(false)}
+                onClick={handleSSOLogin}
                 className="text-sm text-purple-300 hover:text-purple-200 transition-colors"
               >
                 &larr; Back to SSO login

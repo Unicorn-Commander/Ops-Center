@@ -29,6 +29,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 import redis
 
+from catalog_ordering import model_order_by
+
 logger = logging.getLogger(__name__)
 
 # Router
@@ -577,7 +579,7 @@ async def delete_provider(provider_id: str):
 async def list_models(
     provider_id: Optional[str] = None,
     enabled_only: bool = False,
-    sort_by: str = "cost",  # cost, latency, name, context, popularity
+    sort_by: str = "representative",  # representative, cost, latency, name, context, popularity
     search: Optional[str] = None,
     min_cost: Optional[float] = None,
     max_cost: Optional[float] = None,
@@ -592,7 +594,8 @@ async def list_models(
     Query Parameters:
         provider_id: Filter by provider UUID
         enabled_only: Only return enabled models (default: false)
-        sort_by: Sort by cost, latency, name, context, or popularity (default: cost)
+        sort_by: Sort by representative provider spread, cost, latency, name,
+            context, or popularity (default: representative)
         search: Search model names (case-insensitive)
         min_cost: Minimum cost per 1M tokens (input + output average)
         max_cost: Maximum cost per 1M tokens (input + output average)
@@ -668,18 +671,11 @@ async def list_models(
             query += " AND m.context_length <= %s"
             params.append(max_context)
 
-        # Sort
-        if sort_by == "cost":
-            query += " ORDER BY avg_cost ASC"
-        elif sort_by == "latency":
-            query += " ORDER BY m.avg_latency_ms ASC NULLS LAST"
-        elif sort_by == "context":
-            query += " ORDER BY m.context_length DESC"
-        elif sort_by == "popularity":
-            # Sort by name for now (could add usage stats later)
-            query += " ORDER BY m.name"
-        else:  # name
-            query += " ORDER BY m.name"
+        # The public default must not let one large provider consume the first
+        # page. Keep explicit sort modes intact, but surface our local catalog
+        # first, direct/non-OpenRouter providers second, and OpenRouter last.
+        # Deterministic tie-breakers keep offset pagination stable.
+        query += model_order_by(sort_by)
 
         # Pagination
         query += " LIMIT %s OFFSET %s"

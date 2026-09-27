@@ -470,6 +470,9 @@ class SystemKeyManager:
                         {'type': 'mistral', 'name': 'Mistral'},
                         {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
                         {'type': 'huggingface', 'name': 'HuggingFace'},
+                        {'type': 'deepseek', 'name': 'DeepSeek'},
+                        {'type': 'siliconflow', 'name': 'SiliconFlow'},
+                        {'type': 'dashscope', 'name': 'DashScope'},
                         {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
                         {'type': 'custom', 'name': 'Custom Provider'}
                     ]
@@ -486,15 +489,31 @@ class SystemKeyManager:
                     if not provider_type:
                         raise HTTPException(status_code=400, detail="Invalid provider ID")
 
+                    BASE_URLS = {
+                        'openrouter': 'https://openrouter.ai/api/v1',
+                        'openai': 'https://api.openai.com/v1',
+                        'anthropic': 'https://api.anthropic.com/v1',
+                        'google': 'https://generativelanguage.googleapis.com/v1beta',
+                        'groq': 'https://api.groq.com/openai/v1',
+                        'together': 'https://api.together.xyz/v1',
+                        'mistral': 'https://api.mistral.ai/v1',
+                        'deepseek': 'https://api.deepseek.com/v1',
+                        'siliconflow': 'https://api.siliconflow.com/v1',
+                        'dashscope': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+                        'ollama-cloud': 'https://ollama.com/api',
+                    }
+                    api_base = BASE_URLS.get(provider_type)
+
                     # Insert or update provider
                     await conn.execute("""
-                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, created_at, updated_at, api_key_updated_at)
-                        VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW(), NOW())
+                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, priority, api_base_url, created_at, updated_at, api_key_updated_at)
+                        VALUES ($1, $2, $3, $4, TRUE, 100, $5, NOW(), NOW(), NOW())
                         ON CONFLICT (name) DO UPDATE
                         SET api_key_encrypted = $3,
                             api_key_source = $4,
-                            api_key_updated_at = NOW()
-                    """, provider_name, provider_type, encrypted, source)
+                            api_key_updated_at = NOW(),
+                            api_base_url = COALESCE(llm_providers.api_base_url, $5)
+                    """, provider_name, provider_type, encrypted, source, api_base)
                     logger.info(f"Created/updated provider {provider_name} ({provider_type}) with system key")
                 else:
                     # Regular UUID - update existing provider
@@ -586,6 +605,9 @@ class SystemKeyManager:
                 {'type': 'mistral', 'name': 'Mistral'},
                 {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
                 {'type': 'huggingface', 'name': 'HuggingFace'},
+                {'type': 'deepseek', 'name': 'DeepSeek'},
+                {'type': 'siliconflow', 'name': 'SiliconFlow'},
+                {'type': 'dashscope', 'name': 'DashScope'},
                 {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
                 {'type': 'custom', 'name': 'Custom Provider'}
             ]
@@ -904,9 +926,10 @@ async def chat_completions(
         # Calculate estimated cost (ASYNC NOW)
         estimated_cost = await credit_system.calculate_cost(
             tokens_used=estimated_tokens,
-            model=request.model or "balanced",
+            model=request.model or "unknown",
             power_level=power_level,
-            user_tier=user_tier
+            user_tier=user_tier,
+            request_model=request.model,
         )
 
         # Check credits BEFORE making request (skip if using BYOK or credit-exempt tier)
@@ -999,7 +1022,7 @@ async def chat_completions(
         # from the model string — real local names lack ollama/vllm prefixes.
         is_local_provider = False
         # Local-pricing state (set by the gate after the provider is resolved):
-        local_rate_per_1k = None      # metered-mode per-1k local rate (None = free)
+        use_catalog_local_rates = False  # metered-mode llm_models split-rate path
         record_local_usage = False    # whether to add served tokens to the monthly local quota
 
         # Federated local models: if a trusted federation peer publishes the
@@ -1156,7 +1179,7 @@ async def chat_completions(
 
                 # --- Per-tier local-pricing gate (inert unless LOCAL_PRICING_ENABLED) ---
                 # Runs only for LOCAL providers. resolve_local_pricing decides:
-                #   metered  -> keep model, price local at local_rate_per_1k;
+                #   metered  -> keep model, price via catalog split rates;
                 #   overflow -> re-resolve provider for a PAID model (bills as cloud);
                 #   deny     -> 429; otherwise serve free (today's behavior).
                 # Fail-open: any error serves the request unchanged.
@@ -1199,8 +1222,8 @@ async def chat_completions(
                                 )
                             else:
                                 logger.warning(f"[local_pricing] overflow model '{overflow_model}' not found; serving local")
-                        elif _dec.get("meter") and _dec.get("local_rate_per_1k") is not None:
-                            local_rate_per_1k = _dec["local_rate_per_1k"]
+                        elif _dec.get("meter"):
+                            use_catalog_local_rates = bool(_dec.get("use_catalog_rates"))
                         # Record served tokens against the monthly local quota only when
                         # the served provider is (still) local.
                         record_local_usage = bool(org_id) and is_local_provider
@@ -1248,7 +1271,13 @@ async def chat_completions(
                 headers = {
                     "Content-Type": "application/json"
                 }
-                logger.info(f"Using local provider: {provider_name} at {base_url} (no API key required)")
+                # A local GATEWAY (e.g. uchub-litellm fronting our own GPUs)
+                # still authenticates: a key stored on a local provider row is
+                # sent as Bearer while the request keeps local ($0) pricing.
+                local_gateway_key = provider.get('api_key_encrypted') if provider is not None else None
+                if local_gateway_key:
+                    headers["Authorization"] = f"Bearer {local_gateway_key}"
+                logger.info(f"Using local provider: {provider_name} at {base_url}" + (" (authenticated gateway)" if local_gateway_key else " (no API key required)"))
             else:
                 headers = {
                     "Authorization": f"Bearer {api_key}",
@@ -1258,6 +1287,48 @@ async def chat_completions(
                 }
 
         # Call provider API directly
+        # OpenRouter accepts UC metadata; direct OpenAI-compatible providers (OpenAI,
+        # DeepSeek, SiliconFlow, etc.) reject non-string metadata values. Strip for them.
+        provider_type_for_meta = ''
+        try:
+            if not using_byok and provider is not None:
+                provider_type_for_meta = (provider.get('type') or '').lower()
+                provider_name_for_meta = (provider.get('name') or '').lower()
+            else:
+                provider_name_for_meta = (detected_provider or '').lower()
+                provider_type_for_meta = provider_name_for_meta
+        except Exception:
+            provider_name_for_meta = ''
+        is_openrouterish = (
+            'openrouter' in provider_type_for_meta
+            or 'openrouter' in provider_name_for_meta
+            or 'openrouter.ai' in (base_url or '')
+        )
+        if not is_openrouterish:
+            proxy_request.pop('metadata', None)
+            proxy_request.pop('user', None)
+            # Keep model id as the provider expects (do not force OpenRouter org/model form)
+            if request.model:
+                proxy_request['model'] = request.model
+
+        # Anthropic Messages API uses x-api-key, not Bearer.
+        if ('anthropic' in provider_type_for_meta) or ('anthropic' in provider_name_for_meta) or ('api.anthropic.com' in (base_url or '')):
+            api_key_hdr = None
+            auth = headers.get('Authorization') or ''
+            if auth.lower().startswith('bearer '):
+                api_key_hdr = auth.split(' ', 1)[1]
+            if api_key_hdr:
+                headers = {
+                    'x-api-key': api_key_hdr,
+                    'anthropic-version': '2023-06-01',
+                    'content-type': 'application/json',
+                }
+                # Anthropic messages endpoint is /v1/messages not /chat/completions
+                # Keep chat/completions path only if base already points at a compatible proxy.
+                if base_url.rstrip('/').endswith('/v1') and 'anthropic.com' in base_url:
+                    # Use messages API path by rewriting base_url consumer below via flag
+                    pass
+
         # Handle streaming vs non-streaming requests differently
         if request.stream:
             # STREAMING PATH: Return Server-Sent Events (SSE)
@@ -1273,6 +1344,8 @@ async def chat_completions(
                 """
                 import asyncio  # Import here for sleep(0) flush
                 total_tokens = 0
+                stream_prompt_tokens = 0
+                stream_completion_tokens = 0
                 provider_used = request.model or "unknown"
                 chunks_received = 0
 
@@ -1281,7 +1354,7 @@ async def chat_completions(
                 await asyncio.sleep(0)
 
                 try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with httpx.AsyncClient(timeout=900.0) as client:
                         async with client.stream(
                             'POST',
                             f"{base_url}/chat/completions",
@@ -1326,7 +1399,9 @@ async def chat_completions(
                                         if 'usage' in chunk:
                                             usage = chunk['usage']
                                             total_tokens = usage.get('total_tokens', 0)
-                                            logger.info(f"Received usage data: {total_tokens} tokens")
+                                            stream_prompt_tokens = int(usage.get('prompt_tokens') or 0)
+                                            stream_completion_tokens = int(usage.get('completion_tokens') or 0)
+                                            logger.info(f"Received usage data: {total_tokens} tokens (in={stream_prompt_tokens} out={stream_completion_tokens})")
 
                                         # Extract model info if present
                                         if 'model' in chunk and chunk['model']:
@@ -1356,18 +1431,38 @@ async def chat_completions(
                             power_level=power_level,
                             user_tier=user_tier,
                             is_local=is_local_provider,
-                            local_rate_per_1k=local_rate_per_1k
+                            use_catalog_local_rates=use_catalog_local_rates,
+                            prompt_tokens=stream_prompt_tokens or None,
+                            completion_tokens=stream_completion_tokens or None,
+                            request_model=request.model,
+                        )
+                        # Belt-and-suspenders: free variants must never bill, even if
+                        # calculate_cost is called with a stripped provider echo.
+                        if credit_system.is_free_model(provider_used, request.model):
+                            actual_cost = 0.0
+
+                        ledger_provider, ledger_model = credit_system.ledger_attribution(
+                            provider_used,
+                            request.model,
+                            provider_name,
+                            is_local_provider,
                         )
 
-                        # Deduct credits
-                        if org_id:
+                        # Deduct credits only when there is a real charge
+                        # (free/local/zero-cost must not write ledger noise).
+                        if actual_cost <= 0:
+                            logger.info(
+                                f"Streaming zero-cost settle user={user_id} model={request.model} "
+                                f"provider_used={provider_used} tokens={tokens_for_billing}"
+                            )
+                        elif org_id:
                             # Organization billing
                             success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
                                 user_id=user_id,
                                 credits_used=actual_cost,
                                 service_name=provider_used,
-                                provider=provider_used,
-                                model=request.model,
+                                provider=ledger_provider,
+                                model=ledger_model,
                                 tokens_used=tokens_for_billing,
                                 power_level=power_level,
                                 task_type=request.task_type,
@@ -1393,8 +1488,8 @@ async def chat_completions(
                                 user_id=user_id,
                                 amount=actual_cost,
                                 metadata={
-                                    'provider': provider_used,
-                                    'model': provider_used,
+                                    'provider': ledger_provider,
+                                    'model': ledger_model,
                                     'tokens_used': tokens_for_billing,
                                     'power_level': power_level,
                                     'task_type': request.task_type,
@@ -1425,7 +1520,10 @@ async def chat_completions(
                                 metadata={
                                     'power_level': power_level,
                                     'task_type': request.task_type,
-                                    'streaming': True
+                                    'streaming': True,
+                                    'provider': ledger_provider,
+                                    'requested_model': ledger_model,
+                                    'is_local': is_local_provider,
                                 }
                             )
                         except Exception as usage_error:
@@ -1457,7 +1555,7 @@ async def chat_completions(
 
         else:
             # NON-STREAMING PATH: Return complete JSON response
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=900.0) as client:
                 response = await client.post(
                     f"{base_url}/chat/completions",
                     json=proxy_request,
@@ -1491,16 +1589,31 @@ async def chat_completions(
         # Extract usage information (non-streaming only)
         usage = response_data.get('usage', {})
         tokens_used = usage.get('total_tokens', estimated_tokens)
+        prompt_tokens = usage.get('prompt_tokens')
+        completion_tokens = usage.get('completion_tokens')
         provider_used = response_data.get('model', 'unknown')
 
-        # Calculate actual cost (ASYNC NOW)
+        # Calculate actual cost (ASYNC NOW) — per-model input/output rates
         actual_cost = await credit_system.calculate_cost(
             tokens_used=tokens_used,
             model=provider_used,
             power_level=power_level,
             user_tier=user_tier,
             is_local=is_local_provider,
-            local_rate_per_1k=local_rate_per_1k
+            use_catalog_local_rates=use_catalog_local_rates,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            request_model=request.model,
+        )
+        # Belt-and-suspenders free guard (provider may echo without :free)
+        if credit_system.is_free_model(provider_used, request.model):
+            actual_cost = 0.0
+
+        ledger_provider, ledger_model = credit_system.ledger_attribution(
+            provider_used,
+            request.model,
+            provider_name,
+            is_local_provider,
         )
 
         # Debit credits (skip if using BYOK - user pays provider directly)
@@ -1532,8 +1645,8 @@ async def chat_completions(
                     user_id=user_id,
                     credits_used=actual_cost,
                     service_name=provider_used,
-                    provider=provider_used,
-                    model=request.model,
+                    provider=ledger_provider,
+                    model=ledger_model,
                     tokens_used=tokens_used,
                     power_level=power_level,
                     task_type=request.task_type,
@@ -1554,8 +1667,8 @@ async def chat_completions(
                     user_id=user_id,
                     amount=actual_cost,
                     metadata={
-                        'provider': provider_used,
-                        'model': provider_used,
+                        'provider': ledger_provider,
+                        'model': ledger_model,
                         'tokens_used': tokens_used,
                         'power_level': power_level,
                         'task_type': request.task_type,
@@ -1596,7 +1709,9 @@ async def chat_completions(
                     'power_level': power_level,
                     'task_type': request.task_type,
                     'privacy_required': request.privacy_required,
-                    'provider': provider_used,
+                    'provider': ledger_provider,
+                    'requested_model': ledger_model,
+                    'is_local': is_local_provider,
                     'transaction_id': transaction_id
                 }
             )
@@ -1607,6 +1722,9 @@ async def chat_completions(
         # Add custom headers to response
         response_data['_metadata'] = {
             'provider_used': provider_used,
+            'catalog_provider': ledger_provider,
+            'requested_model': ledger_model,
+            'is_local': is_local_provider,
             'cost_incurred': actual_cost,
             'credits_remaining': new_balance,
             'transaction_id': transaction_id,
@@ -2254,6 +2372,32 @@ async def get_credits(
 
     except Exception as e:
         logger.error(f"Error getting credits: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve credits")
+
+
+@router.get("/credits/me", response_model=CreditResponse)
+async def get_credits_me(
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """Credit balance for the authenticated caller (uc_ API key or JWT).
+
+    Unshadowed alias of GET /credits: litellm_routing_api registers a bare
+    /credits (query-param user_id, different table) on the same prefix BEFORE
+    this router, so key-authed clients (e.g. Majiks DJ sign-in) use this path.
+    (P10, 2026-07-11)
+    """
+    try:
+        balance = await credit_system.get_user_credits(user_id)
+        tier = await credit_system.get_user_tier(user_id)
+        return {
+            "user_id": user_id,
+            "credits_remaining": balance,
+            "tier": tier,
+            "monthly_cap": None
+        }
+    except Exception as e:
+        logger.error(f"Error getting credits (me): {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve credits")
 
 
@@ -3353,6 +3497,72 @@ async def test_provider_api_key(provider: str, api_key: str) -> Dict:
                 else:
                     return {'success': False, 'message': f'API error: {response.status_code}'}
 
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('deepseek',):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.deepseek.com/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid DeepSeek key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('siliconflow', 'silicon flow'):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.siliconflow.cn/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', data if isinstance(data, list) else []))
+                    return {
+                        'success': True,
+                        'message': f'Valid SiliconFlow key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('dashscope',):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid DashScope key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
         except Exception as e:
             return {'success': False, 'message': f'Test failed: {str(e)}'}
 

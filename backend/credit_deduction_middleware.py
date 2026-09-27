@@ -447,8 +447,16 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
             try:
                 response_data = json.loads(body.decode())
             except (json.JSONDecodeError, UnicodeDecodeError):
-                # Non-JSON response - skip middleware credit tracking
+                # Non-JSON response - skip middleware credit tracking.
+                # The body iterator was already consumed above; restore it or the
+                # client receives an EMPTY 200 body. Hits every gzip-encoded response
+                # (GZipMiddleware runs inner to this one and Traefik/Go clients send
+                # Accept-Encoding: gzip), which blanked all non-stream LLM responses
+                # through the public edge. (P10 fix 2026-07-11)
                 logger.debug("Non-JSON response detected, skipping middleware credit extraction")
+                async def _passthrough_body():
+                    yield body
+                response.body_iterator = _passthrough_body()
                 return None
 
             # The endpoint handler is the authoritative debit point and stamps
