@@ -25,6 +25,7 @@ gateway traffic. Inert in practice until LOCAL_PRICING_ENABLED is turned on
 (resolve_local_pricing passes through when disabled).
 """
 
+import hmac
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -53,7 +54,7 @@ LOCAL_GATEWAY_MODELS = set(
 
 def _check_key(request: Request) -> None:
     key = request.headers.get("X-Internal-Key", "")
-    if not INTERNAL_LLM_KEY or key != INTERNAL_LLM_KEY:
+    if not INTERNAL_LLM_KEY or not hmac.compare_digest(key.encode('utf-8'), INTERNAL_LLM_KEY.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid or missing internal service key")
 
 

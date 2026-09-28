@@ -28,6 +28,7 @@ Register the Lago billable metrics once with
 Created: 2026-06-18
 """
 
+import hmac
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -183,7 +184,7 @@ async def report_usage(report: MeterReport, request: Request):
     (e.g. STT/TTS on the voice box). Authenticated with the metering service key.
     """
     key = request.headers.get("X-Metering-Key", "")
-    if not METERING_SERVICE_KEY or key != METERING_SERVICE_KEY:
+    if not METERING_SERVICE_KEY or not hmac.compare_digest(key.encode('utf-8'), METERING_SERVICE_KEY.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid or missing metering service key")
 
     st = report.service_type.strip().lower()

@@ -40,6 +40,7 @@ if '/app' not in sys.path:
 
 from org_credit_integration import get_org_credit_integration
 from litellm_credit_system import CreditSystem
+from service_keys import match_service_key, resolve_principal, ServiceKeyUserContextForbidden
 
 logger = logging.getLogger(__name__)
 
@@ -243,80 +244,33 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                     return None
 
             if auth_header.startswith('Bearer sk-'):
-                # Service key authentication - extract service name
-                token = auth_header[7:]  # Remove "Bearer "
-
-                # Known service keys mapping
-                service_keys = {
-                    'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
-                    'sk-presenton-service-key-2025': 'presenton-service',
-                    'sk-brigade-service-key-2025': 'brigade-service',
-                    'sk-centerdeep-service-key-2025': 'centerdeep-service',
-                    'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
-                    'sk-open-webui-service-key-2026': 'open-webui-service',
-                    'sk-colonel-service-key-2026': 'colonel-service',
-                    'sk-majiks-service-key-2025': 'majiks-service'
-                }
-
-                # Map service names to organization UUIDs (matches litellm_api.py)
-                service_org_ids = {
-                    'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',
-                    'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',
-                    'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
-                    'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',
-                    'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',
-                    'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
-                    'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',
-                    'majiks-service': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-                }
-
-                # Internal services exempt from billing
-                # All platform-internal service accounts run on the org's own
-                # 'internal' tier when called without an X-User-ID context;
-                # user-context calls (X-User-ID set) bill the user's tier.
-                internal_services = {
-                    'colonel-service',
-                    'brigade-service',
-                    'majiks-service',
-                    'centerdeep-service',
-                    'open-webui-service',
-                    'bolt-diy-service',
-                    'presenton-service',
-                    'partnerpulse-service',
-                }
-
-                service_name = service_keys.get(token)
-                if service_name:
-                    tier = "internal" if service_name in internal_services else "professional"
-                    if x_user_id:
-                        # Service key with user context - return user data.
-                        # _app carries the calling UC app so the per-(app,model)
-                        # included-vs-metered policy can apply (see dispatch).
-                        logger.info(f"Service key request with user context: {x_user_id}")
-                        return {
-                            "user_id": x_user_id,
-                            "subscription_tier": tier,
-                            "_app": service_name,
-                        }
-                    else:
-                        # Service key without user context - use org-prefixed ID for billing
-                        service_org_id = service_org_ids.get(service_name)
-                        if service_org_id:
-                            org_prefixed_id = f"org_{service_org_id}"
-                            logger.info(f"Service key request using org credits: {org_prefixed_id}")
-                            return {
-                                "user_id": org_prefixed_id,
-                                "subscription_tier": tier,
-                                "is_service_account": True,
-                                "_app": service_name,
-                            }
-                        else:
-                            logger.error(f"Service org ID not configured for: {service_name}")
-                            return None
-                else:
-                    # Unknown service key - let endpoint handle authentication
-                    logger.warning(f"Unknown service key in credit middleware: {token[:20]}...")
+                token = auth_header[7:]
+                match = match_service_key(token)
+                if match is None:
+                    # Never log any part of a presented key.
+                    logger.warning(f"Unknown or disabled service key in credit middleware (length {len(token)})")
                     return None
+                # Every configured internal service is on the internal tier (unchanged).
+                tier = 'internal'
+                try:
+                    principal, is_service_account = resolve_principal(match, x_user_id)
+                except ServiceKeyUserContextForbidden:
+                    # get_user_id refuses this request with 403; nothing to bill here.
+                    logger.warning(f"Service {match.service} sent X-User-ID but may not act on behalf of a user")
+                    return None
+                if principal is None:
+                    logger.error(f"Service org ID not configured for: {match.service}")
+                    return None
+                if is_service_account:
+                    logger.info(f"Service key request using org credits: {principal}")
+                    return {
+                        'user_id': principal,
+                        'subscription_tier': tier,
+                        'is_service_account': True,
+                        '_app': match.service,
+                    }
+                logger.info(f"Service key request with user context: {principal}")
+                return {'user_id': principal, 'subscription_tier': tier, '_app': match.service}
 
             # Otherwise, try to get user from session cookie
             from redis_session import RedisSessionManager

@@ -159,14 +159,13 @@ CREATE TRIGGER trigger_service_api_keys_updated_at
 -- Step 5: Insert default service keys
 -- ============================================================================
 -- NOTE: These use placeholder bcrypt hashes. The actual keys are:
--- - brigade: sk-brigade-service-key-2025
--- - bolt-diy: sk-bolt-diy-service-key-2025
--- - presenton: sk-presenton-service-key-2025
--- - centerdeep: sk-centerdeep-service-key-2025
--- - partnerpulse: sk-partnerpulse-service-key-2025
+-- NOTE: no service keys are stored in this file. Generate each key on the host of the
+-- service that uses it and give Ops-Center only its SHA-256, via
+-- OPS_CENTER_SERVICE_KEY_HASHES (see backend/service_keys.py). The rows below are
+-- inert placeholders: their api_key_hash is not a bcrypt hash and can never verify.
 --
 -- The bcrypt hashes below are generated for these exact keys.
--- In production, use: SELECT crypt('sk-brigade-service-key-2025', gen_salt('bf'));
+-- In production, compute the bcrypt hash out of band; never commit a key.
 --
 -- IMPORTANT: org_id values must match the EXISTING organization UUIDs in the database.
 -- These are the UUIDs from litellm_api.py service_org_ids mapping:
@@ -199,8 +198,8 @@ VALUES
     (
         'brigade',
         'Unicorn Brigade',
-        crypt('sk-brigade-service-key-2025', gen_salt('bf', 12)),
-        'sk-brigade-service-...',
+        '!disabled-placeholder',  -- not a bcrypt hash: can never verify
+        '(unset)',
         NULL,  -- Will be populated when key is rotated
         'e9b40f6b-b683-4bcf-b462-9fd526cfbb37'::uuid,
         '["llm:chat", "llm:embeddings"]'::jsonb,
@@ -214,8 +213,8 @@ VALUES
     (
         'bolt-diy',
         'Bolt.diy',
-        crypt('sk-bolt-diy-service-key-2025', gen_salt('bf', 12)),
-        'sk-bolt-diy-service-...',
+        '!disabled-placeholder',  -- not a bcrypt hash: can never verify
+        '(unset)',
         NULL,
         '3766e9ee-7cc1-472f-92ae-afec687f0d74'::uuid,
         '["llm:chat", "llm:image"]'::jsonb,
@@ -229,8 +228,8 @@ VALUES
     (
         'presenton',
         'Presenton',
-        crypt('sk-presenton-service-key-2025', gen_salt('bf', 12)),
-        'sk-presenton-service-...',
+        '!disabled-placeholder',  -- not a bcrypt hash: can never verify
+        '(unset)',
         NULL,
         '13587747-66e6-43df-b21d-4411c7373465'::uuid,
         '["llm:chat", "llm:image"]'::jsonb,
@@ -244,8 +243,8 @@ VALUES
     (
         'centerdeep',
         'Center-Deep Pro',
-        crypt('sk-centerdeep-service-key-2025', gen_salt('bf', 12)),
-        'sk-centerdeep-service-...',
+        '!disabled-placeholder',  -- not a bcrypt hash: can never verify
+        '(unset)',
         NULL,
         '91d3b68e-e4c4-457e-80ce-de6997243c34'::uuid,
         '["llm:chat", "llm:embeddings"]'::jsonb,
@@ -259,8 +258,8 @@ VALUES
     (
         'partnerpulse',
         'PartnerPulse',
-        crypt('sk-partnerpulse-service-key-2025', gen_salt('bf', 12)),
-        'sk-partnerpulse-service-...',
+        '!disabled-placeholder',  -- not a bcrypt hash: can never verify
+        '(unset)',
         NULL,
         '8f5bf9a9-2e7c-4465-93d8-97f18bdac098'::uuid,
         '["llm:chat"]'::jsonb,
@@ -432,7 +431,7 @@ COMMIT;
 -- ============================================================================
 --
 -- 1. Verify a service API key:
---    SELECT * FROM verify_service_api_key('sk-brigade-service-key-2025', 'llm:chat');
+--    SELECT * FROM verify_service_api_key('<key>', 'llm:chat');
 --
 -- 2. Check service key status:
 --    SELECT * FROM service_api_keys_status;
