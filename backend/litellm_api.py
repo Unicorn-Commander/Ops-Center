@@ -38,7 +38,13 @@ from get_credential import get_credential
 
 # Import organizational credit integration
 from org_credit_integration import get_org_credit_integration
-from billing_settlement import estimate_chat_tokens, settle_or_queue, settlement_failure_mode
+from billing_settlement import (
+    estimate_chat_tokens,
+    estimate_prompt_tokens,
+    settle_or_queue,
+    settlement_failure_mode,
+    start_settlement,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -923,12 +929,17 @@ async def chat_completions(
                 user_byok_key = user_keys[detected_provider]
                 logger.info(f"User {user_id} has {detected_provider} BYOK")
 
-        # Estimate tokens for pre-check (rough estimate)
-        estimated_tokens = estimate_chat_tokens(request.messages, request.max_tokens)
+        # Rough prompt estimate. Billing fallbacks (no usage from the provider) and
+        # the local-pricing quota gate keep using this prompt-only figure.
+        estimated_tokens = estimate_prompt_tokens(request.messages)
+        # The 402 door check alone also reserves the completion (max_tokens, else
+        # BILLING_DEFAULT_COMPLETION_TOKENS), so a caller cannot start a call it
+        # cannot pay for.
+        door_estimated_tokens = estimate_chat_tokens(request.messages, request.max_tokens)
 
-        # Calculate estimated cost (ASYNC NOW)
+        # Calculate estimated cost for the door check (ASYNC NOW)
         estimated_cost = await credit_system.calculate_cost(
-            tokens_used=estimated_tokens,
+            tokens_used=door_estimated_tokens,
             model=request.model or "unknown",
             power_level=power_level,
             user_tier=user_tier,
@@ -1166,7 +1177,10 @@ async def chat_completions(
                 # Get provider config (handle both dict and JSON string)
                 provider_db_config = provider['config'] or {}
                 if isinstance(provider_db_config, str):
-                    import json
+                    # Module-level json. A local `import json` here made `json` a
+                    # local of chat_completions, unbound on the BYOK path and for a
+                    # provider with NULL config, so stream_generator died with
+                    # NameError on its first json.loads.
                     provider_db_config = json.loads(provider_db_config)
 
                 # Use api_base_url from database if available, otherwise check config, fallback to openrouter
@@ -1351,6 +1365,140 @@ async def chat_completions(
                 stream_completion_tokens = 0
                 provider_used = request.model or "unknown"
                 chunks_received = 0
+                # Settlement bookkeeping. Once the provider has finished, the charge
+                # must be written even if the client goes away: Starlette cancels this
+                # generator on a client disconnect, and a cancelled await in the middle
+                # of the deduction would drop the charge without queueing it. So the
+                # settlement runs as its own task (billing_settlement.start_settlement),
+                # awaited through asyncio.shield, and is started from `finally` when the
+                # generator is torn down between the end of the stream and settlement.
+                provider_completed = False
+                settlement_task = None
+
+                async def settle_streamed_usage():
+                    # After streaming completes, deduct credits
+                    if not (not using_byok and not is_credit_exempt(user_tier) and (user_tier != 'free' or total_tokens > 0)):
+                        return
+                    # Use actual tokens if available, otherwise estimate
+                    tokens_for_billing = total_tokens if total_tokens > 0 else estimated_tokens
+
+                    # Calculate actual cost (ASYNC NOW)
+                    actual_cost = await credit_system.calculate_cost(
+                        tokens_used=tokens_for_billing,
+                        model=provider_used,
+                        power_level=power_level,
+                        user_tier=user_tier,
+                        is_local=is_local_provider,
+                        use_catalog_local_rates=use_catalog_local_rates,
+                        prompt_tokens=stream_prompt_tokens or None,
+                        completion_tokens=stream_completion_tokens or None,
+                        request_model=request.model,
+                    )
+                    # Belt-and-suspenders: free variants must never bill, even if
+                    # calculate_cost is called with a stripped provider echo.
+                    if credit_system.is_free_model(provider_used, request.model):
+                        actual_cost = 0.0
+
+                    ledger_provider, ledger_model = credit_system.ledger_attribution(
+                        provider_used,
+                        request.model,
+                        provider_name,
+                        is_local_provider,
+                    )
+
+                    # Deduct credits only when there is a real charge
+                    # (free/local/zero-cost must not write ledger noise).
+                    if actual_cost <= 0:
+                        logger.info(
+                            f"Streaming zero-cost settle user={user_id} model={request.model} "
+                            f"provider_used={provider_used} tokens={tokens_for_billing}"
+                        )
+                    elif org_id:
+                        # Organization billing
+                        settlement = await settle_or_queue(
+                            pool=getattr(credit_system, "db_pool", None),
+                            settle=lambda: get_org_credit_integration().deduct_org_credits(
+                                user_id=user_id, credits_used=actual_cost, service_name=provider_used,
+                                provider=ledger_provider, model=ledger_model, tokens_used=tokens_for_billing,
+                                power_level=power_level, task_type=request.task_type,
+                                request_id=request_id, org_id=org_id,
+                            ),
+                            record={
+                                "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                                "amount_credits": actual_cost, "provider": ledger_provider,
+                                "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
+                                "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True,
+                                         "service_name": provider_used},
+                            },
+                        )
+                        if settlement and settlement[0]:
+                            success, used_org_id, remaining_credits = settlement
+                            logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
+                        elif settlement_failure_mode() == "legacy":
+                            # The body has already been streamed to the client, so we
+                            # cannot fail closed here the way the non-streaming twin
+                            # does. Log loudly instead: this branch used to be absent
+                            # entirely, so a broken deduction leaked with NO signal.
+                            logger.error(
+                                "UNBILLED STREAMING REQUEST: org credit deduction failed "
+                                f"for user={user_id} org={org_id} model={request.model} "
+                                f"cost={actual_cost:.6f} tokens={tokens_for_billing}; "
+                                "response already delivered, reconcile manually"
+                            )
+                    else:
+                        # Individual billing
+                        settlement = await settle_or_queue(
+                            pool=getattr(credit_system, "db_pool", None),
+                            settle=lambda: credit_system.debit_credits(
+                                user_id=user_id, amount=actual_cost, metadata={
+                                'provider': ledger_provider,
+                                'model': ledger_model,
+                                'tokens_used': tokens_for_billing,
+                                'power_level': power_level,
+                                'task_type': request.task_type,
+                                'cost': actual_cost,
+                                'streaming': True, 'request_id': request_id, 'org_id': org_id,
+                            }),
+                            result_ok=lambda _result: True,
+                            record={
+                                "request_id": request_id, "user_id": user_id, "org_id": None,
+                                "amount_credits": actual_cost, "provider": ledger_provider,
+                                "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
+                                "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True},
+                            },
+                        )
+                        if settlement:
+                            logger.info(f"Deducted {actual_cost:.6f} credits from user {user_id} for streaming request")
+
+                    # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
+                    if record_local_usage:
+                        try:
+                            from local_quota import add_local_tokens
+                            await add_local_tokens(org_id, tokens_for_billing)
+                        except Exception as _q_err:
+                            logger.debug(f"[local_pricing] quota record skipped: {_q_err}")
+
+                    # Track usage event
+                    try:
+                        from decimal import Decimal
+                        await usage_meter.track_usage(
+                            user_id=user_id,
+                            service="litellm",
+                            model=provider_used,
+                            tokens=tokens_for_billing,
+                            cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
+                            is_free=False,
+                            metadata={
+                                'power_level': power_level,
+                                'task_type': request.task_type,
+                                'streaming': True,
+                                'provider': ledger_provider,
+                                'requested_model': ledger_model,
+                                'is_local': is_local_provider,
+                            }
+                        )
+                    except Exception as usage_error:
+                        logger.error(f"Failed to track streaming usage: {usage_error}")
 
                 # Send an initial comment to keep connection alive and force headers
                 yield ": ping\n\n"
@@ -1388,6 +1536,7 @@ async def chat_completions(
 
                                     # Check for completion marker
                                     if data_str.strip() == '[DONE]':
+                                        provider_completed = True
                                         logger.info(f"Streaming complete: {chunks_received} chunks, ~{total_tokens} tokens")
                                         yield f"data: [DONE]\n\n"
                                         await asyncio.sleep(0)  # Force flush
@@ -1422,126 +1571,9 @@ async def chat_completions(
                                         logger.warning(f"Failed to parse SSE chunk: {e}, data: {data_str[:100]}")
                                         continue
 
-                    # After streaming completes, deduct credits
-                    if not using_byok and not is_credit_exempt(user_tier) and (user_tier != 'free' or total_tokens > 0):
-                        # Use actual tokens if available, otherwise estimate
-                        tokens_for_billing = total_tokens if total_tokens > 0 else estimated_tokens
-
-                        # Calculate actual cost (ASYNC NOW)
-                        actual_cost = await credit_system.calculate_cost(
-                            tokens_used=tokens_for_billing,
-                            model=provider_used,
-                            power_level=power_level,
-                            user_tier=user_tier,
-                            is_local=is_local_provider,
-                            use_catalog_local_rates=use_catalog_local_rates,
-                            prompt_tokens=stream_prompt_tokens or None,
-                            completion_tokens=stream_completion_tokens or None,
-                            request_model=request.model,
-                        )
-                        # Belt-and-suspenders: free variants must never bill, even if
-                        # calculate_cost is called with a stripped provider echo.
-                        if credit_system.is_free_model(provider_used, request.model):
-                            actual_cost = 0.0
-
-                        ledger_provider, ledger_model = credit_system.ledger_attribution(
-                            provider_used,
-                            request.model,
-                            provider_name,
-                            is_local_provider,
-                        )
-
-                        # Deduct credits only when there is a real charge
-                        # (free/local/zero-cost must not write ledger noise).
-                        if actual_cost <= 0:
-                            logger.info(
-                                f"Streaming zero-cost settle user={user_id} model={request.model} "
-                                f"provider_used={provider_used} tokens={tokens_for_billing}"
-                            )
-                        elif org_id:
-                            # Organization billing
-                            settlement = await settle_or_queue(
-                                pool=getattr(credit_system, "db_pool", None),
-                                settle=lambda: get_org_credit_integration().deduct_org_credits(
-                                    user_id=user_id, credits_used=actual_cost, service_name=provider_used,
-                                    provider=ledger_provider, model=ledger_model, tokens_used=tokens_for_billing,
-                                    power_level=power_level, task_type=request.task_type,
-                                    request_id=request_id, org_id=org_id,
-                                ),
-                                record={
-                                    "request_id": request_id, "user_id": user_id, "org_id": org_id,
-                                    "amount_credits": actual_cost, "provider": ledger_provider,
-                                    "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
-                                    "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True},
-                                },
-                            )
-                            if settlement and settlement[0]:
-                                success, used_org_id, remaining_credits = settlement
-                                logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
-                            elif settlement_failure_mode() == "legacy":
-                                # The body has already been streamed to the client, so we
-                                # cannot fail closed here the way the non-streaming twin
-                                # does. Log loudly instead: this branch used to be absent
-                                # entirely, so a broken deduction leaked with NO signal.
-                                logger.error(
-                                    "UNBILLED STREAMING REQUEST: org credit deduction failed "
-                                    f"for user={user_id} org={org_id} model={request.model} "
-                                    f"cost={actual_cost:.6f} tokens={tokens_for_billing}; "
-                                    "response already delivered, reconcile manually"
-                                )
-                        else:
-                            # Individual billing
-                            await settle_or_queue(
-                                pool=getattr(credit_system, "db_pool", None),
-                                settle=lambda: credit_system.debit_credits(
-                                    user_id=user_id, amount=actual_cost, metadata={
-                                    'provider': ledger_provider,
-                                    'model': ledger_model,
-                                    'tokens_used': tokens_for_billing,
-                                    'power_level': power_level,
-                                    'task_type': request.task_type,
-                                    'cost': actual_cost,
-                                    'streaming': True, 'request_id': request_id, 'org_id': org_id,
-                                }),
-                                result_ok=lambda _result: True,
-                                record={
-                                    "request_id": request_id, "user_id": user_id, "org_id": None,
-                                    "amount_credits": actual_cost, "provider": ledger_provider,
-                                    "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
-                                    "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True},
-                                },
-                            )
-                            logger.info(f"Settled {actual_cost:.6f} credits for streaming request user={user_id}")
-
-                        # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
-                        if record_local_usage:
-                            try:
-                                from local_quota import add_local_tokens
-                                await add_local_tokens(org_id, tokens_for_billing)
-                            except Exception as _q_err:
-                                logger.debug(f"[local_pricing] quota record skipped: {_q_err}")
-
-                        # Track usage event
-                        try:
-                            from decimal import Decimal
-                            await usage_meter.track_usage(
-                                user_id=user_id,
-                                service="litellm",
-                                model=provider_used,
-                                tokens=tokens_for_billing,
-                                cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
-                                is_free=False,
-                                metadata={
-                                    'power_level': power_level,
-                                    'task_type': request.task_type,
-                                    'streaming': True,
-                                    'provider': ledger_provider,
-                                    'requested_model': ledger_model,
-                                    'is_local': is_local_provider,
-                                }
-                            )
-                        except Exception as usage_error:
-                            logger.error(f"Failed to track streaming usage: {usage_error}")
+                    provider_completed = True
+                    settlement_task = start_settlement(settle_streamed_usage())
+                    await asyncio.shield(settlement_task)
 
                 except Exception as stream_error:
                     logger.error(f"Streaming error: {stream_error}", exc_info=True)
@@ -1552,6 +1584,17 @@ async def chat_completions(
                         }
                     }
                     yield f"data: {json.dumps(error_data)}\n\n"
+                finally:
+                    if provider_completed and settlement_task is None:
+                        # Torn down (client disconnect / cancellation) after the
+                        # provider finished but before settlement started.
+                        try:
+                            settlement_task = start_settlement(settle_streamed_usage())
+                        except RuntimeError as settle_exc:  # no running loop (interpreter shutdown)
+                            logger.critical(
+                                f"UNBILLED STREAMING REQUEST request_id={request_id} user={user_id} "
+                                f"org={org_id}: settlement could not start: {settle_exc}"
+                            )
 
             # Return streaming response with aggressive anti-buffering headers
             return StreamingResponse(
@@ -1667,7 +1710,8 @@ async def chat_completions(
                         "request_id": request_id, "user_id": user_id, "org_id": org_id,
                         "amount_credits": actual_cost, "provider": ledger_provider, "model": ledger_model,
                         "tokens": tokens_used, "service": "litellm",
-                        "metadata": {"power_level": power_level, "task_type": request.task_type},
+                        "metadata": {"power_level": power_level, "task_type": request.task_type,
+                                     "service_name": provider_used},
                     },
                 )
                 if settlement and settlement[0]:
@@ -2303,7 +2347,8 @@ async def generate_image(
                         "request_id": request_id, "user_id": user_id, "org_id": org_id,
                         "amount_credits": actual_cost, "provider": provider_name, "model": model,
                         "tokens": 0, "service": "image_generation",
-                        "metadata": {"task_type": "image_generation"},
+                        "metadata": {"task_type": "image_generation", "power_level": "standard",
+                                     "service_name": f"image_generation_{model}"},
                     },
                 )
                 if settlement and settlement[0]:
