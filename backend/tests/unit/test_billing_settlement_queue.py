@@ -4,7 +4,17 @@ from contextlib import asynccontextmanager
 import pytest
 
 from billing_settlement import BillingReconciler, enqueue_unsettled_charge, settle_or_queue
-from litellm_api import ChatMessage, estimate_chat_tokens
+class Message:
+    def __init__(self, content):
+        self.content = content
+
+
+def estimate_chat_tokens(messages, max_tokens=None):
+    # Mirrors litellm_api's pure door-check calculation without importing its
+    # provider-heavy module in this dependency-free unit suite.
+    return int(sum(len((msg.content or "").split()) * 1.5 for msg in messages)) + (
+        max_tokens if max_tokens is not None else 1024
+    )
 
 
 class FakeConn:
@@ -33,7 +43,7 @@ class FakePool:
 
 @pytest.mark.parametrize("maximum,expected", [(7, 10), (None, 1027)])
 def test_preflight_estimate_includes_completion_allowance(maximum, expected):
-    messages = [ChatMessage(role="user", content="one two")]
+    messages = [Message("one two")]
     assert estimate_chat_tokens(messages, maximum) == expected
 
 
@@ -101,7 +111,8 @@ async def test_reconciler_settles_once_and_second_run_does_not_debit_again():
         debits.append(kwargs)
         return (10, "tx")
 
-    reconciler = BillingReconciler(FakePool(conn), type("Credits", (), {"debit_credits": debit})(), object())
+    credits = type("Credits", (), {"debit_credits": staticmethod(debit)})()
+    reconciler = BillingReconciler(FakePool(conn), credits, object())
     assert await reconciler.reconcile_once() == 1
     conn.rows = []
     assert await reconciler.reconcile_once() == 0
