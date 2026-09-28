@@ -312,25 +312,31 @@ class CreditSystem:
                         )
                         new_balance = current_balance - amount
 
-                        # Log service usage for analytics (optional - table may not exist)
+                        # Log service usage for analytics (optional - table may not exist).
+                        # In a SAVEPOINT: a failed statement aborts the enclosing
+                        # transaction, and catching the exception does not undo that,
+                        # so the COMMIT below silently became a ROLLBACK and the debit
+                        # above never landed (measured: every service-org debit on a
+                        # schema without service_usage_log reported success, moved 0).
                         try:
-                            service_name = metadata.get('service_name', user_id.replace('org_', '').replace('_service', ''))
-                            await conn.execute(
-                                """
-                                INSERT INTO service_usage_log (
-                                    service_org_id, service_name, endpoint,
-                                    credits_used, model_used, user_id, request_metadata
+                            async with conn.transaction():
+                                service_name = metadata.get('service_name', user_id.replace('org_', '').replace('_service', ''))
+                                await conn.execute(
+                                    """
+                                    INSERT INTO service_usage_log (
+                                        service_org_id, service_name, endpoint,
+                                        credits_used, model_used, user_id, request_metadata
+                                    )
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                    """,
+                                    org_uuid,
+                                    service_name,
+                                    metadata.get('endpoint', '/api/v1/llm/chat/completions'),
+                                    amount,
+                                    metadata.get('model', 'unknown'),
+                                    metadata.get('proxied_user_id'),  # NULL if service-initiated
+                                    json.dumps(metadata)
                                 )
-                                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                                """,
-                                org_uuid,
-                                service_name,
-                                metadata.get('endpoint', '/api/v1/llm/chat/completions'),
-                                amount,
-                                metadata.get('model', 'unknown'),
-                                metadata.get('proxied_user_id'),  # NULL if service-initiated
-                                json.dumps(metadata)
-                            )
                         except Exception as log_error:
                             logger.debug(f"Service usage log not recorded (table may not exist): {log_error}")
 

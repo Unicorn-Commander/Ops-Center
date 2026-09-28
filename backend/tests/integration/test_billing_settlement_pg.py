@@ -370,3 +370,30 @@ async def test_a_debit_that_leaves_a_zero_balance_keeps_its_transaction_id(env):
     assert await env.pool.fetchval("SELECT id::text FROM credit_transactions WHERE metadata->>'request_id' = $1",
                                    request_id) == transaction_id
     assert await env.queue_row(request_id) is None  # nothing queued
+
+
+@pytest.mark.asyncio
+async def test_service_org_debit_lands_even_when_the_usage_log_insert_fails(env):
+    """A caught failing INSERT inside the debit transaction aborted it, so COMMIT became
+    ROLLBACK: every service-org debit on a schema without service_usage_log reported success
+    and moved nothing. The optional log insert now runs in a savepoint. endpoint=None makes
+    the insert fail server-side on any schema (NOT NULL, or the table is missing)."""
+    service_org = uuid.uuid4()
+    async with env.pool.acquire() as conn:
+        await conn.execute("INSERT INTO organizations (id, name, slug, plan_tier) VALUES ($1, $2, $3, 'managed')",
+                           service_org, f"pgtest-svc-{service_org}", f"pgtest-svc-{service_org}")
+        await conn.execute("INSERT INTO organization_credit_pools (org_id, total_credits) VALUES ($1, 1000)", service_org)
+    try:
+        new_balance, _ = await env.credits.debit_credits(
+            user_id=f"org_{service_org}", amount=2.0,
+            metadata={"model": "pgtest-model", "request_id": str(uuid.uuid4()), "endpoint": None},
+        )
+        assert new_balance == 998.0
+        assert await env.pool.fetchval("SELECT used_credits FROM organization_credit_pools WHERE org_id = $1",
+                                       service_org) == 2
+    finally:
+        async with env.pool.acquire() as conn:
+            if await conn.fetchval("SELECT to_regclass('service_usage_log') IS NOT NULL"):
+                await conn.execute("DELETE FROM service_usage_log WHERE service_org_id = $1", service_org)
+            await conn.execute("DELETE FROM organization_credit_pools WHERE org_id = $1", service_org)
+            await conn.execute("DELETE FROM organizations WHERE id = $1", service_org)
