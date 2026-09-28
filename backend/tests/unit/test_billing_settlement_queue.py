@@ -3,18 +3,17 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from billing_settlement import BillingReconciler, enqueue_unsettled_charge, settle_or_queue
+import os
+from pathlib import Path
+
+from billing_settlement import BillingReconciler, enqueue_unsettled_charge, estimate_chat_tokens, settle_or_queue
+
+
 class Message:
     def __init__(self, content):
         self.content = content
 
 
-def estimate_chat_tokens(messages, max_tokens=None):
-    # Mirrors litellm_api's pure door-check calculation without importing its
-    # provider-heavy module in this dependency-free unit suite.
-    return int(sum(len((msg.content or "").split()) * 1.5 for msg in messages)) + (
-        max_tokens if max_tokens is not None else 1024
-    )
 
 
 class FakeConn:
@@ -132,3 +131,54 @@ async def test_reconciler_drains_spool_into_table(monkeypatch, tmp_path):
 
 async def _async_value(value):
     return value
+
+
+# --- Orchestrator review fixes (Claude Code, 2026-09-28) -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enqueue_without_pool_still_persists_to_spool(monkeypatch, tmp_path):
+    """No pool must not mean 'logged as queued but written nowhere'."""
+    monkeypatch.setenv("BILLING_SPOOL_DIR", str(tmp_path))
+    record = {"request_id": "00000000-0000-0000-0000-000000000010", "user_id": "u", "amount_credits": 2, "service": "litellm"}
+    assert not await enqueue_unsettled_charge(None, record)
+    lines = (tmp_path / "billing_spool.jsonl").read_text().splitlines()
+    assert [json.loads(l)["request_id"] for l in lines] == [record["request_id"]]
+
+
+@pytest.mark.asyncio
+async def test_drain_never_drops_a_line_appended_while_draining(monkeypatch, tmp_path):
+    """DB still down during the drain + a new charge spooled mid-drain: both must survive."""
+    monkeypatch.setenv("BILLING_SPOOL_DIR", str(tmp_path))
+    spool = tmp_path / "billing_spool.jsonl"
+    old = {"request_id": "00000000-0000-0000-0000-000000000011", "user_id": "u", "amount_credits": 1, "service": "litellm"}
+    new = {"request_id": "00000000-0000-0000-0000-000000000012", "user_id": "u", "amount_credits": 1, "service": "litellm"}
+    spool.write_text(json.dumps(old) + "\n")
+
+    async def insert_while_db_down(pool, record):
+        # a request finishes and spools its charge while the reconciler is mid-drain
+        with spool.open("a") as fh:
+            fh.write(json.dumps(new) + "\n")
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("billing_settlement._insert_record", insert_while_db_down)
+    assert await BillingReconciler(object(), object(), object()).drain_spool() == 0
+    ids = sorted(json.loads(l)["request_id"] for l in spool.read_text().splitlines())
+    assert ids == sorted([old["request_id"], new["request_id"]])
+    assert not (tmp_path / "billing_spool.jsonl.draining").exists()
+
+
+@pytest.mark.asyncio
+async def test_drain_moves_unparseable_lines_to_deadletter(monkeypatch, tmp_path):
+    monkeypatch.setenv("BILLING_SPOOL_DIR", str(tmp_path))
+    (tmp_path / "billing_spool.jsonl").write_text("{not json\n")
+    assert await BillingReconciler(FakePool(FakeConn()), object(), object()).drain_spool() == 0
+    assert (tmp_path / "billing_spool.deadletter.jsonl").read_text().strip() == "{not json"
+    assert not (tmp_path / "billing_spool.jsonl").exists()
+
+
+def test_server_does_not_hand_the_shared_pool_to_org_billing():
+    """OrgCreditIntegration acquires from db_pool but never releases (it only closes direct
+    connections). Giving it the app pool leaks one connection per org-billed request."""
+    server = (Path(__file__).resolve().parents[2] / "server.py").read_text()
+    assert "get_org_credit_integration().db_pool =" not in server

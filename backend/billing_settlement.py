@@ -18,6 +18,13 @@ def settlement_failure_mode() -> str:
     return mode if mode in {"queue", "legacy"} else "queue"
 
 
+def estimate_chat_tokens(messages, max_tokens: Optional[int] = None) -> int:
+    """Conservative door-check estimate: prompt plus requested/default completion."""
+    default_completion = int(os.getenv("BILLING_DEFAULT_COMPLETION_TOKENS", "1024"))
+    prompt_tokens = int(sum(len((msg.content or "").split()) * 1.5 for msg in messages))
+    return prompt_tokens + (max_tokens if max_tokens is not None else default_completion)
+
+
 def _spool_path() -> Path:
     return Path(os.getenv("BILLING_SPOOL_DIR", str(Path(__file__).parent / "data"))) / "billing_spool.jsonl"
 
@@ -26,14 +33,16 @@ def _record_json(record: Dict[str, Any]) -> str:
     return json.dumps(record, default=str, separators=(",", ":"))
 
 
-async def _append_spool(record: Dict[str, Any]) -> None:
-    path = _spool_path()
+async def _append_line(path: Path, line: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    line = _record_json(record) + "\n"
     def append():
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(line)
+            handle.write(line.rstrip("\n") + "\n")
     await asyncio.to_thread(append)
+
+
+async def _append_spool(record: Dict[str, Any]) -> None:
+    await _append_line(_spool_path(), _record_json(record))
 
 
 async def _insert_record(pool: Any, record: Dict[str, Any]) -> bool:
@@ -68,6 +77,8 @@ async def enqueue_unsettled_charge(pool: Any, record: Dict[str, Any]) -> bool:
         inserted = await _insert_record(pool, record)
     except Exception as exc:
         logger.warning("Unable to persist unsettled charge in database: %s", exc)
+    if not inserted:
+        # No pool, or the insert failed: the spool is the durable fallback either way.
         try:
             await _append_spool(record)
         except Exception as spool_exc:
@@ -106,23 +117,34 @@ class BillingReconciler:
 
     async def drain_spool(self) -> int:
         path = _spool_path()
-        if not path.exists():
-            return 0
-        lines = await asyncio.to_thread(path.read_text, encoding="utf-8")
-        kept, drained = [], 0
+        draining = path.with_name(path.name + ".draining")
+        # Atomic hand-off: enqueues that happen while we drain append to a fresh
+        # spool file, so a rewrite can never drop a line (this runs exactly when
+        # the database was down and the spool is filling).
+        if not draining.exists():
+            if not path.exists():
+                return 0
+            await asyncio.to_thread(os.replace, path, draining)
+        lines = await asyncio.to_thread(draining.read_text, encoding="utf-8")
+        drained = 0
         for line in lines.splitlines():
+            if not line.strip():
+                continue
             try:
                 record = json.loads(line)
-                if await _insert_record(self.pool, record):
-                    drained += 1
-                else:
-                    kept.append(line)
+            except ValueError:
+                await _append_line(path.with_name("billing_spool.deadletter.jsonl"), line)
+                logger.critical("Unparseable billing spool line moved to deadletter")
+                continue
+            try:
+                ok = await _insert_record(self.pool, record)
             except Exception:
-                kept.append(line)
-        if kept:
-            await asyncio.to_thread(path.write_text, "\n".join(kept) + "\n", encoding="utf-8")
-        else:
-            await asyncio.to_thread(path.unlink)
+                ok = False
+            if ok:
+                drained += 1
+            else:
+                await _append_line(path, line)
+        await asyncio.to_thread(draining.unlink)
         return drained
 
     async def reconcile_once(self) -> int:

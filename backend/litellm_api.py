@@ -38,7 +38,7 @@ from get_credential import get_credential
 
 # Import organizational credit integration
 from org_credit_integration import get_org_credit_integration
-from billing_settlement import enqueue_unsettled_charge, settle_or_queue, settlement_failure_mode
+from billing_settlement import estimate_chat_tokens, settle_or_queue, settlement_failure_mode
 
 logger = logging.getLogger(__name__)
 
@@ -76,13 +76,6 @@ CREDIT_EXEMPT_TIERS = set(t.strip() for t in CREDIT_EXEMPT_TIERS_ENV.split(",") 
 
 # Master billing toggle - set to "false" to disable all credit checking
 BILLING_ENABLED = os.getenv("BILLING_ENABLED", "true").lower() == "true"
-BILLING_DEFAULT_COMPLETION_TOKENS = int(os.getenv("BILLING_DEFAULT_COMPLETION_TOKENS", "1024"))
-
-
-def estimate_chat_tokens(messages, max_tokens: Optional[int] = None) -> int:
-    """Conservative door-check estimate: prompt plus requested/default completion."""
-    prompt_tokens = int(sum(len((msg.content or "").split()) * 1.5 for msg in messages))
-    return prompt_tokens + (max_tokens if max_tokens is not None else BILLING_DEFAULT_COMPLETION_TOKENS)
 
 def is_credit_exempt(user_tier: str) -> bool:
     """Check if a user tier is exempt from credit charges."""
@@ -1709,7 +1702,9 @@ async def chat_completions(
                         "metadata": {"power_level": power_level, "task_type": request.task_type},
                     },
                 )
-                if settlement and settlement[0]:
+                # A delivered debit returns (balance, txn id); a balance of 0.0 is
+                # still a success, so test the tuple, not its first element.
+                if settlement:
                     new_balance, transaction_id = settlement
                 else:
                     new_balance, transaction_id = 0.0, None

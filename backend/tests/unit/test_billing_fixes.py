@@ -17,14 +17,21 @@ LITELLM_SOURCE = Path(__file__).parents[2] / "litellm_api.py"
 
 
 class FakeConnection:
-    def __init__(self):
+    def __init__(self, already_recorded=False):
         self.calls = []
+        self.already_recorded = already_recorded
 
     async def fetchval(self, query, *args):
         self.calls.append((query, args))
         if query.startswith("SELECT deduct_credits"):
             return True
+        if "FROM credit_usage_attribution" in query:
+            # idempotency pre-check: has this request_id already been charged?
+            return self.already_recorded
         return 9876
+
+    def deduction_call(self):
+        return next(call for call in self.calls if call[0].startswith("SELECT deduct_credits"))
 
 
 class FakePool:
@@ -35,8 +42,8 @@ class FakePool:
         return self.connection
 
 
-async def _deduct(credits_used):
-    connection = FakeConnection()
+async def _deduct(credits_used, already_recorded=False):
+    connection = FakeConnection(already_recorded)
     integration = OrgCreditIntegration(FakePool(connection))
     result = await integration.deduct_org_credits(
         user_id="unit-user",
@@ -58,7 +65,7 @@ async def test_deduction_serializes_metadata_and_preserves_json_values():
     (success, _, _), connection = await _deduct(0.25)
 
     assert success is True
-    deduction_call = connection.calls[0]
+    deduction_call = connection.deduction_call()
     metadata = deduction_call[1][-1]
     assert isinstance(metadata, str)
     assert json.loads(metadata)["model"] == "unit-model"
@@ -69,8 +76,17 @@ async def test_deduction_rounds_and_floors_nonzero_charge():
     (_, _, _), tiny_connection = await _deduct(0.000271)
     (_, _, _), zero_connection = await _deduct(0.0)
 
-    assert tiny_connection.calls[0][1][2] == 1
-    assert zero_connection.calls[0][1][2] == 0
+    assert tiny_connection.deduction_call()[1][2] == 1
+    assert zero_connection.deduction_call()[1][2] == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_of_an_already_charged_request_id_does_not_deduct_again():
+    """Reconciler retries pass the original request_id; a charge that already landed must not land twice."""
+    (success, org_id, _), connection = await _deduct(0.25, already_recorded=True)
+
+    assert success is True and org_id == "unit-org"
+    assert not any(query.startswith("SELECT deduct_credits") for query, _ in connection.calls)
 
 
 def test_streaming_generator_contains_org_deduction_call():

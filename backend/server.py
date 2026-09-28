@@ -987,12 +987,13 @@ async def startup_event():
         app.state.redis_client = redis_client  # Store for cleanup
         logger.info("LiteLLM credit system initialized successfully")
 
-        # Share the live pool with org billing and start durable post-delivery
-        # settlement retries. This is intentionally after schema self-heal.
+        # Start durable post-delivery settlement retries. This is intentionally
+        # after schema self-heal. Org billing keeps its own per-call connections:
+        # OrgCreditIntegration never releases pooled connections, so handing it
+        # db_pool would leak one pool connection per org-billed request.
         try:
             from billing_settlement import BillingReconciler
             from org_credit_integration import get_org_credit_integration
-            get_org_credit_integration().db_pool = db_pool
             if os.getenv("BILLING_RECONCILER_ENABLED", "true").lower() == "true":
                 app.state.billing_reconciler_task = asyncio.create_task(
                     BillingReconciler(db_pool, credit_system, get_org_credit_integration()).run()
