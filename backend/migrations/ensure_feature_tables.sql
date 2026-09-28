@@ -59,6 +59,14 @@ CREATE TABLE IF NOT EXISTS billing_unsettled_charges (
 );
 CREATE INDEX IF NOT EXISTS idx_billing_unsettled_pending
     ON billing_unsettled_charges (settled_at, last_attempt_at);
+-- Settlement idempotency lookups run on every billed request (request_id is
+-- always set now): the org path checks credit_usage_attribution.request_id and
+-- the individual path checks credit_transactions.metadata->>'request_id'.
+-- Both tables pre-exist (not created here); these only add lookup indexes.
+CREATE INDEX IF NOT EXISTS idx_credit_usage_request_id
+    ON credit_usage_attribution (request_id);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_request_id
+    ON credit_transactions ((metadata->>'request_id'));
 
 -- ============================================================================
 -- Shared trigger function for updated_at maintenance (idempotent definition).

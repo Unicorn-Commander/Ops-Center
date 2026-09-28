@@ -251,36 +251,51 @@ class OrgCreditIntegration:
                 'cost': credits_used
             }
 
+            if request_id is not None:
+                request_id = str(request_id)  # credit_usage_attribution.request_id is varchar
+
             # Deduct credits using stored function
             conn = await self._get_db_connection()
             try:
-                # The database function records request_id in the attribution
-                # ledger. Check it before retrying so reconciliation is safe
-                # even when the original function committed before its caller
-                # lost the response.
-                if request_id:
-                    already_recorded = await conn.fetchval(
-                        "SELECT EXISTS (SELECT 1 FROM credit_usage_attribution WHERE request_id = $1)",
-                        request_id,
-                    )
-                    if already_recorded:
-                        remaining = await conn.fetchval(
-                            """SELECT (allocated_credits - used_credits)
-                               FROM user_credit_allocations
-                               WHERE org_id = $1 AND user_id = $2""",
-                            org_id, user_id,
+                # Idempotency: deduct_credits() writes request_id into
+                # credit_usage_attribution in the same transaction as the
+                # deduction. Taking a transaction-scoped advisory lock on the
+                # request_id first makes "already charged?" and the charge one
+                # atomic unit: a concurrent settler of the same request (the
+                # reconciler in another worker, a retry that outlived its
+                # backoff) waits here, then sees the committed attribution row.
+                async with conn.transaction():
+                    if request_id:
+                        await conn.execute(
+                            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                            f"billing:request:{request_id}",
                         )
-                        return True, org_id, remaining
-                success = await conn.fetchval(
-                    "SELECT deduct_credits($1, $2, $3, $4, $5, $6, $7)",
-                    org_id,
-                    user_id,
-                    credits_used_int,
-                    "llm_inference",  # service_type
-                    service_name,     # service_name (model)
-                    request_id,
-                    json.dumps(metadata)  # p_request_metadata is jsonb: asyncpg needs a JSON string, not a dict
-                )
+                        already_recorded = await conn.fetchval(
+                            "SELECT EXISTS (SELECT 1 FROM credit_usage_attribution WHERE request_id = $1)",
+                            request_id,
+                        )
+                        if already_recorded:
+                            remaining = await conn.fetchval(
+                                """SELECT (allocated_credits - used_credits)
+                                   FROM user_credit_allocations
+                                   WHERE org_id = $1 AND user_id = $2""",
+                                org_id, user_id,
+                            )
+                            logger.info(
+                                f"Org charge already recorded for request_id={request_id} "
+                                f"(org {org_id}, user {user_id}); not deducting again"
+                            )
+                            return True, org_id, remaining
+                    success = await conn.fetchval(
+                        "SELECT deduct_credits($1, $2, $3, $4, $5, $6, $7)",
+                        org_id,
+                        user_id,
+                        credits_used_int,
+                        "llm_inference",  # service_type
+                        service_name,     # service_name (model)
+                        request_id,
+                        json.dumps(metadata)  # p_request_metadata is jsonb: asyncpg needs a JSON string, not a dict
+                    )
 
                 if success:
                     # Get remaining credits

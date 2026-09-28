@@ -1167,6 +1167,13 @@ async def shutdown_event():
                 await task
             except asyncio.CancelledError:
                 pass
+        # Streaming settlements run as their own tasks; let any in flight finish
+        # (or reach the queue/spool) before the pool they may use goes away.
+        try:
+            from billing_settlement import wait_for_background_settlements
+            await wait_for_background_settlements(timeout=5.0)
+        except Exception as e:
+            logger.error(f"Error waiting for streaming settlements: {e}")
         try:
             await app.state.db_pool.close()
             logger.info("PostgreSQL connection pool closed")

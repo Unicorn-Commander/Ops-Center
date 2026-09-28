@@ -16,10 +16,29 @@ from org_credit_integration import OrgCreditIntegration
 LITELLM_SOURCE = Path(__file__).parents[2] / "litellm_api.py"
 
 
+class FakeTransaction:
+    def __init__(self, connection):
+        self.connection = connection
+
+    async def __aenter__(self):
+        self.connection.calls.append(("BEGIN", ()))
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.connection.calls.append(("ROLLBACK" if exc_type else "COMMIT", ()))
+        return False
+
+
 class FakeConnection:
     def __init__(self, already_recorded=False):
         self.calls = []
         self.already_recorded = already_recorded
+
+    def transaction(self):
+        return FakeTransaction(self)
+
+    async def execute(self, query, *args):
+        self.calls.append((query, args))
 
     async def fetchval(self, query, *args):
         self.calls.append((query, args))
@@ -87,6 +106,23 @@ async def test_retry_of_an_already_charged_request_id_does_not_deduct_again():
 
     assert success is True and org_id == "unit-org"
     assert not any(query.startswith("SELECT deduct_credits") for query, _ in connection.calls)
+
+
+@pytest.mark.asyncio
+async def test_dedup_check_and_deduction_are_one_locked_transaction():
+    """A check-then-act across two autocommit statements let 5 concurrent settlers of one
+    request_id charge 5x on a real database. The advisory lock and the deduction must sit
+    inside one transaction, lock first."""
+    (_, _, _), connection = await _deduct(0.25)
+    queries = [query for query, _ in connection.calls]
+    begin = queries.index("BEGIN")
+    lock = next(i for i, q in enumerate(queries) if "pg_advisory_xact_lock" in q)
+    check = next(i for i, q in enumerate(queries) if "FROM credit_usage_attribution" in q)
+    deduct = next(i for i, q in enumerate(queries) if q.startswith("SELECT deduct_credits"))
+    commit = queries.index("COMMIT")
+    assert begin < lock < check < deduct < commit
+    lock_args = connection.calls[lock][1]
+    assert lock_args == ("billing:request:unit-request",)
 
 
 def test_streaming_generator_contains_org_deduction_call():

@@ -410,8 +410,14 @@ class CreditSystem:
                             json.dumps(metadata)
                         )
 
-            # Invalidate cache
-            await self.redis.delete(f"credits:balance:{user_id}")
+            # Invalidate cache. The debit has already committed here, so a cache
+            # error must not report it as failed: the caller would queue a retry
+            # of a charge that landed (and service-org debits have no request_id
+            # dedup). The cached balance expires on its own (cache_ttl).
+            try:
+                await self.redis.delete(f"credits:balance:{user_id}")
+            except Exception as cache_exc:
+                logger.warning(f"Credit balance cache invalidation failed for {user_id} (debit committed): {cache_exc}")
 
             # NEW: Send metering event to Lago (non-blocking)
             try:
