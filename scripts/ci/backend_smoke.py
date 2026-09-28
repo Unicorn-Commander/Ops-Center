@@ -12,6 +12,8 @@ What it asserts (all via `ast`, so no backend deps/DB/Redis are needed):
      don't accidentally open admin/mutation surfaces: every entry is checked
      against a denylist of admin-ish / destructive / credential-ish patterns,
      and over-broad prefixes (e.g. "/api/v1/") are rejected outright.
+  4. Every /admin route in the model-catalog routers (model_access_api, model_admin_api) takes
+     Depends(require_admin_user) as its first dependency.
 
 Run from anywhere:  python3 scripts/ci/backend_smoke.py
 Exits non-zero with a list of failures.
@@ -245,9 +247,59 @@ def check_auth_allowlists() -> None:
         print(f"auth allowlists OK: {len(exact)} exact + {len(prefixes)} prefix entries, none admin/mutation-shaped.")
 
 
+# Router modules whose /admin routes are operator surfaces (model catalog, tier access, markups,
+# platform-wide usage). Every such route must take Depends(require_admin_user) as its FIRST dependency:
+# the auth middleware only proves "logged in", and get_user_id accepts any customer (2026-09-28 fix).
+ADMIN_GATED_MODULES = {"model_access_api": 10, "model_admin_api": 7}  # module -> minimum /admin routes
+ROUTE_METHODS = {"get", "post", "put", "delete", "patch"}
+
+
+def check_model_admin_gates() -> None:
+    """Check 4: every /admin route in ADMIN_GATED_MODULES depends first on require_admin_user."""
+    for module, minimum in ADMIN_GATED_MODULES.items():
+        path = BACKEND / f"{module}.py"
+        tree = parse(path)
+        if tree is None:
+            continue
+        prefix = ""
+        for node in tree.body:
+            if (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "router" for t in node.targets)
+                    and isinstance(node.value, ast.Call)):
+                for kw in node.value.keywords:
+                    if kw.arg == "prefix" and isinstance(kw.value, ast.Constant):
+                        prefix = kw.value.value
+        gated = 0
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in node.decorator_list:
+                if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                        and isinstance(dec.func.value, ast.Name) and dec.func.value.id == "router"
+                        and dec.func.attr in ROUTE_METHODS and dec.args and isinstance(dec.args[0], ast.Constant)):
+                    continue
+                full = prefix + dec.args[0].value
+                if "/admin" not in full:
+                    continue
+                defaults = node.args.defaults + [d for d in node.args.kw_defaults if d is not None]
+                depends = [d for d in defaults if isinstance(d, ast.Call) and isinstance(d.func, ast.Name)
+                           and d.func.id == "Depends"]
+                first = depends[0].args[0] if depends and depends[0].args else None
+                if isinstance(first, ast.Name) and first.id == "require_admin_user":
+                    gated += 1
+                else:
+                    fail(f"{path.relative_to(REPO)}:{node.lineno}: {dec.func.attr.upper()} {full} ({node.name}) must take "
+                         f"Depends(require_admin_user) as its first dependency")
+        if gated < minimum:
+            fail(f"{path.relative_to(REPO)}: found {gated} admin-gated /admin routes, expected at least {minimum} "
+                 f"(routes moved or the check went blind)")
+        else:
+            print(f"{module}: {gated} /admin routes, all gated by require_admin_user first.")
+
+
 def main() -> int:
     check_server()
     check_auth_allowlists()
+    check_model_admin_gates()
 
     if failures:
         print("\nBackend smoke FAILED:", file=sys.stderr)
