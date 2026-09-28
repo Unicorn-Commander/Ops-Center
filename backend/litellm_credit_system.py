@@ -356,6 +356,17 @@ class CreditSystem:
 
                         current_balance = float(result['credits_remaining'])
 
+                        request_id = metadata.get("request_id")
+                        if request_id:
+                            existing = await conn.fetchrow(
+                                """SELECT id FROM credit_transactions
+                                   WHERE user_id = $1 AND metadata->>'request_id' = $2
+                                   LIMIT 1""",
+                                user_id, str(request_id),
+                            )
+                            if existing:
+                                return current_balance, str(existing["id"])
+
                         # Check sufficient credits (except free tier)
                         if result['tier'] != 'free' and current_balance < amount:
                             raise HTTPException(
@@ -399,8 +410,14 @@ class CreditSystem:
                             json.dumps(metadata)
                         )
 
-            # Invalidate cache
-            await self.redis.delete(f"credits:balance:{user_id}")
+            # Invalidate cache. The debit has already committed here, so a cache
+            # error must not report it as failed: the caller would queue a retry
+            # of a charge that landed (and service-org debits have no request_id
+            # dedup). The cached balance expires on its own (cache_ttl).
+            try:
+                await self.redis.delete(f"credits:balance:{user_id}")
+            except Exception as cache_exc:
+                logger.warning(f"Credit balance cache invalidation failed for {user_id} (debit committed): {cache_exc}")
 
             # NEW: Send metering event to Lago (non-blocking)
             try:

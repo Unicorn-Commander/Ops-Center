@@ -987,6 +987,21 @@ async def startup_event():
         app.state.redis_client = redis_client  # Store for cleanup
         logger.info("LiteLLM credit system initialized successfully")
 
+        # Start durable post-delivery settlement retries. This is intentionally
+        # after schema self-heal. Org billing keeps its own per-call connections:
+        # OrgCreditIntegration never releases pooled connections, so handing it
+        # db_pool would leak one pool connection per org-billed request.
+        try:
+            from billing_settlement import BillingReconciler
+            from org_credit_integration import get_org_credit_integration
+            if os.getenv("BILLING_RECONCILER_ENABLED", "true").lower() == "true":
+                app.state.billing_reconciler_task = asyncio.create_task(
+                    BillingReconciler(db_pool, credit_system, get_org_credit_integration()).run()
+                )
+                logger.info("Billing reconciler started (60s interval)")
+        except Exception as e:
+            logger.error(f"Failed to start billing reconciler: {e}")
+
         # Initialize BYOK manager (uses same db_pool)
         byok_manager = BYOKManager(db_pool)
         app.state.byok_manager = byok_manager
@@ -1145,6 +1160,20 @@ async def shutdown_event():
 
     # Close credit system connections
     if hasattr(app.state, 'db_pool') and app.state.db_pool:
+        task = getattr(app.state, "billing_reconciler_task", None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        # Streaming settlements run as their own tasks; let any in flight finish
+        # (or reach the queue/spool) before the pool they may use goes away.
+        try:
+            from billing_settlement import wait_for_background_settlements
+            await wait_for_background_settlements(timeout=5.0)
+        except Exception as e:
+            logger.error(f"Error waiting for streaming settlements: {e}")
         try:
             await app.state.db_pool.close()
             logger.info("PostgreSQL connection pool closed")
