@@ -14,6 +14,8 @@ Date: October 20, 2025
 
 import logging
 import os
+import asyncio
+import uuid
 from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 import json
@@ -36,6 +38,7 @@ from get_credential import get_credential
 
 # Import organizational credit integration
 from org_credit_integration import get_org_credit_integration
+from billing_settlement import enqueue_unsettled_charge, settle_or_queue, settlement_failure_mode
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,13 @@ CREDIT_EXEMPT_TIERS = set(t.strip() for t in CREDIT_EXEMPT_TIERS_ENV.split(",") 
 
 # Master billing toggle - set to "false" to disable all credit checking
 BILLING_ENABLED = os.getenv("BILLING_ENABLED", "true").lower() == "true"
+BILLING_DEFAULT_COMPLETION_TOKENS = int(os.getenv("BILLING_DEFAULT_COMPLETION_TOKENS", "1024"))
+
+
+def estimate_chat_tokens(messages, max_tokens: Optional[int] = None) -> int:
+    """Conservative door-check estimate: prompt plus requested/default completion."""
+    prompt_tokens = int(sum(len((msg.content or "").split()) * 1.5 for msg in messages))
+    return prompt_tokens + (max_tokens if max_tokens is not None else BILLING_DEFAULT_COMPLETION_TOKENS)
 
 def is_credit_exempt(user_tier: str) -> bool:
     """Check if a user tier is exempt from credit charges."""
@@ -884,6 +894,7 @@ async def chat_completions(
         + X-Credits-Remaining: Updated balance
     """
     try:
+        request_id = str(uuid.uuid4())
         # Determine power level
         power_level = x_power_level or request.power_level
         if power_level not in POWER_LEVELS:
@@ -920,8 +931,7 @@ async def chat_completions(
                 logger.info(f"User {user_id} has {detected_provider} BYOK")
 
         # Estimate tokens for pre-check (rough estimate)
-        estimated_tokens = sum(len((msg.content or "").split()) * 1.5 for msg in request.messages)
-        estimated_tokens = int(estimated_tokens)
+        estimated_tokens = estimate_chat_tokens(request.messages, request.max_tokens)
 
         # Calculate estimated cost (ASYNC NOW)
         estimated_cost = await credit_system.calculate_cost(
@@ -1457,21 +1467,25 @@ async def chat_completions(
                             )
                         elif org_id:
                             # Organization billing
-                            success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
-                                user_id=user_id,
-                                credits_used=actual_cost,
-                                service_name=provider_used,
-                                provider=ledger_provider,
-                                model=ledger_model,
-                                tokens_used=tokens_for_billing,
-                                power_level=power_level,
-                                task_type=request.task_type,
-                                request_id=None,
-                                org_id=org_id
+                            settlement = await settle_or_queue(
+                                pool=getattr(credit_system, "db_pool", None),
+                                settle=lambda: get_org_credit_integration().deduct_org_credits(
+                                    user_id=user_id, credits_used=actual_cost, service_name=provider_used,
+                                    provider=ledger_provider, model=ledger_model, tokens_used=tokens_for_billing,
+                                    power_level=power_level, task_type=request.task_type,
+                                    request_id=request_id, org_id=org_id,
+                                ),
+                                record={
+                                    "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                                    "amount_credits": actual_cost, "provider": ledger_provider,
+                                    "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
+                                    "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True},
+                                },
                             )
-                            if success:
+                            if settlement and settlement[0]:
+                                success, used_org_id, remaining_credits = settlement
                                 logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
-                            else:
+                            elif settlement_failure_mode() == "legacy":
                                 # The body has already been streamed to the client, so we
                                 # cannot fail closed here the way the non-streaming twin
                                 # does. Log loudly instead: this branch used to be absent
@@ -1484,20 +1498,26 @@ async def chat_completions(
                                 )
                         else:
                             # Individual billing
-                            await credit_system.debit_credits(
-                                user_id=user_id,
-                                amount=actual_cost,
-                                metadata={
+                            await settle_or_queue(
+                                pool=getattr(credit_system, "db_pool", None),
+                                settle=lambda: credit_system.debit_credits(
+                                    user_id=user_id, amount=actual_cost, metadata={
                                     'provider': ledger_provider,
                                     'model': ledger_model,
                                     'tokens_used': tokens_for_billing,
                                     'power_level': power_level,
                                     'task_type': request.task_type,
                                     'cost': actual_cost,
-                                    'streaming': True
-                                }
+                                    'streaming': True, 'request_id': request_id, 'org_id': org_id,
+                                }),
+                                record={
+                                    "request_id": request_id, "user_id": user_id, "org_id": None,
+                                    "amount_credits": actual_cost, "provider": ledger_provider,
+                                    "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
+                                    "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True},
+                                },
                             )
-                            logger.info(f"Deducted {actual_cost:.6f} credits from user {user_id} for streaming request")
+                            logger.info(f"Settled {actual_cost:.6f} credits for streaming request user={user_id}")
 
                         # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
                         if record_local_usage:
@@ -1641,40 +1661,56 @@ async def chat_completions(
             # Check if using org billing or individual billing
             if org_id:
                 # Using organization billing
-                success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
-                    user_id=user_id,
-                    credits_used=actual_cost,
-                    service_name=provider_used,
-                    provider=ledger_provider,
-                    model=ledger_model,
-                    tokens_used=tokens_used,
-                    power_level=power_level,
-                    task_type=request.task_type,
-                    request_id=None,  # Could add request tracking here
-                    org_id=org_id
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: get_org_credit_integration().deduct_org_credits(
+                        user_id=user_id, credits_used=actual_cost, service_name=provider_used,
+                        provider=ledger_provider, model=ledger_model, tokens_used=tokens_used,
+                        power_level=power_level, task_type=request.task_type,
+                        request_id=request_id, org_id=org_id,
+                    ),
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                        "amount_credits": actual_cost, "provider": ledger_provider, "model": ledger_model,
+                        "tokens": tokens_used, "service": "litellm",
+                        "metadata": {"power_level": power_level, "task_type": request.task_type},
+                    },
                 )
-
-                if success:
+                if settlement and settlement[0]:
+                    success, used_org_id, remaining_credits = settlement
                     new_balance = remaining_credits / 1000.0 if remaining_credits else 0.0  # Convert to credits
                     transaction_id = f"org-{used_org_id}-{user_id}"
                     logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for user {user_id}")
-                else:
+                elif settlement_failure_mode() == "legacy":
                     logger.error(f"Failed to deduct org credits for user {user_id}")
                     raise HTTPException(status_code=500, detail="Failed to deduct credits")
+                else:
+                    new_balance = 0.0
+                    transaction_id = None
             else:
                 # Using individual credits - charge credits
-                new_balance, transaction_id = await credit_system.debit_credits(
-                    user_id=user_id,
-                    amount=actual_cost,
-                    metadata={
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: credit_system.debit_credits(
+                        user_id=user_id, amount=actual_cost, metadata={
                         'provider': ledger_provider,
                         'model': ledger_model,
                         'tokens_used': tokens_used,
                         'power_level': power_level,
                         'task_type': request.task_type,
-                        'cost': actual_cost
-                    }
+                        'cost': actual_cost, 'request_id': request_id,
+                    }),
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": None,
+                        "amount_credits": actual_cost, "provider": ledger_provider, "model": ledger_model,
+                        "tokens": tokens_used, "service": "litellm",
+                        "metadata": {"power_level": power_level, "task_type": request.task_type},
+                    },
                 )
+                if settlement and settlement[0]:
+                    new_balance, transaction_id = settlement
+                else:
+                    new_balance, transaction_id = 0.0, None
         else:
             # Free tier with free model
             if org_id:
@@ -1865,6 +1901,7 @@ async def generate_image(
         - Stable Diffusion XL: ~2-5 credits
     """
     try:
+        request_id = str(uuid.uuid4())
         # Validate model (default to gpt-image-1, the latest Nov 2025 model)
         model = request.model or "gpt-image-1"
 
@@ -2257,40 +2294,55 @@ async def generate_image(
         elif user_tier != 'free' or actual_cost > 0:
             if org_id:
                 # Using organization billing
-                success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
-                    user_id=user_id,
-                    credits_used=actual_cost,
-                    service_name=f"image_generation_{model}",
-                    provider=provider_name,
-                    model=model,
-                    tokens_used=0,  # Not applicable for images
-                    power_level="standard",
-                    task_type="image_generation",
-                    request_id=None,
-                    org_id=org_id
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: get_org_credit_integration().deduct_org_credits(
+                        user_id=user_id, credits_used=actual_cost,
+                        service_name=f"image_generation_{model}", provider=provider_name, model=model,
+                        tokens_used=0, power_level="standard", task_type="image_generation",
+                        request_id=request_id, org_id=org_id,
+                    ),
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                        "amount_credits": actual_cost, "provider": provider_name, "model": model,
+                        "tokens": 0, "service": "image_generation",
+                        "metadata": {"task_type": "image_generation"},
+                    },
                 )
-
-                if success:
+                if settlement and settlement[0]:
+                    success, used_org_id, remaining_credits = settlement
                     new_balance = remaining_credits / 1000.0 if remaining_credits else 0.0
                     transaction_id = f"org-{used_org_id}-{user_id}"
                     logger.info(f"Deducted {actual_cost:.2f} credits from org {used_org_id} for image generation")
-                else:
+                elif settlement_failure_mode() == "legacy":
                     logger.error(f"Failed to deduct org credits for image generation")
                     raise HTTPException(status_code=500, detail="Failed to deduct credits")
+                else:
+                    new_balance, transaction_id = 0.0, None
             else:
                 # Using individual credits
-                new_balance, transaction_id = await credit_system.debit_credits(
-                    user_id=user_id,
-                    amount=actual_cost,
-                    metadata={
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: credit_system.debit_credits(
+                        user_id=user_id, amount=actual_cost, metadata={
                         'provider': provider_name,
                         'model': model,
                         'image_count': request.n,
                         'size': request.size,
                         'quality': request.quality,
-                        'cost': actual_cost
-                    }
+                        'cost': actual_cost, 'request_id': request_id,
+                    }),
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": None,
+                        "amount_credits": actual_cost, "provider": provider_name, "model": model,
+                        "tokens": 0, "service": "image_generation",
+                        "metadata": {"task_type": "image_generation"},
+                    },
                 )
+                if settlement:
+                    new_balance, transaction_id = settlement
+                else:
+                    new_balance, transaction_id = 0.0, None
         else:
             if org_id:
                 _, _, new_balance = await get_org_credit_integration().get_user_org_credits(

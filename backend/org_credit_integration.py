@@ -254,6 +254,23 @@ class OrgCreditIntegration:
             # Deduct credits using stored function
             conn = await self._get_db_connection()
             try:
+                # The database function records request_id in the attribution
+                # ledger. Check it before retrying so reconciliation is safe
+                # even when the original function committed before its caller
+                # lost the response.
+                if request_id:
+                    already_recorded = await conn.fetchval(
+                        "SELECT EXISTS (SELECT 1 FROM credit_usage_attribution WHERE request_id = $1)",
+                        request_id,
+                    )
+                    if already_recorded:
+                        remaining = await conn.fetchval(
+                            """SELECT (allocated_credits - used_credits)
+                               FROM user_credit_allocations
+                               WHERE org_id = $1 AND user_id = $2""",
+                            org_id, user_id,
+                        )
+                        return True, org_id, remaining
                 success = await conn.fetchval(
                     "SELECT deduct_credits($1, $2, $3, $4, $5, $6, $7)",
                     org_id,

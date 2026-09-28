@@ -356,6 +356,17 @@ class CreditSystem:
 
                         current_balance = float(result['credits_remaining'])
 
+                        request_id = metadata.get("request_id")
+                        if request_id:
+                            existing = await conn.fetchrow(
+                                """SELECT id FROM credit_transactions
+                                   WHERE user_id = $1 AND metadata->>'request_id' = $2
+                                   LIMIT 1""",
+                                user_id, str(request_id),
+                            )
+                            if existing:
+                                return current_balance, str(existing["id"])
+
                         # Check sufficient credits (except free tier)
                         if result['tier'] != 'free' and current_balance < amount:
                             raise HTTPException(
