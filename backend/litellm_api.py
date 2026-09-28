@@ -1510,6 +1510,7 @@ async def chat_completions(
                                     'cost': actual_cost,
                                     'streaming': True, 'request_id': request_id, 'org_id': org_id,
                                 }),
+                                result_ok=lambda _result: True,
                                 record={
                                     "request_id": request_id, "user_id": user_id, "org_id": None,
                                     "amount_credits": actual_cost, "provider": ledger_provider,
@@ -1700,6 +1701,7 @@ async def chat_completions(
                         'task_type': request.task_type,
                         'cost': actual_cost, 'request_id': request_id,
                     }),
+                    result_ok=lambda _result: True,
                     record={
                         "request_id": request_id, "user_id": user_id, "org_id": None,
                         "amount_credits": actual_cost, "provider": ledger_provider, "model": ledger_model,
@@ -2332,6 +2334,7 @@ async def generate_image(
                         'quality': request.quality,
                         'cost': actual_cost, 'request_id': request_id,
                     }),
+                    result_ok=lambda _result: True,
                     record={
                         "request_id": request_id, "user_id": user_id, "org_id": None,
                         "amount_credits": actual_cost, "provider": provider_name, "model": model,

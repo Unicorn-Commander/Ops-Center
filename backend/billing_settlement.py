@@ -79,11 +79,11 @@ async def enqueue_unsettled_charge(pool: Any, record: Dict[str, Any]) -> bool:
     return inserted
 
 
-async def settle_or_queue(*, settle, pool: Any, record: Dict[str, Any]):
+async def settle_or_queue(*, settle, pool: Any, record: Dict[str, Any], result_ok=None):
     """One policy gate used by stream, chat, and image billing paths."""
     try:
         result = await settle()
-        ok = bool(result[0]) if isinstance(result, tuple) else bool(result)
+        ok = result_ok(result) if result_ok else (bool(result[0]) if isinstance(result, tuple) else bool(result))
         if ok:
             return result
         if settlement_failure_mode() == "legacy":
@@ -160,7 +160,8 @@ class BillingReconciler:
                         user_id=record["user_id"], amount=float(record["amount_credits"]),
                         metadata={**metadata, "request_id": str(record["request_id"])},
                     )
-                if result is not None and (result[0] if isinstance(result, tuple) else True):
+                success = bool(result[0]) if record.get("org_id") and isinstance(result, tuple) else result is not None
+                if success:
                     async with self.pool.acquire() as conn:
                         await conn.execute("UPDATE billing_unsettled_charges SET settled_at=NOW() WHERE request_id=$1", record["request_id"])
                     settled += 1
