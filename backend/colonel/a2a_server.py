@@ -17,6 +17,7 @@ invoke The Colonel's skills programmatically.
 
 import asyncio
 import json
+import hmac
 import logging
 import os
 import time
@@ -38,6 +39,7 @@ logger = logging.getLogger("colonel.a2a")
 BRIGADE_API_URL = os.getenv("BRIGADE_API_URL", "http://unicorn-brigade:8100")
 BRIGADE_SERVICE_KEY = os.getenv("BRIGADE_SERVICE_KEY", "")
 A2A_SHARED_SECRET = os.getenv("A2A_SHARED_SECRET", "")
+_a2a_unconfigured_warned = False
 
 # Provider info — env-overridable so each white-label deployment can identify
 # its own brand (Magic Unicorn / Majik's Studio / Brightwater Labs / etc.)
@@ -143,28 +145,32 @@ class TaskSendParams(BaseModel):
 
 def _validate_a2a_auth(request: Request) -> bool:
     """
-    Validate A2A request authentication.
+    Validate the caller of the A2A endpoint.
 
-    Checks for a shared secret in the Authorization header if one is configured
-    via A2A_SHARED_SECRET or BRIGADE_SERVICE_KEY environment variables.
-    If no secret is configured, all requests are allowed (open mode).
+    The secret is A2A_SHARED_SECRET, or BRIGADE_SERVICE_KEY when that is unset.
+    Accepted as ``Authorization: Bearer <secret>`` or ``X-Service-Key: <secret>``.
+
+    Fails CLOSED: with no secret configured every call is refused (it used to
+    allow everything, which exposed skills/invoke to anyone). Compared in
+    constant time.
     """
+    global _a2a_unconfigured_warned
     secret = A2A_SHARED_SECRET or BRIGADE_SERVICE_KEY
     if not secret:
-        # No secret configured — open mode
-        return True
+        if not _a2a_unconfigured_warned:
+            _a2a_unconfigured_warned = True
+            logger.error("A2A auth is not configured (A2A_SHARED_SECRET and BRIGADE_SERVICE_KEY unset); refusing all /a2a calls")
+        return False
 
+    presented = ""
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        return token == secret
-
-    # Also accept X-Service-Key header
-    service_key = request.headers.get("x-service-key", "")
-    if service_key:
-        return service_key == secret
-
-    return False
+        presented = auth_header[7:]
+    else:
+        presented = request.headers.get("x-service-key", "")
+    if not presented:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), secret.encode("utf-8"))
 
 
 # ─── Router ─────────────────────────────────────────────────────────────

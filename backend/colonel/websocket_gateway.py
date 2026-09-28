@@ -44,6 +44,23 @@ from colonel.system_prompt import build_system_prompt
 
 logger = logging.getLogger("colonel.ws")
 
+
+_colonel_key_warned = False
+
+
+def _colonel_service_key() -> str:
+    """The Colonel's own inbound service key for its LLM calls (env only, no default).
+
+    Unset means the Colonel calls the LLM endpoint without credentials, which
+    the console rejects; warn once instead of falling back to a literal.
+    """
+    global _colonel_key_warned
+    key = os.getenv("COLONEL_SERVICE_KEY", "")
+    if not key and not _colonel_key_warned:
+        _colonel_key_warned = True
+        logger.warning("COLONEL_SERVICE_KEY is not set; Colonel LLM calls will be unauthenticated and rejected")
+    return key
+
 # ─── Token Estimation Helpers ────────────────────────────────────────────────
 
 # Rough heuristic: 1 token ~= 4 characters.  This is intentionally
@@ -620,7 +637,7 @@ class ColonelGateway:
         headers = {
             "Content-Type": "application/json",
         }
-        service_key = os.getenv("COLONEL_SERVICE_KEY", "sk-colonel-service-key-2026")
+        service_key = _colonel_service_key()
         if service_key:
             headers["Authorization"] = f"Bearer {service_key}"
 

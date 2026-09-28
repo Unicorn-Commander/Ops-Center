@@ -38,6 +38,7 @@ from get_credential import get_credential
 
 # Import organizational credit integration
 from org_credit_integration import get_org_credit_integration
+from service_keys import match_service_key, resolve_principal, ServiceKeyUserContextForbidden
 from billing_settlement import (
     estimate_chat_tokens,
     estimate_prompt_tokens,
@@ -714,13 +715,18 @@ async def get_user_id(
     authorization: Optional[str] = Header(None)
 ) -> str:
     """
-    Extract user ID from authorization header OR session cookie
+    Resolve the caller's user id for LLM API requests.
 
-    Supports four authentication methods:
-    1. Session Cookie: session_token cookie (for browser-based requests)
-    2. API Key: Bearer uc_<hex-key>
-    3. JWT Token: Bearer <jwt-token>
-    4. Service Key: Bearer sk-<service-name>-service-key-<year>
+    Accepted credentials, in order:
+      1. No Authorization header: the session cookie (browser requests).
+      2. ``Bearer sk-...``: an inbound SERVICE key. Keys are configured only as
+         SHA-256 hashes in OPS_CENTER_SERVICE_KEY_HASHES (see service_keys.py);
+         an unconfigured service is disabled. Without X-User-ID the request is
+         billed to the service's own organization ("org_<uuid>"). X-User-ID is
+         honoured only for services listed in OPS_CENTER_SERVICE_KEY_ACT_AS_USER;
+         any other service sending it gets 403.
+      3. ``Bearer uc_...``: a user API key.
+      4. Otherwise: a JWT.
     """
     # Try session-based authentication first (for browser requests)
     if not authorization:
@@ -746,69 +752,41 @@ async def get_user_id(
 
     # Authorization header provided - use existing token-based auth
     if not authorization.startswith('Bearer '):
-        logger.warning(f"Invalid auth format: {authorization[:20]}...")
+        logger.warning(f"Invalid auth format (length {len(authorization)}, no Bearer prefix)")
         raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Authorization: Bearer <api-key>")
 
     # Extract token
     token = authorization[7:]
-    logger.info(f"🔍 Auth token received - Length: {len(token)}, Prefix: {token[:10]}...")
+    logger.debug(f"Auth token received (length {len(token)})")
 
-    # Check for service key (format: sk-<service>-service-key-<year>)
+    # Inbound service key (Bearer sk-...): env-configured hashes only, never literals in source.
     if token.startswith('sk-'):
-        logger.info(f"🔑 Token starts with 'sk-', checking service keys...")
-        # Service keys are pre-configured trusted keys for internal services
-        service_keys = {
-            'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
-            'sk-presenton-service-key-2025': 'presenton-service',
-            'sk-brigade-service-key-2025': 'brigade-service',
-            'sk-centerdeep-service-key-2025': 'centerdeep-service',
-            'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
-            'sk-open-webui-service-key-2026': 'open-webui-service',
-            'sk-colonel-service-key-2026': 'colonel-service',
-            'sk-majiks-service-key-2025': 'majiks-service'
-        }
-
-        # FIX P0: Map service names to actual UUIDs from database (not strings)
-        # These are the actual organization UUIDs for service accounts
-        service_org_ids = {
-            'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',      # UUID for bolt-diy-service org
-            'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',     # UUID for presenton-service org
-            'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
-            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
-            'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',  # UUID for partnerpulse-service org
-            'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',    # UUID for open-webui-service org
-            'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # Colonel uses brigade org for billing
-            'majiks-service': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'        # Majiks Studio service org
-        }
-
-        if token in service_keys:
-            service_name = service_keys[token]
-
-            # Check for X-User-ID header (service proxying on behalf of user)
-            x_user_id = request.headers.get('X-User-ID')
-            if x_user_id:
-                # Service is proxying for a user - bill to user's account
-                logger.info(f"✅ Service key authenticated: {service_name} proxying for user: {x_user_id}")
-                return x_user_id
-            else:
-                # No user context - use service organization account for billing
-                service_org_id = service_org_ids.get(service_name)
-                if service_org_id:
-                    # Prefix with 'org_' so credit system recognizes this as an organization
-                    org_prefixed_id = f"org_{service_org_id}"
-                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {org_prefixed_id}")
-                    return org_prefixed_id
-                else:
-                    logger.error(f"❌ Service org ID not configured for: {service_name}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Service organization not configured for {service_name}. Contact system administrator."
-                    )
-        else:
-            logger.warning(f"❌ Unknown service key: {token[:20]}... (full length: {len(token)})")
+        match = match_service_key(token)
+        if match is None:
+            # Never log any part of a presented key.
+            logger.warning(f"❌ Rejected unknown or disabled service key (length {len(token)})")
             raise HTTPException(status_code=401, detail="Invalid service key")
-    else:
-        logger.info(f"ℹ️ Token does NOT start with 'sk-', will try API key or JWT validation")
+
+        x_user_id = request.headers.get('X-User-ID')
+        try:
+            principal, is_service_account = resolve_principal(match, x_user_id)
+        except ServiceKeyUserContextForbidden:
+            logger.warning(f"❌ Service {match.service} sent X-User-ID but may not act on behalf of a user")
+            raise HTTPException(
+                status_code=403,
+                detail="This service key may not act on behalf of a user"
+            )
+        if principal is None:
+            logger.error(f"❌ Service org ID not configured for: {match.service}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Service organization not configured for {match.service}. Contact system administrator."
+            )
+        if is_service_account:
+            logger.info(f"✅ Service key authenticated: {match.service} using org credits: {principal}")
+        else:
+            logger.info(f"✅ Service key authenticated: {match.service} proxying for user: {principal}")
+        return principal
 
     # Try API key validation (format: uc_<hex>)
     if token.startswith('uc_'):

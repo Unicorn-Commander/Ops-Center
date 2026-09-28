@@ -8,6 +8,8 @@ Author: Backend Authentication Team
 Date: November 29, 2025
 """
 
+import os
+
 import pytest
 import asyncio
 from fastapi.testclient import TestClient
@@ -15,12 +17,14 @@ from httpx import AsyncClient
 import json
 
 # Test configurations
+# Keys are never committed. To run these integration tests against a live console,
+# export TEST_SERVICE_KEY_<NAME> (e.g. TEST_SERVICE_KEY_PRESENTON) for services whose
+# SHA-256 is configured in that console's OPS_CENTER_SERVICE_KEY_HASHES.
 SERVICE_KEYS = {
-    'presenton': 'sk-presenton-service-key-2025',
-    'bolt_diy': 'sk-bolt-diy-service-key-2025',
-    'brigade': 'sk-brigade-service-key-2025',
-    'centerdeep': 'sk-centerdeep-service-key-2025'
+    name: os.getenv(f"TEST_SERVICE_KEY_{name.upper()}", "")
+    for name in ('presenton', 'bolt_diy', 'brigade', 'centerdeep')
 }
+_MISSING_SERVICE_KEYS = sorted(n for n, k in SERVICE_KEYS.items() if not k)
 
 SERVICE_ORG_IDS = {
     'presenton': 'org_presenton_service',
@@ -33,6 +37,7 @@ SERVICE_ORG_IDS = {
 TEST_USER_ID = '7a6bfd31-0120-4a30-9e21-0fc3b8006579'
 
 
+@pytest.mark.skipif(bool(_MISSING_SERVICE_KEYS), reason="integration test: TEST_SERVICE_KEY_* not set (keys are never committed)")
 class TestServiceKeyAuthentication:
     """Test service key authentication without user context"""
 
@@ -157,7 +162,7 @@ class TestServiceKeyAuthentication:
         - Returns 401 Unauthorized
         - Error message indicates invalid service key
         """
-        fake_service_key = "sk-fake-service-key-9999"
+        fake_service_key = "sk-invalid-00000000000000000000000000000000"
 
         response = await async_client.post(
             "/api/v1/llm/image/generations",
