@@ -971,12 +971,15 @@ async def startup_event():
 
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
-        redis_client = aioredis.from_url(
-            redis_url,
-            encoding="utf-8",
-            decode_responses=True
-        )
-        logger.info(f"Connecting to Redis at: {redis_url}")
+        redis_kwargs = {
+            "encoding": "utf-8",
+            "decode_responses": True,
+        }
+        if os.getenv("REDIS_PASSWORD"):
+            redis_kwargs["password"] = os.getenv("REDIS_PASSWORD")
+        redis_client = aioredis.from_url(redis_url, **redis_kwargs)
+        # Do not log REDIS_URL verbatim: it may contain an embedded password.
+        logger.info("Connecting to Redis for the credit system")
         await redis_client.ping()  # Test connection
         logger.info("Redis client connected")
 
