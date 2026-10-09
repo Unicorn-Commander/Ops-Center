@@ -34,11 +34,9 @@ async def get_current_admin(request: Request) -> str:
     if not session_data:
         if '/app' not in sys.path:
             sys.path.insert(0, '/app')
-        from redis_session import RedisSessionManager
+        from redis_session import redis_session_manager
 
-        redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        redis_sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+        redis_sessions = redis_session_manager
         if session_token in redis_sessions:
             session_data = redis_sessions[session_token]
 

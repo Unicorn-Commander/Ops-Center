@@ -217,8 +217,8 @@ class ColonelGateway:
             return None
 
         try:
-            from redis_session import RedisSessionManager
-            sessions = RedisSessionManager(host=REDIS_HOST, port=REDIS_PORT, password=os.getenv("REDIS_PASSWORD"))
+            from redis_session import redis_session_manager
+            sessions = redis_session_manager
             session_data = sessions.get(session_token)
             if not session_data:
                 return None

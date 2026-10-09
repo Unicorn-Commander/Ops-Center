@@ -125,7 +125,7 @@ class OrganizationStatusUpdate(BaseModel):
 
 async def get_current_user(request: Request) -> Dict:
     """Get current user data from session (uses Redis session manager)"""
-    from redis_session import RedisSessionManager
+    from redis_session import redis_session_manager
 
     session_token = request.cookies.get("session_token")
     if not session_token:
@@ -135,8 +135,8 @@ async def get_current_user(request: Request) -> Dict:
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+    # Reuse the startup-configured session manager.
+    sessions = redis_session_manager
 
     # Get session data
     if session_token not in sessions:

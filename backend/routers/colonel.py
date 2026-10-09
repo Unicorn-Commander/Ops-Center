@@ -38,7 +38,7 @@ def _colonel_id(colonel: str = Query("default", description="Colonel id to scope
 async def _get_user(request: Request) -> dict:
     """Get authenticated user from session cookie."""
     import os
-    from redis_session import RedisSessionManager
+    from redis_session import redis_session_manager
 
     session_token = request.cookies.get("session_token")
     if not session_token:
@@ -46,7 +46,7 @@ async def _get_user(request: Request) -> dict:
 
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+    sessions = redis_session_manager
     session_data = sessions.get(session_token)
 
     if not session_data:
