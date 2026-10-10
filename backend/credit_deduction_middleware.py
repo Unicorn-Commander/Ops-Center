@@ -273,7 +273,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
                 return {'user_id': principal, 'subscription_tier': tier, '_app': match.service}
 
             # Otherwise, try to get user from session cookie
-            from redis_session import RedisSessionManager
+            from redis_session import redis_session_manager
 
             session_token = request.cookies.get("session_token")
             if not session_token:
@@ -282,7 +282,7 @@ class CreditDeductionMiddleware(BaseHTTPMiddleware):
             redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
             redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-            sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+            sessions = redis_session_manager
             user_data = sessions.get(session_token)
 
             if not user_data:

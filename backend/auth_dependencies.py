@@ -43,7 +43,7 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
-    from redis_session import RedisSessionManager
+    from redis_session import RedisSessionUnavailable, redis_session_manager
 
     # Check for session token in cookie
     session_token = request.cookies.get("session_token")
@@ -56,12 +56,15 @@ async def require_authenticated_user(request: Request) -> Dict[str, Any]:
             detail="Not authenticated. Please login to access this resource."
         )
 
-    # Get Redis connection
-    redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
-    redis_port = int(os.getenv("REDIS_PORT", "6379"))
-
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
-    session_data = sessions.get(session_token)
+    try:
+        # Use the startup-configured singleton. This accessor performs one
+        # request-time Redis operation and never enters the startup retry loop.
+        session_data = redis_session_manager.get_for_request(session_token)
+    except RedisSessionUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Session service unavailable. Please try again shortly.",
+        ) from exc
 
     if not session_data:
         raise HTTPException(

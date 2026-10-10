@@ -4,6 +4,7 @@ Federation API router for Ops-Center.
 
 
 import os
+import re
 import sys
 from typing import Any, Dict, List, Literal, Optional
 
@@ -90,62 +91,83 @@ class UsagePayload(BaseModel):
     cost_usd: float = 0.0
 
 
+_SESSION_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{20,256}={0,2}")
+
+
+def _validate_bearer_shape(request: Request) -> None:
+    """Reject malformed admin bearer values before any session lookup."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return
+
+    token = auth_header.split(" ", 1)[1].strip()
+    # JWTs are verified without Redis below. Opaque bearer values are only
+    # eligible for the URL-safe session-token format issued by this service.
+    if token.count(".") == 2 or _SESSION_TOKEN_RE.fullmatch(token):
+        return
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 async def get_current_user(request: Request):
     if "/app" not in sys.path:
         sys.path.insert(0, "/app")
     from auth_manager import auth_manager
-    from redis_session import RedisSessionManager
+    from redis_session import RedisSessionUnavailable, redis_session_manager
 
     session_token = request.cookies.get("session_token")
     if session_token:
-        sessions = RedisSessionManager(
-            host=os.getenv("REDIS_HOST", "unicorn-redis"),
-            port=int(os.getenv("REDIS_PORT", "6379")),
-        )
-        if session_token in sessions:
-            session_data = sessions[session_token]
-            user = session_data.get("user", {})
-            if user:
-                return user
+        try:
+            session_data = redis_session_manager.get_for_request(session_token)
+        except RedisSessionUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Session service unavailable. Please try again shortly.",
+            ) from exc
+        user = (session_data or {}).get("user", {})
+        if user:
+            return user
 
     auth_header = request.headers.get("Authorization", "")
     if auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
+        _validate_bearer_shape(request)
+
+        # A JWT can be verified without Redis. Do this first so malformed or
+        # expired JWTs never turn into a session-store dependency.
+        if token.count(".") == 2:
+            try:
+                jwt_user = auth_manager.verify_token(token)
+            except Exception:
+                jwt_user = None
+            if not jwt_user:
+                raise HTTPException(status_code=401, detail="Invalid or expired token")
+            full_user = auth_manager.get_user(jwt_user["user_id"]) or {}
+            return {
+                **full_user,
+                **jwt_user,
+                "is_admin": jwt_user.get("role") == "admin",
+            }
 
         # The SPA stores the Redis session token in localStorage and sends it as
         # a bearer. Try Redis session lookup first; fall back to JWT verify for
         # tokens issued by auth_manager (local users).
         try:
-            sessions = RedisSessionManager(
-                host=os.getenv("REDIS_HOST", "unicorn-redis"),
-                port=int(os.getenv("REDIS_PORT", "6379")),
-            )
-            if token in sessions:
-                session_data = sessions[token]
-                user = session_data.get("user", {})
-                if user:
-                    return user
-        except Exception:
-            pass
-
-        try:
-            jwt_user = auth_manager.verify_token(token)
-        except Exception:
-            jwt_user = None
-        if not jwt_user:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-        full_user = auth_manager.get_user(jwt_user["user_id"]) or {}
-        return {
-            **full_user,
-            **jwt_user,
-            "is_admin": jwt_user.get("role") == "admin",
-        }
+            session_data = redis_session_manager.get_for_request(token)
+        except RedisSessionUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Session service unavailable. Please try again shortly.",
+            ) from exc
+        user = (session_data or {}).get("user", {})
+        if user:
+            return user
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 async def require_admin(request: Request):
+    _validate_bearer_shape(request)
     user = await get_current_user(request)
     if not user.get("is_admin") and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -158,6 +180,7 @@ async def require_federation_or_admin(request: Request):
     """Accept either federation key auth OR admin user auth."""
     if _federation_secret_ok(request):
         return {"authenticated": True, "method": "federation_key"}
+    _validate_bearer_shape(request)
     return await require_admin(request)
 def _federation_secret_ok(request: Request) -> bool:
     """Verify federation request auth — JWT (preferred) or legacy shared key.
@@ -179,7 +202,11 @@ def _federation_secret_ok(request: Request) -> bool:
 async def get_registry(request: Request) -> NodeRegistry:
     redis_client = getattr(request.app.state, "redis_client", None)
     if redis_client is None:
-        redis_client = aioredis.from_url(os.getenv("REDIS_URL", "redis://unicorn-redis:6379/0"), decode_responses=True)
+        redis_url = os.getenv("REDIS_URL", "redis://unicorn-redis:6379/0")
+        redis_kwargs = {"decode_responses": True}
+        if os.getenv("REDIS_PASSWORD"):
+            redis_kwargs["password"] = os.getenv("REDIS_PASSWORD")
+        redis_client = aioredis.from_url(redis_url, **redis_kwargs)
         request.app.state.redis_client = redis_client
     db_pool = await get_db_pool()
     return NodeRegistry(redis_client=redis_client, db_pool=db_pool)

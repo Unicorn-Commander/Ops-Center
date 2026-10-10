@@ -60,6 +60,9 @@ class FakeRedisSessionManager:
         value = self.store.get(session_id)
         return copy.deepcopy(value) if value is not None else None
 
+    def get_for_request(self, session_id):
+        return self.get(session_id)
+
     def __contains__(self, session_id):
         return session_id in self.store
 
@@ -138,6 +141,7 @@ def modules(monkeypatch):
     monkeypatch.setattr(FakeRedisSessionManager, "store", {
         token: {"user": dict(user), "org_id": "org-" + token} for token, user in SESSION_USERS.items()})
     fake_module(monkeypatch, "redis_session", RedisSessionManager=FakeRedisSessionManager,
+                RedisSessionUnavailable=RuntimeError,
                 redis_session_manager=FakeRedisSessionManager())
     # model_access_api's heavy siblings: only their names are needed by the admin routes.
     fake_module(monkeypatch, "litellm_credit_system", CreditSystem=type("CreditSystem", (), {}))

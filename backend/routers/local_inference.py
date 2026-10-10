@@ -72,7 +72,7 @@ async def get_current_user(request: Request):
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
-    from redis_session import RedisSessionManager
+    from redis_session import redis_session_manager
 
     session_token = request.cookies.get("session_token")
     if not session_token:
@@ -81,7 +81,7 @@ async def get_current_user(request: Request):
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+    sessions = redis_session_manager
 
     if session_token not in sessions:
         raise HTTPException(status_code=401, detail="Invalid or expired session")

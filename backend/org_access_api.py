@@ -114,7 +114,7 @@ async def get_user_id_from_session(request: Request) -> Optional[str]:
         sys.path.insert(0, '/app')
 
     try:
-        from redis_session import RedisSessionManager
+        from redis_session import redis_session_manager
 
         session_token = request.cookies.get("session_token")
         if not session_token:
@@ -123,7 +123,7 @@ async def get_user_id_from_session(request: Request) -> Optional[str]:
         redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-        sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+        sessions = redis_session_manager
 
         # Use .get() (the supported accessor) — `token in sessions` / `sessions[token]`
         # are not reliable on RedisSessionManager and were yielding None -> 401.

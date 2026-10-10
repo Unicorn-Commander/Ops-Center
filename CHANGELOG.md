@@ -5,6 +5,14 @@ All notable changes to Ops-Center will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Redis-backed admin authentication now fails fast.** Session lookups reuse one
+  password-aware client, malformed bearer values are rejected before Redis, and
+  request-time Redis failures return promptly instead of entering the startup
+  retry loop.
+
 ## [3.12.4] - 2026-07-09
 
 ### Added
