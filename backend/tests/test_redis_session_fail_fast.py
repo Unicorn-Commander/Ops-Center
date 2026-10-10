@@ -1,5 +1,6 @@
 """Regression tests for shared Redis session configuration and auth fail-fast behavior."""
 
+import asyncio
 import importlib.util
 import sys
 import time
@@ -87,9 +88,13 @@ def test_request_session_lookup_does_not_sleep_or_retry(monkeypatch):
     sleep.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_invalid_bearer_is_401_before_redis(monkeypatch):
-    """A malformed bearer must not reach the request-time Redis accessor."""
+def test_invalid_bearer_is_401_before_redis(monkeypatch):
+    """A malformed bearer must not reach the request-time Redis accessor.
+
+    Runs on its own event loop (not pytest-asyncio's) so it still executes when
+    an earlier test in the full suite has unset the main thread's current loop,
+    and it never sets or clears the global loop itself.
+    """
     # asyncpg is an optional deployment dependency and is absent from this
     # system Python. The federation router only needs its type names at import.
     if "asyncpg" not in sys.modules:
@@ -126,16 +131,24 @@ async def test_invalid_bearer_is_401_before_redis(monkeypatch):
 
     app = FastAPI()
     app.include_router(federation_router.router)
-    started = time.monotonic()
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
-        base_url="http://test",
-    ) as client:
-        response = await client.get(
-            "/api/v1/federation/nodes",
-            headers={"Authorization": "Bearer bogus"},
-        )
-    elapsed = time.monotonic() - started
+
+    async def call_with_bogus_bearer():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            return await client.get(
+                "/api/v1/federation/nodes",
+                headers={"Authorization": "Bearer bogus"},
+            )
+
+    loop = asyncio.new_event_loop()
+    try:
+        started = time.monotonic()
+        response = loop.run_until_complete(call_with_bogus_bearer())
+        elapsed = time.monotonic() - started
+    finally:
+        loop.close()
 
     assert response.status_code == 401, response.text
     assert elapsed < 1
