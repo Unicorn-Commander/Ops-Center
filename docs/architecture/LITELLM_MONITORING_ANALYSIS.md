@@ -540,7 +540,7 @@ byok_settings:
 ```bash
 # LiteLLM Connection
 LITELLM_PROXY_URL=http://unicorn-litellm:4000
-LITELLM_MASTER_KEY=sk-master-key-generate-this
+LITELLM_MASTER_KEY=<redacted>
 
 # Lago Integration
 LREMOVED
