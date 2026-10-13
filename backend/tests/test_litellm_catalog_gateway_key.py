@@ -97,13 +97,21 @@ class RecordingAsyncClient:
         return FakeResponse({"data": []})
 
 
+def _fake_credentials(values):
+    async def fake(name, default=""):
+        return values.get(name, default)
+
+    return fake
+
+
 @pytest.fixture(autouse=True)
 def isolate_catalog_dependencies(monkeypatch):
     RecordingAsyncClient.calls = []
     monkeypatch.delenv("LITELLM_CATALOG_KEY", raising=False)
     monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setattr(litellm_api, "get_credential", lambda _name: "")
+    monkeypatch.delenv("LITELLM_PROXY_URL", raising=False)
+    monkeypatch.setattr(litellm_api, "get_credential_async", _fake_credentials({}))
     monkeypatch.setattr(litellm_api.httpx, "AsyncClient", RecordingAsyncClient)
 
     federation = types.ModuleType("federation_llm_bridge")
@@ -119,8 +127,8 @@ def isolate_catalog_dependencies(monkeypatch):
 async def test_configured_catalog_credential_is_forwarded_as_bearer(monkeypatch):
     monkeypatch.setattr(
         litellm_api,
-        "get_credential",
-        lambda name: "unit-catalog-credential" if name == "LITELLM_MASTER_KEY" else "",
+        "get_credential_async",
+        _fake_credentials({"LITELLM_MASTER_KEY": "unit-catalog-credential"}),
     )
 
     result = await litellm_api.list_models_categorized(
@@ -176,3 +184,43 @@ async def test_missing_catalog_credential_returns_503_without_outbound_call(capl
     assert len(warnings) == 1
     assert warnings[0].endpoint == "/api/v1/llm/models/categorized"
     assert RecordingAsyncClient.calls == []
+
+
+@pytest.mark.asyncio
+async def test_catalog_uses_platform_settings_proxy_url(monkeypatch):
+    monkeypatch.setattr(
+        litellm_api,
+        "get_credential_async",
+        _fake_credentials(
+            {
+                "LITELLM_MASTER_KEY": "unit-catalog-credential",
+                "LITELLM_PROXY_URL": "http://unit-gateway:4000/",
+            }
+        ),
+    )
+
+    await litellm_api.list_models_categorized(
+        user_id="unit-user",
+        byok_manager=FakeByokManager(),
+        credit_system=FakeCreditSystem(),
+    )
+
+    assert RecordingAsyncClient.calls[0]["url"] == "http://unit-gateway:4000/v1/models"
+
+
+
+@pytest.mark.asyncio
+async def test_catalog_proxy_url_defaults_when_unconfigured(monkeypatch):
+    monkeypatch.setattr(
+        litellm_api,
+        "get_credential_async",
+        _fake_credentials({"LITELLM_MASTER_KEY": "unit-catalog-credential"}),
+    )
+
+    await litellm_api.list_models_categorized(
+        user_id="unit-user",
+        byok_manager=FakeByokManager(),
+        credit_system=FakeCreditSystem(),
+    )
+
+    assert RecordingAsyncClient.calls[0]["url"] == "http://uchub-litellm:4000/v1/models"
