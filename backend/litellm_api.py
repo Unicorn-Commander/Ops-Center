@@ -2992,6 +2992,18 @@ async def list_models_categorized(
             "summary": {...}          # Statistics and provider list
         }
     """
+    litellm_key = (
+        get_credential("LITELLM_MASTER_KEY")
+        or os.getenv("LITELLM_CATALOG_KEY")
+        or os.getenv("LITELLM_MASTER_KEY")
+    )
+    if not litellm_key:
+        logger.warning(
+            "gateway_key_not_configured",
+            extra={"endpoint": "/api/v1/llm/models/categorized"},
+        )
+        raise HTTPException(status_code=503, detail="gateway key not configured")
+
     try:
         # Get user's tier and tier markup percentage
         user_tier = await credit_system.get_user_tier(user_id)
@@ -3018,7 +3030,6 @@ async def list_models_categorized(
         # Fetch models from LiteLLM proxy
         import httpx
         litellm_url = os.getenv("LITELLM_PROXY_URL", "http://uchub-litellm:4000")
-        litellm_key = os.getenv("LITELLM_MASTER_KEY", "REMOVED")
 
         # Get OpenRouter API key for pricing data
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
