@@ -9,9 +9,10 @@ What it asserts (all via `ast`, so no backend deps/DB/Redis are needed):
      app.include_router()s them, the module file exists, parses, and actually
      defines the imported router symbol at module scope.
   3. backend/auth_middleware.py's PUBLIC_EXACT / PUBLIC_PREFIXES allowlists
-     don't accidentally open admin/mutation surfaces: every entry is checked
-     against a denylist of admin-ish / destructive / credential-ish patterns,
-     and over-broad prefixes (e.g. "/api/v1/") are rejected outright.
+     don't accidentally open admin/mutation surfaces: every literal or pure
+     computed entry is checked against a denylist of admin-ish / destructive /
+     credential-ish patterns, and over-broad prefixes (e.g. "/api/v1/") are
+     rejected outright.
   4. Every /admin route in the model-catalog routers (model_access_api, model_admin_api) takes
      Depends(require_admin_user) as its first dependency.
 
@@ -56,7 +57,9 @@ DENY_PATTERNS = [
     (r"/admin\b", "admin-scoped path"),
     (r"/users?\b", "user-management surface"),
     (r"/organizations?\b", "organization-management surface"),
-    (r"/delete\b|/remove\b|/purge\b|/terminate\b|/revoke\b|/wipe\b", "destructive verb in path"),
+    # `revoke-self` is a deliberately self-authenticating uc_-key endpoint;
+    # other revoke paths remain covered by this destructive-path rule.
+    (r"/delete\b|/remove\b|/purge\b|/terminate\b|/revoke(?!-self\b)\b|/wipe\b", "destructive verb in path"),
     (r"/credentials?\b|/secrets?\b|/api-keys?\b|/service-keys?\b", "credential surface"),
     (r"/impersonat", "impersonation surface"),
     (r"/permissions?\b|/roles?\b", "authorization surface"),
@@ -68,6 +71,444 @@ DENY_PATTERNS = [
 
 # Prefixes this broad would disable the default-deny middleware wholesale.
 OVERBROAD = {"/", "/api", "/api/", "/api/v1", "/api/v1/"}
+
+# The resolver below is deliberately an AST interpreter rather than an import
+# or exec of application code.  Keep this environment deterministic: the CI
+# audit must not inherit a runner's secrets or deployment-specific settings.
+STATIC_ENV_DEFAULTS = {
+    "LEGACY_LOCAL_AUTH_ENABLED": "false",
+}
+
+
+class StaticResolutionError(Exception):
+    """The static allowlist resolver cannot prove a value safely."""
+
+
+class _StaticEnvironment:
+    def __init__(self, values):
+        self._values = dict(values)
+
+    def get(self, key, default=None):
+        if not isinstance(key, str):
+            raise StaticResolutionError("os.environ keys must be string literals")
+        return self._values.get(key, default)
+
+    def __getitem__(self, key):
+        value = self.get(key, None)
+        if value is None and key not in self._values:
+            raise StaticResolutionError(f"os.environ has no documented value for {key!r}")
+        return value
+
+
+class _StaticOS:
+    def __init__(self):
+        self.environ = _StaticEnvironment(STATIC_ENV_DEFAULTS)
+
+    def getenv(self, key, default=None):
+        return self.environ.get(key, default)
+
+
+class _StaticSettings:
+    """Small settings stub for pure allowlist builders.
+
+    These values mirror the documented disabled-local-auth CI default.  An
+    unknown setting remains an error instead of being guessed.
+    """
+
+    VALUES = {
+        "LEGACY_LOCAL_AUTH_ENABLED": "false",
+        "legacy_local_auth_enabled": False,
+        "local_auth_enabled": False,
+    }
+
+    def get(self, key, default=None):
+        return self.VALUES.get(key, default)
+
+    def __getattr__(self, name):
+        if name in self.VALUES:
+            return self.VALUES[name]
+        raise StaticResolutionError(f"settings.{name} has no documented static value")
+
+
+class _StaticModule:
+    def __init__(self, path, tree):
+        self.path = path
+        self.tree = tree
+        self.functions = {}
+        self.assignments = {}
+        self.imports = {}
+
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self.functions[node.name] = node
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        self.assignments[target.id] = node.value
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+                self.assignments[node.target.id] = node.value
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    local = alias.asname or alias.name.split(".")[0]
+                    self.imports[local] = ("module", alias.name, None, 0)
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    local = alias.asname or alias.name
+                    self.imports[local] = ("symbol", node.module, alias.name, node.level)
+
+
+class _StaticModuleRef:
+    def __init__(self, module):
+        self.module = module
+
+
+class _StaticFunction:
+    def __init__(self, resolver, module, node):
+        self.resolver = resolver
+        self.module = module
+        self.node = node
+
+
+class _StaticCallable:
+    def __init__(self, function, description):
+        self.function = function
+        self.description = description
+
+
+class _StaticResolver:
+    """Evaluate the small pure subset used by allowlist builder functions."""
+
+    SAFE_BUILTINS = {
+        "bool": bool,
+        "len": len,
+        "list": list,
+        "str": str,
+        "tuple": tuple,
+    }
+    SAFE_STRING_METHODS = {
+        "casefold",
+        "endswith",
+        "lower",
+        "replace",
+        "startswith",
+        "strip",
+        "upper",
+    }
+
+    def __init__(self, entry_path):
+        self.entry_path = entry_path.resolve()
+        self.modules = {}
+        self.assignment_cache = {}
+        self.call_stack = []
+        self.static_os = _StaticOS()
+        self.static_settings = _StaticSettings()
+
+    def resolve(self, expression):
+        module = self._load_module(self.entry_path)
+        return self._eval(expression, module, {})
+
+    def _load_module(self, path):
+        path = path.resolve()
+        if path in self.modules:
+            return self.modules[path]
+        if not path.exists():
+            raise StaticResolutionError(f"imported module {path} does not exist")
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            raise StaticResolutionError(f"cannot parse {path}: {exc}") from exc
+        module = _StaticModule(path, tree)
+        self.modules[path] = module
+        return module
+
+    def _find_imported_module(self, module_name, importing_module, level):
+        if level:
+            directory = importing_module.path.parent
+            for _ in range(level - 1):
+                directory = directory.parent
+            relative = (module_name or "").replace(".", "/")
+            roots = [directory]
+        else:
+            relative = (module_name or "").replace(".", "/")
+            roots = [importing_module.path.parent, BACKEND, REPO]
+
+        for root in roots:
+            candidate = root / f"{relative}.py"
+            if candidate.exists():
+                return self._load_module(candidate)
+            package = root / relative / "__init__.py"
+            if package.exists():
+                return self._load_module(package)
+        raise StaticResolutionError(
+            f"cannot locate imported module {(module_name or '<package>')!r} "
+            f"from {importing_module.path}"
+        )
+
+    def _resolve_import(self, module, name):
+        kind, module_name, imported_name, level = module.imports[name]
+        if module_name == "os" and not level:
+            if kind == "module":
+                return self.static_os
+            if imported_name == "environ":
+                return self.static_os.environ
+            if imported_name == "getenv":
+                return _StaticCallable(self.static_os.getenv, "os.getenv")
+            raise StaticResolutionError(f"os.{imported_name} is not supported by the static environment")
+
+        imported = self._find_imported_module(module_name, module, level)
+        if kind == "module":
+            return _StaticModuleRef(imported)
+        return self._resolve_name(imported, imported_name, {})
+
+    def _resolve_name(self, module, name, local_values):
+        if name in local_values:
+            return local_values[name]
+        if name in module.functions:
+            return _StaticFunction(self, module, module.functions[name])
+        if name in module.assignments:
+            key = (module.path, name)
+            if key not in self.assignment_cache:
+                self.assignment_cache[key] = self._eval(module.assignments[name], module, {})
+            return self.assignment_cache[key]
+        if name in module.imports:
+            return self._resolve_import(module, name)
+        if name in self.SAFE_BUILTINS:
+            return self.SAFE_BUILTINS[name]
+        if name == "os":
+            return self.static_os
+        if name == "settings":
+            return self.static_settings
+        raise StaticResolutionError(f"name {name!r} is not available in the static environment")
+
+    def _resolve_attribute(self, value, name):
+        if isinstance(value, _StaticModuleRef):
+            return self._resolve_name(value.module, name, {})
+        if value is self.static_os:
+            if name == "environ":
+                return value.environ
+            if name == "getenv":
+                return _StaticCallable(value.getenv, "os.getenv")
+            raise StaticResolutionError(f"os.{name} is not supported by the static environment")
+        if isinstance(value, _StaticEnvironment):
+            if name == "get":
+                return _StaticCallable(value.get, "os.environ.get")
+            raise StaticResolutionError(f"os.environ.{name} is not supported by the static environment")
+        if isinstance(value, _StaticSettings):
+            if name == "get":
+                return _StaticCallable(value.get, "settings.get")
+            return getattr(value, name)
+        if isinstance(value, str) and name in self.SAFE_STRING_METHODS:
+            return _StaticCallable(getattr(value, name), f"str.{name}")
+        raise StaticResolutionError(f"attribute {name!r} is not supported in the static environment")
+
+    def _eval(self, node, module, local_values):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            return self._resolve_name(module, node.id, local_values)
+        if isinstance(node, ast.Tuple):
+            return tuple(self._eval(item, module, local_values) for item in node.elts)
+        if isinstance(node, ast.List):
+            return [self._eval(item, module, local_values) for item in node.elts]
+        if isinstance(node, ast.Set):
+            return {self._eval(item, module, local_values) for item in node.elts}
+        if isinstance(node, ast.Dict):
+            if any(key is None for key in node.keys):
+                raise StaticResolutionError("dictionary unpacking is not supported")
+            return {
+                self._eval(key, module, local_values): self._eval(value, module, local_values)
+                for key, value in zip(node.keys, node.values)
+            }
+        if isinstance(node, ast.Attribute):
+            return self._resolve_attribute(self._eval(node.value, module, local_values), node.attr)
+        if isinstance(node, ast.Subscript):
+            value = self._eval(node.value, module, local_values)
+            key = self._eval(node.slice, module, local_values)
+            try:
+                return value[key]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise StaticResolutionError(f"cannot resolve subscript {key!r}: {exc}") from exc
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self._eval(node.left, module, local_values) + self._eval(node.right, module, local_values)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.UAdd, ast.USub)):
+            value = self._eval(node.operand, module, local_values)
+            if isinstance(node.op, ast.Not):
+                return not value
+            return +value if isinstance(node.op, ast.UAdd) else -value
+        if isinstance(node, ast.BoolOp):
+            if isinstance(node.op, ast.And):
+                result = None
+                for value_node in node.values:
+                    result = self._eval(value_node, module, local_values)
+                    if not result:
+                        return result
+                return result
+            if isinstance(node.op, ast.Or):
+                result = None
+                for value_node in node.values:
+                    result = self._eval(value_node, module, local_values)
+                    if result:
+                        return result
+                return result
+        if isinstance(node, ast.IfExp):
+            branch = node.body if self._eval(node.test, module, local_values) else node.orelse
+            return self._eval(branch, module, local_values)
+        if isinstance(node, ast.Compare):
+            left = self._eval(node.left, module, local_values)
+            comparisons = []
+            for operator, comparator in zip(node.ops, node.comparators):
+                right = self._eval(comparator, module, local_values)
+                if isinstance(operator, ast.Eq):
+                    result = left == right
+                elif isinstance(operator, ast.NotEq):
+                    result = left != right
+                elif isinstance(operator, ast.In):
+                    result = left in right
+                elif isinstance(operator, ast.NotIn):
+                    result = left not in right
+                else:
+                    raise StaticResolutionError(f"comparison {type(operator).__name__} is not supported")
+                comparisons.append(result)
+                left = right
+            return all(comparisons)
+        if isinstance(node, ast.Call):
+            function = self._eval(node.func, module, local_values)
+            args = [self._eval(arg, module, local_values) for arg in node.args]
+            keywords = {}
+            for keyword in node.keywords:
+                if keyword.arg is None:
+                    raise StaticResolutionError("call argument unpacking is not supported")
+                keywords[keyword.arg] = self._eval(keyword.value, module, local_values)
+            return self._call(function, args, keywords)
+        raise StaticResolutionError(f"expression {type(node).__name__} is not supported")
+
+    def _call(self, function, args, keywords):
+        if isinstance(function, _StaticFunction):
+            return self._call_function(function, args, keywords)
+        if isinstance(function, _StaticCallable):
+            try:
+                return function.function(*args, **keywords)
+            except Exception as exc:
+                raise StaticResolutionError(f"{function.description} failed: {exc}") from exc
+        if function in self.SAFE_BUILTINS.values():
+            try:
+                return function(*args, **keywords)
+            except Exception as exc:
+                raise StaticResolutionError(f"safe builtin {function.__name__} failed: {exc}") from exc
+        raise StaticResolutionError("call target is not an approved static function")
+
+    def _call_function(self, function, args, keywords):
+        if isinstance(function.node, ast.AsyncFunctionDef):
+            raise StaticResolutionError(f"async function {function.node.name} cannot be evaluated statically")
+        if function.node.name in self.call_stack:
+            raise StaticResolutionError(f"recursive function {function.node.name} cannot be evaluated statically")
+
+        positional = list(function.node.args.posonlyargs) + list(function.node.args.args)
+        if function.node.args.vararg or function.node.args.kwarg or function.node.args.kwonlyargs:
+            raise StaticResolutionError(
+                f"function {function.node.name} uses unsupported *args/**kwargs or keyword-only arguments"
+            )
+        if len(args) > len(positional):
+            raise StaticResolutionError(f"too many arguments for {function.node.name}")
+
+        values = {}
+        defaults = [_MISSING] * (len(positional) - len(function.node.args.defaults)) + list(function.node.args.defaults)
+        for parameter, default in zip(positional, defaults):
+            if args:
+                values[parameter.arg] = args.pop(0)
+            elif parameter.arg in keywords:
+                values[parameter.arg] = keywords.pop(parameter.arg)
+            elif default is not _MISSING:
+                values[parameter.arg] = self._eval(default, function.module, {})
+            else:
+                raise StaticResolutionError(f"missing argument {parameter.arg!r} for {function.node.name}")
+        if args or keywords:
+            raise StaticResolutionError(f"unexpected arguments for {function.node.name}")
+
+        self.call_stack.append(function.node.name)
+        try:
+            returned, value = self._execute_block(function.node.body, function.module, values)
+        finally:
+            self.call_stack.pop()
+        if not returned:
+            raise StaticResolutionError(f"function {function.node.name} has no static return value")
+        return value
+
+    def _execute_block(self, statements, module, local_values):
+        for statement in statements:
+            if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
+                continue
+            if isinstance(statement, ast.Pass):
+                continue
+            if isinstance(statement, ast.Return):
+                value = None if statement.value is None else self._eval(statement.value, module, local_values)
+                return True, value
+            if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                value_node = statement.value
+                if value_node is None:
+                    raise StaticResolutionError("annotated assignment has no value")
+                targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+                if len(targets) != 1 or not isinstance(targets[0], ast.Name):
+                    raise StaticResolutionError("only simple local assignments are supported")
+                local_values[targets[0].id] = self._eval(value_node, module, local_values)
+                continue
+            if isinstance(statement, ast.If):
+                branch = statement.body if self._eval(statement.test, module, local_values) else statement.orelse
+                returned, value = self._execute_block(branch, module, local_values)
+                if returned:
+                    return True, value
+                continue
+            raise StaticResolutionError(f"statement {type(statement).__name__} is not supported")
+        return False, None
+
+
+_MISSING = object()
+
+
+def _find_allowlist_assignment(tree: ast.Module, name: str):
+    """Return the last module-scope assignment value for *name*, if present."""
+    value = _MISSING
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            value = node.value
+    return value
+
+
+def resolve_allowlist(path: Path, name: str):
+    """Resolve an allowlist value without importing or executing app code.
+
+    Literal values retain the original path.  PUBLIC_PREFIXES may additionally
+    be a pure call expression whose function is defined in this module or a
+    local imported module; unsupported expressions raise instead of passing an
+    incomplete audit.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError) as exc:
+        raise StaticResolutionError(f"cannot parse {path}: {exc}") from exc
+
+    value = _find_allowlist_assignment(tree, name)
+    if value is _MISSING:
+        raise StaticResolutionError(f"{name} not found (renamed? middleware gutted?)")
+
+    try:
+        return ast.literal_eval(value)
+    except (ValueError, TypeError, SyntaxError):
+        if name != "PUBLIC_PREFIXES":
+            raise StaticResolutionError(f"{name} is no longer a literal — cannot audit it statically")
+
+    try:
+        return _StaticResolver(path).resolve(value)
+    except StaticResolutionError as exc:
+        raise StaticResolutionError(f"{name} could not be resolved statically: {exc}") from exc
 
 failures = []
 
@@ -197,30 +638,31 @@ def check_server() -> ast.Module:
 
 def check_auth_allowlists() -> None:
     """Check 3: the public allowlists in auth_middleware.py stay tight."""
-    tree = parse(BACKEND / "auth_middleware.py")
+    auth_path = BACKEND / "auth_middleware.py"
+    tree = parse(auth_path)
     if tree is None:
         return
 
-    exact = prefixes = None
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id in ("PUBLIC_EXACT", "PUBLIC_PREFIXES"):
-                    try:
-                        value = ast.literal_eval(node.value)
-                    except (ValueError, SyntaxError):
-                        fail(f"auth_middleware.py: {target.id} is no longer a literal — cannot audit it statically")
-                        continue
-                    if target.id == "PUBLIC_EXACT":
-                        exact = value
-                    else:
-                        prefixes = value
+    exact = prefixes = _MISSING
+    for name in ("PUBLIC_EXACT", "PUBLIC_PREFIXES"):
+        try:
+            value = resolve_allowlist(auth_path, name)
+        except StaticResolutionError as exc:
+            fail(f"auth_middleware.py: {exc}")
+            continue
+        if name == "PUBLIC_EXACT":
+            exact = value
+        else:
+            prefixes = value
 
-    if exact is None:
-        fail("auth_middleware.py: PUBLIC_EXACT not found (renamed? middleware gutted?)")
-    if prefixes is None:
-        fail("auth_middleware.py: PUBLIC_PREFIXES not found (renamed? middleware gutted?)")
-    if exact is None or prefixes is None:
+    if exact is _MISSING or prefixes is _MISSING:
+        return
+
+    if not isinstance(exact, (tuple, list, set, frozenset)):
+        fail(f"auth_middleware.py: PUBLIC_EXACT resolved to {type(exact).__name__}, expected a collection")
+        return
+    if not isinstance(prefixes, (tuple, list, set, frozenset)):
+        fail(f"auth_middleware.py: PUBLIC_PREFIXES resolved to {type(prefixes).__name__}, expected a collection")
         return
 
     entries = [("PUBLIC_EXACT", e) for e in exact] + [("PUBLIC_PREFIXES", p) for p in prefixes]
