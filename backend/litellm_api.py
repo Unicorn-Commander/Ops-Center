@@ -34,7 +34,7 @@ from usage_metering import usage_meter
 from cryptography.fernet import Fernet
 
 # Import universal credential helper
-from get_credential import get_credential
+from get_credential import get_credential, get_credential_async
 
 # Import organizational credit integration
 from org_credit_integration import get_org_credit_integration
@@ -2992,8 +2992,11 @@ async def list_models_categorized(
             "summary": {...}          # Statistics and provider list
         }
     """
+    # Resolve DB-first at request time. The sync get_credential() cannot read
+    # platform_settings inside a running event loop (it falls back to env), and
+    # neither console sets the gateway key in env.
     litellm_key = (
-        get_credential("LITELLM_MASTER_KEY")
+        await get_credential_async("LITELLM_MASTER_KEY")
         or os.getenv("LITELLM_CATALOG_KEY")
         or os.getenv("LITELLM_MASTER_KEY")
     )
@@ -3029,7 +3032,9 @@ async def list_models_categorized(
 
         # Fetch models from LiteLLM proxy
         import httpx
-        litellm_url = os.getenv("LITELLM_PROXY_URL", "http://uchub-litellm:4000")
+        litellm_url = (
+            await get_credential_async("LITELLM_PROXY_URL") or "http://uchub-litellm:4000"
+        ).rstrip("/")
 
         # Get OpenRouter API key for pricing data
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
