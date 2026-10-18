@@ -22,10 +22,12 @@ import logging
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 import httpx
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from colonel.config import get_colonel_config, list_colonels
@@ -59,6 +61,20 @@ COLONEL_PROVIDER_URL = os.getenv(
 # Starlette derived from the inbound request. Useful behind reverse
 # proxies that don't forward X-Forwarded-Proto correctly.
 COLONEL_PUBLIC_URL = os.getenv("COLONEL_PUBLIC_URL", "").rstrip("/")
+
+MCP_INDEX_PATH = Path(__file__).resolve().parent.parent / "config" / "mcps-index.json"
+# The transport implementation is JSON-RPC 2.0; this is the current A2A card
+# shape used by clients of the discovery endpoint.
+CURRENT_A2A_PROTOCOL_VERSION = "0.3.0"
+
+
+def _load_mcp_index() -> Dict[str, Any]:
+    """Load the committed suite MCP discovery index."""
+    with MCP_INDEX_PATH.open(encoding="utf-8") as config_file:
+        return json.load(config_file)
+
+
+MCP_INDEX = _load_mcp_index()
 
 
 def _public_base_url(request) -> str:
@@ -217,6 +233,27 @@ async def agent_card(request: Request):
     return await _build_card_for("default", base_url)
 
 
+@router.get("/.well-known/agent-card.json")
+async def current_agent_card(request: Request):
+    """Publish the current A2A Agent Card shape for the default Colonel."""
+    base_url = _public_base_url(request)
+    card = await _build_card_for("default", base_url)
+    card.update(
+        {
+            "protocolVersion": CURRENT_A2A_PROTOCOL_VERSION,
+            "securitySchemes": {
+                "bearer": {
+                    "type": "http",
+                    "scheme": "bearer",
+                }
+            },
+            "security": [{"bearer": []}],
+            "preferredTransport": "JSONRPC",
+        }
+    )
+    return card
+
+
 @router.get("/.well-known/agent-{colonel_id}.json")
 async def agent_card_named(colonel_id: str, request: Request):
     """
@@ -232,6 +269,11 @@ async def agent_card_named(colonel_id: str, request: Request):
             status_code=404,
             detail="Use /.well-known/agent.json for the default Colonel.",
         )
+    if colonel_id == "card":
+        raise HTTPException(
+            status_code=404,
+            detail="Use /.well-known/agent-card.json for the current Agent Card.",
+        )
 
     # Verify the colonel exists before building the card so callers get a
     # clean 404 instead of a synthetic empty card.
@@ -241,6 +283,12 @@ async def agent_card_named(colonel_id: str, request: Request):
 
     base_url = _public_base_url(request)
     return await _build_card_for(colonel_id, base_url)
+
+
+@router.get("/.well-known/mcps.json", response_class=JSONResponse)
+async def mcp_index():
+    """Publish the public Unicorn Commander suite MCP discovery index."""
+    return JSONResponse(content=MCP_INDEX)
 
 
 @router.get("/.well-known/api-catalog")
