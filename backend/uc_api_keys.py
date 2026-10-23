@@ -19,6 +19,7 @@ Date: November 3, 2025
 """
 
 import logging
+import os
 import secrets
 import time
 import bcrypt
@@ -47,6 +48,23 @@ DEFAULT_UC_KEY_PERMISSIONS = [
     "llm:models",
     "mcp:accounting-ops",
 ]
+
+# Step 1.5 is deliberately dark until dogfood enables it.  The endpoint is
+# still registered while disabled so the console has a stable wiring target.
+AUTO_PROVISION_DEFAULT_UC_API_KEY_ENV = "UC_API_KEY_AUTO_PROVISION_ENABLED"
+DEFAULT_ONBOARDING_KEY_NAME = "onboarding-default"
+_API_KEY_ELIGIBLE_TIERS = frozenset(
+    {
+        "app",
+        "byok",
+        "enterprise",
+        "founder_friend",
+        "managed",
+        "professional",
+        "starter",
+        "vip_founder",
+    }
+)
 
 _LLM_PERMISSIONS = frozenset({"llm:inference", "llm:models", "llm:embeddings", "llm:audio"})
 _MCP_WILDCARD = "mcp:*"
@@ -142,6 +160,23 @@ class UCAPIKeyCreateResponse(BaseModel):
     created_at: str
     expires_at: Optional[str]
     warning: str = "Save this API key now. You won't be able to see it again."
+
+
+class EnsureDefaultUCAPIKeyResponse(BaseModel):
+    """Result of the idempotent signup/onboarding API-key step."""
+
+    enabled: bool
+    eligible: bool
+    created: bool
+    key_id: Optional[str] = None
+    api_key: Optional[str] = None
+    key_name: Optional[str] = None
+    key_preview: Optional[str] = None
+    permissions: List[str] = Field(default_factory=list)
+    created_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    reason: Optional[str] = None
+    warning: Optional[str] = None
 
 
 # ============================================================================
@@ -250,9 +285,299 @@ def get_key_status(key_record) -> str:
     return "active"
 
 
+def auto_provision_default_uc_api_key_enabled() -> bool:
+    """Return whether signup/onboarding key provisioning is enabled."""
+    return os.getenv(
+        AUTO_PROVISION_DEFAULT_UC_API_KEY_ENV, "false"
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _normalize_tier(value) -> Optional[str]:
+    """Normalize a tier value from Keycloak attributes or a session."""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if value is None:
+        return None
+    return str(value).strip().lower().replace("-", "_") or None
+
+
+def plan_allows_default_uc_api_key(
+    plan_tier: Optional[str],
+    api_calls_limit: Optional[int] = None,
+) -> bool:
+    """Apply the existing API-access plan boundary, failing closed for unknown tiers.
+
+    The customer-facing tier definitions exclude ``free`` and ``trial`` from API
+    access.  The database's ``api_calls_limit`` is authoritative for custom tiers;
+    the known tier list is used when a session is all the endpoint can resolve.
+    """
+    tier = _normalize_tier(plan_tier)
+    if not tier or tier in {"free", "trial"}:
+        return False
+
+    if api_calls_limit is not None:
+        try:
+            return int(api_calls_limit) != 0
+        except (TypeError, ValueError):
+            return False
+
+    return tier in _API_KEY_ELIGIBLE_TIERS
+
+
+def _record_value(record, key: str, default=None):
+    """Read a value from an asyncpg Record or a plain mapping used by tests."""
+    if record is None:
+        return default
+    try:
+        return record[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
+def _session_plan_tier(request: Optional[Request], current_user: Dict) -> Optional[str]:
+    """Read a plan from the authenticated user/session without trusting request data."""
+    candidates = [
+        current_user.get("subscription_tier"),
+        current_user.get("plan_tier"),
+        current_user.get("tier"),
+    ]
+
+    if request is not None:
+        session_token = request.cookies.get("session_token")
+        sessions = getattr(request.app.state, "sessions", {})
+        session_data = sessions.get(session_token) if session_token else None
+        if session_data:
+            candidates.extend(
+                [
+                    session_data.get("subscription_tier"),
+                    session_data.get("plan_tier"),
+                    session_data.get("tier"),
+                ]
+            )
+            session_user = session_data.get("user") or {}
+            candidates.extend(
+                [
+                    session_user.get("subscription_tier"),
+                    session_user.get("plan_tier"),
+                    session_user.get("tier"),
+                ]
+            )
+
+    for candidate in candidates:
+        tier = _normalize_tier(candidate)
+        if tier:
+            return tier
+    return None
+
+
+async def _resolve_default_key_plan(
+    request: Optional[Request],
+    current_user: Dict,
+    db_pool: asyncpg.Pool,
+) -> tuple[Optional[str], Optional[int]]:
+    """Resolve the caller's org plan, preferring the database over session data."""
+    user_id = current_user.get("user_id")
+    session_tier = _session_plan_tier(request, current_user)
+
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT o.plan_tier, st.api_calls_limit
+                FROM organization_members om
+                JOIN organizations o ON o.id = om.org_id
+                LEFT JOIN users u ON u.id::text = om.user_id
+                LEFT JOIN subscription_tiers st ON st.tier_code = o.plan_tier
+                WHERE om.user_id = $1 OR u.zitadel_id = $1
+                LIMIT 1
+                """,
+                str(user_id),
+            )
+        if row:
+            return _normalize_tier(_record_value(row, "plan_tier")), _record_value(
+                row, "api_calls_limit"
+            )
+    except Exception as exc:
+        # A missing/legacy entitlement table should not turn a login into a 500.
+        # If a trusted session carries a known tier, use that; otherwise fail closed.
+        logger.warning(
+            "Default API-key plan lookup failed for user %s: %s", user_id, exc
+        )
+
+    return session_tier, None
+
+
+def _isoformat(value) -> Optional[str]:
+    """Format a timestamp from asyncpg or a test double."""
+    return (
+        value.isoformat()
+        if value is not None and hasattr(value, "isoformat")
+        else value
+    )
+
+
+def _permissions_from_record(record) -> List[str]:
+    permissions = _record_value(record, "permissions", [])
+    if isinstance(permissions, str):
+        permissions = json.loads(permissions)
+    return list(permissions or [])
+
+
+def _existing_default_key_response(record) -> EnsureDefaultUCAPIKeyResponse:
+    """Return metadata for an existing default key without returning its secret."""
+    key_prefix = _record_value(record, "key_prefix") or ""
+    return EnsureDefaultUCAPIKeyResponse(
+        enabled=True,
+        eligible=True,
+        created=False,
+        key_id=str(_record_value(record, "id")),
+        key_name=_record_value(record, "key_name", DEFAULT_ONBOARDING_KEY_NAME),
+        key_preview=f"{key_prefix}...****" if key_prefix else None,
+        permissions=_permissions_from_record(record),
+        created_at=_isoformat(_record_value(record, "created_at")),
+        expires_at=_isoformat(_record_value(record, "expires_at")),
+        reason="already_provisioned",
+    )
+
+
+async def ensure_default_uc_api_key(
+    current_user: Dict,
+    db_pool: asyncpg.Pool,
+    request: Optional[Request] = None,
+) -> EnsureDefaultUCAPIKeyResponse:
+    """Mint the reserved onboarding key once and only once for an entitled user."""
+    if not auto_provision_default_uc_api_key_enabled():
+        return EnsureDefaultUCAPIKeyResponse(
+            enabled=False,
+            eligible=False,
+            created=False,
+            reason="feature_disabled",
+        )
+
+    user_id = (
+        current_user.get("user_id") or current_user.get("sub") or current_user.get("id")
+    )
+    if not user_id or user_id == "unknown":
+        raise HTTPException(
+            status_code=401, detail="Authenticated user has no stable ID"
+        )
+
+    plan_tier, api_calls_limit = await _resolve_default_key_plan(
+        request, current_user, db_pool
+    )
+    if not plan_allows_default_uc_api_key(plan_tier, api_calls_limit):
+        return EnsureDefaultUCAPIKeyResponse(
+            enabled=True,
+            eligible=False,
+            created=False,
+            reason="plan_not_entitled",
+        )
+
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            # There is no uniqueness constraint on user_api_keys.key_name.  The
+            # advisory lock makes the read-then-insert idempotence safe when two
+            # onboarding requests arrive at the same time.
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))",
+                f"uc-api-key:{user_id}:{DEFAULT_ONBOARDING_KEY_NAME}",
+            )
+            existing = await conn.fetchrow(
+                """
+                SELECT id, key_name, key_prefix, permissions, created_at, expires_at
+                FROM user_api_keys
+                WHERE user_id = $1 AND key_name = $2
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                user_id,
+                DEFAULT_ONBOARDING_KEY_NAME,
+            )
+            if existing:
+                return _existing_default_key_response(existing)
+
+            api_key, prefix = generate_uc_api_key()
+            key_hash = hash_api_key(api_key)
+            expires_at = datetime.utcnow() + timedelta(days=90)
+            result = await conn.fetchrow(
+                """
+                INSERT INTO user_api_keys (
+                    user_id, key_name, key_hash, key_prefix,
+                    permissions, expires_at
+                )
+                VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+                RETURNING id, created_at
+                """,
+                user_id,
+                DEFAULT_ONBOARDING_KEY_NAME,
+                key_hash,
+                prefix,
+                json.dumps(DEFAULT_UC_KEY_PERMISSIONS),
+                expires_at,
+            )
+
+    # Deliberately log only non-secret metadata.  The plaintext is returned in
+    # this response and is never retained or interpolated into a log message.
+    logger.info("Provisioned default UC API key for user %s", user_id)
+    return EnsureDefaultUCAPIKeyResponse(
+        enabled=True,
+        eligible=True,
+        created=True,
+        key_id=str(_record_value(result, "id")),
+        api_key=api_key,
+        key_name=DEFAULT_ONBOARDING_KEY_NAME,
+        key_preview=mask_api_key(api_key),
+        permissions=list(DEFAULT_UC_KEY_PERMISSIONS),
+        created_at=_isoformat(_record_value(result, "created_at")),
+        expires_at=expires_at.isoformat(),
+        warning="Save this API key now. You won't be able to see it again.",
+    )
+
+
 # ============================================================================
 # API Endpoints
 # ============================================================================
+
+
+@router.post(
+    "/ensure-default",
+    response_model=EnsureDefaultUCAPIKeyResponse,
+    status_code=200,
+)
+async def ensure_default_uc_api_key_endpoint(
+    request: Request,
+    current_user: Dict = Depends(get_current_user),
+):
+    """Step 1.5: provision the entitled user's default UC API key once.
+
+    The console should call this after the first authenticated signup/onboarding
+    response.  The plaintext ``api_key`` is present only when this call creates
+    the row; retries return metadata without the secret.
+    """
+    if not auto_provision_default_uc_api_key_enabled():
+        return EnsureDefaultUCAPIKeyResponse(
+            enabled=False,
+            eligible=False,
+            created=False,
+            reason="feature_disabled",
+        )
+
+    try:
+        db_pool = await get_db_pool(request)
+        return await ensure_default_uc_api_key(current_user, db_pool, request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error ensuring default UC API key: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to provision default API key"
+        )
+
 
 @router.post("", response_model=UCAPIKeyCreateResponse, status_code=201)
 async def create_uc_api_key(
@@ -412,7 +737,7 @@ async def revoke_uc_api_key(
 
         return {
             "success": True,
-            "message": f"API key revoked successfully",
+            "message": "API key revoked successfully",
             "key_id": key_id
         }
 
@@ -582,7 +907,7 @@ async def get_uc_api_key(
 # session cookie involved. Token verification reuses the entitlements JWKS
 # pattern (RS256, allowlisted uchub issuers, both realms).
 
-from entitlements_api import _verify_bearer as _verify_kc_bearer
+from entitlements_api import _verify_bearer as _verify_kc_bearer  # noqa: E402
 
 _MINT_RATE_LIMIT = 5        # mints
 _MINT_RATE_WINDOW = 3600.0  # per hour, per user (in-process; server runs single-worker)
