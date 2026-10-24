@@ -98,8 +98,11 @@ export function OrganizationProvider({ children }) {
       const orgs = data.organizations || data || [];
       setOrganizations(orgs);
 
-      // If no current org set, use API's current_org_id or default to first org
-      if (!currentOrgId && orgs.length > 0) {
+      // If no current org is set, or the saved one is no longer in the user's list
+      // (membership removed, org deactivated), use the API's current/default org.
+      // Otherwise a stale saved id leaves the switcher on "Select Organization".
+      const savedOrgIsValid = !!currentOrgId && orgs.some(org => org.id === currentOrgId);
+      if (!savedOrgIsValid && orgs.length > 0) {
         const orgId = data.current_org_id || data.default_org_id || orgs[0].id;
         setCurrentOrgId(orgId);
         localStorage.setItem('currentOrgId', orgId);
