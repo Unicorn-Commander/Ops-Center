@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Licence: Apache-2.0 (was AGPL-3.0-or-later).
+
 ### Fixed
 - **Redis-backed admin authentication now fails fast.** Session lookups reuse one
   password-aware client, malformed bearer values are rejected before Redis, and

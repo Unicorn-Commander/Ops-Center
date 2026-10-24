@@ -552,7 +552,7 @@ ${pageHead({
       <div class="shell railed">
         <span class="rail-num">01</span>
         <h2 class="section-title">What ships, and under what license</h2>
-        <p class="lede">${pad2(SELF_HOSTABLE)} of ${pad2(TOTAL)} products are self-hostable today. Each states its own license. There is no blanket claim on this page because there is no blanket truth: one of these is Apache-2.0 and the rest are AGPL-3.0.</p>
+        <p class="lede">${pad2(SELF_HOSTABLE)} of ${pad2(TOTAL)} products are self-hostable today. Each states its own license. There is no blanket claim on this page because there is no blanket truth: four of these are Apache-2.0, and Center Deep Research's core remains AGPL-3.0 because it is built on SearXNG.</p>
         <div class="ledger-scroll">
           <table class="ledger">
             <thead>

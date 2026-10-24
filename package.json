@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Professional admin dashboard for UC-1 Pro",
   "private": true,
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"

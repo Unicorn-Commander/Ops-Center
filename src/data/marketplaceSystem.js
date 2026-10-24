@@ -151,11 +151,9 @@ export const AUDIENCES = [
     n: 'No. 03',
     verb: 'Host the whole platform',
     // Door 3 carries the most concrete sentence on the page. It must NEVER
-    // claim blanket AGPL: Majiks Studio ships Apache-2.0 with no public repo,
-    // so a blanket claim would be false, and a false sovereignty claim
-    // discredits the one thesis no competing marketplace can match.
-    // (Project-Ops was the example here until its public edition was measured
-    // and found to be AGPL-3.0 and genuinely public; the rule is unchanged.)
+    // claim one licence for the whole catalog. Majiks Studio ships Apache-2.0
+    // with no public repo, and Center Deep Research's core stays AGPL-3.0
+    // because it is built on SearXNG. A blanket claim would be false.
     claim: 'Run every part of this on your own hardware. Every listing states its exact license, and the source link only appears when the repository is actually public.',
     proof: `${SELF_HOSTABLE} of ${TOTAL} self-hostable today`,
     cta: 'What self-hosting takes',
