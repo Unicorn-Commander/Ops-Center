@@ -167,7 +167,9 @@ async def get_user_organizations(request: Request):
     - Tier information
     - Accessible apps based on tier
 
-    Also returns current_org_id (from cookie) and default_org_id (first org).
+    Also returns current_org_id (from cookie) and default_org_id (the membership flagged
+    is_default, else the oldest). Memberships may be keyed by the Keycloak subject or by
+    the legacy users.id mapped through users.zitadel_id; both count.
     """
     user_id = await get_user_id_from_session(request)
 
@@ -184,16 +186,32 @@ async def get_user_organizations(request: Request):
                 COALESCE(LOWER(REPLACE(o.name, ' ', '-')), o.id::text) as org_slug,
                 om.role,
                 COALESCE(st.tier_code, o.plan_tier, 'managed') as tier_code,
-                COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' ')), 'Managed') as tier_name
+                COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' ')), 'Managed') as tier_name,
+                COALESCE(om.is_default, FALSE) as is_default,
+                om.joined_at
             FROM organization_members om
             JOIN organizations o ON om.org_id = o.id
+            LEFT JOIN users u ON u.id::text = om.user_id
             LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
-            WHERE om.user_id = $1
+            WHERE (om.user_id = $1 OR u.zitadel_id = $1)
               AND o.status = 'active'
-            ORDER BY o.name
+            ORDER BY COALESCE(om.is_default, FALSE) DESC, om.joined_at ASC NULLS LAST, o.name
         """
 
-        org_rows = await conn.fetch(query, user_id)
+        # Memberships are keyed either by the Keycloak subject (current org APIs)
+        # or by the legacy users.id that maps to it through users.zitadel_id.
+        # One org can therefore match twice; keep the first (default-first) row.
+        raw_rows = await conn.fetch(query, user_id)
+        seen = set()
+        org_rows = []
+        for r in raw_rows:
+            if r['org_id'] in seen:
+                continue
+            seen.add(r['org_id'])
+            org_rows.append(r)
+        # The user's default org is the first row; display order is by name.
+        default_org_id = org_rows[0]['org_id'] if org_rows else None
+        org_rows.sort(key=lambda r: (r['org_name'] or '').lower())
 
         if not org_rows:
             # User has no organizations - return empty list
@@ -260,7 +278,6 @@ async def get_user_organizations(request: Request):
         if current_org_id and current_org_id not in org_ids:
             current_org_id = None
 
-        default_org_id = org_ids[0] if org_ids else None
 
         return OrganizationsResponse(
             organizations=organizations,
@@ -304,8 +321,9 @@ async def switch_organization(
                 COALESCE(st.tier_code, 'managed') as tier_code
             FROM organization_members om
             JOIN organizations o ON om.org_id = o.id
+            LEFT JOIN users u ON u.id::text = om.user_id
             LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
-            WHERE om.user_id = $1
+            WHERE (om.user_id = $1 OR u.zitadel_id = $1)
               AND o.id = $2
               AND o.status = 'active'
         """
@@ -375,8 +393,9 @@ async def get_current_organization(request: Request):
                     COALESCE(st.tier_name, 'Managed') as tier_name
                 FROM organization_members om
                 JOIN organizations o ON om.org_id = o.id
+                LEFT JOIN users u ON u.id::text = om.user_id
                 LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
-                WHERE om.user_id = $1
+                WHERE (om.user_id = $1 OR u.zitadel_id = $1)
                   AND o.id = $2
                   AND o.status = 'active'
             """
@@ -396,10 +415,11 @@ async def get_current_organization(request: Request):
                     COALESCE(st.tier_name, 'Managed') as tier_name
                 FROM organization_members om
                 JOIN organizations o ON om.org_id = o.id
+                LEFT JOIN users u ON u.id::text = om.user_id
                 LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
-                WHERE om.user_id = $1
+                WHERE (om.user_id = $1 OR u.zitadel_id = $1)
                   AND o.status = 'active'
-                ORDER BY o.name
+                ORDER BY COALESCE(om.is_default, FALSE) DESC, om.joined_at ASC NULLS LAST, o.name
                 LIMIT 1
             """
             row = await conn.fetchrow(query, user_id)
