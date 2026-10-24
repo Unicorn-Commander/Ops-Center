@@ -49,11 +49,24 @@ Ops-Center is the control plane for people running AI infrastructure and the app
   <br><em>Model and provider management — local inference with configured cloud failover.</em>
 </p>
 
-Manage local inference services and cloud provider connections, curate model lists per application, and control model access by tier. Bring Your Own Key (BYOK) settings let users supply their own provider credentials; platform keys and provider settings remain separate administrative surfaces.
+Manage local inference services and cloud provider connections, curate model lists per application, and control model access by tier. Bring Your Own Key (BYOK) settings let users supply their own provider credentials; platform keys and provider settings remain separate administrative surfaces. Account API keys are stored as bcrypt hashes.
 
-The inference APIs cover chat completions and image generation, with separate audio and metered-compute routes. Provider availability depends on the services and credentials you configure. The repository includes adapters for local model services and cloud providers such as OpenAI, Anthropic, and OpenRouter.
+The mounted inference surfaces are:
 
-**Routing and the gateway:** Ops-Center's inference API and federation router work alongside an optional LiteLLM proxy. Federation gathers local, peer, and cloud candidates, filters them against request constraints, and applies tier-dependent routing. Local-first is a supported route order; paid tiers can prefer cloud capacity unless a preferred node is selected. Configure and test fallback policy for your deployment before relying on it.
+| Route | What it does |
+|---|---|
+| `POST /api/v1/llm/chat/completions` | OpenAI-compatible chat completions |
+| `POST /api/v1/llm/image/generations` | Image generation, with cost rows for DALL-E and Stable Diffusion families |
+| `POST /api/v1/inference/image/generate` | Image jobs proxied to Artwork Studio (FLUX) |
+| `POST /api/v1/inference/music/generate` | Music jobs proxied to Majiks Studio (ACE-Step) |
+| `POST /api/v1/audio/speech` | Text-to-speech proxy to a configured Kokoro service (`KOKORO_TTS_URL`) |
+| `POST /api/v1/inference/audio/align` | Lyrics alignment and transcription jobs proxied to Artwork Studio |
+| `POST /api/v1/metered/report` | Unit-metric reports for STT (`stt_audio_seconds`) and TTS (`tts_characters`). The audio does not pass through this route |
+| `GET /api/v1/rag-services/status` | Embedding and reranker status. Start and stop are separate `POST` routes under `/api/v1/rag-services` |
+
+Provider calls in the LLM API use configured base URLs for OpenAI, Anthropic, OpenRouter, Google, Ollama, and Ollama Cloud. [backend/model_adapters](backend/model_adapters) covers Ollama, vLLM, embeddings, and reranking. [litellm_config.yaml](litellm_config.yaml) lists additional cloud model entries and fallback groups. Which of these answer depends on the services and credentials you configure. The metered-compute module no longer proxies embeddings or reranking; those remain federation service types and RAG-service records.
+
+**Routing and the gateway:** Ops-Center's inference API and federation router work alongside an optional LiteLLM proxy. Federation gathers local, peer, and cloud candidates, filters them against request constraints, and applies tier-dependent routing. With no tier, or when the tier is `vip_founder`, `founder_friend`, `admin`, or `internal`, the search order is local, then peer, then cloud. Any other named tier searches cloud GPU, then cloud, then local, then peer, unless the request sets `preferred_node`, which uses local, then peer, then cloud. A tier named `free` is not in that local-first allowlist. Configure and test fallback policy for your deployment before relying on it. When `FEDERATION_KEY` or `FEDERATION_SHARED_SECRET` is set, peer calls accept HMAC-SHA256 JWTs that expire in 60 seconds and carry a `jti` replay check, or that shared key. With no shared key configured, federation verification allows the request. `FEDERATION_AUTH_MODE` defaults to `shared_key`; `node_keys` is the other mode. The default per-peer circuit breaker opens after 3 consecutive failures, waits 30 seconds, and allows one half-open trial.
 
 | Capability | What is implemented |
 |---|---|
@@ -61,7 +74,7 @@ The inference APIs cover chat completions and image generation, with separate au
 | Provider credentials | Platform keys and encrypted BYOK storage with key-testing actions |
 | Shared inference | OpenAI-compatible chat completions and model discovery routes |
 | Federation | Node registration, heartbeats, service discovery, topology, routing, and invocation |
-| Routing resilience | Per-peer circuit breakers, routing audit records, and service access controls |
+| Routing resilience | Per-peer circuit breakers (default: 3 failures, 30 second cooldown, one half-open trial), routing audit records, and service access controls |
 | Cloud GPU provisioning | Optional Lambda Labs and RunPod provisioning, instance tracking, and cleanup |
 | Multi-step inference | Pipeline definitions that pass outputs between routed services |
 
@@ -74,9 +87,9 @@ See model-list management, the BYOK guide, and the [routing implementation](back
   <br><em>Usage and metering — understand where requests and credits go.</em>
 </p>
 
-Inspect credit balances, ledger transactions, and recorded usage alongside account and organization billing. Lago supplies subscription and metering integration; Stripe supplies checkout, payment-method, invoice, and webhook flows. Plans and prices come from configured subscription tiers, with legacy fallback plans when that lookup is unavailable.
+Inspect credit balances, ledger transactions, and recorded usage alongside account and organization billing. Lago supplies subscription and metering integration; Stripe supplies checkout, payment-method, invoice, and webhook flows. Plans and prices come from configured subscription tiers. If that lookup fails, the plan page shows a built-in list: Trial ($1/week), Starter ($19/month), Professional ($49/month), and Enterprise ($99/month). Those figures are the fallback, not the live catalog.
 
-Users can review their plan, manage payment methods, and request subscription changes. Administrators can manage subscriptions, pricing, credit packages, and organization feature grants. The metered-compute reporting API also accepts usage from configured services, including audio workloads.
+Users can review their plan, manage payment methods, and upgrade, downgrade, or cancel. Cancellation is recorded through Lago. Administrators can manage subscriptions, pricing, credit packages, and organization feature grants. Notification preferences are stored per user. The metered-compute reporting API also accepts usage from configured services, including audio workloads.
 
 Some legacy analytics endpoints still generate sample data, and the Usage Metrics page falls back to demo charts when its API fails. Use the credit ledger and configured billing services to reconcile actual spend; a populated chart alone is not evidence of recorded usage.
 
@@ -106,11 +119,11 @@ Additional administrative surfaces cover Traefik routes and certificates, storag
 
 ### Users, organizations, and access
 
-The dashboard above is the entry point for account administration. Search and filter users, import CSV data, change subscription tiers in bulk, assign individual roles, and send password-reset or onboarding messages through Keycloak.
+The dashboard above is the entry point for account administration. Search and filter users, import and export CSV, change subscription tiers in bulk, assign or remove an individual realm role, and send password-reset or onboarding messages through Keycloak. Sign-in maps Keycloak groups and roles onto `admin`, `power_user`, `user`, and `viewer`. `GET /api/v1/admin/users/roles/available` returns a different hardcoded list: `admin`, `moderator`, `developer`, `analyst`, and `viewer`.
 
-Organizations have membership and role-management APIs, settings, billing views, and feature grants. User details bring profile, access, organization, and subscription information together. Account API keys have creation, regeneration, revocation, and scope controls; service credentials support application-to-application calls.
+Organizations have membership and role-management APIs, settings, billing views, and feature grants. User details bring profile, access, organization, and subscription information together. Account API keys have creation, regeneration, revocation, and scope controls; service credentials support application-to-application calls. **The Guide**, described below, can prepare API-key create, revoke, and rotate actions that wait for a human confirmation.
 
-Role checks, session authentication, and authorization remain part of the backend. User impersonation, the per-user activity feed, bulk role assignment, and the administrative user-session endpoints are still placeholders in this checkout. Use the implemented routes and integration guide for the supported contract.
+Role checks, session authentication, and authorization remain part of the backend. User impersonation, the per-user activity feed, the per-user role list, bulk role assignment, and the administrative user-session endpoints are still placeholders in this checkout. Use the implemented routes and integration guide for the supported contract.
 
 ## Built for agents
 
@@ -138,7 +151,7 @@ The mounted agent interface is **HTTP JSON-RPC at `/a2a`**:
 - Discovery: `/.well-known/agent-card.json`, with a legacy card at `/.well-known/agent.json` and an agent index at `/.well-known/api-catalog`.
 - Authentication: `Authorization: Bearer <a2a-shared-secret>` or `X-Service-Key: <a2a-shared-secret>`. The server uses `A2A_SHARED_SECRET`, falling back to `BRIGADE_SERVICE_KEY`, and refuses calls when neither is configured.
 - Methods: `skills/list`, `skills/invoke`, `agent/status`, `colonels/list`, and the legacy `tasks/send`. `tasks/get` is not implemented; A2A streaming and push notifications are not advertised.
-- Invocation: supply `skill`, `action`, and `parameters`; an optional `colonel` selects a configured Colonel.
+- Invocation: supply `skill`, `action`, and `parameters`. An optional `colonel` (or `colonel_id`) is stored on the audit row and selects the Colonel for `agent/status` and named agent cards. `skills/invoke` runs the shared executor map; it does not load a different tool set per Colonel.
 
 **A2A is a privileged service interface.** Its direct `skills/invoke` handler calls executors without the interactive chat confirmation flow. Give its credential only to trusted callers and enforce any required human approval in that caller's workflow.
 
@@ -188,21 +201,22 @@ See the [agent interface](backend/colonel/a2a_server.py), [skill router](backend
 
 **This checkout requires shared services.** Have PostgreSQL, Redis, Keycloak, and an HTTPS reverse proxy available before starting the authenticated dashboard. Billing needs Lago and Stripe configuration; inference and agent chat need configured model services or providers. The repository does not include a complete, portable suite bootstrap, and `SKIP_AUTH` in the environment template is not an implemented dashboard bypass.
 
-The shortest self-contained application build uses the checked-in [Dockerfile](Dockerfile). The existing [direct Compose file](docker-compose.direct.yml) is a deployment-specific overlay: it expects external networks and services, references a prebuilt image, and includes embedded environment settings that override an env file. It needs operator review before reuse. The proxy Compose files do not create the backend, database, cache, or identity provider.
+The shortest self-contained application build uses the checked-in [Dockerfile](Dockerfile). Its frontend stage is Node 20, which is not the version in [.nvmrc](.nvmrc). The existing [direct Compose file](docker-compose.direct.yml) is a deployment-specific overlay: it expects external networks and services, references a prebuilt image, and includes embedded environment settings that override an env file. It needs operator review before reuse. The proxy Compose files do not create the backend, database, cache, or identity provider.
 
 **Prepare your identity and storage services:**
 
 - Provide an Ops-Center database and a database account able to apply its startup migrations. Review the [migration notes](backend/migrations/README.md); an existing database should be backed up before an upgrade.
 - Provide Redis reachable from the application container. Configure both the split Redis settings and `REDIS_URL` consistently, including authentication.
-- In Keycloak, create a confidential browser-login client with standard authorization-code flow. Register `https://<ops-center-host>/auth/callback` as its redirect URI and your HTTPS application origin as an allowed web origin.
-- Make the user's roles or groups available to the user-info response. Assign the `admin` role or an `admins` group for the first administrator; the [role mapper](backend/role_mapper.py) lists supported mappings.
-- Supply Keycloak administrative credentials for user-management operations. That integration requests a token in the `master` realm using `KEYCLOAK_CLIENT_ID` (normally Keycloak's `admin-cli` client). The browser-login client is selected separately by `OAUTH_CLIENT_ID`.
+- In Keycloak, create a confidential client whose client id is `ops-center`. The login, callback, and identity-provider hint routes hardcode that id in [backend/server.py](backend/server.py). Setting `OAUTH_CLIENT_ID` does not change it. Use the authorization-code flow. Register `https://<ops-center-host>/auth/callback` as its redirect URI and your HTTPS application origin as an allowed web origin. Put the client secret in `OPS_CENTER_OAUTH_CLIENT_SECRET`. If that variable is unset, the login handler uses a placeholder compiled into the same file.
+- Make the user's roles or groups available to the user-info response. Assign the `admin` role or an `admins` group for the first administrator; the [role mapper](backend/role_mapper.py) lists supported mappings. `/auth/login/google`, `/auth/login/github`, and `/auth/login/microsoft` only add a Keycloak identity-provider hint. The providers still have to be enabled in the realm.
+- Set `KEYCLOAK_REALM` to the realm that holds application users. If it is unset, `/auth/login` and the identity-provider hint routes default to `master`, and `/auth/callback` defaults to `uchub`.
+- User-management calls request an admin token from the `master` realm with `KEYCLOAK_CLIENT_ID` (code default `admin-cli` when the variable is unset), `KEYCLOAK_ADMIN_USER`, and `KEYCLOAK_ADMIN_PASSWORD`. That request does not send `KEYCLOAK_CLIENT_SECRET`. Logout's end-session URL prefers `KEYCLOAK_CLIENT_ID`, then `OAUTH_CLIENT_ID`, then `ops-center`. The template sets `KEYCLOAK_CLIENT_ID=ops-center`, which matches the browser client and does not match the admin-token default. One variable serves both jobs in this checkout.
 - Route your HTTPS application host to the application port, including `/auth`, `/api`, `/ws`, `/a2a`, and `/.well-known`. Preserve the original host and scheme and enable WebSocket forwarding.
 
-Clone and prepare a private runtime configuration:
+Clone and prepare a private runtime configuration. On 2026-10-23 the public [Unicorn-Commander](https://github.com/Unicorn-Commander) organization did not list a repository named `Ops-Center`. Clone the URL of the checkout you are reading. The commands below assume the directory name `Ops-Center`.
 
 ```bash
-git clone https://github.com/Unicorn-Commander/Ops-Center.git
+git clone <repository-url>
 cd Ops-Center
 cp .env.example .env.auth
 chmod 600 .env.auth
@@ -213,8 +227,7 @@ Edit `.env.auth` for your services before continuing. Replace the template's dep
 ```dotenv
 EXTERNAL_HOST=<ops-center-host>
 EXTERNAL_PROTOCOL=https
-OAUTH_CLIENT_ID=<browser-login-client-id>
-OPS_CENTER_OAUTH_CLIENT_SECRET=<browser-login-client-secret>
+OPS_CENTER_OAUTH_CLIENT_SECRET=<ops-center-client-secret>
 SESSION_SECRET_KEY=<random-session-secret>
 REDIS_URL=<authenticated-redis-url>
 ENCRYPTION_KEY=<persistent-fernet-key>
@@ -284,6 +297,8 @@ python3.10 -m venv .venv
 python -m pip install -r backend/requirements.txt python-dotenv
 ```
 
+`python-dotenv` is not in [backend/requirements.txt](backend/requirements.txt). The `uvicorn --env-file` flag requires it.
+
 Use the prepared `.env.auth`, with service addresses reachable from your development machine. Start the backend from the repository root:
 
 ```bash
@@ -318,10 +333,10 @@ The build writes `dist/`. A locally built frontend is not automatically deployed
 
 | Variable | Meaning |
 |---|---|
-| `KEYCLOAK_URL` | Identity provider address reachable by the backend |
-| `KEYCLOAK_EXTERNAL_URL` | Browser-facing identity provider address, also used for user-info lookup |
+| `KEYCLOAK_URL` | Identity provider address reachable by the backend. Set it: the admin-token helper and the OAuth callback each compile a different fallback host |
+| `KEYCLOAK_EXTERNAL_URL` | Browser-facing identity provider address, used for the login redirect and for user-info lookup |
 | `KEYCLOAK_REALM` | Realm containing application users |
-| `KEYCLOAK_CLIENT_ID` | Client used for the Keycloak administrative token request; browser-login settings are separate below |
+| `KEYCLOAK_CLIENT_ID` | Client id on the `master`-realm admin token request. When set, logout's end-session URL uses it too. The browser login id is hardcoded to `ops-center` |
 | `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD` | Credentials used by Keycloak administrative operations |
 | `POSTGRES_HOST`, `POSTGRES_PORT` | PostgreSQL connection target |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Application database and database credentials |
@@ -339,7 +354,7 @@ Additional settings used by current code but absent from the template:
 | Variable | Meaning |
 |---|---|
 | `EXTERNAL_HOST`, `EXTERNAL_PROTOCOL` | Public application host and scheme used for URLs and cookie handling |
-| `OAUTH_CLIENT_ID`, `OPS_CENTER_OAUTH_CLIENT_SECRET` | Browser-login client identity and confidential-client secret |
+| `OPS_CENTER_OAUTH_CLIENT_SECRET` | Secret for the hardcoded browser client id `ops-center`. `OAUTH_CLIENT_ID` is only a logout fallback when `KEYCLOAK_CLIENT_ID` is unset |
 | `SESSION_SECRET_KEY` | Persistent signing secret for session middleware |
 | `REDIS_URL` | Redis connection URL used by session and credit-system initialization |
 | `ENCRYPTION_KEY`, `BYOK_ENCRYPTION_KEY` | Persistent Fernet keys for credential and BYOK encryption |
@@ -353,7 +368,7 @@ Additional settings used by current code but absent from the template:
 | `FEDERATION_KEY`, `FEDERATION_SERVICE_PROFILE` | Federation authentication material and service-discovery profile |
 | `CLOUD_GPU_ENABLED`, `CLOUD_GPU_PROVIDER` | Optional cloud GPU provisioning switch and provider selection |
 
-The template's `KEYCLOAK_CLIENT_SECRET` is not the browser-login secret; that handler reads `OPS_CENTER_OAUTH_CLIENT_SECRET`. Similarly, `ENABLE_BILLING`, `SECRET_KEY`, and `SKIP_AUTH` are not substitutes for `BILLING_ENABLED`, `SESSION_SECRET_KEY`, or a working Keycloak setup. Keep runtime configuration out of Git.
+The template's `KEYCLOAK_CLIENT_SECRET` is not the browser-login secret. The login handler reads `OPS_CENTER_OAUTH_CLIENT_SECRET`, and the admin token request does not send `KEYCLOAK_CLIENT_SECRET`. Similarly, `ENABLE_BILLING`, `SECRET_KEY`, and `SKIP_AUTH` are not substitutes for `BILLING_ENABLED`, `SESSION_SECRET_KEY`, or a working Keycloak setup. Keep runtime configuration out of Git.
 
 Frontend analytics initialize only in production builds with the corresponding build-time identifier configured. Changing container runtime variables alone does not alter an already compiled frontend; the stock Dockerfile does not pass these analytics variables into its frontend build stage.
 
@@ -384,7 +399,7 @@ flowchart TD
 - **Frontend — [src](src):** React, Vite, Material UI, React Router, context providers, and charting components. Admin, account, organization, billing, model, and federation pages share the application shell.
 - **Application — [backend/server.py](backend/server.py):** FastAPI mounts the feature routers, handles browser sign-in and sessions, serves the frontend, and starts integration services.
 - **Persistence:** PostgreSQL stores application and billing-related records; Redis supports sessions, caching, and coordination. Startup applies selected feature and core migrations; inspect the migration logs on deployment.
-- **Identity and access:** Keycloak supplies identity; backend session checks, route-specific authorization, API-key verification, and federation authentication cover different entry points.
+- **Identity and access:** Keycloak supplies identity. Browser login uses the hardcoded client id `ops-center`. Backend session checks, route-specific authorization, bcrypt-hashed API keys, and federation HMAC-SHA256 JWTs cover different entry points.
 - **Inference — [backend/federation](backend/federation) and [backend/litellm_api.py](backend/litellm_api.py):** Provider routing, usage accounting, peer discovery, pipelines, and optional cloud GPU management.
 - **Agents — [backend/colonel](backend/colonel):** Skill loading, execution, interactive confirmations, memory, sessions, and A2A integration. Brigade can provide delegation and agent memory.
 - **Operations:** Docker, Traefik, billing providers, and monitoring services are external integrations. Compose describes deployment topology; it does not replace the services themselves.
@@ -422,26 +437,21 @@ Ops-Center/
 
 ## Part of Unicorn Commander
 
-| App | What it does |
-|---|---|
-| **[Ops-Center](https://github.com/Unicorn-Commander/Ops-Center)** | **The control plane: tenants, billing, federation, API keys, model routing** |
-| [Unicorn-Brigade](https://github.com/Unicorn-Commander/Unicorn-Brigade) | The agent layer: agents, tools, memory, orchestration |
-| [Unicorn-Stable](https://github.com/Unicorn-Commander/Unicorn-Stable) | Humans and agents in the same room: chat, voice, video |
-| [Accounting-Ops](https://github.com/Unicorn-Commander/Accounting-Ops) | Agent-native accounting and books |
-| [Contact-Ops](https://github.com/Unicorn-Commander/Contact-Ops) | The shared contact and identity graph |
-| [Customer-Ops](https://github.com/Unicorn-Commander/Customer-Ops) | Customers, pipeline, quotes and outreach |
-| [Email-Ops](https://github.com/Unicorn-Commander/Email-Ops) | Agent-drafted email with a human approval inbox |
-| [Project-Ops](https://github.com/Unicorn-Commander/Project-Ops) | Projects, tasks, time and invoices |
-| [Meeting-Ops](https://github.com/Unicorn-Commander/Meeting-Ops) | Recordings, transcripts, summaries and action items |
-| [Knowledge-Ops](https://github.com/Unicorn-Commander/Knowledge-Ops) | The wiki and memory your agents ground on |
-| [Security-Ops](https://github.com/Unicorn-Commander/Security-Ops) | Authorized security scanning with engagement and attestation gates |
-| [Tax-Planning-Ops](https://github.com/Unicorn-Commander/Tax-Planning-Ops) | Tax plans, scenarios and statutory deadlines |
-| [Brand-Ops](https://github.com/Unicorn-Commander/Brand-Ops) | Brand kits, marks, voices and rules |
-| [Podcast-Ops](https://github.com/Unicorn-Commander/Podcast-Ops) | Episodes, audio QA and publishing |
-| [UUDA](https://github.com/Unicorn-Commander/UUDA) | The device agent for your fleet |
-| [fleet-map](https://github.com/Unicorn-Commander/fleet-map) | Fleet inventory and topology map |
+Public repositories on the [Unicorn-Commander](https://github.com/Unicorn-Commander) organization, checked 2026-10-23. Names below are the published repository names, not the product names used in older notes.
 
-Ops-Center connects through shared Keycloak identity, application entitlement and API-key validation APIs, and inference and metering services; it also registers and delegates the Colonel through Brigade, accepts UUDA device heartbeats, and ingests fleet-map topology.
+| App | From the public description |
+|---|---|
+| **Ops-Center** | **This repository. No public repository named `Ops-Center` was listed on that date** |
+| [unicorn-stable-oss](https://github.com/Unicorn-Commander/unicorn-stable-oss) | Humans and agents in the same room |
+| [accounting-ops-oss](https://github.com/Unicorn-Commander/accounting-ops-oss) | Append-only, hash-chained books. A separate community edition is [accounting-ops-community](https://github.com/Unicorn-Commander/accounting-ops-community) |
+| [contact-ops-community](https://github.com/Unicorn-Commander/contact-ops-community) | Shared contact and identity layer |
+| [customer-ops-community](https://github.com/Unicorn-Commander/customer-ops-community) | Customer relationship and pipeline |
+| [email-ops-community](https://github.com/Unicorn-Commander/email-ops-community) | Agent-governed mail with a human approval inbox |
+| [project-ops-community](https://github.com/Unicorn-Commander/project-ops-community) | Projects and tasks |
+| [Meeting-Ops-OSS](https://github.com/Unicorn-Commander/Meeting-Ops-OSS) | Record, live transcription, and meeting search |
+| [Unicorn-Orator](https://github.com/Unicorn-Commander/Unicorn-Orator) | Text-to-speech |
+
+Ops-Center connects through shared Keycloak identity, application entitlement and API-key validation APIs, and inference and metering services. This tree also registers and delegates the Colonel through Brigade, accepts UUDA device registration and heartbeats, and ingests fleet-map topology. On the date above, the public organization did not list repositories named Unicorn-Brigade, Knowledge-Ops, Security-Ops, Tax-Planning-Ops, Brand-Ops, Podcast-Ops, UUDA, or fleet-map.
 
 ## Development
 
@@ -468,16 +478,16 @@ npx playwright install chromium
 BASE_URL='https://<test-ops-center-host>' npm run test:e2e -- --project=chromium
 ```
 
-Review the selected specs for additional service URLs and account requirements before execution. Some tests use deployment-specific defaults. Use disposable test accounts and service instances.
+Review the selected specs for additional service URLs and account requirements before execution. If `BASE_URL` is unset, [playwright.config.js](playwright.config.js) uses `https://magicunicorn.dev`. Some tests use other deployment-specific defaults. Use disposable test accounts and service instances.
 
-The checked-in CI uses Ruff for Python linting. Install it explicitly before running the command:
+The GitHub test workflow runs Ruff and Black from `backend/` as required steps, and MyPy with `continue-on-error`. It does not run Bandit. The GitHub CI/CD pipeline runs Ruff, Black, MyPy, and Bandit from `backend/`, each `continue-on-error`. The Forgejo CI/CD pipeline runs Ruff, Black, and MyPy from `backend/` with `|| true`; it installs Bandit and does not run it. Those three workflows install ESLint in the job and run it against `src`, with `continue-on-error` or `|| true`. `.forgejo/workflows/ci.yml` does not run these linters. There is no `npm run lint` script in the current manifest. Install Ruff explicitly for a local check:
 
 ```bash
 python -m pip install ruff
 python -m ruff check backend/
 ```
 
-There is no `npm run lint` script in the current manifest. Frontend build and test commands above are available; this README does not imply that all application tests or lint checks currently pass.
+Frontend build and test commands above are available. This README does not imply that all application tests or lint checks currently pass.
 
 ### Documentation
 
@@ -496,7 +506,7 @@ Long-form references and historical implementation reports remain in the reposit
 - [Tests](tests/README.md), [backend tests](backend/tests/README.md), and [browser tests](tests/e2e/README.md) — suite-specific fixtures and execution.
 - [Troubleshooting](docs/TROUBLESHOOTING.md) — historical operational issues and diagnostics.
 - Technical notes — detailed implementation context and deployment history.
-- [Changelog](CHANGELOG.md) — release history, including federation, agent delegation, model routing, and account-management changes.
+- [Changelog](CHANGELOG.md) — release history. Entries that match this tree include campaign and invite-code work in 3.12.4, Brigade-aware Colonel memory (`COLONEL_LOCAL_GRAPH`) in 3.12.2, and the 3.12.0 inference notes for embeddings, reranking, and failover configuration. Earlier entries record federation routing, circuit breakers, routing audits, cloud GPU provisioning, and Colonel delegation to Brigade. Hostnames and hardware names in those notes are one installation's examples.
 - Historical roadmap — planning context, not a statement of current completion.
 
 The running FastAPI application also exposes `/docs` and `/openapi.json`. Those describe mounted routes more accurately than an old endpoint inventory; administrative session cookies, app API keys, service keys, and federation credentials serve different authentication paths.
@@ -513,7 +523,7 @@ The running FastAPI application also exposes `/docs` and `/openapi.json`. Those 
 | An A2A call returns an authentication error | Shared-secret configuration and the presented service credential |
 | A new frontend build does not appear | Which `public` or `dist` directory the application is serving |
 
-For bugs and feature requests, use [GitHub Issues](https://github.com/Unicorn-Commander/Ops-Center/issues). For general support, email [support@magicunicorn.tech](mailto:support@magicunicorn.tech).
+For bugs and feature requests, use this repository's issue tracker. A public issues URL under `Unicorn-Commander/Ops-Center` was not listed on 2026-10-23. For general support, email [support@magicunicorn.tech](mailto:support@magicunicorn.tech).
 
 Ops-Center builds on [FastAPI](https://fastapi.tiangolo.com/), [React](https://react.dev/), [Material UI](https://mui.com/), [Keycloak](https://www.keycloak.org/), [Lago](https://www.getlago.com/), and [LiteLLM](https://litellm.ai/).
 
