@@ -1,728 +1,532 @@
-# 🦄 Ops-Center - UC-Cloud Command & Control
+<p align="center">
+  <img src="public/logos/uc-mark-colonel.webp" width="120" alt="The Colonel, Unicorn Commander's unicorn mascot">
+</p>
+<h1 align="center">Ops-Center</h1>
+<p align="center">
+  <strong>Run your AI services, tenants, billing, and agents from one self-hosted control plane.</strong>
+</p>
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-AGPL--3.0--or--later-purple" alt="Licence: AGPL-3.0-or-later"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-3.12.4-blue" alt="Version 3.12.4"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/React-18-61dafb" alt="React 18"></a>
+  <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/backend-FastAPI-009688" alt="FastAPI backend"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/deployment-self--hosted-7c3aed" alt="Self-hosted"></a>
+  <a href="#built-for-agents"><img src="https://img.shields.io/badge/agents-A2A-ef7b45" alt="A2A agent interface"></a>
+</p>
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#feature-tour">Features</a> ·
+  <a href="#built-for-agents">Agents</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#part-of-unicorn-commander">Suite</a>
+</p>
 
-<div align="center">
+<p align="center">
+  <img src="docs/screenshots/dashboard.webp" width="1100" alt="Ops-Center admin dashboard showing infrastructure status and operational summaries in a demo workspace">
+  <br><em>The admin dashboard — infrastructure and operations at a glance.</em>
+</p>
 
-![Version](https://img.shields.io/badge/version-3.12.0-blue.svg)
-![Status](https://img.shields.io/badge/status-production-green.svg)
-![License](https://img.shields.io/badge/license-MIT-purple.svg)
-![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
-![React](https://img.shields.io/badge/react-18-61dafb.svg)
-![Inference](https://img.shields.io/badge/inference-local--first-ff69b4.svg)
-![Fallback](https://img.shields.io/badge/failover-local→local→cloud-orange.svg)
-![Security](https://img.shields.io/badge/security-zero--trust-red.svg)
+## What is Ops-Center?
 
-**Run your own AI cloud.** Ops-Center is the command deck for a **local-first, federated inference mesh** — your GPUs do the work, a single public gateway fronts it with **automatic local→local→cloud failover**, and every token is **authenticated, metered, and billed** across your entire app suite. One pane of glass for users, orgs, subscriptions, models, billing, and the multi-node GPU fabric underneath.
+Ops-Center is the control plane for people running AI infrastructure and the applications built on it: manage users, organizations, subscriptions, API keys, model providers, and service health in one place. It is self-hosted and part of **Unicorn Commander**, whose apps connect through shared identity, organization context, entitlements, and usage APIs. **The Colonel**, its server-management agent, can inspect infrastructure and execute tools; its interactive chat asks humans to confirm actions marked as requiring approval. Choose local inference, federated capacity, or configured cloud providers according to your deployment and routing policy.
 
-[Why it's different](#-what-makes-it-different) • [Features](#-key-features) • [The Gateway](#-the-smart-inference-gateway) • [Quick Start](#-quick-start) • [API](#-api-reference)
+## Highlights
 
-</div>
+- **One place for accounts and access.** Manage Keycloak users, organization membership, roles, API keys, and app grants without maintaining separate access lists in every app.
+- **Local inference with cloud options.** Manage model catalogs, provider credentials, and federated routing so applications can use a shared inference interface.
+- **Usage attached to the account.** Track requests, credits, and model costs alongside subscriptions, invoices, and payment methods through Lago and Stripe integrations.
+- **An agent that can act.** The Colonel exposes infrastructure skills through chat and authenticated A2A calls, including Docker inspection, logs, database diagnostics, and Brigade delegation.
+- **Apps matched to entitlement.** The marketplace combines subscription features with organization grants, while users get a view of the apps they can access.
+- **Infrastructure in context.** Follow service health, system metrics, federation topology, routing audits, and fleet inventory from the same dashboard.
+- **A configurable platform.** Bring provider keys, curate app-specific model lists, customize branding, and configure billing exemptions for your installation.
 
----
+## Feature tour
 
-## 🎯 What is Ops-Center?
+### Model and provider management
 
-Ops-Center is the **centralized management dashboard** for the UC-Cloud ecosystem - your single pane of glass for managing users, organizations, subscriptions, LLM infrastructure, and federated AI services across your entire platform.
+<p align="center">
+  <img src="docs/screenshots/models.webp" width="1000" alt="Model and provider management in Ops-Center with a demo model catalog and provider settings">
+  <br><em>Model and provider management — local inference with configured cloud failover.</em>
+</p>
 
-**Think of it like:**
-- 🏢 **AWS Console** - Infrastructure management at scale
-- 👥 **Auth0 Dashboard** - Complete user and authentication control
-- 💰 **Stripe Dashboard** - Subscription and billing management
-- 🤖 **LiteLLM Proxy** - Multi-provider LLM orchestration
-- 🌐 **Kubernetes Federation** - Multi-node inference mesh with cloud GPU bursting
-- 📊 **Grafana** - Real-time analytics and monitoring
+Manage local inference services and cloud provider connections, curate model lists per application, and control model access by tier. Bring Your Own Key (BYOK) settings let users supply their own provider credentials; platform keys and provider settings remain separate administrative surfaces.
 
-**All in one beautiful, unified interface with zero-trust security.**
+The inference APIs cover chat completions and image generation, with separate audio and metered-compute routes. Provider availability depends on the services and credentials you configure. The repository includes adapters for local model services and cloud providers such as OpenAI, Anthropic, and OpenRouter.
 
----
+**Routing and the gateway:** Ops-Center's inference API and federation router work alongside an optional LiteLLM proxy. Federation gathers local, peer, and cloud candidates, filters them against request constraints, and applies tier-dependent routing. Local-first is a supported route order; paid tiers can prefer cloud capacity unless a preferred node is selected. Configure and test fallback policy for your deployment before relying on it.
 
-## 🔥 What Makes It Different
-
-Most "LLM gateways" are a thin proxy in front of someone else's cloud. Ops-Center is the opposite — **you are the cloud.**
-
-- **🏠 Local-first economics.** Inference runs on *your* GPUs (marginal cost ≈ electricity). 3rd-party APIs (DeepSeek, OpenAI, OpenRouter) are **invisible insurance**, not the product — customers only ever touch them when your hardware is overwhelmed or down, and only within their plan's allowance. The margin lives on your own iron.
-- **🛟 Failover nobody else has.** One model alias, four rungs: **local GPU-A → local GPU-B → cheap cloud → premium cloud.** A box dies mid-request and the caller never notices. (Verified: kill the primary, the response still lands.)
-- **🔌 One ingress, one key, every modality.** Chat, embeddings, reranking, and STT/TTS all ride a single public, key-authed, OpenAI-compatible endpoint — metered to Lago, gated by budget, no VPN or raw GPU ports exposed.
-- **🧩 Built for a whole app suite.** Per-org keys, per-app metering, and a unified credit/billing rail designed so one subscription's allowance can span Meeting-Ops, Center-Deep, Brigade, and the rest.
-- **🔐 Zero-trust by construction.** Headscale/WireGuard mesh, per-node signed JWTs, per-service ACLs, CSRF + budget gates, full audit trail. The gateway is the *only* tailnet boundary-crosser; backends stay private.
-
-> **The pitch in one line:** the cost structure of self-hosting, the reliability of a managed cloud, and the billing of a SaaS — fused.
-
----
-
-## ⚡ Key Features
-
-### 👥 User Management
-- **Advanced Filtering**: 10+ filter options (tier, role, status, org, date ranges)
-- **Bulk Operations**: CSV import/export, bulk role assignment, bulk actions
-- **User Detail Pages**: 6-tab comprehensive profile view with charts
-- **Role Management**: Visual permission matrix with hierarchical roles
-- **API Key Management**: Full CRUD for user API keys with bcrypt hashing
-- **User Impersonation**: Admin "login as user" feature with 24hr sessions
-- **Activity Timeline**: Color-coded audit log with expandable details
-
-### 💰 Billing & Subscriptions
-- **4 Subscription Tiers**: Trial ($1/week), Starter ($19/mo), Professional ($49/mo), Enterprise ($99/mo)
-- **Usage Tracking**: Real-time API call tracking with quota management
-- **Stripe Integration**: Payment processing, invoices, webhooks
-- **Lago Billing**: Advanced metering, usage-based billing
-- **Self-Service**: Users can upgrade/downgrade/cancel their plans
-- **Payment Methods**: Manage cards, billing address, upcoming invoices
-
-### 🏢 Organization Management
-- **Multi-Tenancy**: Organizations with team management
-- **Role-Based Access**: Custom roles and permissions per organization
-- **Team Collaboration**: Invite members, manage roles, audit trails
-- **Resource Quotas**: Per-organization limits (API calls, storage, seats)
-- **Billing**: Organization-level subscription and payment management
-
-### 🤖 LLM Management
-- **100+ Models**: OpenAI, Anthropic, Google, Meta, and more via LiteLLM
-- **BYOK Support**: Bring Your Own Key - use your API keys, no platform markup
-- **Credit System**: Usage-based billing with automatic credit tracking
-- **Model Catalog**: Curated lists per app (Bolt.diy, Presenton, Open-WebUI)
-- **Image Generation**: DALL-E, Stable Diffusion, Imagen support
-- **Provider Routing**: Smart routing to cheapest/fastest providers
-
-### 🎨 Apps Marketplace
-- **Dynamic Tier-Based Access**: Apps appear/disappear based on subscription tier
-- **12 Integrated Services**: Chat, Search, TTS, STT, Git, Brigade, Bolt, Presentations, Email Marketing, Social Media, Analytics, Partner Management
-- **Single Sign-On**: Keycloak SSO across all apps
-- **Feature Management**: Admin control over which tiers get which apps
-
-### 🎖️ The Colonel - AI Server Management
-- **Claude Code-Caliber AI**: GPU-accelerated AI agent for server management via chat
-- **18 Built-in Skills**: Docker, system status, GPU monitoring, Traefik, PostgreSQL, backups, file ops, git, bash, and more
-- **Brigade Delegation**: Seamlessly delegate to 17 specialist agents (finance, legal, research, coding, DevOps, data science)
-- **SKILL.md Format**: Extensible skill system with YAML-defined tools
-- **WebSocket Streaming**: Real-time streaming responses with tool execution visibility
-- **Persistent Sessions**: PostgreSQL-backed sessions with Redis caching
-
-### 🌐 Federation Inference Mesh
-- **4-Node WireGuard Mesh**: Encrypted peer-to-peer mesh via Headscale/Tailscale (`unicorncommander.net` MagicDNS)
-- **13 Services Auto-Discovered**: LLM (30 models), embeddings, reranker, search (4 tools), extraction, image/music gen, agents
-- **3 Federated Nodes**: Home GPU server (magicunicorn), VPS gateway (commander), Search server (centerdeep) + Mac Studio
-- **Service Auto-Discovery**: Per-deployment profiles (`home`, `vps`, `centerdeep`, `custom`) with Docker health checks every 30s
-- **Smart Routing**: Tier-aware, constraint-based routing to the best available inference backend
-- **Cloud GPU Bursting**: On-demand Lambda Labs GPU provisioning with auto-shutdown on idle
-- **Zero Trust Security**: WireGuard encryption for internal traffic, per-node signed JWTs, per-service ACLs, circuit breakers
-- **Brigade Agent Federation**: Cross-node agent discovery and delegation
-
-### 📊 Analytics & Monitoring
-- **Real-Time Dashboards**: User growth, API usage, revenue trends
-- **Service Health**: Monitor all services in real-time
-- **Usage Analytics**: API calls, credits consumed, costs per service
-- **Audit Logs**: Complete activity tracking across all operations
-- **Federation Audit**: Routing decision log with candidates, constraints, and scoring
-
----
-
-## 🛰️ The Smart Inference Gateway
-
-A single public, OpenAI-compatible endpoint (`llm.unicorncommander.ai`) fronts the entire GPU mesh. Consumers — your apps, the customer node, external products — hold **one per-org key** and call it like any AI provider. Behind it, the gateway authenticates, rate-limits, **meters every call to Lago**, and routes with automatic multi-tier failover.
-
-```
-   app / customer node / external          one key  ▸ Authorization: Bearer REMOVED…
-                  │
-       HTTPS :443 │  (Cloudflare → Traefik)
-                  ▼
-        ┌───────────────────────────────────────────────┐
-        │  LiteLLM gateway  —  authn · RPM/TPM · Lago     │
-        │  /v1/chat · /v1/embeddings · /v1/rerank · STT   │
-        └───────────────┬───────────────────────────────┘
-                        │   model: uc/chat-default
-        ┌───────────────┴───────────────────────────────────────────┐
-        ▼                ▼                 ▼                ▼
-   ① local 3090     ② local P40       ③ DeepSeek V4     ④ OpenRouter
-   (primary, free)  (redundancy, free) Flash (cheap)     (premium)
-        └──────── automatic failover, left → right, caller never knows ────────┘
-
-   Metering:  LLM + embeddings → ai_api_call (cost × plan)   |   STT/TTS → unit metrics
-   Gating:    per-org key max_budget — local is $0 (unlimited), cloud counts against the allowance
-```
-
-**Why this matters:** rungs ① and ② are *your* GPUs — free and fast. Only a full local outage spills to ③/④, and even then a free-tier org is **fail-closed** (local-only) while paid orgs draw down their bundled cloud allowance. You get managed-cloud reliability on self-hosted economics, billed like a SaaS.
-
-| Capability | How |
+| Capability | What is implemented |
 |---|---|
-| **Local→local→cloud failover** | LiteLLM model-group + ordered `fallbacks` (verified live) |
-| **Per-org metering** | `success_callback: [lago]`, `external_subscription_id = org_id` |
-| **Budget gating** | per-key `max_budget`; local = $0 so it never depletes, cloud does |
-| **Non-LLM compute** | STT/TTS report unit metrics (audio-seconds / characters) via a service-key bridge — audio never transits the gateway |
-| **Cloud-GPU burst** | Lambda Labs auto-provision + idle-shutdown for sustained overflow (privacy-preserving — your models on rented iron) |
+| App-specific catalogs | Curated model lists, ordering, tier access, and user preferences |
+| Provider credentials | Platform keys and encrypted BYOK storage with key-testing actions |
+| Shared inference | OpenAI-compatible chat completions and model discovery routes |
+| Federation | Node registration, heartbeats, service discovery, topology, routing, and invocation |
+| Routing resilience | Per-peer circuit breakers, routing audit records, and service access controls |
+| Cloud GPU provisioning | Optional Lambda Labs and RunPod provisioning, instance tracking, and cleanup |
+| Multi-step inference | Pipeline definitions that pass outputs between routed services |
 
----
+See model-list management, the BYOK guide, and the [routing implementation](backend/federation/inference_router.py) for the configuration boundaries.
 
-## 🚀 Quick Start
+### Usage and metering
 
-### Prerequisites
+<p align="center">
+  <img src="docs/screenshots/usage.webp" width="1000" alt="Ops-Center usage and metering view showing demo request and credit activity">
+  <br><em>Usage and metering — understand where requests and credits go.</em>
+</p>
 
-- **Docker** & **Docker Compose**
-- **PostgreSQL** (shared database)
-- **Redis** (shared cache)
-- **Keycloak** (SSO authentication)
-- **Node.js 20+** (for frontend development)
-- **Python 3.10+** (for backend development)
+Inspect credit balances, ledger transactions, and recorded usage alongside account and organization billing. Lago supplies subscription and metering integration; Stripe supplies checkout, payment-method, invoice, and webhook flows. Plans and prices come from configured subscription tiers, with legacy fallback plans when that lookup is unavailable.
 
-### 1. Clone the Repository
+Users can review their plan, manage payment methods, and request subscription changes. Administrators can manage subscriptions, pricing, credit packages, and organization feature grants. The metered-compute reporting API also accepts usage from configured services, including audio workloads.
+
+Some legacy analytics endpoints still generate sample data, and the Usage Metrics page falls back to demo charts when its API fails. Use the credit ledger and configured billing services to reconcile actual spend; a populated chart alone is not evidence of recorded usage.
+
+For installations that do not charge for inference, the backend supports `BILLING_ENABLED` and `CREDIT_EXEMPT_TIERS`. These control inference credit checks; they do not provision or remove the billing services. See the [billing reference](docs/api/BILLING_API_REFERENCE.md) and [credit model](CREDITS.md).
+
+### The app marketplace
+
+<p align="center">
+  <img src="docs/screenshots/marketplace.webp" width="1000" alt="Ops-Center app marketplace with applications and entitlement information in a demo workspace">
+  <br><em>The app marketplace — discover applications and see your access.</em>
+</p>
+
+The marketplace uses app definitions and feature grants to present available applications. **My Apps** resolves subscription features together with organization grants, giving users a launcher for the services they can access. Administrators manage the catalog and the features associated with plans.
+
+Keycloak-backed applications can share sign-in. App definitions contain launch URLs and access metadata; connecting an app still requires its own deployment, identity setup, and integration. Existing integrations include Brigade, Open-WebUI, Bolt.diy, Presenton, and Forgejo, with configurable catalog entries for other services.
+
+### Service health
+
+<p align="center">
+  <img src="docs/screenshots/services.webp" width="1000" alt="Ops-Center service health view showing demo service status and management controls">
+  <br><em>Service health — inspect services before taking action.</em>
+</p>
+
+View Docker-backed service status, inspect logs, and manage service lifecycle operations on a configured host. System monitoring exposes CPU, memory, storage, and available GPU information; federation views show peer nodes and their advertised services. Host inspection and management require the relevant Docker, filesystem, and device access.
+
+Additional administrative surfaces cover Traefik routes and certificates, storage and backups, alerts, website monitoring, and analytics. Optional Prometheus, Grafana, and Umami integrations use their configured services. Fleet inventory accepts UUDA registration and heartbeats, while the fleet-map integration ingests topology snapshots.
+
+### Users, organizations, and access
+
+The dashboard above is the entry point for account administration. Search and filter users, import CSV data, change subscription tiers in bulk, assign individual roles, and send password-reset or onboarding messages through Keycloak.
+
+Organizations have membership and role-management APIs, settings, billing views, and feature grants. User details bring profile, access, organization, and subscription information together. Account API keys have creation, regeneration, revocation, and scope controls; service credentials support application-to-application calls.
+
+Role checks, session authentication, and authorization remain part of the backend. User impersonation, the per-user activity feed, bulk role assignment, and the administrative user-session endpoints are still placeholders in this checkout. Use the implemented routes and integration guide for the supported contract.
+
+## Built for agents
+
+### The Colonel: chat and A2A
+
+The Colonel ships **18 skill definitions and 67 registered action executors**. These are Colonel function-calling actions, not a count of public MCP tools. The skill files use Markdown with YAML front matter and are loaded from [backend/colonel/skills](backend/colonel/skills).
+
+Useful actions include:
+
+| Action | Use it to |
+|---|---|
+| `system-status__full_status` | Inspect CPU, memory, disk, and GPU information |
+| `docker-management__list_containers` | Discover containers and their state |
+| `docker-management__container_logs` | Read a container's recent output |
+| `service-health__check_all` | Check configured services |
+| `postgresql-ops__stats` | Inspect database statistics |
+| `litellm-management__list_models` | Inspect the configured proxy's model catalog |
+| `brigade-delegation__list_agents` | Discover available Brigade agents |
+| `brigade-delegation__delegate_task` | Send a task to a selected Brigade agent |
+
+Interactive chat streams responses and tool activity over WebSocket, with Redis-backed sessions and PostgreSQL persistence. Actions marked for confirmation go through a human confirmation prompt in chat. Brigade registration and delegation use `BRIGADE_API_URL` and `BRIGADE_SERVICE_KEY`; the local memory graph can defer to Brigade when that integration is configured.
+
+The mounted agent interface is **HTTP JSON-RPC at `/a2a`**:
+
+- Discovery: `/.well-known/agent-card.json`, with a legacy card at `/.well-known/agent.json` and an agent index at `/.well-known/api-catalog`.
+- Authentication: `Authorization: Bearer <a2a-shared-secret>` or `X-Service-Key: <a2a-shared-secret>`. The server uses `A2A_SHARED_SECRET`, falling back to `BRIGADE_SERVICE_KEY`, and refuses calls when neither is configured.
+- Methods: `skills/list`, `skills/invoke`, `agent/status`, `colonels/list`, and the legacy `tasks/send`. `tasks/get` is not implemented; A2A streaming and push notifications are not advertised.
+- Invocation: supply `skill`, `action`, and `parameters`; an optional `colonel` selects a configured Colonel.
+
+**A2A is a privileged service interface.** Its direct `skills/invoke` handler calls executors without the interactive chat confirmation flow. Give its credential only to trusted callers and enforce any required human approval in that caller's workflow.
+
+Copy this curl client configuration, replace the placeholders, and run it against your deployment to list available skills:
 
 ```bash
-git clone https://git.unicorncommander.ai/UnicornCommander/Ops-Center.git
+curl --config - <<'CURL'
+url = "https://<ops-center-host>/a2a"
+request = "POST"
+header = "Authorization: Bearer <a2a-shared-secret>"
+header = "Content-Type: application/json"
+data = "{\"jsonrpc\":\"2.0\",\"id\":\"readme-discovery\",\"method\":\"skills/list\",\"params\":{}}"
+silent
+show-error
+fail-with-body
+CURL
+```
+
+For a read-only status action, change the JSON body to:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "readme-status",
+  "method": "skills/invoke",
+  "params": {
+    "skill": "system-status",
+    "action": "full_status",
+    "parameters": {}
+  }
+}
+```
+
+### MCP discovery and application hooks
+
+Ops-Center serves the suite MCP directory at `/.well-known/mcps.json`. It is a discovery index for other applications, not a general-purpose MCP server mounted by this app. MCP transport, authentication, and tool counts belong to each target server; inspect that server's discovery document and authenticated tool list before configuring a client. The committed directory contains deployment-specific locations and must be reviewed for your installation.
+
+The main server does not mount the legacy MCP callback connector or the separate MCP metering and UUDA MCP gateway routers present in the source tree. Their presence is not a working public MCP endpoint, so there is no `mcpServers` configuration for Ops-Center itself here.
+
+Other mounted hooks include API-key validation for applications, entitlement lookup, federation agent discovery and invocation, and service-authenticated metered-compute reporting. **The Guide**, a separate account assistant, provides account help and confirmation-based API-key lifecycle actions without the Colonel's host-management toolset.
+
+See the [agent interface](backend/colonel/a2a_server.py), [skill router](backend/colonel/skill_router.py), and application integration guide.
+
+## Quick start
+
+### Docker: connect to a provisioned suite
+
+**This checkout requires shared services.** Have PostgreSQL, Redis, Keycloak, and an HTTPS reverse proxy available before starting the authenticated dashboard. Billing needs Lago and Stripe configuration; inference and agent chat need configured model services or providers. The repository does not include a complete, portable suite bootstrap, and `SKIP_AUTH` in the environment template is not an implemented dashboard bypass.
+
+The shortest self-contained application build uses the checked-in [Dockerfile](Dockerfile). The existing [direct Compose file](docker-compose.direct.yml) is a deployment-specific overlay: it expects external networks and services, references a prebuilt image, and includes embedded environment settings that override an env file. It needs operator review before reuse. The proxy Compose files do not create the backend, database, cache, or identity provider.
+
+**Prepare your identity and storage services:**
+
+- Provide an Ops-Center database and a database account able to apply its startup migrations. Review the [migration notes](backend/migrations/README.md); an existing database should be backed up before an upgrade.
+- Provide Redis reachable from the application container. Configure both the split Redis settings and `REDIS_URL` consistently, including authentication.
+- In Keycloak, create a confidential browser-login client with standard authorization-code flow. Register `https://<ops-center-host>/auth/callback` as its redirect URI and your HTTPS application origin as an allowed web origin.
+- Make the user's roles or groups available to the user-info response. Assign the `admin` role or an `admins` group for the first administrator; the [role mapper](backend/role_mapper.py) lists supported mappings.
+- Supply Keycloak administrative credentials for user-management operations. That integration requests a token in the `master` realm using `KEYCLOAK_CLIENT_ID` (normally Keycloak's `admin-cli` client). The browser-login client is selected separately by `OAUTH_CLIENT_ID`.
+- Route your HTTPS application host to the application port, including `/auth`, `/api`, `/ws`, `/a2a`, and `/.well-known`. Preserve the original host and scheme and enable WebSocket forwarding.
+
+Clone and prepare a private runtime configuration:
+
+```bash
+git clone https://github.com/Unicorn-Commander/Ops-Center.git
 cd Ops-Center
-```
-
-### 2. Configure Environment
-
-```bash
-# Copy environment template
 cp .env.example .env.auth
-
-# Edit configuration
-vim .env.auth
+chmod 600 .env.auth
 ```
 
-**Key Variables**:
-```bash
-# Keycloak SSO
-KEYCLOAK_URL=http://uchub-keycloak:8080
-KEYCLOAK_REALM=uchub
-KEYCLOAK_CLIENT_ID=ops-center
-KEYCLOAK_CLIENT_SECRET=<your-secret>
+Edit `.env.auth` for your services before continuing. Replace the template's deployment defaults, credentials, and hostnames. Set the PostgreSQL, Redis, Keycloak, and optional provider variables listed under [Configuration](#configuration), and add these runtime settings missing from the template:
 
-# Database
-POSTGRES_HOST=unicorn-postgresql
-POSTGRES_DB=unicorn_db
-
-# Billing
-LAGO_API_KEY=<your-lago-key>
-STRIPE_SECRET_KEY=<your-stripe-key>
-
-# Billing Mode (Optional)
-BILLING_ENABLED=true                    # Set "false" to disable all billing
-CREDIT_EXEMPT_TIERS=free,admin,internal # Tiers exempt from charges (or "*" for all)
+```dotenv
+EXTERNAL_HOST=<ops-center-host>
+EXTERNAL_PROTOCOL=https
+OAUTH_CLIENT_ID=<browser-login-client-id>
+OPS_CENTER_OAUTH_CLIENT_SECRET=<browser-login-client-secret>
+SESSION_SECRET_KEY=<random-session-secret>
+REDIS_URL=<authenticated-redis-url>
+ENCRYPTION_KEY=<persistent-fernet-key>
+BYOK_ENCRYPTION_KEY=<persistent-byok-fernet-key>
 ```
 
-> **Tip**: For personal or internal servers, set `BILLING_ENABLED=false` to skip all credit checks.
+Use a hostname without a scheme or path for `EXTERNAL_HOST`. Keep encryption keys stable across restarts. The current SSO login and callback handlers construct an HTTPS redirect; a plain HTTP localhost address is useful for diagnostics, but is not the complete sign-in path.
 
-### 3. Start the Services
+Build and start the application on an **existing** Docker network that can reach your shared services. Replace `<suite-network>` with that network's name:
 
 ```bash
-# Start with Docker Compose
-docker compose -f docker-compose.direct.yml up -d
+docker build --tag ops-center:local .
 
-# Check status
-docker ps | grep ops-center
+docker run --detach \
+  --name ops-center \
+  --network '<suite-network>' \
+  --publish 127.0.0.1:8084:8084 \
+  --env-file .env.auth \
+  --mount type=volume,source=ops-center-data,target=/app/data \
+  --mount type=volume,source=ops-center-avatars,target=/app/public/avatars \
+  --entrypoint /bin/sh \
+  ops-center:local \
+  -c 'cp -a /app/dist/. /app/public/ && exec uvicorn server:app --host 0.0.0.0 --port 8084'
 ```
 
-### 4. Access the Dashboard
+The startup command stages the newly built frontend into `public`, which the server checks before `dist`. The loopback port is for a reverse proxy on the Docker host; a containerized proxy on the same network can use the container's application port directly.
+
+For host service inspection and control, add the Docker socket mount to that `docker run` command before the image name:
+
+```text
+--mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock
+```
+
+Docker socket access grants control over the host's Docker daemon. GPU and host filesystem features need their own device or directory mappings; the basic application container does not automatically gain those capabilities.
+
+Check that the backend responds, then complete sign-in through your configured HTTPS host:
 
 ```bash
-# Local development
-http://localhost:8084
-
-# Production
-https://unicorncommander.ai
+curl --fail --silent --show-error http://localhost:8084/api/v1/system/status
+docker logs --tail 100 ops-center
 ```
 
-**Default Admin**: Navigate to Keycloak and create your first admin user
+Open `https://<ops-center-host>/auth/login` and verify that the admin dashboard loads after Keycloak sign-in. A successful status response alone does not verify database initialization, authentication, billing, or inference. Review startup errors before enabling those integrations.
 
----
+### Compose files in this repository
 
-## 📁 Project Structure
-
-```
-ops-center/
-├── backend/                      # FastAPI backend
-│   ├── server.py                 # Main application
-│   ├── colonel/                  # The Colonel AI agent system
-│   │   ├── skill_executor.py     # 67 tool executors (Docker, git, Brigade, etc.)
-│   │   ├── skill_loader.py       # SKILL.md parser → OpenAI tool definitions
-│   │   ├── models.py             # Session, config, WebSocket frame models
-│   │   └── skills/               # 18 skill definitions (.skill.md files)
-│   ├── federation/               # Federation inference mesh
-│   │   ├── node_registry.py      # Peer node registration & heartbeat
-│   │   ├── inference_router.py   # Tier-aware, constraint-based routing
-│   │   ├── hardware_detector.py  # Auto-detect GPUs & services
-│   │   ├── cloud_provisioner.py  # Lambda Labs GPU provisioning
-│   │   ├── pipeline_engine.py    # Multi-step inference pipelines
-│   │   ├── auth.py               # Per-node signed JWTs (v3.1)
-│   │   ├── resilience.py         # Circuit breakers & audit log (v3.1)
-│   │   └── access_control.py     # Per-service ACL (v3.1)
-│   ├── routers/federation.py     # 20+ federation API endpoints
-│   ├── user_management_api.py    # User CRUD + bulk ops
-│   ├── billing_analytics_api.py  # Billing & subscriptions
-│   ├── org_api.py                # Organization management
-│   ├── litellm_api.py            # LLM proxy + credit system
-│   ├── my_apps_api.py            # Tier-based app access
-│   ├── model_list_api.py         # Model catalog management
-│   ├── landing_page_settings_api.py  # Landing page config
-│   ├── pricing_packages_api.py   # Public pricing API
-│   ├── keycloak_integration.py   # SSO integration
-│   ├── lago_integration.py       # Billing system
-│   └── dependencies.py           # Dependency injection
-│
-├── src/                          # React frontend
-│   ├── App.jsx                   # Main app + routing
-│   ├── pages/
-│   │   ├── Dashboard.jsx         # Main dashboard
-│   │   ├── UserManagement.jsx    # User list + filters
-│   │   ├── UserDetail.jsx        # User profile (6 tabs)
-│   │   ├── AppsMarketplace.jsx   # Tier-based apps
-│   │   ├── BillingDashboard.jsx  # Admin billing
-│   │   ├── admin/
-│   │   │   ├── ModelListManagement.jsx  # Model catalogs
-│   │   │   └── FeatureManagement.jsx    # Feature flags
-│   │   ├── subscription/         # User subscription pages
-│   │   └── organization/         # Org management pages
-│   ├── components/               # Reusable components
-│   └── contexts/                 # React contexts
-│
-├── public/                       # Static assets + built files
-├── docker-compose.direct.yml     # Docker configuration
-├── package.json                  # Frontend dependencies
-├── requirements.txt              # Backend dependencies
-└── CLAUDE.md                     # Complete documentation
-```
-
----
-
-## 🛠️ Technology Stack
-
-### Backend
-- **Framework**: FastAPI (async Python)
-- **Database**: PostgreSQL + asyncpg
-- **Cache**: Redis
-- **Authentication**: Keycloak SSO (OpenID Connect)
-- **Billing**: Lago + Stripe
-- **LLM Proxy**: LiteLLM (100+ models)
-
-### Frontend
-- **Framework**: React 18
-- **Build Tool**: Vite
-- **UI Library**: Material-UI (MUI v5)
-- **Routing**: React Router v6
-- **State**: React Context API
-- **Charts**: Chart.js + react-chartjs-2
-- **HTTP**: Axios
-
-### Infrastructure
-- **Containers**: Docker + Docker Compose
-- **Reverse Proxy**: Traefik (SSL/TLS)
-- **Networks**: Multi-network architecture
-- **Orchestration**: Docker Compose
-- **Federation**: 4-node WireGuard mesh via Headscale with 13 auto-discovered services
-- **Cloud GPU**: Auto-provisioning with persistent S3 model cache and idle auto-shutdown
-- **Mesh Network**: Headscale coordination at `headscale.unicorncommander.ai`, MagicDNS via `unicorncommander.net`
-
----
-
-## 🎨 Screenshots
-
-### Admin Dashboard — infrastructure at a glance
-GPU status, service health, hosted sites, billing, and the federation mesh in one view.
-
-![Admin Dashboard](public/logos/Admin-Dashboard.png)
-
-### AI Model Management — the whole catalog + gateway
-Curate models, route providers, and manage the inference gateway.
-
-![AI Model Management](public/logos/AI-Model-Management.png)
-
-### Service Management & System Monitoring
-
-| Services | Monitoring |
+| File | Role |
 |---|---|
-| ![Service Management](public/logos/Service%20Management.png) | ![System Monitoring](public/logos/System%20Monitoring.png) |
+| [docker-compose.direct.yml](docker-compose.direct.yml) | Application deployment overlay for existing suite networks and services |
+| [docker-compose.traefik.yml](docker-compose.traefik.yml) | Static frontend behind Traefik |
+| [docker-compose.prod.yml](docker-compose.prod.yml) | Nginx proxy on existing networks |
+| [docker-compose.litellm.yml](docker-compose.litellm.yml) | Optional LiteLLM and routing services; references shared dependencies |
+| [docker-compose.monitoring.yml](docker-compose.monitoring.yml) | Optional monitoring services |
 
-### User Dashboard — credits, usage, plan
-Per-user view of allowance, spend, models used, and quick actions.
+These files describe separate deployment pieces. Review their mounts, service names, credentials, and external-network assumptions before combining them with your own suite deployment.
 
-![User Dashboard](public/logos/User%20Dashboard-Homepage.png)
+## Run from source
 
-> _Screenshots reflect recent builds; the daylight theme + gateway/billing surfaces are continually refreshed._
+Use the Node version selected by [.nvmrc](.nvmrc), npm compatible with [package.json](package.json), and Python matching the backend's [Dockerfile](Dockerfile). Backend dependencies are in [backend/requirements.txt](backend/requirements.txt). The same database, cache, identity, and HTTPS prerequisites apply to source development.
 
----
-
-## 📚 Documentation
-
-### For Users
-- **[Quick Start Guide](docs/QUICK_START.md)** - Get up and running in 5 minutes
-- **[User Guide](docs/USER_GUIDE.md)** - Complete feature walkthrough
-- **[FAQ](docs/FAQ.md)** - Common questions and answers
-
-### For Developers
-- **CLAUDE.md** - Complete technical documentation (production context)
-- **[API Reference](docs/API_REFERENCE.md)** - REST API endpoints
-- **[Development Guide](docs/DEVELOPMENT.md)** - Local development setup
-- **[Architecture](docs/ARCHITECTURE.md)** - System design and architecture
-
-### For Admins
-- **[Admin Guide](docs/ADMIN_OPERATIONS_HANDBOOK.md)** - Administrative operations
-- **[Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-
----
-
-## 🔌 API Reference
-
-### Base URL
-```
-https://unicorncommander.ai/api/v1
-http://localhost:8084/api/v1  # Local development
-```
-
-### Authentication
-All admin endpoints require Keycloak SSO authentication via session cookies or Bearer tokens. Federation endpoints use per-node HMAC-SHA256 signed JWTs.
-
-### Key Endpoints
-
-#### User Management
-```bash
-GET    /admin/users                    # List users (with filters)
-GET    /admin/users/{id}               # Get user details
-POST   /admin/users/comprehensive      # Create user
-PUT    /admin/users/{id}               # Update user
-DELETE /admin/users/{id}               # Delete user
-POST   /admin/users/bulk/import        # Import CSV
-GET    /admin/users/export             # Export CSV
-```
-
-#### Organization Management
-```bash
-GET    /organizations                  # List organizations
-POST   /organizations                  # Create organization
-GET    /organizations/{id}             # Get organization
-PUT    /organizations/{id}             # Update organization
-GET    /organizations/{id}/members     # List members
-POST   /organizations/{id}/invite      # Invite member
-```
-
-#### LLM & Credits
-```bash
-POST   /llm/chat/completions           # Chat completion (OpenAI-compatible)
-POST   /llm/image/generations          # Image generation (DALL-E, SD)
-GET    /llm/models                     # List available models
-GET    /llm/models/categorized         # Models by BYOK vs Platform
-GET    /llm/usage                      # Usage statistics
-```
-
-#### Billing & Subscriptions
-```bash
-GET    /billing/plans                  # List subscription plans
-GET    /billing/subscriptions/current  # Current subscription
-POST   /billing/subscriptions/create   # Create subscription
-POST   /billing/subscriptions/upgrade  # Upgrade tier
-POST   /billing/subscriptions/cancel   # Cancel subscription
-GET    /billing/invoices               # Invoice history
-```
-
-#### Apps Marketplace
-```bash
-GET    /my-apps/authorized             # Apps user can access (tier-filtered)
-GET    /my-apps/marketplace            # Apps available for purchase
-```
-
-#### Federation Mesh
-```bash
-GET    /federation/health              # Public health check (no auth)
-POST   /federation/register            # Node self-registration
-POST   /federation/heartbeat           # Node heartbeat with load/capacity
-GET    /federation/nodes               # List all federated nodes
-GET    /federation/services            # Unified service catalog
-GET    /federation/topology            # Federation map
-POST   /federation/route               # Find best inference backend
-POST   /federation/pipelines/execute   # Execute multi-step workflow
-GET    /federation/agents              # Cross-node agent discovery
-GET    /federation/audit               # Routing decision audit log (admin)
-GET    /federation/circuits            # Circuit breaker status (admin)
-POST   /federation/cloud/provision     # Provision cloud GPU on demand
-```
-
-**Complete API documentation**: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
-
----
-
-## 🧪 Development
-
-### Local Development Setup
+From the repository root, install the frontend and backend dependencies:
 
 ```bash
-# Install frontend dependencies
-npm install
-
-# Install backend dependencies
-pip install -r backend/requirements.txt
-
-# Start development server (frontend)
-npm run dev  # http://localhost:5173
-
-# Start backend (via Docker)
-docker compose -f docker-compose.direct.yml up -d
-
-# Watch logs
-docker logs ops-center-direct -f
+npm ci
+python3.10 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r backend/requirements.txt python-dotenv
 ```
 
-### Build Frontend
+Use the prepared `.env.auth`, with service addresses reachable from your development machine. Start the backend from the repository root:
 
 ```bash
-# Production build
+. .venv/bin/activate
+python -m uvicorn server:app \
+  --app-dir backend \
+  --env-file .env.auth \
+  --host 127.0.0.1 \
+  --port 8085 \
+  --reload
+```
+
+In another terminal:
+
+```bash
+npm run dev -- --host 127.0.0.1
+```
+
+[Vite](vite.config.js) serves the frontend on `http://localhost:8084` and proxies `/api` and `/ws` to the backend on `8085`. It does not proxy `/auth`. For a full signed-in development session, route `/auth`, `/api`, `/ws`, `/a2a`, and `/.well-known` from your HTTPS development host to the backend, and other paths to Vite. Use that HTTPS host in Keycloak and `EXTERNAL_HOST`.
+
+Build the frontend with:
+
+```bash
+npm run build
+```
+
+The build writes `dist/`. A locally built frontend is not automatically deployed by that command. For a container deployment, rebuild the image and use the Docker startup path above; source changes do not require copying a build into tracked assets.
+
+## Configuration
+
+[.env.example](.env.example) is a starting template, not a complete runtime contract. The table below lists important template variables read by the current integrations; fill in your own values in `.env.auth`.
+
+| Variable | Meaning |
+|---|---|
+| `KEYCLOAK_URL` | Identity provider address reachable by the backend |
+| `KEYCLOAK_EXTERNAL_URL` | Browser-facing identity provider address, also used for user-info lookup |
+| `KEYCLOAK_REALM` | Realm containing application users |
+| `KEYCLOAK_CLIENT_ID` | Client used for the Keycloak administrative token request; browser-login settings are separate below |
+| `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD` | Credentials used by Keycloak administrative operations |
+| `POSTGRES_HOST`, `POSTGRES_PORT` | PostgreSQL connection target |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Application database and database credentials |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD` | Cache and session connection settings; keep consistent with the Redis URL |
+| `LAGO_API_URL`, `LAGO_API_KEY` | Lago API connection and authentication |
+| `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Checkout configuration, server API access, and webhook verification |
+| `LITELLM_PROXY_URL`, `LITELLM_MASTER_KEY` | Optional LiteLLM proxy connection and administrative authentication |
+| `RATE_LIMIT_ENABLED` | Enables the backend's configured rate-limiting integration |
+| `UMAMI_URL` | Backend connection to the optional Umami analytics service |
+| `VITE_UMAMI_WEBSITE_ID` | Build-time identifier enabling frontend Umami pageview tracking |
+| `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` | Build-time PostHog project and ingestion configuration |
+
+Additional settings used by current code but absent from the template:
+
+| Variable | Meaning |
+|---|---|
+| `EXTERNAL_HOST`, `EXTERNAL_PROTOCOL` | Public application host and scheme used for URLs and cookie handling |
+| `OAUTH_CLIENT_ID`, `OPS_CENTER_OAUTH_CLIENT_SECRET` | Browser-login client identity and confidential-client secret |
+| `SESSION_SECRET_KEY` | Persistent signing secret for session middleware |
+| `REDIS_URL` | Redis connection URL used by session and credit-system initialization |
+| `ENCRYPTION_KEY`, `BYOK_ENCRYPTION_KEY` | Persistent Fernet keys for credential and BYOK encryption |
+| `BILLING_ENABLED`, `CREDIT_EXEMPT_TIERS` | Inference billing switch and exempt subscription tiers |
+| `COLONEL_LLM_URL`, `COLONEL_MODEL`, `COLONEL_SERVICE_KEY` | Colonel inference endpoint, selected model, and service authentication |
+| `COLONEL_PUBLIC_URL` | Public base URL advertised in Colonel discovery documents |
+| `A2A_SHARED_SECRET` | Credential accepted by the Colonel's A2A endpoint |
+| `BRIGADE_API_URL`, `BRIGADE_SERVICE_KEY` | Brigade registration and delegation connection |
+| `COLONEL_LOCAL_GRAPH` | Whether the Colonel uses its local memory graph or defers to Brigade |
+| `FEDERATION_NODE_ID`, `FEDERATION_ENDPOINT_URL`, `FEDERATION_PEERS` | Node identity, advertised endpoint, and peer configuration |
+| `FEDERATION_KEY`, `FEDERATION_SERVICE_PROFILE` | Federation authentication material and service-discovery profile |
+| `CLOUD_GPU_ENABLED`, `CLOUD_GPU_PROVIDER` | Optional cloud GPU provisioning switch and provider selection |
+
+The template's `KEYCLOAK_CLIENT_SECRET` is not the browser-login secret; that handler reads `OPS_CENTER_OAUTH_CLIENT_SECRET`. Similarly, `ENABLE_BILLING`, `SECRET_KEY`, and `SKIP_AUTH` are not substitutes for `BILLING_ENABLED`, `SESSION_SECRET_KEY`, or a working Keycloak setup. Keep runtime configuration out of Git.
+
+Frontend analytics initialize only in production builds with the corresponding build-time identifier configured. Changing container runtime variables alone does not alter an already compiled frontend; the stock Dockerfile does not pass these analytics variables into its frontend build stage.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Human[Administrator or account user] --> Edge[HTTPS reverse proxy]
+    Agent[Trusted agent client] -->|Authenticated A2A| Edge
+    Edge --> UI[React and Vite frontend]
+    Edge --> API[FastAPI application]
+    UI -->|Session APIs and WebSocket| API
+    Human <-->|Sign-in| Identity[Keycloak]
+    API <-->|OIDC and user administration| Identity
+    API --> DB[(PostgreSQL)]
+    API --> Cache[(Redis)]
+    API --> Billing[Lago and Stripe]
+    API --> Inference[Inference API and federation router]
+    Inference --> Local[Local model services]
+    Inference --> Peers[Federated peers]
+    Inference --> Cloud[Configured cloud providers and optional LiteLLM]
+    API --> Colonel[The Colonel]
+    Colonel --> Host[Docker and host tools]
+    Colonel --> Brigade[Unicorn-Brigade]
+    Fleet[UUDA and fleet-map collectors] -->|Registration, heartbeat, or ingest| API
+```
+
+- **Frontend — [src](src):** React, Vite, Material UI, React Router, context providers, and charting components. Admin, account, organization, billing, model, and federation pages share the application shell.
+- **Application — [backend/server.py](backend/server.py):** FastAPI mounts the feature routers, handles browser sign-in and sessions, serves the frontend, and starts integration services.
+- **Persistence:** PostgreSQL stores application and billing-related records; Redis supports sessions, caching, and coordination. Startup applies selected feature and core migrations; inspect the migration logs on deployment.
+- **Identity and access:** Keycloak supplies identity; backend session checks, route-specific authorization, API-key verification, and federation authentication cover different entry points.
+- **Inference — [backend/federation](backend/federation) and [backend/litellm_api.py](backend/litellm_api.py):** Provider routing, usage accounting, peer discovery, pipelines, and optional cloud GPU management.
+- **Agents — [backend/colonel](backend/colonel):** Skill loading, execution, interactive confirmations, memory, sessions, and A2A integration. Brigade can provide delegation and agent memory.
+- **Operations:** Docker, Traefik, billing providers, and monitoring services are external integrations. Compose describes deployment topology; it does not replace the services themselves.
+
+<details>
+<summary>Repository map</summary>
+
+```text
+Ops-Center/
+├── backend/
+│   ├── server.py                # Application, startup, auth, router registration
+│   ├── colonel/                 # Agent chat, skills, memory, and A2A
+│   ├── federation/              # Nodes, discovery, routing, and pipelines
+│   ├── routers/                 # Infrastructure and integration APIs
+│   ├── migrations/              # SQL migrations and migration manifest
+│   ├── user_management_api.py   # Administrative user operations
+│   ├── org_api.py               # Organizations and membership
+│   ├── litellm_api.py           # Inference, usage, and provider operations
+│   ├── my_apps_api.py           # App catalog and entitlement resolution
+│   └── requirements.txt         # Python dependencies
+├── src/
+│   ├── App.jsx                  # Application shell and routes
+│   ├── pages/                   # Admin and account pages
+│   ├── components/              # Shared interface components
+│   └── contexts/                # Shared frontend state
+├── public/                      # Static assets
+├── docs/                        # Guides, references, and historical reports
+├── tests/                       # Integration and browser tests
+├── Dockerfile                   # Frontend build and Python application image
+├── package.json                 # Frontend version, dependencies, and commands
+└── vite.config.js               # Frontend build and development proxy
+```
+
+</details>
+
+## Part of Unicorn Commander
+
+| App | What it does |
+|---|---|
+| **[Ops-Center](https://github.com/Unicorn-Commander/Ops-Center)** | **The control plane: tenants, billing, federation, API keys, model routing** |
+| [Unicorn-Brigade](https://github.com/Unicorn-Commander/Unicorn-Brigade) | The agent layer: agents, tools, memory, orchestration |
+| [Unicorn-Stable](https://github.com/Unicorn-Commander/Unicorn-Stable) | Humans and agents in the same room: chat, voice, video |
+| [Accounting-Ops](https://github.com/Unicorn-Commander/Accounting-Ops) | Agent-native accounting and books |
+| [Contact-Ops](https://github.com/Unicorn-Commander/Contact-Ops) | The shared contact and identity graph |
+| [Customer-Ops](https://github.com/Unicorn-Commander/Customer-Ops) | Customers, pipeline, quotes and outreach |
+| [Email-Ops](https://github.com/Unicorn-Commander/Email-Ops) | Agent-drafted email with a human approval inbox |
+| [Project-Ops](https://github.com/Unicorn-Commander/Project-Ops) | Projects, tasks, time and invoices |
+| [Meeting-Ops](https://github.com/Unicorn-Commander/Meeting-Ops) | Recordings, transcripts, summaries and action items |
+| [Knowledge-Ops](https://github.com/Unicorn-Commander/Knowledge-Ops) | The wiki and memory your agents ground on |
+| [Security-Ops](https://github.com/Unicorn-Commander/Security-Ops) | Authorized security scanning with engagement and attestation gates |
+| [Tax-Planning-Ops](https://github.com/Unicorn-Commander/Tax-Planning-Ops) | Tax plans, scenarios and statutory deadlines |
+| [Brand-Ops](https://github.com/Unicorn-Commander/Brand-Ops) | Brand kits, marks, voices and rules |
+| [Podcast-Ops](https://github.com/Unicorn-Commander/Podcast-Ops) | Episodes, audio QA and publishing |
+| [UUDA](https://github.com/Unicorn-Commander/UUDA) | The device agent for your fleet |
+| [fleet-map](https://github.com/Unicorn-Commander/fleet-map) | Fleet inventory and topology map |
+
+Ops-Center connects through shared Keycloak identity, application entitlement and API-key validation APIs, and inference and metering services; it also registers and delegates the Colonel through Brigade, accepts UUDA device heartbeats, and ingests fleet-map topology.
+
+## Development
+
+Use [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow. The frontend manifest defines Vitest and Playwright commands; backend test configuration lives in [pytest.ini](pytest.ini), with extra dependencies in [tests/requirements-test.txt](tests/requirements-test.txt).
+
+```bash
+# Frontend tests, a single run
+npm run test:run
+
+# Production frontend build, including the dependency precheck
 npm run build
 
-# Deploy to public/
-cp -r dist/* public/
+# Backend test dependencies, in your activated virtual environment
+python -m pip install -r tests/requirements-test.txt
 
-# Restart backend to serve new files
-docker restart ops-center-direct
+# Backend tests: configure isolated test services before running the full suite
+python -m pytest
 ```
 
-### Run Tests
+Browser tests need a running test deployment and the fixtures required by the selected tests. Install the browser and explicitly select your test URL:
 
 ```bash
-# Backend tests (if available)
-cd backend && pytest
-
-# Frontend tests
-npm test
-
-# E2E tests
-npm run test:e2e
+npx playwright install chromium
+BASE_URL='https://<test-ops-center-host>' npm run test:e2e -- --project=chromium
 ```
 
-### Code Quality
+Review the selected specs for additional service URLs and account requirements before execution. Some tests use deployment-specific defaults. Use disposable test accounts and service instances.
+
+The checked-in CI uses Ruff for Python linting. Install it explicitly before running the command:
 
 ```bash
-# Frontend linting
-npm run lint
-
-# Backend linting
-ruff check backend/
-
-# Type checking
-mypy backend/
+python -m pip install ruff
+python -m ruff check backend/
 ```
 
----
+There is no `npm run lint` script in the current manifest. Frontend build and test commands above are available; this README does not imply that all application tests or lint checks currently pass.
 
-## 🌟 Recent Updates
+### Documentation
 
-### v3.11.0 (June 2026) — Public Inference Gateway, Smart Failover & Metered Billing
-- **Public, key-authed gateway** for the whole GPU mesh: chat + **embeddings + reranking** now ride one OpenAI-compatible endpoint, authed per-org and metered to Lago.
-- **4-tier automatic failover**: `local 3090 → local P40 → DeepSeek V4 Flash → OpenRouter` under a single model alias — verified live (kill the primary, the response still lands).
-- **Direct providers wired**: DeepSeek V4 (flash/pro) + OpenAI, keys in secure env (never the committed config).
-- **Usage-based pricing across every modality** (LLM / embeddings / rerank / STT / TTS), with per-tier **budget gating** — free = local-only fail-closed, paid = bundled cloud allowance.
-- **Non-LLM metering bridge**: STT/TTS report unit metrics (audio-seconds / characters) without audio ever transiting the gateway.
-- **Account assistant ("The Guide")** gained confirm-gated API-key lifecycle (create/revoke/rotate); **notification preferences** rebuilt with real persistence.
+Long-form references and historical implementation reports remain in the repository. Some predate the current routing and deployment model; use the current source and this README's startup prerequisites when a guide differs.
 
-### v3.3.0 (March 22, 2026) - Mesh Network + Service Auto-Discovery
-- **4-Node WireGuard Mesh**: Encrypted peer-to-peer mesh via Headscale/Tailscale with MagicDNS (`unicorncommander.net`)
-- **13 Services Auto-Discovered**: Docker health-check-based discovery across 3 federated nodes
-- **Per-Deployment Profiles**: `FEDERATION_SERVICE_PROFILE` env var (home, vps, centerdeep, custom) for multi-site compose
-- **New Service Types**: `search` (CenterDeep tools) and `extraction` (Granite, Tika)
-- **Compose Parameterization**: `${VAR:-default}` substitution — git pulls no longer clobber deployment config
-- **Infrastructure**: `join-federation-network.sh`, Docker log rotation, Forgejo Actions CI runner
+- [User guide](docs/USER_GUIDE.md) — account, dashboard, and administrative workflows.
+- Application integration guide — identity, application access, and API integration.
+- [Billing API reference](docs/api/BILLING_API_REFERENCE.md) and billing systems reference — billing surfaces and service relationships.
+- [Credit model](CREDITS.md) — credit accounting concepts and billing terminology.
+- Model-list reference — catalogs and per-app model access.
+- BYOK user guide and [BYOK architecture](docs/BYOK_VS_PLATFORM_KEYS_ARCHITECTURE.md) — user and platform credential flows.
+- [Traefik user guide](docs/TRAEFIK_USER_GUIDE.md) and [Traefik API reference](docs/TRAEFIK_API_REFERENCE.md) — routes, services, middleware, and certificates.
+- [Monitoring setup](docs/MONITORING_SETUP.md) — optional monitoring infrastructure.
+- [Migration notes](backend/migrations/README.md) and [SQL reference](backend/sql/README.md) — database setup and schema changes.
+- [Legacy local-auth policy](docs/SECURITY_LEGACY_LOCAL_AUTH.md) — why local authentication is separate from Keycloak sign-in.
+- [Tests](tests/README.md), [backend tests](backend/tests/README.md), and [browser tests](tests/e2e/README.md) — suite-specific fixtures and execution.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — historical operational issues and diagnostics.
+- Technical notes — detailed implementation context and deployment history.
+- [Changelog](CHANGELOG.md) — release history, including federation, agent delegation, model routing, and account-management changes.
+- Historical roadmap — planning context, not a statement of current completion.
 
-### v3.1.0 (March 21, 2026) - Zero Trust Security + Resilience
-- **Per-Node Signed JWTs**: HMAC-SHA256 tokens with replay prevention replace shared API keys for federation auth
-- **Circuit Breakers**: Per-peer failure isolation prevents cascading failures across the federation mesh
-- **Per-Service ACLs**: Tier-based access control per inference service type (e.g., trial users blocked from music/image gen)
-- **Routing Audit Trail**: Every federation routing decision logged to PostgreSQL with full scoring details
-- **Brigade Agent Federation**: Cross-node agent discovery via `GET /federation/agents`
-- **Distributed Locking**: Redis-based locks prevent duplicate cloud GPU provisioning
+The running FastAPI application also exposes `/docs` and `/openapi.json`. Those describe mounted routes more accurately than an old endpoint inventory; administrative session cookies, app API keys, service keys, and federation credentials serve different authentication paths.
 
-### v3.0.0 (March 21, 2026) - Federation Inference Mesh
-- **Peer-to-Peer Mesh**: ~9,000 lines across 29 files — federated inference across home servers, cloud GPUs, and API providers
-- **Smart Routing**: Tier-aware, constraint-based routing to the best available inference backend
-- **Cloud GPU Bursting**: Lambda Labs auto-provisioning with idle shutdown and persistent S3 model cache
-- **4 Admin Pages**: Federation settings, node management, visual topology, unified service catalog
-- **Multi-Step Pipelines**: Chain inference steps across nodes (e.g., music generation + artwork)
-- **No single competing platform** covers all 8 requirements (heterogeneous hardware, multi-modal, hybrid cloud routing, idle GPU management, federated auth, billing, service discovery, multi-instance)
+### Troubleshooting the first run
 
-### v2.5.2 (February 27, 2026) - Colonel + Brigade A2A
-- **Colonel → Brigade Delegation**: One-way A2A delegation to 17 specialist agents for research, coding, finance, legal, medical, and more
+| Symptom | Check |
+|---|---|
+| Login loops or a rejected callback | HTTPS host, Keycloak redirect URI, browser client ID and secret, and forwarded host/scheme |
+| Login succeeds but admin access is denied | Keycloak user-info role/group claims and the role mapper |
+| Empty data or failed feature pages | PostgreSQL connectivity, migration logs, Redis credentials, and the configured integration |
+| UI works but host services are absent | Docker socket access, host mappings, service discovery, and GPU/device visibility |
+| A model call fails | Provider availability, model naming, API-key scope, routing policy, and credit settings |
+| An A2A call returns an authentication error | Shared-secret configuration and the presented service credential |
+| A new frontend build does not appear | Which `public` or `dist` directory the application is serving |
 
-### v2.5.0 (January 31, 2026) - Org Features + User Dashboard
-- Organization-level feature grants, user dashboard, service API keys management, configurable billing
+For bugs and feature requests, use [GitHub Issues](https://github.com/Unicorn-Commander/Ops-Center/issues). For general support, email [support@magicunicorn.tech](mailto:support@magicunicorn.tech).
 
-**[Complete Changelog](CHANGELOG.md)**
+Ops-Center builds on [FastAPI](https://fastapi.tiangolo.com/), [React](https://react.dev/), [Material UI](https://mui.com/), [Keycloak](https://www.keycloak.org/), [Lago](https://www.getlago.com/), and [LiteLLM](https://litellm.ai/).
 
----
+## Security
 
-## 🤝 Integration
+Report vulnerabilities privately to [security@unicorncommander.ai](mailto:security@unicorncommander.ai); see [SECURITY.md](SECURITY.md) for what to include. Do not put credentials, personal data, or exploitable details in a public issue.
 
-### UC-Cloud Ecosystem
+The implementation includes session authentication, route-level role checks, CSRF protection, rate limiting, hashed account API keys, encrypted provider credentials, and federation authentication and audit components. These have distinct scopes and configuration requirements. Terminate HTTPS at your proxy, restrict host-management access, and treat Colonel A2A credentials as privileged execution credentials.
 
-Ops-Center integrates seamlessly with the entire UC-Cloud platform:
+## Licence
 
-- **🎖️ Unicorn Brigade** - AI agent platform (17 production agents) — Colonel delegates tasks via A2A
-- **💬 Open-WebUI** - AI chat interface
-- **🔍 Center-Deep** - AI metasearch engine (70+ search engines)
-- **🎤 Unicorn Orator** - Professional TTS service
-- **🎧 Unicorn Amanuensis** - Professional STT service
-- **⚡ Bolt.diy** - AI development environment
-- **📊 Presenton** - AI presentation generation
-- **🔐 Keycloak** - Enterprise SSO (uchub realm)
-- **💳 Lago + Stripe** - Advanced billing system
-- **🐙 Forgejo** - Self-hosted Git server
-- **📧 Listmonk** - Email marketing platform
-- **📱 Postiz** - Social media scheduling
+Ops-Center is licensed under the **GNU Affero General Public License, version 3 or any later version** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE) for the full, unmodified licence text.
 
-All services share:
-- ✅ Single Sign-On (Keycloak)
-- ✅ Unified billing (Lago + Stripe)
-- ✅ Centralized LLM routing
-- ✅ Cross-service authentication
-- ✅ Shared database and cache
+Copyright © Magic Unicorn Unconventional Technology & Stuff Inc.
 
----
-
-## 🔒 Security — Zero Trust / Defense-in-Depth
-
-- **🔐 SSO Authentication**: Keycloak with Google, GitHub, Microsoft providers
-- **🔑 API Key Management**: Bcrypt hashing, secure storage
-- **👮 Role-Based Access**: 5-tier role hierarchy (admin → viewer) + per-service ACLs
-- **📝 Audit Logging**: Complete activity tracking + federation routing audit trail
-- **🛡️ Input Validation**: Pydantic models, SQL injection protection
-- **🔒 HTTPS/TLS**: SSL certificates via Traefik
-- **💰 PCI Compliance**: Stripe handles all card data
-- **🌐 Federation Security**: Per-node HMAC-SHA256 signed JWTs with replay prevention (JTI + 60s expiry)
-- **🔗 WireGuard Mesh**: All internal federation traffic encrypted via WireGuard tunnels (no Cloudflare for heartbeats)
-- **🔄 Circuit Breakers**: Per-peer failure isolation (3 failures → 30s cooldown → half-open test)
-- **🔐 Credential Encryption**: Fernet encryption for stored secrets, CSRF protection, rate limiting
-
----
-
-## 📊 Performance
-
-- **⚡ API Response Times**: 2-8ms average (38x faster than Stripe API)
-- **💾 Database Queries**: <1ms execution time
-- **🎯 Container Resources**: 0.66% memory, 0.20% CPU
-- **📦 Bundle Size**: Frontend optimized for production
-- **🚀 Zero Downtime**: Rolling deployments supported
-
----
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-**❓ Metrics showing 0**
-```bash
-# Populate Keycloak user attributes
-docker exec ops-center-direct python3 /app/scripts/quick_populate_users.py
-```
-
-**❓ Build errors**
-```bash
-# Install dependencies
-npm install
-
-# Rebuild
-npm run build && cp -r dist/* public/
-```
-
-**❓ API 401/403 errors**
-```bash
-# Check Keycloak
-docker ps | grep keycloak
-
-# Re-login via SSO
-# https://unicorncommander.ai/auth/login
-```
-
-**❓ Database connection errors**
-```bash
-# Check PostgreSQL
-docker ps | grep postgresql
-
-# Test connection
-docker exec unicorn-postgresql psql -U unicorn -d unicorn_db -c "SELECT 1;"
-```
-
-**[Complete Troubleshooting Guide](docs/TROUBLESHOOTING.md)**
-
----
-
-## 📈 Roadmap
-
-### Phase 2: Enhanced Analytics (Complete ✅)
-- ✅ User growth charts and dashboards
-- ✅ Usage tracking with API metering
-- ✅ Revenue tracking via Lago + Stripe
-- ✅ Organization-level feature grants
-- ✅ User Dashboard with credit/usage overview
-
-### Phase 3: Federation Inference Mesh (Complete ✅)
-- ✅ Peer-to-peer federated inference across multiple servers
-- ✅ Cloud GPU auto-provisioning (Lambda Labs)
-- ✅ Zero trust security (signed JWTs, circuit breakers, ACLs)
-- ✅ Full routing audit trail
-- ✅ Brigade agent federation
-
-### Phase 4: Advanced Organization Management (In Progress)
-- 🏢 Team hierarchies and nested teams
-- 🎭 Custom roles per organization
-- 📦 Resource quotas and limits
-- 🔐 Per-organization SSO providers
-
-### Phase 5: Self-Service & Automation
-- 🤖 Automated provisioning on signup
-- 📈 Usage-based tier upgrades
-- 💬 AI-powered chatbot support
-- 📚 Built-in API documentation portal
-
-**[Complete Roadmap](docs/ROADMAP.md)**
-
----
-
-## 🧑‍💻 Contributing
-
-We welcome contributions! Here's how to get started:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes** (follow our coding standards)
-4. **Run tests**: `npm test && pytest`
-5. **Commit**: `git commit -m 'feat: Add amazing feature'`
-6. **Push**: `git push origin feature/amazing-feature`
-7. **Open a Pull Request**
-
-**[Contributing Guidelines](CONTRIBUTING.md)**
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-Copyright (c) 2025 Magic Unicorn Unconventional Technology & Stuff Inc
-
----
-
-## 🙏 Acknowledgments
-
-Built with ❤️ by the UC-Cloud team using:
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
-- [React](https://reactjs.org/) - UI library
-- [Material-UI](https://mui.com/) - Component library
-- [Keycloak](https://www.keycloak.org/) - Identity and access management
-- [Lago](https://www.getlago.com/) - Open-source billing platform
-- [LiteLLM](https://litellm.ai/) - LLM proxy and routing
-
----
-
-## 📞 Support
-
-- **📧 Email**: support@magicunicorn.tech
-- **💬 Discord**: [Join our community](https://discord.gg/unicorn-commander)
-- **🐛 Issues**: [GitHub Issues](https://git.unicorncommander.ai/UnicornCommander/Ops-Center/issues)
-- **📚 Docs**: [Complete Documentation](https://docs.unicorncommander.ai)
-
----
-
-<div align="center">
-
-**⭐ Star us on GitHub** • **🐦 Follow on Twitter** • **💼 Connect on LinkedIn**
-
-Made with 🦄 by [Magic Unicorn Tech](https://magicunicorn.tech)
-
-</div>
+Built by [Magic Unicorn](https://magicunicorn.tech) · part of [Unicorn Commander](https://unicorncommander.ai)
