@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.webp" width="1100" alt="Ops-Center admin dashboard showing infrastructure status and operational summaries in a demo workspace">
+  <img src="docs/screenshots/marketplace.webp" width="1100" alt="The Ops-Center app marketplace">
   <br><em>The admin dashboard — infrastructure and operations at a glance.</em>
 </p>
 
@@ -107,11 +107,6 @@ The marketplace uses app definitions and feature grants to present available app
 Keycloak-backed applications can share sign-in. App definitions contain launch URLs and access metadata; connecting an app still requires its own deployment, identity setup, and integration. Existing integrations include Brigade, Open-WebUI, Bolt.diy, Presenton, and Forgejo, with configurable catalog entries for other services.
 
 ### Service health
-
-<p align="center">
-  <img src="docs/screenshots/services.webp" width="1000" alt="Ops-Center service health view showing demo service status and management controls">
-  <br><em>Service health — inspect services before taking action.</em>
-</p>
 
 View Docker-backed service status, inspect logs, and manage service lifecycle operations on a configured host. System monitoring exposes CPU, memory, storage, and available GPU information; federation views show peer nodes and their advertised services. Host inspection and management require the relevant Docker, filesystem, and device access.
 
@@ -442,13 +437,13 @@ Public repositories on the [Unicorn-Commander](https://github.com/Unicorn-Comman
 | App | From the public description |
 |---|---|
 | **Ops-Center** | **This repository. No public repository named `Ops-Center` was listed on that date** |
-| [unicorn-stable-oss](https://github.com/Unicorn-Commander/unicorn-stable-oss) | Humans and agents in the same room |
-| [accounting-ops-oss](https://github.com/Unicorn-Commander/accounting-ops-oss) | Append-only, hash-chained books. A separate community edition is [accounting-ops-community](https://github.com/Unicorn-Commander/accounting-ops-community) |
-| [contact-ops-community](https://github.com/Unicorn-Commander/contact-ops-community) | Shared contact and identity layer |
-| [customer-ops-community](https://github.com/Unicorn-Commander/customer-ops-community) | Customer relationship and pipeline |
-| [email-ops-community](https://github.com/Unicorn-Commander/email-ops-community) | Agent-governed mail with a human approval inbox |
-| [project-ops-community](https://github.com/Unicorn-Commander/project-ops-community) | Projects and tasks |
-| [Meeting-Ops-OSS](https://github.com/Unicorn-Commander/Meeting-Ops-OSS) | Record, live transcription, and meeting search |
+| [Unicorn-Stable](https://github.com/Unicorn-Commander/Unicorn-Stable) | Humans and agents in the same room |
+| [Accounting-Ops](https://github.com/Unicorn-Commander/Accounting-Ops) | Append-only, hash-chained books |
+| [Contact-Ops](https://github.com/Unicorn-Commander/Contact-Ops) | Shared contact and identity layer |
+| [Customer-Ops](https://github.com/Unicorn-Commander/Customer-Ops) | Customer relationship and pipeline |
+| [Email-Ops](https://github.com/Unicorn-Commander/Email-Ops) | Agent-governed mail with a human approval inbox |
+| [Project-Ops](https://github.com/Unicorn-Commander/Project-Ops) | Projects and tasks |
+| [Meeting-Ops](https://github.com/Unicorn-Commander/Meeting-Ops) | Record, live transcription, and meeting search |
 | [Unicorn-Orator](https://github.com/Unicorn-Commander/Unicorn-Orator) | Text-to-speech |
 
 Ops-Center connects through shared Keycloak identity, application entitlement and API-key validation APIs, and inference and metering services. This tree also registers and delegates the Colonel through Brigade, accepts UUDA device registration and heartbeats, and ingests fleet-map topology. On the date above, the public organization did not list repositories named Unicorn-Brigade, Knowledge-Ops, Security-Ops, Tax-Planning-Ops, Brand-Ops, Podcast-Ops, UUDA, or fleet-map.
