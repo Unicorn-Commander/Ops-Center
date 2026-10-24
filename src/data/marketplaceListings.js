@@ -91,7 +91,7 @@ export const LISTINGS = [
       "Self-host"
     ],
     "deployment_note": "Local means the Meeting-Ops appliance path, including local transcription and Ollama analysis.",
-    "source_license": "AGPL-3.0",
+    "source_license": "Apache-2.0",
     "source_url": "https://github.com/Unicorn-Commander/Meeting-Ops-OSS",
     "data_egress": "Self-hosted appliance: no. Hosted service: meeting data is processed in Unicorn Cloud.",
     "cta": {
@@ -99,7 +99,7 @@ export const LISTINGS = [
       "href": "https://meeting-ops.unicorncommander.ai/"
     },
     "secondary_cta": {
-      "label": "View AGPL source",
+      "label": "View Apache-2.0 source",
       "href": "https://github.com/Unicorn-Commander/Meeting-Ops-OSS"
     },
     "part": "UC-02"
@@ -140,9 +140,9 @@ export const LISTINGS = [
       "Self-host"
     ],
     "deployment_note": "Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.",
-    "source_license": "AGPL-3.0",
+    "source_license": "Apache-2.0",
     "source_url": "https://github.com/Unicorn-Commander/project-ops-community",
-    "source_note": "This is the public community edition, and its LICENSE file is AGPL-3.0.",
+    "source_note": "This is the public community edition, and its LICENSE file is Apache-2.0.",
     "data_egress": "Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.",
     "cta": {
       "label": "Request access",
@@ -188,7 +188,7 @@ export const LISTINGS = [
       "Self-host"
     ],
     "deployment_note": "The app self-hosts on your hardware and can use a local model, your hosted model API, or Unicorn Cloud.",
-    "source_license": "AGPL-3.0",
+    "source_license": "Apache-2.0",
     "source_url": "https://github.com/Unicorn-Commander/accounting-ops-community",
     "data_egress": "Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.",
     "cta": {

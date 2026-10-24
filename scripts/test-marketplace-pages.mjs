@@ -113,9 +113,17 @@ for (const l of LISTINGS) {
       `${l.slug}.source_url points at the login-walled Forgejo host`);
   }
 }
-// Never a blanket AGPL claim: Majiks Studio is Apache-2.0 with no public repo.
+// Never a blanket AGPL claim: Majiks Studio is Apache-2.0 with no public repo,
+// and Center Deep's core is SearXNG (AGPL-3.0), so one phrase cannot cover the catalog.
 assert.doesNotMatch(index, /AGPL at the core/i);
 assert.match(index, /states its (own|exact) license/i);
+const centerDeep = LISTINGS.find((l) => l.slug === 'center-deep-research');
+assert.equal(centerDeep.source_license, 'AGPL-3.0 (Core)');
+assert.equal(centerDeep.secondary_cta.label, 'Self-host Core (AGPL)');
+for (const l of LISTINGS) {
+  if (l.slug === 'center-deep-research') continue;
+  assert.equal(l.source_license, 'Apache-2.0', `${l.slug} ships Apache-2.0`);
+}
 
 // The page must never tell a visitor a public repository is unreachable. This
 // shipped as a verifiable falsehood about project-ops-community, which answers

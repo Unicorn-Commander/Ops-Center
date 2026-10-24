@@ -6,7 +6,7 @@
   <strong>Run your AI services, tenants, billing, and agents from one self-hosted control plane.</strong>
 </p>
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-AGPL--3.0--or--later-purple" alt="Licence: AGPL-3.0-or-later"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Apache--2.0-purple" alt="License: Apache-2.0"></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-3.12.4-blue" alt="Version 3.12.4"></a>
   <a href="package.json"><img src="https://img.shields.io/badge/React-18-61dafb" alt="React 18"></a>
   <a href="backend/requirements.txt"><img src="https://img.shields.io/badge/backend-FastAPI-009688" alt="FastAPI backend"></a>
@@ -530,7 +530,7 @@ The implementation includes session authentication, route-level role checks, CSR
 
 ## Licence
 
-Ops-Center is licensed under the **GNU Affero General Public License, version 3 or any later version** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE) for the full, unmodified licence text.
+Ops-Center is licensed under the [Apache License 2.0](LICENSE). You can use, change and redistribute it, including commercially, under its terms. Our names and logos are covered by [TRADEMARKS.md](TRADEMARKS.md).
 
 Copyright © Magic Unicorn Unconventional Technology & Stuff Inc.
 

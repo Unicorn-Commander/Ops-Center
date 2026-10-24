@@ -126,7 +126,7 @@ const OVERLAY = {
       'Builds summaries, decisions, and action items',
       'Runs the appliance path entirely on your network',
     ],
-    // VERIFIED against the AGPL source README (Meeting-Ops-OSS, "Works with
+    // VERIFIED against the Meeting-Ops-OSS source README ("Works with
     // the rest of the suite" + the stated design rule "Meeting-Ops proposes,
     // the owning app disposes"), and against the named implementation files
     // it cites: api/federation_summary_approval.py and
@@ -135,14 +135,14 @@ const OVERLAY = {
     approval_boundary: 'Meeting-Ops proposes; the owning app disposes. Extracted action items are sent to Project-Ops as task proposals, and that push is off by default until an org turns it on. Nothing reaches a customer record until a human releases that summary, and it never overwrites another app’s state.',
     deployment_options: ['Local app', 'Unicorn Cloud', 'Self-host'],
     deployment_note: 'Local means the Meeting-Ops appliance path, including local transcription and Ollama analysis.',
-    source_license: 'AGPL-3.0',
+    source_license: 'Apache-2.0',
     // Was .../meeting-ops-community, which returns 404 to an anonymous
     // visitor. verify-hosts.mjs caught it. This repo is public and its LICENSE
-    // file is AGPL-3.0 verbatim.
+    // file is Apache-2.0.
     source_url: 'https://github.com/Unicorn-Commander/Meeting-Ops-OSS',
     data_egress: 'Self-hosted appliance: no. Hosted service: meeting data is processed in Unicorn Cloud.',
     cta: { label: 'Start free', href: 'https://meeting-ops.unicorncommander.ai/' },
-    secondary_cta: { label: 'View AGPL source', href: 'https://github.com/Unicorn-Commander/Meeting-Ops-OSS' },
+    secondary_cta: { label: 'View Apache-2.0 source', href: 'https://github.com/Unicorn-Commander/Meeting-Ops-OSS' },
   },
   'center-deep-research': {
     // Re-measured 2026-08-13: centerdeep.ai itself says "Early access — by
@@ -181,6 +181,8 @@ const OVERLAY = {
     approval_boundary: 'Its verified MCP surface is research-only: search and deep_research. No mail, payment, or account-writing tool is listed.',
     deployment_options: ['Local app', 'Unicorn Cloud', 'Self-host'],
     deployment_note: 'Self-hosting controls the application and history. Web searches still contact the providers you configure.',
+    // SearXNG base. Center Deep's core is SearXNG, which stays AGPL-3.0.
+    // Do not relabel this listing Apache-2.0.
     source_license: 'AGPL-3.0 (Core)',
     source_url: 'https://github.com/Unicorn-Commander/Center-Deep',
     data_egress: 'Yes. Search queries and selected filters go to each configured search provider.',
@@ -249,9 +251,9 @@ const OVERLAY = {
     approval_boundary: 'Material items and missing-receipt entries stop for human approval. Tax packages remain draft and do not file themselves.',
     deployment_options: ['Local app', 'Unicorn Cloud', 'Hybrid', 'BYOK', 'Self-host'],
     deployment_note: 'The app self-hosts on your hardware and can use a local model, your hosted model API, or Unicorn Cloud.',
-    source_license: 'AGPL-3.0',
+    source_license: 'Apache-2.0',
     // Was the Forgejo host, which answers 303 -> /user/login anonymously.
-    // This mirror is public and its LICENSE file is AGPL-3.0 verbatim.
+    // This mirror is public and its LICENSE file is Apache-2.0.
     source_url: 'https://github.com/Unicorn-Commander/accounting-ops-community',
     data_egress: 'Self-hosted with a local model: no. Hosted models and connectors receive the records required for the task.',
     // The PRIMARY link is the product's own page, like every other listing.
@@ -314,34 +316,12 @@ const OVERLAY = {
     approval_boundary: 'AI-proposed action items land in a Triage queue: nothing becomes project work until a human approves, routes, or rejects it. Agents act only through the MCP surface, under the caller’s own role, so a CLIENT is read-only and write tools refuse.',
     deployment_options: ['Unicorn Cloud', 'Self-host'],
     deployment_note: 'Self-host is a Docker Compose stack: Postgres, Redis, S3-compatible storage, a NestJS backend, and a Next.js frontend. The AI agent is optional and can point at your own Brigade installation.',
-    // This card answers ONE question: "what can I actually go and get?"
-    // So it states the PUBLIC edition, measured, not the internal tree.
-    //
-    // Measured 2026-08-07, unauthenticated:
-    //   GET https://github.com/Unicorn-Commander/project-ops-community  -> 200
-    //   api.github.com/repos/...  private=false  visibility=public
-    //                             license.spdx_id=AGPL-3.0
-    //   raw LICENSE -> 200, "GNU AFFERO GENERAL PUBLIC LICENSE Version 3"
-    // The repo is public and the edition you can clone is AGPL-3.0.
-    //
-    // The previous value said Apache-2.0 with source_url:null, which made the
-    // page print "The repository is not publicly reachable today" about a repo
-    // that answers 200 to anyone. That was a verifiable falsehood on the one
-    // page whose thesis is verified honesty, and it is why this changed.
-    //
-    // STILL UNRESOLVED, and deliberately disclosed rather than hidden: the
-    // internal tree ships Apache-2.0 (LICENSE, both package.json files, README
-    // badge all agree) and the community repo's GitHub *description* still
-    // reads "Apache-2.0 OSS release ... Private staging mirror" — which
-    // disagrees with its own LICENSE file and with its public visibility.
-    // That is an owner decision about editions, not something a page generator
-    // may quietly pick a winner for, so source_note says so in plain words.
-    source_license: 'AGPL-3.0',
+    // Public community repo. Licence is Apache-2.0 as of 2026-10-24.
+    // Keep source_url set: a null URL makes the page claim the repository
+    // is not publicly reachable, and this repo answers to an anonymous visitor.
+    source_license: 'Apache-2.0',
     source_url: 'https://github.com/Unicorn-Commander/project-ops-community',
-    // 2026-08-13: reconciled. The GitHub description now reads "AGPL-3.0 +
-    // commercial" (re-verified via the API), so the self-expiring note that
-    // lived here was retired exactly as it promised it would be.
-    source_note: 'This is the public community edition, and its LICENSE file is AGPL-3.0.',
+    source_note: 'This is the public community edition, and its LICENSE file is Apache-2.0.',
     data_egress: 'Self-hosted: your data and deployment stay yours, and the optional agent can point at your own installation. Unicorn Cloud: assistant turns are processed by Unicorn Brigade on Magic Unicorn infrastructure.',
     cta: { label: 'Request access', href: 'https://projectops.unicorncommander.ai/' },
     secondary_cta: null,
@@ -372,7 +352,7 @@ const LISTINGS = Object.entries(OVERLAY).map(([slug, o]) => {
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
   })
   // Part numbers are assigned from that final order and printed under every
-  // mascot plate as "UC-03 · AGPL-3.0". This states the exact license once more
+  // mascot plate as "UC-03 · APACHE-2.0". This states the exact license once more
   // per listing, in the art furniture, at the one place a scanner is already
   // looking, without adding a badge.
   .map((l, i) => ({ ...l, part: `UC-${String(i + 1).padStart(2, '0')}` }));

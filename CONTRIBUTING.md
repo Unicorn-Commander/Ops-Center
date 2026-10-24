@@ -12,4 +12,4 @@ Never commit runtime environment files, credentials, private deployment addresse
 
 The frontend provides Vitest, Playwright, and build commands in [package.json](package.json); there is no frontend lint script. Python linting uses Ruff, installed explicitly as described in the README. Avoid unrelated formatting or dependency changes.
 
-Contributions to Ops-Center are made under [AGPL-3.0-or-later](LICENSE).
+Contributions to Ops-Center are made under the Apache License 2.0, the same licence as the repository (see [LICENSE](LICENSE)). By opening a pull request you confirm you wrote the change or have the right to submit it under that licence.
