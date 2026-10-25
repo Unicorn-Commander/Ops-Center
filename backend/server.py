@@ -43,6 +43,7 @@ from auth_manager import (
 from hardware_info import hardware_detector
 from update_manager import github_update_manager
 from fastapi.responses import RedirectResponse
+from urllib.parse import quote
 import secrets
 import base64
 from landing_config import landing_config
@@ -6782,6 +6783,9 @@ async def login_page(request: Request):
     """
     session_token = request.cookies.get("session_token")
     return_url = request.query_params.get("return_url")
+    # "/" is the public storefront, so a bare Sign in must land on the console
+    # (2026-10-25: signing in from the storefront looked like it had failed).
+    console_url = "/admin"
 
     print(f"[LOGIN] return_url={return_url}, session_token exists={bool(session_token)}")
 
@@ -6808,13 +6812,11 @@ async def login_page(request: Request):
                         cookie_kwargs["domain"] = f".{EXTERNAL_HOST}"
                     response.set_cookie(**cookie_kwargs)
                     return response
-            return RedirectResponse(url="/")
+            return RedirectResponse(url=console_url)
 
     # Not authenticated, start OAuth flow with return_url preserved
     print(f"[LOGIN] No valid session, redirecting to OAuth")
-    oauth_url = "/auth/login"
-    if return_url:
-        oauth_url += f"?return_url={return_url}"
+    oauth_url = f"/auth/login?return_url={quote(return_url or console_url, safe='/:')}"
     return RedirectResponse(url=oauth_url)
 
 # Login page endpoint - now just redirects to OAuth
