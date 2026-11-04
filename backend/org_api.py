@@ -125,6 +125,12 @@ class OrganizationStatusUpdate(BaseModel):
 
 async def get_current_user(request: Request) -> Dict:
     """Get current user data from session (uses Redis session manager)"""
+    from auth_dependencies import get_service_key_user
+
+    service_key_user = await get_service_key_user(request)
+    if service_key_user is not None:
+        return service_key_user
+
     from redis_session import redis_session_manager
 
     session_token = request.cookies.get("session_token")

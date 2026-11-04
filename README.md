@@ -117,6 +117,7 @@ Additional administrative surfaces cover Traefik routes and certificates, storag
 The dashboard above is the entry point for account administration. Search and filter users, import and export CSV, change subscription tiers in bulk, assign or remove an individual realm role, and send password-reset or onboarding messages through Keycloak. Sign-in maps Keycloak groups and roles onto `admin`, `power_user`, `user`, and `viewer`. `GET /api/v1/admin/users/roles/available` returns a different hardcoded list: `admin`, `moderator`, `developer`, `analyst`, and `viewer`.
 
 Organizations have membership and role-management APIs, settings, billing views, and feature grants. User details bring profile, access, organization, and subscription information together. Account API keys have creation, regeneration, revocation, and scope controls; service credentials support application-to-application calls. **The Guide**, described below, can prepare API-key create, revoke, and rotate actions that wait for a human confirmation.
+Route-scoped admin service keys for the four onboarding writes use `OPS_CENTER_SERVICE_KEY_HASHES` plus `OPS_CENTER_SERVICE_KEY_ROUTE_ALLOWLIST`; browser session authentication remains unchanged.
 
 Role checks, session authentication, and authorization remain part of the backend. User impersonation, the per-user activity feed, the per-user role list, bulk role assignment, and the administrative user-session endpoints are still placeholders in this checkout. Use the implemented routes and integration guide for the supported contract.
 
