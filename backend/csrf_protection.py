@@ -85,6 +85,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
     # Safe methods that don't require CSRF protection
     SAFE_METHODS: Set[str] = {"GET", "HEAD", "OPTIONS", "TRACE"}
+    # Header-authenticated machine calls (see _is_service_key_request)
+    SERVICE_KEY_HEADER = "X-Ops-Center-Service-Key"
 
     def __init__(
         self,
@@ -154,6 +156,16 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         logger.debug(f"CSRF: path {path} not exempt; enforcing")
         return False
 
+    def _is_service_key_request(self, request: Request) -> bool:
+        """True for header-authenticated machine calls: a service-key header or a Bearer
+        Authorization header, and no session cookie. Never true when a session cookie is present."""
+        if request.cookies.get("session_token"):
+            return False
+        if request.headers.get(self.SERVICE_KEY_HEADER):
+            return True
+        authorization = request.headers.get("Authorization", "")
+        return authorization.lower().startswith("bearer ")
+
     def get_token_from_request(self, request: Request) -> Optional[str]:
         """
         Extract CSRF token from request
@@ -219,6 +231,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 self.set_csrf_cookie(response, csrf_token)
 
             return response
+
+        # Machine auth: a request that presents a service key (or a Bearer token) and carries no
+        # browser session has no ambient credential a cross-site page could ride, so CSRF does not
+        # apply (same reasoning as the /api/v1/uuda/ exemption). The route's dependency verifies the
+        # key itself; a request that ALSO carries a session cookie is checked like any browser request.
+        if self._is_service_key_request(request):
+            logger.info(f"CSRF check skipped for header-authenticated request: {request.url.path}")
+            return await call_next(request)
 
         # Check if URL is exempt
         if self.is_exempt(request.url.path):
