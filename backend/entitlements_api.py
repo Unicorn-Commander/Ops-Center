@@ -9,7 +9,8 @@ source of truth being Ops-Center's tier_features ∪ org_features (via get_combi
 Apps call this post-auth with the user's bearer token and allow access if their feature_key
 is present. Fail-closed: no token / bad token → 401; no resolvable org → empty entitlements.
 
-    GET /api/v1/entitlements                       -> {org_id, tier, entitlements:[...]}
+    GET /api/v1/entitlements                       -> {org_id, org_name, display_name, slug,
+                                                       tier, role, entitlements:[...]}
     GET /api/v1/entitlements?feature_key=foo_access -> {... , authorized: bool}
 """
 import logging
@@ -45,6 +46,16 @@ _JWKS_UA = os.getenv(
 )
 
 _jwks_clients: dict = {}
+
+
+def _row_value(row, key: str):
+    """Read an asyncpg record or mapping without assuming optional columns in tests."""
+    if not row:
+        return None
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
 
 
 def _jwks_for(issuer: str) -> PyJWKClient:
@@ -154,12 +165,25 @@ async def get_entitlements(
     try:
         resolved_org, org_role = await _resolve_membership(claims, conn, requested_org_id=org_id)
         if not resolved_org:
-            result = {"org_id": None, "tier": None, "role": None, "entitlements": []}
+            result = {
+                "org_id": None,
+                "org_name": None,
+                "display_name": None,
+                "slug": None,
+                "tier": None,
+                "role": None,
+                "entitlements": [],
+            }
         else:
             tier_row = await conn.fetchrow(
-                "SELECT plan_tier FROM organizations WHERE id = $1", resolved_org
+                """
+                SELECT plan_tier, name AS org_name, display_name, slug
+                FROM organizations
+                WHERE id = $1
+                """,
+                resolved_org,
             )
-            tier = (tier_row["plan_tier"] if tier_row and tier_row["plan_tier"] else "free")
+            tier = _row_value(tier_row, "plan_tier") or "free"
             try:
                 features = await get_combined_features(tier, resolved_org, conn)
             except HTTPException:
@@ -167,6 +191,9 @@ async def get_entitlements(
                 features = set()
             result = {
                 "org_id": resolved_org,
+                "org_name": _row_value(tier_row, "org_name"),
+                "display_name": _row_value(tier_row, "display_name"),
+                "slug": _row_value(tier_row, "slug"),
                 "tier": tier,
                 "role": org_role,
                 "entitlements": sorted(features),
