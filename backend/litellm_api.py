@@ -14,6 +14,8 @@ Date: October 20, 2025
 
 import logging
 import os
+import asyncio
+import uuid
 from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 import json
@@ -32,10 +34,18 @@ from usage_metering import usage_meter
 from cryptography.fernet import Fernet
 
 # Import universal credential helper
-from get_credential import get_credential
+from get_credential import get_credential, get_credential_async
 
 # Import organizational credit integration
 from org_credit_integration import get_org_credit_integration
+from service_keys import match_service_key, resolve_principal, ServiceKeyUserContextForbidden
+from billing_settlement import (
+    estimate_chat_tokens,
+    estimate_prompt_tokens,
+    settle_or_queue,
+    settlement_failure_mode,
+    start_settlement,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +480,9 @@ class SystemKeyManager:
                         {'type': 'mistral', 'name': 'Mistral'},
                         {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
                         {'type': 'huggingface', 'name': 'HuggingFace'},
+                        {'type': 'deepseek', 'name': 'DeepSeek'},
+                        {'type': 'siliconflow', 'name': 'SiliconFlow'},
+                        {'type': 'dashscope', 'name': 'DashScope'},
                         {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
                         {'type': 'custom', 'name': 'Custom Provider'}
                     ]
@@ -486,15 +499,31 @@ class SystemKeyManager:
                     if not provider_type:
                         raise HTTPException(status_code=400, detail="Invalid provider ID")
 
+                    BASE_URLS = {
+                        'openrouter': 'https://openrouter.ai/api/v1',
+                        'openai': 'https://api.openai.com/v1',
+                        'anthropic': 'https://api.anthropic.com/v1',
+                        'google': 'https://generativelanguage.googleapis.com/v1beta',
+                        'groq': 'https://api.groq.com/openai/v1',
+                        'together': 'https://api.together.xyz/v1',
+                        'mistral': 'https://api.mistral.ai/v1',
+                        'deepseek': 'https://api.deepseek.com/v1',
+                        'siliconflow': 'https://api.siliconflow.com/v1',
+                        'dashscope': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+                        'ollama-cloud': 'https://ollama.com/api',
+                    }
+                    api_base = BASE_URLS.get(provider_type)
+
                     # Insert or update provider
                     await conn.execute("""
-                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, created_at, updated_at, api_key_updated_at)
-                        VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW(), NOW())
+                        INSERT INTO llm_providers (name, type, api_key_encrypted, api_key_source, enabled, priority, api_base_url, created_at, updated_at, api_key_updated_at)
+                        VALUES ($1, $2, $3, $4, TRUE, 100, $5, NOW(), NOW(), NOW())
                         ON CONFLICT (name) DO UPDATE
                         SET api_key_encrypted = $3,
                             api_key_source = $4,
-                            api_key_updated_at = NOW()
-                    """, provider_name, provider_type, encrypted, source)
+                            api_key_updated_at = NOW(),
+                            api_base_url = COALESCE(llm_providers.api_base_url, $5)
+                    """, provider_name, provider_type, encrypted, source, api_base)
                     logger.info(f"Created/updated provider {provider_name} ({provider_type}) with system key")
                 else:
                     # Regular UUID - update existing provider
@@ -586,6 +615,9 @@ class SystemKeyManager:
                 {'type': 'mistral', 'name': 'Mistral'},
                 {'type': 'ollama-cloud', 'name': 'Ollama Cloud'},
                 {'type': 'huggingface', 'name': 'HuggingFace'},
+                {'type': 'deepseek', 'name': 'DeepSeek'},
+                {'type': 'siliconflow', 'name': 'SiliconFlow'},
+                {'type': 'dashscope', 'name': 'DashScope'},
                 {'type': 'unicorn-commander', 'name': 'Unicorn Commander'},
                 {'type': 'custom', 'name': 'Custom Provider'}
             ]
@@ -683,13 +715,18 @@ async def get_user_id(
     authorization: Optional[str] = Header(None)
 ) -> str:
     """
-    Extract user ID from authorization header OR session cookie
+    Resolve the caller's user id for LLM API requests.
 
-    Supports four authentication methods:
-    1. Session Cookie: session_token cookie (for browser-based requests)
-    2. API Key: Bearer uc_<hex-key>
-    3. JWT Token: Bearer <jwt-token>
-    4. Service Key: Bearer sk-<service-name>-service-key-<year>
+    Accepted credentials, in order:
+      1. No Authorization header: the session cookie (browser requests).
+      2. ``Bearer sk-...``: an inbound SERVICE key. Keys are configured only as
+         SHA-256 hashes in OPS_CENTER_SERVICE_KEY_HASHES (see service_keys.py);
+         an unconfigured service is disabled. Without X-User-ID the request is
+         billed to the service's own organization ("org_<uuid>"). X-User-ID is
+         honoured only for services listed in OPS_CENTER_SERVICE_KEY_ACT_AS_USER;
+         any other service sending it gets 403.
+      3. ``Bearer uc_...``: a user API key.
+      4. Otherwise: a JWT.
     """
     # Try session-based authentication first (for browser requests)
     if not authorization:
@@ -715,69 +752,41 @@ async def get_user_id(
 
     # Authorization header provided - use existing token-based auth
     if not authorization.startswith('Bearer '):
-        logger.warning(f"Invalid auth format: {authorization[:20]}...")
+        logger.warning(f"Invalid auth format (length {len(authorization)}, no Bearer prefix)")
         raise HTTPException(status_code=401, detail="Invalid authorization format. Use: Authorization: Bearer <api-key>")
 
     # Extract token
     token = authorization[7:]
-    logger.info(f"🔍 Auth token received - Length: {len(token)}, Prefix: {token[:10]}...")
+    logger.debug(f"Auth token received (length {len(token)})")
 
-    # Check for service key (format: sk-<service>-service-key-<year>)
+    # Inbound service key (Bearer sk-...): env-configured hashes only, never literals in source.
     if token.startswith('sk-'):
-        logger.info(f"🔑 Token starts with 'sk-', checking service keys...")
-        # Service keys are pre-configured trusted keys for internal services
-        service_keys = {
-            'sk-bolt-diy-service-key-2025': 'bolt-diy-service',
-            'sk-presenton-service-key-2025': 'presenton-service',
-            'sk-brigade-service-key-2025': 'brigade-service',
-            'sk-centerdeep-service-key-2025': 'centerdeep-service',
-            'sk-partnerpulse-service-key-2025': 'partnerpulse-service',
-            'sk-open-webui-service-key-2026': 'open-webui-service',
-            'sk-colonel-service-key-2026': 'colonel-service',
-            'sk-majiks-service-key-2025': 'majiks-service'
-        }
-
-        # FIX P0: Map service names to actual UUIDs from database (not strings)
-        # These are the actual organization UUIDs for service accounts
-        service_org_ids = {
-            'bolt-diy-service': '3766e9ee-7cc1-472f-92ae-afec687f0d74',      # UUID for bolt-diy-service org
-            'presenton-service': '13587747-66e6-43df-b21d-4411c7373465',     # UUID for presenton-service org
-            'brigade-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # UUID for brigade-service org
-            'centerdeep-service': '91d3b68e-e4c4-457e-80ce-de6997243c34',    # UUID for centerdeep-service org
-            'partnerpulse-service': '8f5bf9a9-2e7c-4465-93d8-97f18bdac098',  # UUID for partnerpulse-service org
-            'open-webui-service': 'f47ac10b-58cc-4372-a567-0e02b2c3d479',    # UUID for open-webui-service org
-            'colonel-service': 'e9b40f6b-b683-4bcf-b462-9fd526cfbb37',       # Colonel uses brigade org for billing
-            'majiks-service': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'        # Majiks Studio service org
-        }
-
-        if token in service_keys:
-            service_name = service_keys[token]
-
-            # Check for X-User-ID header (service proxying on behalf of user)
-            x_user_id = request.headers.get('X-User-ID')
-            if x_user_id:
-                # Service is proxying for a user - bill to user's account
-                logger.info(f"✅ Service key authenticated: {service_name} proxying for user: {x_user_id}")
-                return x_user_id
-            else:
-                # No user context - use service organization account for billing
-                service_org_id = service_org_ids.get(service_name)
-                if service_org_id:
-                    # Prefix with 'org_' so credit system recognizes this as an organization
-                    org_prefixed_id = f"org_{service_org_id}"
-                    logger.info(f"✅ Service key authenticated: {service_name} using org credits: {org_prefixed_id}")
-                    return org_prefixed_id
-                else:
-                    logger.error(f"❌ Service org ID not configured for: {service_name}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Service organization not configured for {service_name}. Contact system administrator."
-                    )
-        else:
-            logger.warning(f"❌ Unknown service key: {token[:20]}... (full length: {len(token)})")
+        match = match_service_key(token)
+        if match is None:
+            # Never log any part of a presented key.
+            logger.warning(f"❌ Rejected unknown or disabled service key (length {len(token)})")
             raise HTTPException(status_code=401, detail="Invalid service key")
-    else:
-        logger.info(f"ℹ️ Token does NOT start with 'sk-', will try API key or JWT validation")
+
+        x_user_id = request.headers.get('X-User-ID')
+        try:
+            principal, is_service_account = resolve_principal(match, x_user_id)
+        except ServiceKeyUserContextForbidden:
+            logger.warning(f"❌ Service {match.service} sent X-User-ID but may not act on behalf of a user")
+            raise HTTPException(
+                status_code=403,
+                detail="This service key may not act on behalf of a user"
+            )
+        if principal is None:
+            logger.error(f"❌ Service org ID not configured for: {match.service}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Service organization not configured for {match.service}. Contact system administrator."
+            )
+        if is_service_account:
+            logger.info(f"✅ Service key authenticated: {match.service} using org credits: {principal}")
+        else:
+            logger.info(f"✅ Service key authenticated: {match.service} proxying for user: {principal}")
+        return principal
 
     # Try API key validation (format: uc_<hex>)
     if token.startswith('uc_'):
@@ -862,6 +871,7 @@ async def chat_completions(
         + X-Credits-Remaining: Updated balance
     """
     try:
+        request_id = str(uuid.uuid4())
         # Determine power level
         power_level = x_power_level or request.power_level
         if power_level not in POWER_LEVELS:
@@ -897,16 +907,21 @@ async def chat_completions(
                 user_byok_key = user_keys[detected_provider]
                 logger.info(f"User {user_id} has {detected_provider} BYOK")
 
-        # Estimate tokens for pre-check (rough estimate)
-        estimated_tokens = sum(len((msg.content or "").split()) * 1.5 for msg in request.messages)
-        estimated_tokens = int(estimated_tokens)
+        # Rough prompt estimate. Billing fallbacks (no usage from the provider) and
+        # the local-pricing quota gate keep using this prompt-only figure.
+        estimated_tokens = estimate_prompt_tokens(request.messages)
+        # The 402 door check alone also reserves the completion (max_tokens, else
+        # BILLING_DEFAULT_COMPLETION_TOKENS), so a caller cannot start a call it
+        # cannot pay for.
+        door_estimated_tokens = estimate_chat_tokens(request.messages, request.max_tokens)
 
-        # Calculate estimated cost (ASYNC NOW)
+        # Calculate estimated cost for the door check (ASYNC NOW)
         estimated_cost = await credit_system.calculate_cost(
-            tokens_used=estimated_tokens,
-            model=request.model or "balanced",
+            tokens_used=door_estimated_tokens,
+            model=request.model or "unknown",
             power_level=power_level,
-            user_tier=user_tier
+            user_tier=user_tier,
+            request_model=request.model,
         )
 
         # Check credits BEFORE making request (skip if using BYOK or credit-exempt tier)
@@ -999,7 +1014,7 @@ async def chat_completions(
         # from the model string — real local names lack ollama/vllm prefixes.
         is_local_provider = False
         # Local-pricing state (set by the gate after the provider is resolved):
-        local_rate_per_1k = None      # metered-mode per-1k local rate (None = free)
+        use_catalog_local_rates = False  # metered-mode llm_models split-rate path
         record_local_usage = False    # whether to add served tokens to the monthly local quota
 
         # Federated local models: if a trusted federation peer publishes the
@@ -1140,7 +1155,10 @@ async def chat_completions(
                 # Get provider config (handle both dict and JSON string)
                 provider_db_config = provider['config'] or {}
                 if isinstance(provider_db_config, str):
-                    import json
+                    # Module-level json. A local `import json` here made `json` a
+                    # local of chat_completions, unbound on the BYOK path and for a
+                    # provider with NULL config, so stream_generator died with
+                    # NameError on its first json.loads.
                     provider_db_config = json.loads(provider_db_config)
 
                 # Use api_base_url from database if available, otherwise check config, fallback to openrouter
@@ -1156,7 +1174,7 @@ async def chat_completions(
 
                 # --- Per-tier local-pricing gate (inert unless LOCAL_PRICING_ENABLED) ---
                 # Runs only for LOCAL providers. resolve_local_pricing decides:
-                #   metered  -> keep model, price local at local_rate_per_1k;
+                #   metered  -> keep model, price via catalog split rates;
                 #   overflow -> re-resolve provider for a PAID model (bills as cloud);
                 #   deny     -> 429; otherwise serve free (today's behavior).
                 # Fail-open: any error serves the request unchanged.
@@ -1199,8 +1217,8 @@ async def chat_completions(
                                 )
                             else:
                                 logger.warning(f"[local_pricing] overflow model '{overflow_model}' not found; serving local")
-                        elif _dec.get("meter") and _dec.get("local_rate_per_1k") is not None:
-                            local_rate_per_1k = _dec["local_rate_per_1k"]
+                        elif _dec.get("meter"):
+                            use_catalog_local_rates = bool(_dec.get("use_catalog_rates"))
                         # Record served tokens against the monthly local quota only when
                         # the served provider is (still) local.
                         record_local_usage = bool(org_id) and is_local_provider
@@ -1248,7 +1266,13 @@ async def chat_completions(
                 headers = {
                     "Content-Type": "application/json"
                 }
-                logger.info(f"Using local provider: {provider_name} at {base_url} (no API key required)")
+                # A local GATEWAY (e.g. uchub-litellm fronting our own GPUs)
+                # still authenticates: a key stored on a local provider row is
+                # sent as Bearer while the request keeps local ($0) pricing.
+                local_gateway_key = provider.get('api_key_encrypted') if provider is not None else None
+                if local_gateway_key:
+                    headers["Authorization"] = f"Bearer {local_gateway_key}"
+                logger.info(f"Using local provider: {provider_name} at {base_url}" + (" (authenticated gateway)" if local_gateway_key else " (no API key required)"))
             else:
                 headers = {
                     "Authorization": f"Bearer {api_key}",
@@ -1258,6 +1282,48 @@ async def chat_completions(
                 }
 
         # Call provider API directly
+        # OpenRouter accepts UC metadata; direct OpenAI-compatible providers (OpenAI,
+        # DeepSeek, SiliconFlow, etc.) reject non-string metadata values. Strip for them.
+        provider_type_for_meta = ''
+        try:
+            if not using_byok and provider is not None:
+                provider_type_for_meta = (provider.get('type') or '').lower()
+                provider_name_for_meta = (provider.get('name') or '').lower()
+            else:
+                provider_name_for_meta = (detected_provider or '').lower()
+                provider_type_for_meta = provider_name_for_meta
+        except Exception:
+            provider_name_for_meta = ''
+        is_openrouterish = (
+            'openrouter' in provider_type_for_meta
+            or 'openrouter' in provider_name_for_meta
+            or 'openrouter.ai' in (base_url or '')
+        )
+        if not is_openrouterish:
+            proxy_request.pop('metadata', None)
+            proxy_request.pop('user', None)
+            # Keep model id as the provider expects (do not force OpenRouter org/model form)
+            if request.model:
+                proxy_request['model'] = request.model
+
+        # Anthropic Messages API uses x-api-key, not Bearer.
+        if ('anthropic' in provider_type_for_meta) or ('anthropic' in provider_name_for_meta) or ('api.anthropic.com' in (base_url or '')):
+            api_key_hdr = None
+            auth = headers.get('Authorization') or ''
+            if auth.lower().startswith('bearer '):
+                api_key_hdr = auth.split(' ', 1)[1]
+            if api_key_hdr:
+                headers = {
+                    'x-api-key': api_key_hdr,
+                    'anthropic-version': '2023-06-01',
+                    'content-type': 'application/json',
+                }
+                # Anthropic messages endpoint is /v1/messages not /chat/completions
+                # Keep chat/completions path only if base already points at a compatible proxy.
+                if base_url.rstrip('/').endswith('/v1') and 'anthropic.com' in base_url:
+                    # Use messages API path by rewriting base_url consumer below via flag
+                    pass
+
         # Handle streaming vs non-streaming requests differently
         if request.stream:
             # STREAMING PATH: Return Server-Sent Events (SSE)
@@ -1273,15 +1339,151 @@ async def chat_completions(
                 """
                 import asyncio  # Import here for sleep(0) flush
                 total_tokens = 0
+                stream_prompt_tokens = 0
+                stream_completion_tokens = 0
                 provider_used = request.model or "unknown"
                 chunks_received = 0
+                # Settlement bookkeeping. Once the provider has finished, the charge
+                # must be written even if the client goes away: Starlette cancels this
+                # generator on a client disconnect, and a cancelled await in the middle
+                # of the deduction would drop the charge without queueing it. So the
+                # settlement runs as its own task (billing_settlement.start_settlement),
+                # awaited through asyncio.shield, and is started from `finally` when the
+                # generator is torn down between the end of the stream and settlement.
+                provider_completed = False
+                settlement_task = None
+
+                async def settle_streamed_usage():
+                    # After streaming completes, deduct credits
+                    if not (not using_byok and not is_credit_exempt(user_tier) and (user_tier != 'free' or total_tokens > 0)):
+                        return
+                    # Use actual tokens if available, otherwise estimate
+                    tokens_for_billing = total_tokens if total_tokens > 0 else estimated_tokens
+
+                    # Calculate actual cost (ASYNC NOW)
+                    actual_cost = await credit_system.calculate_cost(
+                        tokens_used=tokens_for_billing,
+                        model=provider_used,
+                        power_level=power_level,
+                        user_tier=user_tier,
+                        is_local=is_local_provider,
+                        use_catalog_local_rates=use_catalog_local_rates,
+                        prompt_tokens=stream_prompt_tokens or None,
+                        completion_tokens=stream_completion_tokens or None,
+                        request_model=request.model,
+                    )
+                    # Belt-and-suspenders: free variants must never bill, even if
+                    # calculate_cost is called with a stripped provider echo.
+                    if credit_system.is_free_model(provider_used, request.model):
+                        actual_cost = 0.0
+
+                    ledger_provider, ledger_model = credit_system.ledger_attribution(
+                        provider_used,
+                        request.model,
+                        provider_name,
+                        is_local_provider,
+                    )
+
+                    # Deduct credits only when there is a real charge
+                    # (free/local/zero-cost must not write ledger noise).
+                    if actual_cost <= 0:
+                        logger.info(
+                            f"Streaming zero-cost settle user={user_id} model={request.model} "
+                            f"provider_used={provider_used} tokens={tokens_for_billing}"
+                        )
+                    elif org_id:
+                        # Organization billing
+                        settlement = await settle_or_queue(
+                            pool=getattr(credit_system, "db_pool", None),
+                            settle=lambda: get_org_credit_integration().deduct_org_credits(
+                                user_id=user_id, credits_used=actual_cost, service_name=provider_used,
+                                provider=ledger_provider, model=ledger_model, tokens_used=tokens_for_billing,
+                                power_level=power_level, task_type=request.task_type,
+                                request_id=request_id, org_id=org_id,
+                            ),
+                            record={
+                                "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                                "amount_credits": actual_cost, "provider": ledger_provider,
+                                "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
+                                "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True,
+                                         "service_name": provider_used},
+                            },
+                        )
+                        if settlement and settlement[0]:
+                            success, used_org_id, remaining_credits = settlement
+                            logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
+                        elif settlement_failure_mode() == "legacy":
+                            # The body has already been streamed to the client, so we
+                            # cannot fail closed here the way the non-streaming twin
+                            # does. Log loudly instead: this branch used to be absent
+                            # entirely, so a broken deduction leaked with NO signal.
+                            logger.error(
+                                "UNBILLED STREAMING REQUEST: org credit deduction failed "
+                                f"for user={user_id} org={org_id} model={request.model} "
+                                f"cost={actual_cost:.6f} tokens={tokens_for_billing}; "
+                                "response already delivered, reconcile manually"
+                            )
+                    else:
+                        # Individual billing
+                        settlement = await settle_or_queue(
+                            pool=getattr(credit_system, "db_pool", None),
+                            settle=lambda: credit_system.debit_credits(
+                                user_id=user_id, amount=actual_cost, metadata={
+                                'provider': ledger_provider,
+                                'model': ledger_model,
+                                'tokens_used': tokens_for_billing,
+                                'power_level': power_level,
+                                'task_type': request.task_type,
+                                'cost': actual_cost,
+                                'streaming': True, 'request_id': request_id, 'org_id': org_id,
+                            }),
+                            result_ok=lambda _result: True,
+                            record={
+                                "request_id": request_id, "user_id": user_id, "org_id": None,
+                                "amount_credits": actual_cost, "provider": ledger_provider,
+                                "model": ledger_model, "tokens": tokens_for_billing, "service": "litellm",
+                                "metadata": {"power_level": power_level, "task_type": request.task_type, "streaming": True},
+                            },
+                        )
+                        if settlement:
+                            logger.info(f"Deducted {actual_cost:.6f} credits from user {user_id} for streaming request")
+
+                    # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
+                    if record_local_usage:
+                        try:
+                            from local_quota import add_local_tokens
+                            await add_local_tokens(org_id, tokens_for_billing)
+                        except Exception as _q_err:
+                            logger.debug(f"[local_pricing] quota record skipped: {_q_err}")
+
+                    # Track usage event
+                    try:
+                        from decimal import Decimal
+                        await usage_meter.track_usage(
+                            user_id=user_id,
+                            service="litellm",
+                            model=provider_used,
+                            tokens=tokens_for_billing,
+                            cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
+                            is_free=False,
+                            metadata={
+                                'power_level': power_level,
+                                'task_type': request.task_type,
+                                'streaming': True,
+                                'provider': ledger_provider,
+                                'requested_model': ledger_model,
+                                'is_local': is_local_provider,
+                            }
+                        )
+                    except Exception as usage_error:
+                        logger.error(f"Failed to track streaming usage: {usage_error}")
 
                 # Send an initial comment to keep connection alive and force headers
                 yield ": ping\n\n"
                 await asyncio.sleep(0)
 
                 try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with httpx.AsyncClient(timeout=900.0) as client:
                         async with client.stream(
                             'POST',
                             f"{base_url}/chat/completions",
@@ -1312,6 +1514,7 @@ async def chat_completions(
 
                                     # Check for completion marker
                                     if data_str.strip() == '[DONE]':
+                                        provider_completed = True
                                         logger.info(f"Streaming complete: {chunks_received} chunks, ~{total_tokens} tokens")
                                         yield f"data: [DONE]\n\n"
                                         await asyncio.sleep(0)  # Force flush
@@ -1326,7 +1529,9 @@ async def chat_completions(
                                         if 'usage' in chunk:
                                             usage = chunk['usage']
                                             total_tokens = usage.get('total_tokens', 0)
-                                            logger.info(f"Received usage data: {total_tokens} tokens")
+                                            stream_prompt_tokens = int(usage.get('prompt_tokens') or 0)
+                                            stream_completion_tokens = int(usage.get('completion_tokens') or 0)
+                                            logger.info(f"Received usage data: {total_tokens} tokens (in={stream_prompt_tokens} out={stream_completion_tokens})")
 
                                         # Extract model info if present
                                         if 'model' in chunk and chunk['model']:
@@ -1344,81 +1549,9 @@ async def chat_completions(
                                         logger.warning(f"Failed to parse SSE chunk: {e}, data: {data_str[:100]}")
                                         continue
 
-                    # After streaming completes, deduct credits
-                    if not using_byok and (user_tier != 'free' or total_tokens > 0):
-                        # Use actual tokens if available, otherwise estimate
-                        tokens_for_billing = total_tokens if total_tokens > 0 else estimated_tokens
-
-                        # Calculate actual cost (ASYNC NOW)
-                        actual_cost = await credit_system.calculate_cost(
-                            tokens_used=tokens_for_billing,
-                            model=provider_used,
-                            power_level=power_level,
-                            user_tier=user_tier,
-                            is_local=is_local_provider,
-                            local_rate_per_1k=local_rate_per_1k
-                        )
-
-                        # Deduct credits
-                        if org_id:
-                            # Organization billing
-                            success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
-                                user_id=user_id,
-                                credits_used=actual_cost,
-                                service_name=provider_used,
-                                provider=provider_used,
-                                model=request.model,
-                                tokens_used=tokens_for_billing,
-                                power_level=power_level,
-                                task_type=request.task_type,
-                                request_id=None,
-                                org_id=org_id
-                            )
-                            if success:
-                                logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for streaming request")
-                        else:
-                            # Individual billing
-                            await credit_system.debit_credits(
-                                user_id=user_id,
-                                amount=actual_cost,
-                                metadata={
-                                    'provider': provider_used,
-                                    'model': provider_used,
-                                    'tokens_used': tokens_for_billing,
-                                    'power_level': power_level,
-                                    'task_type': request.task_type,
-                                    'cost': actual_cost,
-                                    'streaming': True
-                                }
-                            )
-                            logger.info(f"Deducted {actual_cost:.6f} credits from user {user_id} for streaming request")
-
-                        # Count local tokens toward the org's monthly quota (mode-2 free_quota_overflow).
-                        if record_local_usage:
-                            try:
-                                from local_quota import add_local_tokens
-                                await add_local_tokens(org_id, tokens_for_billing)
-                            except Exception as _q_err:
-                                logger.debug(f"[local_pricing] quota record skipped: {_q_err}")
-
-                        # Track usage event
-                        try:
-                            from decimal import Decimal
-                            await usage_meter.track_usage(
-                                user_id=user_id,
-                                service="litellm",
-                                model=provider_used,
-                                tokens=tokens_for_billing,
-                                cost=Decimal(str(actual_cost)),  # FIX: Convert float to Decimal
-                                is_free=False,
-                                metadata={
-                                    'power_level': power_level,
-                                    'task_type': request.task_type,
-                                    'streaming': True
-                                }
-                            )
-                        except Exception as usage_error:
-                            logger.error(f"Failed to track streaming usage: {usage_error}")
+                    provider_completed = True
+                    settlement_task = start_settlement(settle_streamed_usage())
+                    await asyncio.shield(settlement_task)
 
                 except Exception as stream_error:
                     logger.error(f"Streaming error: {stream_error}", exc_info=True)
@@ -1429,6 +1562,17 @@ async def chat_completions(
                         }
                     }
                     yield f"data: {json.dumps(error_data)}\n\n"
+                finally:
+                    if provider_completed and settlement_task is None:
+                        # Torn down (client disconnect / cancellation) after the
+                        # provider finished but before settlement started.
+                        try:
+                            settlement_task = start_settlement(settle_streamed_usage())
+                        except RuntimeError as settle_exc:  # no running loop (interpreter shutdown)
+                            logger.critical(
+                                f"UNBILLED STREAMING REQUEST request_id={request_id} user={user_id} "
+                                f"org={org_id}: settlement could not start: {settle_exc}"
+                            )
 
             # Return streaming response with aggressive anti-buffering headers
             return StreamingResponse(
@@ -1446,7 +1590,7 @@ async def chat_completions(
 
         else:
             # NON-STREAMING PATH: Return complete JSON response
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=900.0) as client:
                 response = await client.post(
                     f"{base_url}/chat/completions",
                     json=proxy_request,
@@ -1480,16 +1624,31 @@ async def chat_completions(
         # Extract usage information (non-streaming only)
         usage = response_data.get('usage', {})
         tokens_used = usage.get('total_tokens', estimated_tokens)
+        prompt_tokens = usage.get('prompt_tokens')
+        completion_tokens = usage.get('completion_tokens')
         provider_used = response_data.get('model', 'unknown')
 
-        # Calculate actual cost (ASYNC NOW)
+        # Calculate actual cost (ASYNC NOW) — per-model input/output rates
         actual_cost = await credit_system.calculate_cost(
             tokens_used=tokens_used,
             model=provider_used,
             power_level=power_level,
             user_tier=user_tier,
             is_local=is_local_provider,
-            local_rate_per_1k=local_rate_per_1k
+            use_catalog_local_rates=use_catalog_local_rates,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            request_model=request.model,
+        )
+        # Belt-and-suspenders free guard (provider may echo without :free)
+        if credit_system.is_free_model(provider_used, request.model):
+            actual_cost = 0.0
+
+        ledger_provider, ledger_model = credit_system.ledger_attribution(
+            provider_used,
+            request.model,
+            provider_name,
+            is_local_provider,
         )
 
         # Debit credits (skip if using BYOK - user pays provider directly)
@@ -1517,40 +1676,60 @@ async def chat_completions(
             # Check if using org billing or individual billing
             if org_id:
                 # Using organization billing
-                success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
-                    user_id=user_id,
-                    credits_used=actual_cost,
-                    service_name=provider_used,
-                    provider=provider_used,
-                    model=request.model,
-                    tokens_used=tokens_used,
-                    power_level=power_level,
-                    task_type=request.task_type,
-                    request_id=None,  # Could add request tracking here
-                    org_id=org_id
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: get_org_credit_integration().deduct_org_credits(
+                        user_id=user_id, credits_used=actual_cost, service_name=provider_used,
+                        provider=ledger_provider, model=ledger_model, tokens_used=tokens_used,
+                        power_level=power_level, task_type=request.task_type,
+                        request_id=request_id, org_id=org_id,
+                    ),
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                        "amount_credits": actual_cost, "provider": ledger_provider, "model": ledger_model,
+                        "tokens": tokens_used, "service": "litellm",
+                        "metadata": {"power_level": power_level, "task_type": request.task_type,
+                                     "service_name": provider_used},
+                    },
                 )
-
-                if success:
+                if settlement and settlement[0]:
+                    success, used_org_id, remaining_credits = settlement
                     new_balance = remaining_credits / 1000.0 if remaining_credits else 0.0  # Convert to credits
                     transaction_id = f"org-{used_org_id}-{user_id}"
                     logger.info(f"Deducted {actual_cost:.6f} credits from org {used_org_id} for user {user_id}")
-                else:
+                elif settlement_failure_mode() == "legacy":
                     logger.error(f"Failed to deduct org credits for user {user_id}")
                     raise HTTPException(status_code=500, detail="Failed to deduct credits")
+                else:
+                    new_balance = 0.0
+                    transaction_id = None
             else:
                 # Using individual credits - charge credits
-                new_balance, transaction_id = await credit_system.debit_credits(
-                    user_id=user_id,
-                    amount=actual_cost,
-                    metadata={
-                        'provider': provider_used,
-                        'model': provider_used,
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: credit_system.debit_credits(
+                        user_id=user_id, amount=actual_cost, metadata={
+                        'provider': ledger_provider,
+                        'model': ledger_model,
                         'tokens_used': tokens_used,
                         'power_level': power_level,
                         'task_type': request.task_type,
-                        'cost': actual_cost
-                    }
+                        'cost': actual_cost, 'request_id': request_id,
+                    }),
+                    result_ok=lambda _result: True,
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": None,
+                        "amount_credits": actual_cost, "provider": ledger_provider, "model": ledger_model,
+                        "tokens": tokens_used, "service": "litellm",
+                        "metadata": {"power_level": power_level, "task_type": request.task_type},
+                    },
                 )
+                # A delivered debit returns (balance, txn id); a balance of 0.0 is
+                # still a success, so test the tuple, not its first element.
+                if settlement:
+                    new_balance, transaction_id = settlement
+                else:
+                    new_balance, transaction_id = 0.0, None
         else:
             # Free tier with free model
             if org_id:
@@ -1585,7 +1764,9 @@ async def chat_completions(
                     'power_level': power_level,
                     'task_type': request.task_type,
                     'privacy_required': request.privacy_required,
-                    'provider': provider_used,
+                    'provider': ledger_provider,
+                    'requested_model': ledger_model,
+                    'is_local': is_local_provider,
                     'transaction_id': transaction_id
                 }
             )
@@ -1596,6 +1777,9 @@ async def chat_completions(
         # Add custom headers to response
         response_data['_metadata'] = {
             'provider_used': provider_used,
+            'catalog_provider': ledger_provider,
+            'requested_model': ledger_model,
+            'is_local': is_local_provider,
             'cost_incurred': actual_cost,
             'credits_remaining': new_balance,
             'transaction_id': transaction_id,
@@ -1736,6 +1920,7 @@ async def generate_image(
         - Stable Diffusion XL: ~2-5 credits
     """
     try:
+        request_id = str(uuid.uuid4())
         # Validate model (default to gpt-image-1, the latest Nov 2025 model)
         model = request.model or "gpt-image-1"
 
@@ -2118,43 +2303,67 @@ async def generate_image(
             transaction_id = None
             actual_cost = 0.0
             logger.info(f"BYOK image generation for {user_id} - no credits charged")
+        elif is_credit_exempt(user_tier):
+            # Mirror the chat path: exempt tiers are free everywhere, not just
+            # on non-streaming chat.
+            new_balance = 0.0
+            transaction_id = None
+            actual_cost = 0.0
+            logger.info(f"Credit-exempt tier image generation for {user_id} (tier: {user_tier}) - no credits charged")
         elif user_tier != 'free' or actual_cost > 0:
             if org_id:
                 # Using organization billing
-                success, used_org_id, remaining_credits = await get_org_credit_integration().deduct_org_credits(
-                    user_id=user_id,
-                    credits_used=actual_cost,
-                    service_name=f"image_generation_{model}",
-                    provider=provider_name,
-                    model=model,
-                    tokens_used=0,  # Not applicable for images
-                    power_level="standard",
-                    task_type="image_generation",
-                    request_id=None,
-                    org_id=org_id
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: get_org_credit_integration().deduct_org_credits(
+                        user_id=user_id, credits_used=actual_cost,
+                        service_name=f"image_generation_{model}", provider=provider_name, model=model,
+                        tokens_used=0, power_level="standard", task_type="image_generation",
+                        request_id=request_id, org_id=org_id,
+                    ),
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": org_id,
+                        "amount_credits": actual_cost, "provider": provider_name, "model": model,
+                        "tokens": 0, "service": "image_generation",
+                        "metadata": {"task_type": "image_generation", "power_level": "standard",
+                                     "service_name": f"image_generation_{model}"},
+                    },
                 )
-
-                if success:
+                if settlement and settlement[0]:
+                    success, used_org_id, remaining_credits = settlement
                     new_balance = remaining_credits / 1000.0 if remaining_credits else 0.0
                     transaction_id = f"org-{used_org_id}-{user_id}"
                     logger.info(f"Deducted {actual_cost:.2f} credits from org {used_org_id} for image generation")
-                else:
+                elif settlement_failure_mode() == "legacy":
                     logger.error(f"Failed to deduct org credits for image generation")
                     raise HTTPException(status_code=500, detail="Failed to deduct credits")
+                else:
+                    new_balance, transaction_id = 0.0, None
             else:
                 # Using individual credits
-                new_balance, transaction_id = await credit_system.debit_credits(
-                    user_id=user_id,
-                    amount=actual_cost,
-                    metadata={
+                settlement = await settle_or_queue(
+                    pool=getattr(credit_system, "db_pool", None),
+                    settle=lambda: credit_system.debit_credits(
+                        user_id=user_id, amount=actual_cost, metadata={
                         'provider': provider_name,
                         'model': model,
                         'image_count': request.n,
                         'size': request.size,
                         'quality': request.quality,
-                        'cost': actual_cost
-                    }
+                        'cost': actual_cost, 'request_id': request_id,
+                    }),
+                    result_ok=lambda _result: True,
+                    record={
+                        "request_id": request_id, "user_id": user_id, "org_id": None,
+                        "amount_credits": actual_cost, "provider": provider_name, "model": model,
+                        "tokens": 0, "service": "image_generation",
+                        "metadata": {"task_type": "image_generation"},
+                    },
                 )
+                if settlement:
+                    new_balance, transaction_id = settlement
+                else:
+                    new_balance, transaction_id = 0.0, None
         else:
             if org_id:
                 _, _, new_balance = await get_org_credit_integration().get_user_org_credits(
@@ -2236,6 +2445,32 @@ async def get_credits(
 
     except Exception as e:
         logger.error(f"Error getting credits: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve credits")
+
+
+@router.get("/credits/me", response_model=CreditResponse)
+async def get_credits_me(
+    user_id: str = Depends(get_user_id),
+    credit_system: CreditSystem = Depends(get_credit_system)
+):
+    """Credit balance for the authenticated caller (uc_ API key or JWT).
+
+    Unshadowed alias of GET /credits: litellm_routing_api registers a bare
+    /credits (query-param user_id, different table) on the same prefix BEFORE
+    this router, so key-authed clients (e.g. Majiks DJ sign-in) use this path.
+    (P10, 2026-07-11)
+    """
+    try:
+        balance = await credit_system.get_user_credits(user_id)
+        tier = await credit_system.get_user_tier(user_id)
+        return {
+            "user_id": user_id,
+            "credits_remaining": balance,
+            "tier": tier,
+            "monthly_cap": None
+        }
+    except Exception as e:
+        logger.error(f"Error getting credits (me): {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve credits")
 
 
@@ -2757,6 +2992,21 @@ async def list_models_categorized(
             "summary": {...}          # Statistics and provider list
         }
     """
+    # Resolve DB-first at request time. The sync get_credential() cannot read
+    # platform_settings inside a running event loop (it falls back to env), and
+    # neither console sets the gateway key in env.
+    litellm_key = (
+        await get_credential_async("LITELLM_MASTER_KEY")
+        or os.getenv("LITELLM_CATALOG_KEY")
+        or os.getenv("LITELLM_MASTER_KEY")
+    )
+    if not litellm_key:
+        logger.warning(
+            "gateway_key_not_configured",
+            extra={"endpoint": "/api/v1/llm/models/categorized"},
+        )
+        raise HTTPException(status_code=503, detail="gateway key not configured")
+
     try:
         # Get user's tier and tier markup percentage
         user_tier = await credit_system.get_user_tier(user_id)
@@ -2782,8 +3032,9 @@ async def list_models_categorized(
 
         # Fetch models from LiteLLM proxy
         import httpx
-        litellm_url = os.getenv("LITELLM_PROXY_URL", "http://uchub-litellm:4000")
-        litellm_key = os.getenv("LITELLM_MASTER_KEY", "REMOVED")
+        litellm_url = (
+            await get_credential_async("LITELLM_PROXY_URL") or "http://uchub-litellm:4000"
+        ).rstrip("/")
 
         # Get OpenRouter API key for pricing data
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
@@ -3335,6 +3586,72 @@ async def test_provider_api_key(provider: str, api_key: str) -> Dict:
                 else:
                     return {'success': False, 'message': f'API error: {response.status_code}'}
 
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('deepseek',):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.deepseek.com/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid DeepSeek key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('siliconflow', 'silicon flow'):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://api.siliconflow.cn/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', data if isinstance(data, list) else []))
+                    return {
+                        'success': True,
+                        'message': f'Valid SiliconFlow key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Test failed: {str(e)}'}
+
+    elif provider_lower in ('dashscope',):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+                    headers={'Authorization': f'Bearer {api_key}'}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    model_count = len(data.get('data', []))
+                    return {
+                        'success': True,
+                        'message': f'Valid DashScope key. {model_count} models available.',
+                        'model_count': model_count
+                    }
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'Invalid API key'}
+                else:
+                    return {'success': False, 'message': f'API error: {response.status_code}'}
         except Exception as e:
             return {'success': False, 'message': f'Test failed: {str(e)}'}
 

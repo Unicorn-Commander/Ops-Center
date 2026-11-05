@@ -25,6 +25,11 @@
       "file": "create_campaigns_schema.sql",
       "idempotent": true,
       "notes": "Campaigns/promos tables plus additive campaign_id linkage for invite_codes and coupon_codes. Only CREATE IF NOT EXISTS, ALTER ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, and DROP-IF-EXISTS/CREATE trigger pairs are used."
+    },
+    {
+      "file": "trial_codes_schema.sql",
+      "idempotent": true,
+      "notes": "Trial codes: org_features.expires_at column + partial index; trial_codes + trial_code_redemptions tables + indexes. All ALTER ADD COLUMN IF NOT EXISTS / CREATE TABLE|INDEX IF NOT EXISTS; no data mutation. Depends on org_features_schema.sql (earlier in this manifest)."
     }
   ],
   "needs_review": [

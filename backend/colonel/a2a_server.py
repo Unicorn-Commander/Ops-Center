@@ -17,14 +17,17 @@ invoke The Colonel's skills programmatically.
 
 import asyncio
 import json
+import hmac
 import logging
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 import httpx
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from colonel.config import get_colonel_config, list_colonels
@@ -38,6 +41,7 @@ logger = logging.getLogger("colonel.a2a")
 BRIGADE_API_URL = os.getenv("BRIGADE_API_URL", "http://unicorn-brigade:8100")
 BRIGADE_SERVICE_KEY = os.getenv("BRIGADE_SERVICE_KEY", "")
 A2A_SHARED_SECRET = os.getenv("A2A_SHARED_SECRET", "")
+_a2a_unconfigured_warned = False
 
 # Provider info — env-overridable so each white-label deployment can identify
 # its own brand (Magic Unicorn / Majik's Studio / Brightwater Labs / etc.)
@@ -57,6 +61,20 @@ COLONEL_PROVIDER_URL = os.getenv(
 # Starlette derived from the inbound request. Useful behind reverse
 # proxies that don't forward X-Forwarded-Proto correctly.
 COLONEL_PUBLIC_URL = os.getenv("COLONEL_PUBLIC_URL", "").rstrip("/")
+
+MCP_INDEX_PATH = Path(__file__).resolve().parent.parent / "config" / "mcps-index.json"
+# The transport implementation is JSON-RPC 2.0; this is the current A2A card
+# shape used by clients of the discovery endpoint.
+CURRENT_A2A_PROTOCOL_VERSION = "0.3.0"
+
+
+def _load_mcp_index() -> Dict[str, Any]:
+    """Load the committed suite MCP discovery index."""
+    with MCP_INDEX_PATH.open(encoding="utf-8") as config_file:
+        return json.load(config_file)
+
+
+MCP_INDEX = _load_mcp_index()
 
 
 def _public_base_url(request) -> str:
@@ -143,28 +161,32 @@ class TaskSendParams(BaseModel):
 
 def _validate_a2a_auth(request: Request) -> bool:
     """
-    Validate A2A request authentication.
+    Validate the caller of the A2A endpoint.
 
-    Checks for a shared secret in the Authorization header if one is configured
-    via A2A_SHARED_SECRET or BRIGADE_SERVICE_KEY environment variables.
-    If no secret is configured, all requests are allowed (open mode).
+    The secret is A2A_SHARED_SECRET, or BRIGADE_SERVICE_KEY when that is unset.
+    Accepted as ``Authorization: Bearer <secret>`` or ``X-Service-Key: <secret>``.
+
+    Fails CLOSED: with no secret configured every call is refused (it used to
+    allow everything, which exposed skills/invoke to anyone). Compared in
+    constant time.
     """
+    global _a2a_unconfigured_warned
     secret = A2A_SHARED_SECRET or BRIGADE_SERVICE_KEY
     if not secret:
-        # No secret configured — open mode
-        return True
+        if not _a2a_unconfigured_warned:
+            _a2a_unconfigured_warned = True
+            logger.error("A2A auth is not configured (A2A_SHARED_SECRET and BRIGADE_SERVICE_KEY unset); refusing all /a2a calls")
+        return False
 
+    presented = ""
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        return token == secret
-
-    # Also accept X-Service-Key header
-    service_key = request.headers.get("x-service-key", "")
-    if service_key:
-        return service_key == secret
-
-    return False
+        presented = auth_header[7:]
+    else:
+        presented = request.headers.get("x-service-key", "")
+    if not presented:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), secret.encode("utf-8"))
 
 
 # ─── Router ─────────────────────────────────────────────────────────────
@@ -211,6 +233,27 @@ async def agent_card(request: Request):
     return await _build_card_for("default", base_url)
 
 
+@router.get("/.well-known/agent-card.json")
+async def current_agent_card(request: Request):
+    """Publish the current A2A Agent Card shape for the default Colonel."""
+    base_url = _public_base_url(request)
+    card = await _build_card_for("default", base_url)
+    card.update(
+        {
+            "protocolVersion": CURRENT_A2A_PROTOCOL_VERSION,
+            "securitySchemes": {
+                "bearer": {
+                    "type": "http",
+                    "scheme": "bearer",
+                }
+            },
+            "security": [{"bearer": []}],
+            "preferredTransport": "JSONRPC",
+        }
+    )
+    return card
+
+
 @router.get("/.well-known/agent-{colonel_id}.json")
 async def agent_card_named(colonel_id: str, request: Request):
     """
@@ -226,6 +269,11 @@ async def agent_card_named(colonel_id: str, request: Request):
             status_code=404,
             detail="Use /.well-known/agent.json for the default Colonel.",
         )
+    if colonel_id == "card":
+        raise HTTPException(
+            status_code=404,
+            detail="Use /.well-known/agent-card.json for the current Agent Card.",
+        )
 
     # Verify the colonel exists before building the card so callers get a
     # clean 404 instead of a synthetic empty card.
@@ -235,6 +283,12 @@ async def agent_card_named(colonel_id: str, request: Request):
 
     base_url = _public_base_url(request)
     return await _build_card_for(colonel_id, base_url)
+
+
+@router.get("/.well-known/mcps.json", response_class=JSONResponse)
+async def mcp_index():
+    """Publish the public Unicorn Commander suite MCP discovery index."""
+    return JSONResponse(content=MCP_INDEX)
 
 
 @router.get("/.well-known/api-catalog")

@@ -125,7 +125,7 @@ class OrganizationStatusUpdate(BaseModel):
 
 async def get_current_user(request: Request) -> Dict:
     """Get current user data from session (uses Redis session manager)"""
-    from redis_session import RedisSessionManager
+    from redis_session import redis_session_manager
 
     session_token = request.cookies.get("session_token")
     if not session_token:
@@ -135,8 +135,8 @@ async def get_current_user(request: Request) -> Dict:
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+    # Reuse the startup-configured session manager.
+    sessions = redis_session_manager
 
     # Get session data
     if session_token not in sessions:
@@ -260,18 +260,23 @@ async def get_my_organizations(request: Request):
     try:
         rows = await conn.fetch(
             """
-            SELECT
-                o.id::text AS id,
-                o.name,
-                om.role,
-                o.plan_tier,
-                o.status,
-                om.joined_at,
-                (SELECT COUNT(*) FROM organization_members m WHERE m.org_id = o.id) AS member_count
-            FROM organization_members om
-            JOIN organizations o ON om.org_id = o.id
-            WHERE om.user_id = $1
-            ORDER BY o.name
+            SELECT * FROM (
+                SELECT DISTINCT ON (o.id)
+                    o.id::text AS id,
+                    o.name,
+                    om.role,
+                    o.plan_tier,
+                    o.status,
+                    om.joined_at,
+                    (SELECT COUNT(*) FROM organization_members m WHERE m.org_id = o.id) AS member_count
+                FROM organization_members om
+                JOIN organizations o ON om.org_id = o.id
+                LEFT JOIN users u ON u.id::text = om.user_id
+                -- Keycloak subject directly, or a legacy users.id mapped via zitadel_id
+                WHERE (om.user_id = $1 OR u.zitadel_id = $1)
+                ORDER BY o.id, COALESCE(om.is_default, FALSE) DESC, om.joined_at ASC
+            ) mine
+            ORDER BY name
             """,
             user_id,
         )

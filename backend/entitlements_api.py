@@ -95,6 +95,10 @@ async def _resolve_membership(claims: dict, conn, requested_org_id: Optional[str
     organization membership role (owner/admin/billing_admin/member) — apps can seed their
     own in-app role from it (e.g. owner→ADMIN, else→STAFF) and refine in-app.
 
+    Current org APIs store the verified Keycloak subject directly in user_id.
+    Older memberships store users.id and map through users.zitadel_id. Accept
+    either exact subject binding; never use email to infer membership.
+
     Active-workspace support: if `requested_org_id` is given (the active workspace the app
     resolved from the bearer), we return it ONLY after verifying the caller is a member —
     so a per-user token can never read another org's grants (no IDOR). With no
@@ -106,9 +110,9 @@ async def _resolve_membership(claims: dict, conn, requested_org_id: Optional[str
         row = await conn.fetchrow(
             """
             SELECT om.org_id, om.role
-            FROM users u
-            JOIN organization_members om ON u.id::text = om.user_id
-            WHERE u.zitadel_id = $1 AND om.org_id::text = $2
+            FROM organization_members om
+            LEFT JOIN users u ON u.id::text = om.user_id
+            WHERE (om.user_id = $1 OR u.zitadel_id = $1) AND om.org_id::text = $2
             LIMIT 1
             """,
             str(sub), str(requested_org_id),
@@ -119,9 +123,10 @@ async def _resolve_membership(claims: dict, conn, requested_org_id: Optional[str
     row = await conn.fetchrow(
         """
         SELECT om.org_id, om.role
-        FROM users u
-        JOIN organization_members om ON u.id::text = om.user_id
-        WHERE u.zitadel_id = $1
+        FROM organization_members om
+        LEFT JOIN users u ON u.id::text = om.user_id
+        WHERE om.user_id = $1 OR u.zitadel_id = $1
+        ORDER BY om.is_default DESC, om.joined_at ASC, om.org_id::text ASC
         LIMIT 1
         """,
         str(sub),

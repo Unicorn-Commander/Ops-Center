@@ -38,6 +38,36 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- Billing settlement queue: provider work is delivered before this row is
+-- written, so this table is deliberately self-healing and not alembic-managed.
+CREATE TABLE IF NOT EXISTS billing_unsettled_charges (
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    request_id       UUID NOT NULL UNIQUE,
+    user_id          VARCHAR(255) NOT NULL,
+    org_id           VARCHAR(255),
+    amount_credits   NUMERIC(18, 8) NOT NULL,
+    provider         VARCHAR(100),
+    model            VARCHAR(255),
+    tokens           INTEGER NOT NULL DEFAULT 0,
+    service          VARCHAR(100) NOT NULL,
+    metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error            TEXT,
+    attempts         INTEGER NOT NULL DEFAULT 0,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_attempt_at  TIMESTAMPTZ,
+    settled_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_billing_unsettled_pending
+    ON billing_unsettled_charges (settled_at, last_attempt_at);
+-- Settlement idempotency lookups run on every billed request (request_id is
+-- always set now): the org path checks credit_usage_attribution.request_id and
+-- the individual path checks credit_transactions.metadata->>'request_id'.
+-- Both tables pre-exist (not created here); these only add lookup indexes.
+CREATE INDEX IF NOT EXISTS idx_credit_usage_request_id
+    ON credit_usage_attribution (request_id);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_request_id
+    ON credit_transactions ((metadata->>'request_id'));
+
 -- ============================================================================
 -- Shared trigger function for updated_at maintenance (idempotent definition).
 -- 001_organization_tables.sql also defines update_updated_at_column(); we use a

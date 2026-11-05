@@ -20,6 +20,7 @@ Author: Backend Developer #2
 Date: October 27, 2025
 """
 
+import json
 import logging
 import os
 from typing import Dict, List, Optional
@@ -126,7 +127,37 @@ PROVIDER_CONFIGS = {
         'key_format': 'Bearer ...',
         'description': 'Mistral Large, Medium, Small'
     },
-    'custom': {
+    'deepseek': {
+        'display_name': 'DeepSeek',
+        'test_url': 'https://api.deepseek.com/v1/models',
+        'test_method': 'GET',
+        'auth_type': 'bearer',
+        'headers': {},
+        'key_format': 'sk-...',
+        'description': 'DeepSeek chat and reasoner models',
+        'base_url': 'https://api.deepseek.com/v1'
+    },
+    'siliconflow': {
+        'display_name': 'SiliconFlow',
+        'test_url': 'https://api.siliconflow.com/v1/models',
+        'test_method': 'GET',
+        'auth_type': 'bearer',
+        'headers': {},
+        'key_format': 'sk-...',
+        'description': 'SiliconFlow OpenAI-compatible models',
+        'base_url': 'https://api.siliconflow.com/v1'
+    },
+    'dashscope': {
+        'display_name': 'DashScope',
+        'test_url': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models',
+        'test_method': 'GET',
+        'auth_type': 'bearer',
+        'headers': {},
+        'key_format': 'sk-...',
+        'description': 'Alibaba DashScope (Qwen) compatible API',
+        'base_url': 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+    },
+        'custom': {
         'display_name': 'Custom Endpoint',
         'test_url': None,  # User-provided
         'test_method': 'GET',
@@ -586,7 +617,7 @@ async def save_provider_key(
                     encrypted_key,
                     key_request.provider_type.lower(),
                     'success' if (test_result and test_result.success) else 'failed',
-                    key_request.config,
+                    json.dumps(key_request.config) if key_request.config is not None else None,
                     existing['id']
                 )
                 provider_id = str(existing['id'])
@@ -607,7 +638,7 @@ async def save_provider_key(
                     key_request.provider_type.lower(),
                     encrypted_key,
                     'success' if (test_result and test_result.success) else 'failed',
-                    key_request.config or {}
+                    json.dumps(key_request.config or {})
                 )
                 provider_id = str(row['id'])
                 logger.info(f"Admin {user_id} added new provider key: {provider_name}")

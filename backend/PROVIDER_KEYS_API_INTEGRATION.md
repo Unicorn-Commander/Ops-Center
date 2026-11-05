@@ -345,7 +345,7 @@ curl -X POST 'http://localhost:8084/api/v1/llm/providers/keys' \
   -H 'Content-Type: application/json' \
   -d '{
     "provider_type": "openrouter",
-    "api_key": "sk-or-v1-YOUR-REAL-KEY-HERE",
+    "api_key": "<redacted>",
     "name": "OpenRouter"
   }'
 ```
@@ -378,7 +378,7 @@ curl -X POST 'http://localhost:8084/api/v1/llm/providers/keys/test' \
   -H 'Content-Type: application/json' \
   -d '{
     "provider_type": "openai",
-    "api_key": "sk-proj-YOUR-NEW-KEY-TO-TEST"
+    "api_key": "<redacted>"
   }'
 ```
 

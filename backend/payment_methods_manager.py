@@ -9,6 +9,8 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import stripe
 from stripe.error import StripeError
+from fastapi import HTTPException
+from billing_org_identity import lago_org_id
 
 logger = logging.getLogger(__name__)
 
@@ -29,37 +31,22 @@ class PaymentMethodsManager:
         if not stripe.api_key:
             logger.warning("STRIPE_SECRET_KEY not configured")
 
-    async def get_stripe_customer_id(self, user_email: str) -> Optional[str]:
-        """
-        Get Stripe customer ID by looking up via Lago or directly in Stripe.
+    async def get_stripe_customer_id(self, org_id: str) -> Optional[str]:
+        """Resolve only the selected canonical org; email is never tenant identity."""
+        from stripe_integration import stripe_integration
 
-        Args:
-            user_email: User's email address
+        customer = await stripe_integration.get_customer_for_org(lago_org_id(org_id))
+        return customer.get("id") if customer else None
 
-        Returns:
-            Stripe customer ID or None if not found
-        """
-        # Try Lago first if available
-        if self.lago:
-            try:
-                customer = await self.lago.get_customer(user_email)
-                if customer:
-                    stripe_id = customer.get("stripe_customer", {}).get("stripe_customer_id")
-                    if stripe_id:
-                        return stripe_id
-            except Exception as e:
-                logger.warning(f"Lago lookup failed for {user_email}: {e}")
-
-        # Fall back to direct Stripe lookup by email
-        try:
-            customers = stripe.Customer.list(email=user_email, limit=1)
-            if customers.data:
-                return customers.data[0].id
-            logger.warning(f"No Stripe customer found for: {user_email}")
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching Stripe customer ID: {e}")
-            return None
+    def _owned_payment_method(self, payment_method_id: str, stripe_customer_id: str):
+        """Check ownership before exposing details or making any billing changes."""
+        pm = stripe.PaymentMethod.retrieve(payment_method_id)
+        owner = pm.customer
+        if isinstance(owner, dict):
+            owner = owner.get("id")
+        if not stripe_customer_id or owner != stripe_customer_id:
+            raise HTTPException(403, "Payment method does not belong to this organization")
+        return pm
 
     async def list_payment_methods(
         self,
@@ -173,9 +160,7 @@ class PaymentMethodsManager:
         """
         try:
             # Verify payment method belongs to customer
-            pm = stripe.PaymentMethod.retrieve(payment_method_id)
-            if pm.customer != stripe_customer_id:
-                raise Exception("Payment method does not belong to customer")
+            pm = self._owned_payment_method(payment_method_id, stripe_customer_id)
 
             # Update customer's default payment method
             stripe.Customer.modify(
@@ -217,6 +202,8 @@ class PaymentMethodsManager:
             Exception if it's the only payment method with active subscription
         """
         try:
+            self._owned_payment_method(payment_method_id, stripe_customer_id)
+
             # Check if customer has active subscription
             subscriptions = stripe.Subscription.list(
                 customer=stripe_customer_id,
@@ -236,11 +223,6 @@ class PaymentMethodsManager:
                     "Cannot remove the last payment method while subscription is active. "
                     "Please add another payment method first."
                 )
-
-            # Verify payment method belongs to customer
-            pm = stripe.PaymentMethod.retrieve(payment_method_id)
-            if pm.customer != stripe_customer_id:
-                raise Exception("Payment method does not belong to customer")
 
             # Detach payment method
             stripe.PaymentMethod.detach(payment_method_id)
@@ -327,7 +309,7 @@ class PaymentMethodsManager:
 
             payment_method_info = None
             if default_pm_id:
-                pm = stripe.PaymentMethod.retrieve(default_pm_id)
+                pm = self._owned_payment_method(default_pm_id, stripe_customer_id)
                 if pm.type == "card":
                     payment_method_info = {
                         "id": pm.id,
@@ -373,7 +355,8 @@ class PaymentMethodsManager:
 
     async def get_payment_method_details(
         self,
-        payment_method_id: str
+        payment_method_id: str,
+        stripe_customer_id: str
     ) -> Optional[Dict]:
         """
         Get detailed information about a payment method
@@ -385,7 +368,7 @@ class PaymentMethodsManager:
             Dict with payment method details
         """
         try:
-            pm = stripe.PaymentMethod.retrieve(payment_method_id)
+            pm = self._owned_payment_method(payment_method_id, stripe_customer_id)
 
             if pm.type != "card":
                 return None
@@ -406,6 +389,8 @@ class PaymentMethodsManager:
                 "customer": pm.customer
             }
 
+        except HTTPException:
+            raise
         except StripeError as e:
             logger.error(f"Stripe error fetching payment method details: {e}")
             return None

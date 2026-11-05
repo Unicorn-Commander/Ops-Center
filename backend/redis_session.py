@@ -7,8 +7,34 @@ import logging
 import redis
 from typing import Optional, Dict, Any
 import os
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
+
+
+class RedisSessionUnavailable(RuntimeError):
+    """Raised when Redis cannot serve a request-time session lookup."""
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a non-negative float setting without making startup fragile."""
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_redis_password(url: Optional[str] = None) -> Optional[str]:
+    """Extract a URL-encoded password from a Redis URL when configured."""
+    url = url if url is not None else os.getenv("REDIS_URL", "")
+    if not url:
+        return None
+    try:
+        parsed_url = urlsplit(url)
+        return unquote(parsed_url.password) if parsed_url.password is not None else None
+    except ValueError:
+        # A malformed URL will be reported by redis-py when the client is built.
+        return None
 
 
 class RedisSessionManager:
@@ -16,12 +42,13 @@ class RedisSessionManager:
 
     def __init__(
         self,
-        host: str = "unicorn-redis",
-        port: int = 6379,
-        db: int = 0,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        db: Optional[int] = None,
         ttl: int = 7200,  # 2 hours in seconds
         key_prefix: str = "session:",
-        password: Optional[str] = None
+        password: Optional[str] = None,
+        redis_url: Optional[str] = None,
     ):
         """
         Initialize Redis session manager
@@ -33,43 +60,78 @@ class RedisSessionManager:
             ttl: Session time-to-live in seconds (default: 7200 = 2 hours)
             key_prefix: Prefix for session keys (default: "session:")
         """
-        self.host = host
-        self.port = port
-        self.db = db
+        # REDIS_URL is authoritative when the caller did not provide an
+        # explicit host/port/db. This supports URL-based deployments and the
+        # older split env settings with the same singleton.
+        configured_url = redis_url or (os.getenv("REDIS_URL") if host is None else None)
+        if configured_url:
+            parsed_url = urlsplit(configured_url)
+            self.host = parsed_url.hostname or os.getenv("REDIS_HOST", "unicorn-redis")
+            self.port = parsed_url.port or int(os.getenv("REDIS_PORT", "6379"))
+            url_db = parsed_url.path.lstrip("/")
+            self.db = int(url_db) if url_db.isdigit() else int(os.getenv("REDIS_DB", "0"))
+            self.redis_url = configured_url
+        else:
+            self.host = host or os.getenv("REDIS_HOST", "unicorn-redis")
+            self.port = port if port is not None else int(os.getenv("REDIS_PORT", "6379"))
+            self.db = db if db is not None else int(os.getenv("REDIS_DB", "0"))
+            self.redis_url = f"redis://{self.host}:{self.port}/{self.db}"
         self.ttl = ttl
         self.key_prefix = key_prefix
-        self.password = password
-        self._client: Optional[redis.Redis] = None
+        self.password = password or os.getenv("REDIS_PASSWORD") or _extract_redis_password(self.redis_url)
 
-        # Initialize connection
-        self._connect()
+        # Build exactly one configured client. Request handlers only use this
+        # client and never enter the startup retry loop.
+        self._client: Optional[redis.Redis] = self._create_client()
+        self._connect(startup=True)
 
-    def _connect(self):
+    def _create_client(self) -> redis.Redis:
+        """Create the one Redis client used by this session manager."""
+        parsed_url = urlsplit(self.redis_url)
+        # Pass URL credentials explicitly so REDIS_PASSWORD can override a
+        # stale password embedded in REDIS_URL without logging either value.
+        url_without_credentials = urlunsplit(
+            (
+                parsed_url.scheme,
+                parsed_url.netloc.rsplit("@", 1)[-1],
+                parsed_url.path,
+                parsed_url.query,
+                parsed_url.fragment,
+            )
+        )
+        kwargs = {
+            "decode_responses": True,
+            "socket_connect_timeout": _env_float("REDIS_SOCKET_CONNECT_TIMEOUT", 0.5),
+            "socket_timeout": _env_float("REDIS_SOCKET_TIMEOUT", 0.5),
+            "retry_on_timeout": False,
+        }
+        if parsed_url.username is not None:
+            kwargs["username"] = unquote(parsed_url.username)
+        if self.password is not None:
+            kwargs["password"] = self.password
+        return redis.Redis.from_url(url_without_credentials, **kwargs)
+
+    def _connect(self, *, startup: bool = True):
         """Establish Redis connection.
 
         Bounded retry so a transient startup race (Redis still booting, or its
         DNS name not yet resolvable because the container is mid-restart) does
         NOT hard-crash the whole app at import time. Without this, a brief Redis
         blip cascades into a self-sustaining ops-center crash-loop. Retries for
-        ~30s, then raises (a genuine, sustained Redis outage still surfaces loud).
+        a bounded startup window, then raises (a genuine, sustained Redis outage
+        still surfaces loud). Request handlers never call this method.
         """
         import time as _time
-        attempts = int(os.getenv("REDIS_CONNECT_ATTEMPTS", "15"))
-        delay = float(os.getenv("REDIS_CONNECT_RETRY_DELAY", "2"))
+        try:
+            configured_attempts = int(os.getenv("REDIS_CONNECT_ATTEMPTS", "15"))
+        except (TypeError, ValueError):
+            configured_attempts = 15
+        attempts = max(1, configured_attempts) if startup else 1
+        delay = _env_float("REDIS_CONNECT_RETRY_DELAY", 2.0) if startup else 0.0
         last_err = None
         for attempt in range(1, attempts + 1):
             try:
-                self._client = redis.Redis(
-                    host=self.host,
-                    port=self.port,
-                    db=self.db,
-                    password=self.password,
-                    decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5,
-                    retry_on_timeout=True
-                )
-                # Test connection
+                # The client is created once above; retries only re-ping it.
                 self._client.ping()
                 logger.info(f"Redis session manager connected to {self.host}:{self.port}")
                 return
@@ -109,7 +171,7 @@ class RedisSessionManager:
             logger.error(f"Failed to store session {session_id}: {e}")
             return False
 
-    def get(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, session_id: str, *, fail_fast: bool = False) -> Optional[Dict[str, Any]]:
         """
         Retrieve session data from Redis
 
@@ -132,7 +194,13 @@ class RedisSessionManager:
             return session_data
         except Exception as e:
             logger.error(f"Failed to retrieve session {session_id}: {e}")
+            if fail_fast:
+                raise RedisSessionUnavailable("Redis session store unavailable") from e
             return None
+
+    def get_for_request(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Read a session once for an HTTP request, without retry or sleep."""
+        return self.get(session_id, fail_fast=True)
 
     def delete(self, session_id: str) -> bool:
         """
@@ -258,23 +326,10 @@ class RedisSessionManager:
             logger.info("Redis session manager connection closed")
 
 
-def _extract_redis_password():
-    """Extract password from REDIS_URL if REDIS_PASSWORD not set."""
-    url = os.getenv("REDIS_URL", "")
-    # Format: redis://:password@host:port/db
-    if "://" in url and "@" in url:
-        auth_part = url.split("://")[1].split("@")[0]
-        if auth_part.startswith(":") and len(auth_part) > 1:
-            return auth_part[1:]
-    return None
-
-
-# Create global instance with environment-based configuration
+# Create the one shared instance with environment-based configuration. Its
+# constructor performs the bounded startup connection once; request handlers
+# must import and reuse this object rather than constructing another manager.
 redis_session_manager = RedisSessionManager(
-    host=os.getenv("REDIS_HOST", "unicorn-redis"),
-    port=int(os.getenv("REDIS_PORT", "6379")),
-    db=int(os.getenv("REDIS_DB", "0")),
     ttl=int(os.getenv("SESSION_TTL", "7200")),  # 2 hours
     key_prefix=os.getenv("SESSION_KEY_PREFIX", "session:"),
-    password=os.getenv("REDIS_PASSWORD") or _extract_redis_password()
 )

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://brigade.unicorncommander.ai/.well-known/mcps-schema-v1.json",
+  "name": "Unicorn Commander",
+  "kind": "index",
+  "version": "1.0.0",
+  "docs": "https://git.unicorncommander.ai/UnicornCommander/Ops-Center/src/branch/main/docs/P-00039-mcp-discovery.md",
+  "mcps": [
+    {
+      "name": "accounting-ops",
+      "mcp_endpoint": "https://accounting-ops.magicunicorn.dev/mcp/",
+      "tool_namespace": "accounting-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "brand-ops",
+      "mcp_endpoint": "https://mcp.brand-ops.magicunicorn.dev/mcp/",
+      "tool_namespace": "brand-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "customer-ops",
+      "mcp_endpoint": "https://customer-ops.magicunicorn.dev/api/v1/mcp",
+      "tool_namespace": "customer-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "email-ops",
+      "mcp_endpoint": "https://email-ops.magicunicorn.dev/api/v1/mcp",
+      "tool_namespace": "email-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "legal-ops",
+      "mcp_endpoint": "https://legalops.magicunicorn.dev/mcp",
+      "tool_namespace": "legal-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "meeting-ops",
+      "mcp_endpoint": "https://meetingops.magicunicorn.dev/mcp/",
+      "tool_namespace": "meeting-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "project-ops",
+      "mcp_endpoint": "https://api.projectops.magicunicorn.dev/api/v1/mcp",
+      "manifest_url": "https://projectops.magicunicorn.dev/.well-known/mcps.json",
+      "tool_namespace": "project-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "security-ops",
+      "mcp_endpoint": "https://security-ops.magicunicorn.dev/mcp/",
+      "tool_namespace": "security-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    },
+    {
+      "name": "tax-planning-ops",
+      "mcp_endpoint": "https://api.taxplanningops.magicunicorn.dev/api/v1/mcp",
+      "tool_namespace": "tax-planning-ops",
+      "auth": {
+        "type": "bearer"
+      }
+    }
+  ]
+}

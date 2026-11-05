@@ -1,0 +1,1342 @@
+/* ============================================================================
+   UNICORN COMMANDER MARKETPLACE — DIRECTION "INSTRUMENT"
+   The marketplace is not a storefront. It is the datasheet for a fleet.
+   Every claim is a field, every field has a column, every column is verified.
+   The only unmeasured thing on this page is the character art, which is
+   therefore the only thing allowed to be beautiful.
+
+   ── HARD GATES (checkable, not aspirational) ───────────────────────────────
+   1. NEUTRAL HUE GATE. Every neutral surface hex must satisfy G > R and G >= B,
+      and must NOT fall in hue 35deg-70deg. That band is the "warm cream" the
+      brief bans; a saturation ceiling was not enough because a sneaky #f8f0e4
+      passes a saturation test and still reads as cream. This is enforced by
+      scripts/check-palette.mjs and it fails the build.
+   2. EVERY gap / padding / margin / radius IS A var(). A literal px value in a
+      gap, padding, or margin is a review failure. Grep for it.
+   3. NO :nth-child in the audience/control components. Equality of the three
+      audiences is structural (shared subgrid tracks), never positional.
+   4. NO dark-mode shadows, no blur, no backdrop-filter, no gradient surfaces.
+      Dark elevation is --canvas-raised plus a --line-strong hairline. Full stop.
+   5. Radius stops at 8px. --r-lg / --r-xl are deliberately NOT defined so
+      nobody can reach for them. Rows and panels are square.
+
+   ── MEASURED CONTRAST (re-measured on the green-grey ground, not inherited) ─
+   Dark canvas #090b0b : signal 15.93:1 · warm 10.83:1 · violet 7.84:1
+                         ink 16.90:1 · ink-soft 11.65:1 · muted 5.96:1 · quiet 4.96:1
+   Light canvas #eceeea: signal  5.18:1 · warm  5.56:1 · violet 5.73:1
+                         ink 15.36:1 · ink-soft 10.01:1 · muted 4.93:1 · quiet 5.18:1
+   All clear 4.5:1 in BOTH themes. Do not adjust any of them without
+   re-measuring all twelve. The light ramp is SUBSTRATE's green-grey; the
+   original warm-sand #f2f0e9 was removed because it measured hue 46.7deg /
+   25.7% saturation, i.e. it was cream wearing a different name.
+
+   The matrix's DIM state is colour-only (--quiet, 4.96:1 dark / 5.18:1 light).
+   It used to carry `opacity: .34` as well, which put the dim glyphs — the
+   actual data — at 1.33-1.60:1 the moment a visitor selected an audience.
+   Never re-add opacity to a state that carries meaning.
+
+   ── WHY PUBLISH IS GOLD AND NOT PEACH ──────────────────────────────────────
+   The banned combination is cream ground + serif display + coral/terracotta
+   accent. Replacing the cream ground was not enough on its own: --signal-warm
+   shipped as #efb295, which measures hue 19.3deg, and its light-mode partner
+   #9a4635 is a brick terracotta. Two thirds of the rejected chord were still
+   standing. PUBLISH is now gold — #e3bb5a dark (hue 42.5, 10.83:1) and
+   #78590f light (hue 42.3, 5.56:1) — which is 23deg clear of the coral band,
+   holds the same contrast and chroma as before so it stays a true peer of the
+   other two doors, and is the one warm hue this brand already owns: the
+   Colonel's horn, the eagle insignia, and the #d4af37 already carried as the
+   brand accent by both Meeting-Ops and Accounting-Ops.
+   Hue separation in both themes: gold-to-mint 108-118deg, gold-to-violet
+   ~210deg. Do not drift this back toward orange.
+   ========================================================================== */
+
+/* ---------- FACES. Self-hosted, OFL, no CDN. --------------------------------
+   The serif names things. The mono measures things. The sans explains things.
+   If a number is set in the sans, it is a bug. If a product name is set in
+   mono, it is a bug.
+
+   THE SANS IS IBM PLEX SANS, and the reason is not neutrality. Manrope sat
+   here first and was the "sneaky variant" the brief warns about: a not-Inter
+   that is another neo-grotesque, indistinguishable from Inter at reading size
+   in the ledger, the door claims, and the CTA labels. It left all the
+   character in this design to the serif and the mono while carrying 80% of the
+   words. Plex is a humanist face drawn FOR an engineering-instrument culture,
+   which is the direction this page is named after: it has visible voice at
+   14-17px (spurred 'a', tailed 'l', flat-sided bowls, angle-cut terminals)
+   without any display mannerism, and it sits under a serif without competing.
+   Metric-tested in the ledger before adoption: 2.7% wider average advance and
+   4.4% smaller x-height than Manrope, which is inside the headroom the ledger
+   now has, and re-measured after the swap at 1280/1440/1512.
+
+   THE DISPLAY IS FRAUNCES, kept deliberately and not by inheritance. The
+   rejected page ran Fraunces at its defaults — the WONK and SOFT axes doing
+   the talking — on cream, next to coral, which is where its reputation as an
+   AI-default face comes from. Here both of those axes are pinned to 0 at every
+   size and the optical-size axis carries the whole range instead (opsz 144 on
+   the mast down to opsz 24 on a crew name), so the face is being used as a
+   sized instrument rather than as decoration. That is a different typeface
+   argument on a different ground with a different chord. It is the one call in
+   this file that is a judgement rather than a measurement, and it is flagged
+   as such: if the owner still reads Fraunces as the rejected page, the swap
+   costs one --display token and a preload.                                  */
+
+@font-face {
+  font-family: 'Fraunces';
+  src: url('/marketplace/fonts/fraunces-var.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2010-2027, U+2030-205E, U+2190-2193, U+25A0-25CF;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/marketplace/fonts/plex-sans-var.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2010-2027, U+2030-205E, U+2190-2193, U+25A0-25CF;
+}
+/* Metric-matched fallback so the swap does not reflow the ledger. Derived from
+   the shipped file, not estimated: unitsPerEm 1000, USE_TYPO_METRICS set,
+   typoAscender 1025, typoDescender -275, sxHeight 516; Arial sxHeight 0.5186em.
+   size-adjust equalises x-height, then the ascent/descent overrides are
+   expressed against that adjusted em. If the face changes, recompute from the
+   new file's head/OS-2 tables the same way — do not carry these numbers over,
+   they are specific to this font paired with Arial. */
+@font-face {
+  font-family: 'IBM Plex Sans Fallback';
+  src: local('Arial');
+  ascent-override: 103.01%;
+  descent-override: 27.64%;
+  line-gap-override: 0%;
+  size-adjust: 99.51%;
+}
+@font-face {
+  font-family: 'DM Mono';
+  src: url('/marketplace/fonts/dm-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2010-2027, U+2030-205E, U+2190-2193, U+25A0-25CF;
+}
+/* Loaded explicitly. The reference page synthesised this weight; a synthesised
+   bold in a design whose whole claim is precision is disqualifying. */
+@font-face {
+  font-family: 'DM Mono';
+  src: url('/marketplace/fonts/dm-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2010-2027, U+2030-205E, U+2190-2193, U+25A0-25CF;
+}
+@font-face {
+  font-family: 'DM Mono Fallback';
+  src: local('Arial');
+  ascent-override: 73.71%;
+  descent-override: 23.03%;
+  size-adjust: 134.59%;
+}
+
+/* ---------- TOKENS. Dark is the default. ---------------------------------- */
+
+:root {
+  --canvas: #090b0b;          --canvas-ch: 9 11 11;
+  --ink: #eceeea;             --ink-ch: 236 238 234;
+  --ink-soft: #c4c8c3;
+  --muted: #859089;
+  --quiet: #78827b;
+  --line: #e1ebe421;
+  --line-strong: #e1ebe438;
+
+  /* The accent chord IS the three audiences. Three peers, comparable chroma,
+     comparable contrast. None is "the accent" and the other two secondary. */
+  --signal: #b8f4d6;          --signal-ch: 184 244 214;   /* BUY     */
+  --signal-warm: #e3bb5a;     --signal-warm-ch: 227 187 90; /* PUBLISH */
+  --signal-violet: #a89bd8;   --signal-violet-ch: 168 155 216; /* HOST  */
+
+  /* Dark elevation is a hairline. These resolve to none on purpose. */
+
+  --s-1: 4px;  --s-2: 8px;   --s-3: 12px;  --s-4: 16px;
+  --s-5: 20px; --s-6: 24px;  --s-7: 32px;  --s-8: 40px;
+  --s-9: 56px; --s-10: 72px; --s-11: 104px; --s-12: 160px;
+
+  --r-xs: 5px; --r-sm: 8px; --r-pill: 999px;
+  /* --r-lg and --r-xl intentionally undefined. See gate 5. */
+
+  --page: min(1360px, calc(100vw - var(--s-9)));
+  --rail: 104px;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+
+  --display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --text: 'IBM Plex Sans', 'IBM Plex Sans Fallback', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'DM Mono', 'DM Mono Fallback', ui-monospace, SFMono-Regular, monospace;
+
+  /* Reserved. Applied to EXACTLY ONE element sitewide: the Colonel sigil in
+     the footer lockup. Any second use is a bug. */
+  --mu-gradient-brand: linear-gradient(135deg, #b66eff 0%, #7c5cff 46%, #00d4ff 100%);
+
+  color-scheme: dark;
+}
+
+/* Light tokens, authored (not derived by inversion). Declared twice: once for
+   OS preference when no explicit choice exists, once for the explicit toggle,
+   so a user override wins in BOTH directions. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --canvas: #eceeea;        --canvas-ch: 236 238 234;
+    --ink: #141815;           --ink-ch: 20 24 21;
+    --ink-soft: #333a35;
+    --muted: #5f6863;
+    --quiet: #5b6560;
+    --line: #16201b26;
+    --line-strong: #16201b47;
+    --signal: #167052;        --signal-ch: 22 112 82;
+    --signal-warm: #78590f;   --signal-warm-ch: 120 89 15;
+    --signal-violet: #5f5297; --signal-violet-ch: 95 82 151;
+    color-scheme: light;
+  }
+}
+:root[data-theme='light'] {
+  --canvas: #eceeea;          --canvas-ch: 236 238 234;
+  --ink: #141815;             --ink-ch: 20 24 21;
+  --ink-soft: #333a35;
+  --muted: #5f6863;
+  --quiet: #5b6560;
+  --line: #16201b26;
+  --line-strong: #16201b47;
+  --signal: #167052;          --signal-ch: 22 112 82;
+  --signal-warm: #78590f;     --signal-warm-ch: 120 89 15;
+  --signal-violet: #5f5297;   --signal-violet-ch: 95 82 151;
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  --canvas: #090b0b;          --canvas-ch: 9 11 11;
+  --ink: #eceeea;             --ink-ch: 236 238 234;
+  --ink-soft: #c4c8c3;
+  --muted: #859089;
+  --quiet: #78827b;
+  --line: #e1ebe421;
+  --line-strong: #e1ebe438;
+  --signal: #b8f4d6;          --signal-ch: 184 244 214;
+  --signal-warm: #e3bb5a;     --signal-warm-ch: 227 187 90;
+  --signal-violet: #a89bd8;   --signal-violet-ch: 168 155 216;
+  color-scheme: dark;
+}
+
+/* ---------- BASE ---------------------------------------------------------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body,
+.marketplace-page {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  font-optical-sizing: none;
+  /* NO `overflow-x: hidden` here. It was masking a real 321px horizontal
+     overflow rather than fixing it: the page still panned into dead space on
+     iOS Safari, where the mask is unreliable, and any future leak of the same
+     class would have been silently absorbed. Every horizontal scroller on this
+     page clips its own content (see .matrix-scroll / .ledger-scroll), so the
+     document must not overflow — and if it ever does again, it fails loudly. */
+  -webkit-font-smoothing: antialiased;
+}
+/* The SPA mounts inside a wrapper; the SSR pages render at <body>. Both must
+   receive the ground or one surface silently keeps the old skin. */
+.marketplace-page { min-height: 100vh; }
+
+/* The one texture. It should be invisible if you go looking for it. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .026;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.93' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+body > * { position: relative; z-index: 1; }
+
+img { max-width: 100%; height: auto; }
+
+/* Screen-reader-only. The matrix carries its meaning in glyphs, so every cell
+   also states its value in words for assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+::selection { background: rgb(var(--signal-ch) / .28); color: var(--ink); }
+
+/* One focus ring everywhere. No per-component variants. */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* Links in prose are underlined, always, and never change colour. */
+.prose a,
+p a:not(.btn):not(.hostname) {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: .18em;
+  text-decoration-thickness: 1px;
+}
+
+.shell {
+  width: var(--page);
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+/* The gutter of record. One vertical hairline, full document height, like the
+   margin rule on a printed specification. Left of it: mono numerals, row
+   indices, colour chips, status ticks. Nothing else, ever. */
+.railed {
+  position: relative;
+  padding-left: var(--rail);
+}
+.railed::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.rail-num {
+  position: absolute;
+  left: 0;
+  top: var(--s-1);
+  font-family: var(--mono);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .14em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+section { border-top: 1px solid var(--line-strong); }
+section.no-rule { border-top: 0; }
+.section-block { padding-block: var(--s-12); }
+
+/* ---------- TYPE ROLES ---------------------------------------------------- */
+
+.mast {
+  margin: 0;
+  font-family: var(--display);
+  /* Explicit, because the UA default (bold) and the ops-center shell
+     (font-weight: inherit) disagree, and an accidental weight is a weight the
+     fallback face renders differently on each surface. */
+  font-weight: 400;
+  font-variation-settings: 'opsz' 144, 'wght' 400, 'SOFT' 0, 'WONK' 0;
+  font-size: clamp(3.5rem, 8.4vw, 8.25rem);
+  line-height: .84;
+  letter-spacing: -.042em;
+  text-wrap: balance;
+}
+.mast em { font-style: italic; }
+
+.page-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-variation-settings: 'opsz' 144, 'wght' 400, 'SOFT' 0, 'WONK' 0;
+  font-size: clamp(2.75rem, 5.4vw, 4.75rem);
+  line-height: .90;
+  letter-spacing: -.036em;
+  text-wrap: balance;
+}
+
+.section-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-variation-settings: 'opsz' 120, 'wght' 400, 'SOFT' 0, 'WONK' 0;
+  font-size: clamp(2.25rem, 4vw, 3.5rem);
+  line-height: .94;
+  letter-spacing: -.03em;
+}
+
+.lede {
+  margin: 0;
+  font-size: clamp(1.0625rem, 1.4vw, 1.3125rem);
+  line-height: 1.55;
+  letter-spacing: -.011em;
+  max-width: 54ch;
+  color: var(--ink-soft);
+}
+
+.prose {
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  letter-spacing: -.006em;
+  max-width: 68ch;
+  text-wrap: pretty;
+  color: var(--ink-soft);
+}
+
+/* Vertical rhythm between a section's title and whatever follows it. Authored
+   once here rather than as per-section margins, so the ramp stays uniform. */
+.section-title + .lede,
+.section-title + .prose,
+.page-title + .lede { margin-top: var(--s-5); }
+.lede + .ledger-scroll,
+.lede + .matrix-scroll,
+.lede + .platform-rail { margin-top: var(--s-8); }
+.eyebrow + .section-title { margin-top: var(--s-3); }
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: .6875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.small {
+  font-size: .8125rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.micro {
+  font-family: var(--mono);
+  font-size: .625rem;
+  line-height: 1.4;
+  letter-spacing: .05em;
+  color: var(--quiet);
+}
+
+/* Tabular figures globally on mono: this is a datasheet. */
+.mono, .ledger td, .matrix td, .readout, .hostname, .partno, .pill, .colhead {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- BUTTONS. One shape, two variants. No fills, no icons inside. --- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* min-height, NOT height: a fixed height plus a label that wraps inside a
+     narrow ledger cell overflows the row and lands on the row below. */
+  min-height: 36px;
+  padding-block: var(--s-2);
+  padding-inline: var(--s-4);
+  text-align: center;
+  border-radius: var(--r-sm);
+  font-family: var(--text);
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color .24s var(--ease), color .24s var(--ease);
+}
+.btn-primary { border: 1px solid var(--ink); color: var(--ink); }
+.btn-primary:hover { border-color: var(--signal); color: var(--signal); }
+.btn-secondary { border: 1px solid var(--line-strong); color: var(--ink-soft); }
+.btn-secondary:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- HEADER / FOOTER ---------------------------------------------- */
+
+.site-header { border-top: 0; border-bottom: 1px solid var(--line-strong); }
+.site-header .shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding-block: var(--s-4);
+  flex-wrap: wrap;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: .9375rem;
+}
+.brand img { width: 30px; height: 30px; }
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  flex-wrap: wrap;
+}
+.nav a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: .875rem;
+  font-weight: 600;
+  transition: color .24s var(--ease);
+}
+.nav a:hover { color: var(--ink); }
+/* Audience order invariant: buy, publish, host. Same three, same order, in
+   header, hero, and footer. Three appearances per page. */
+.nav a.aud-buy:hover { color: var(--signal); }
+.nav a.aud-publish:hover { color: var(--signal-warm); }
+.nav a.aud-host { color: var(--signal-violet); }
+.nav a.aud-host:hover { color: var(--signal-violet); text-decoration: underline; text-underline-offset: .3em; }
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 30px;
+  padding-inline: var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .625rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color .24s var(--ease), color .24s var(--ease);
+}
+.theme-toggle:hover { border-color: var(--ink); color: var(--ink); }
+
+.site-footer { padding-block: var(--s-10); }
+.footer-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-8);
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.footer-lockup { display: inline-flex; align-items: center; gap: var(--s-3); }
+/* The ONE permitted use of the brand gradient, sitewide. */
+.footer-sigil {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--mu-gradient-brand);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.footer-sigil img { width: 18px; height: 18px; }
+.footer-plinth { display: flex; flex-direction: column; gap: var(--s-2); }
+.footer-plinth a { color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+.footer-plinth a:hover { text-decoration: underline; text-underline-offset: .18em; }
+
+/* ---------- HERO ---------------------------------------------------------- */
+
+.hero { border-top: 0; }
+.hero-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--s-9);
+  padding-block: var(--s-12) var(--s-10);
+}
+.hero-copy { display: flex; flex-direction: column; gap: var(--s-6); }
+.hero-claim { max-width: 46ch; }
+.colonel {
+  width: clamp(180px, 20vw, 288px);
+  justify-self: end;
+  animation: orbit 12s var(--ease) infinite;
+}
+@keyframes orbit {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-4px, -4px, 0); }
+}
+
+/* ---------- SECTION 01 — THE THREE DOORS -----------------------------------
+   Equality of the three audiences is STRUCTURAL, not stylistic: all three
+   doors share one subgrid track set, so anyone who enlarges one option
+   visibly breaks the baseline alignment of all three. That is the point.
+   No :nth-child selectors in this component. See gate 3.                    */
+
+.triptych {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-8);
+  margin-top: var(--s-9);
+}
+.door {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 5;
+  gap: var(--s-4);
+  padding: var(--s-6) 0 0;
+  border-top: 2px solid var(--door);
+  text-decoration: none;
+  color: inherit;
+}
+/* Fallback for engines without subgrid: the tracks still line up visually
+   because every door declares the same row gaps. */
+@supports not (grid-template-rows: subgrid) {
+  .triptych { align-items: start; }
+  .door { grid-row: auto; grid-template-rows: auto auto auto auto auto; }
+}
+.door-n {
+  font-family: var(--mono);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--door);
+}
+.door-verb {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 500;
+  font-variation-settings: 'opsz' 48, 'wght' 500, 'SOFT' 0, 'WONK' 0;
+  font-size: clamp(1.375rem, 1.8vw, 1.75rem);
+  line-height: 1.06;
+  letter-spacing: -.018em;
+}
+.door-claim { margin: 0; font-size: .9375rem; line-height: 1.5; color: var(--ink-soft); }
+.door-proof {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: .8125rem;
+  line-height: 1.45;
+  letter-spacing: .01em;
+  color: var(--muted);
+}
+.door-cta {
+  align-self: end;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--door);
+}
+.door:hover .door-cta { text-decoration: underline; text-underline-offset: .3em; }
+
+/* ---------- THE LEGEND (segmented control) --------------------------------
+   This is NOT a filter. It does not remove products and does not change what
+   is listed. It tells you what the three colours on the rest of the page mean
+   before you meet them. The server renders the ALL state.                   */
+
+.legend {
+  margin-top: var(--s-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.legend-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  max-width: 720px;
+}
+.legend-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line-strong);
+  padding: var(--s-4) var(--s-3);
+  font-family: var(--mono);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  transition: color .28s var(--ease), background-color .28s var(--ease);
+}
+.legend-btn:first-child { border-left: 0; }
+.legend-btn:hover { color: var(--ink); }
+.legend-btn[aria-pressed='true'] { color: var(--tone); background: rgb(var(--tone-ch) / .10); }
+
+/* ---------- SECTION 02 — THE LEDGER ---------------------------------------
+   The catalog is a table, not a card grid. Five products plus the open stall,
+   rendered as one continuous hairline-ruled ledger with real columns. This is
+   the one place the boldness is spent; everything else on the page is quiet.
+   A marketplace that presents itself as a specification is claiming a level of
+   self-knowledge that a card grid cannot claim.                             */
+
+/* `position: relative` for the same containing-block reason as .matrix-scroll:
+   the caption and the "Character art" / "Go to product" column heads are
+   .sr-only abspos spans, and an overflow ancestor cannot clip what it does not
+   contain. */
+.ledger-scroll { position: relative; overflow-x: auto; min-width: 0; max-width: 100%; }
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.colhead {
+  padding: var(--s-3) var(--s-4);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--quiet);
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+  vertical-align: bottom;
+  background: var(--canvas);
+}
+/* "index, not rank" sits under a one-character "#". Inheriting .colhead's
+   `white-space: nowrap` made this 8-word gloss the widest thing in the column
+   and forced a 56px column to 130px — 74 of the 121px that pushed the ledger
+   past its container. It wraps to two short lines instead. */
+.colhead-note {
+  display: block;
+  max-width: 8ch;
+  white-space: normal;
+  font-size: .625rem;
+  letter-spacing: .05em;
+  line-height: 1.25;
+  color: var(--quiet);
+  text-transform: none;
+}
+.ledger tbody tr {
+  border-bottom: 1px solid var(--line);
+  transition: padding .24s var(--ease), background-color .24s var(--ease);
+}
+.ledger tbody tr:hover { background: rgb(var(--ink-ch) / .022); }
+.ledger td {
+  padding: var(--s-5) var(--s-4);
+  vertical-align: top;
+  font-size: .8125rem;
+  line-height: 1.45;
+  letter-spacing: .01em;
+  color: var(--ink-soft);
+}
+.cell-index {
+  width: 56px;
+  padding-left: 0;
+  font-family: var(--mono);
+  font-size: .6875rem;
+  letter-spacing: .06em;
+  color: var(--quiet);
+  white-space: nowrap;
+}
+/* Per-product identity appears ONLY here (a 3px chip) and as the plate
+   hairline. It never tints text, never tints a background, never gradients. */
+.chip {
+  display: inline-block;
+  width: 3px;
+  height: 34px;
+  margin-right: var(--s-3);
+  background: var(--b, var(--signal));
+  vertical-align: middle;
+  border-radius: var(--r-pill);
+}
+.cell-art { width: 128px; }
+
+/* MASCOT PLATE.
+   Three of the six approved mascots are 0.0% transparent: they are illustrated
+   scenes with baked backgrounds, not cutouts. A hairline frame plus a recess
+   reads as glass in a frame, so the defect becomes architecture. Uniform outer
+   geometry, honest inner fill, is what makes six mascots with three different
+   alpha conventions read as one crew. Do NOT "fix" this later by cropping the
+   baked assets — cropping destroys the artwork and gains nothing. */
+.plate {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in srgb, var(--b, var(--signal)) 30%, transparent);
+  background: var(--plate, transparent);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.plate img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* States the license five times without a badge, in the art furniture, at the
+   one place a scanner is already looking. */
+/* Wraps under the 96px plate. `white-space: nowrap` here made the longest
+   part number ("UC-01 · AGPL-3.0 (CORE)") set the column width, blowing a
+   declared 128px cell out to 182px — the other 54px of the ledger overflow.
+   The label reads fine on two lines and the plate above it is what the eye
+   lands on first. */
+.partno {
+  display: block;
+  /* Never wider than the plate it labels. Each context sets --plate-size. */
+  max-width: var(--plate-size, 96px);
+  margin-top: var(--s-2);
+  font-size: .625rem;
+  letter-spacing: .05em;
+  line-height: 1.3;
+  color: var(--quiet);
+  text-transform: uppercase;
+  overflow-wrap: break-word;
+}
+.cell-name { min-width: 240px; }
+.product-name {
+  margin: 0 0 var(--s-2);
+  font-family: var(--display);
+  font-weight: 500;
+  font-variation-settings: 'opsz' 48, 'wght' 500, 'SOFT' 0, 'WONK' 0;
+  font-size: clamp(1.375rem, 1.8vw, 1.75rem);
+  line-height: 1.06;
+  letter-spacing: -.018em;
+}
+.product-name a { color: inherit; text-decoration: none; }
+.product-name a:hover { text-decoration: underline; text-underline-offset: .18em; }
+.row-tagline {
+  margin: 0;
+  font-family: var(--text);
+  font-size: .9375rem;
+  line-height: 1.5;
+  letter-spacing: -.005em;
+  color: var(--ink-soft);
+  max-width: 52ch;
+}
+/* Collapsed fields for the mid tier. Hidden at full width. */
+.row-subline { display: none; margin-top: var(--s-3); color: var(--muted); font-size: .75rem; }
+
+.pill {
+  display: inline-block;
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+  font-size: .6875rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.pill-available { color: var(--signal); }
+.pill-development { color: var(--signal-warm); }
+.pill-open { color: var(--quiet); }
+
+.runs-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--s-1); }
+/* Self-host is violet in every row that supports it. You cannot scan the
+   catalog without meeting the sovereignty position four times. */
+.runs-list .is-selfhost { color: var(--signal-violet); }
+
+.license { white-space: nowrap; }
+.license a { color: inherit; text-decoration: underline; text-underline-offset: .18em; }
+/* Selecting HOST lights this column too: the sovereignty position is the only
+   one that reaches back up into the ledger. */
+.ledger .col-source.is-lit { color: var(--tone, var(--signal-violet)); }
+.ledger .col-source { transition: color .28s var(--ease); }
+
+/* The outbound cell prints its own destination. Never a generic "Learn more". */
+.hostname {
+  /* block, NOT inline-flex: as a flex container the text became an anonymous
+     flex item that shrank below its content and split "centerdeep.ai" into
+     "centerdeep.a / i". As a block it wraps on normal boundaries. */
+  display: block;
+  font-size: .8125rem;
+  letter-spacing: .01em;
+  color: var(--ink-soft);
+  text-decoration: none;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.hostname .arrow { color: var(--muted); transition: transform .24s var(--ease); display: inline-block; margin-left: var(--s-2); }
+.hostname:hover { color: var(--ink); }
+.hostname:hover .arrow { transform: translateX(2px); }
+.cell-action { width: 210px; }
+.cell-action .btn { margin-top: var(--s-3); display: flex; width: 100%; }
+/* The three spec columns carry short values; the row's breathing room comes
+   from .cell-name and .cell-action. Tightening them here buys the last of the
+   headroom that keeps the ledger inside its container at every desktop width. */
+.ledger td.col-runs,
+.ledger td.col-source,
+.ledger td.col-egress,
+.ledger th.col-runs,
+.ledger th.col-source,
+.ledger th.col-egress { padding-inline: var(--s-3); }
+
+/* The open stall is row 06 of the ledger, in the table with the shipping
+   products. Publishing is a peer path, not a developer-docs footnote. */
+.row-open .plate {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--signal-warm) 40%, transparent);
+}
+.row-open .plate span {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  color: var(--signal-warm);
+}
+.row-open .product-name { color: var(--muted); }
+.publish-link { color: var(--signal-warm); text-decoration: none; font-weight: 600; font-size: .875rem; white-space: nowrap; }
+.publish-link:hover { text-decoration: underline; text-underline-offset: .3em; }
+
+/* ---------- SECTION 03 — THE DEPLOYMENT MATRIX (signature moment) ----------
+   The same fleet, viewed along a different axis. Rows rhyme with the ledger
+   above (same order, same indices, same chips). Columns are the five runtime
+   homes. Cells are monochrome at rest; selecting an audience re-weights the
+   matrix, it never changes what data exists.                                */
+
+/* `position: relative` is load-bearing, not decoration. Each matrix cell holds
+   an absolutely-positioned .sr-only span stating its value in words. Without a
+   positioned ancestor here those spans resolve against the initial containing
+   block, and an overflow ancestor does NOT clip an abspos descendant it does
+   not contain — so they escaped the scroller and pushed the document to 711px
+   at a 390px viewport. Making this the containing block clips them with
+   everything else. */
+.matrix-scroll { position: relative; overflow-x: auto; min-width: 0; max-width: 100%; }
+.matrix {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.matrix th, .matrix td { padding: var(--s-3) var(--s-4); }
+.matrix thead th {
+  font-family: var(--mono);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--quiet);
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+  border-bottom-width: 2px;
+  border-bottom-color: transparent;
+  box-shadow: inset 0 -1px 0 var(--line-strong);
+  transition: color .28s var(--ease), box-shadow .28s var(--ease);
+}
+.matrix tbody tr { border-bottom: 1px solid var(--line); }
+.matrix tbody th {
+  font-family: var(--text);
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.matrix td {
+  font-size: .8125rem;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: color .28s var(--ease), opacity .28s var(--ease);
+}
+/* De-emphasis is carried in COLOUR ONLY. `opacity: .34` used to ride along
+   here, which dropped the dim glyphs to 1.33-1.60:1 against the canvas in both
+   themes — under WCAG 1.4.3 by a factor of three. The glyphs ARE the data, so
+   that was not a de-emphasis, it was an erasure, and it also falsified the
+   caption directly beneath the table ("nothing is added, nothing is hidden").
+   Worse, it only appeared AFTER a click: the served all-lit state passed, so
+   the failure was invisible to a static check.
+   --quiet alone measures 4.96:1 dark / 5.18:1 light and still reads as clearly
+   subordinate to the lit --tone state (7.84:1 / 5.73:1). Do not add opacity. */
+.matrix col.dim,
+.matrix .is-dim { color: var(--quiet); }
+.matrix .is-lit { color: var(--tone); opacity: 1; }
+.matrix thead th.is-lit {
+  color: var(--tone);
+  box-shadow: inset 0 -2px 0 var(--tone);
+}
+/* Machined hatch: the visual signature of self-host. Flipping to "your
+   hardware" changes the GROUND, not the contents. */
+.matrix td.hatch-on {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgb(var(--signal-violet-ch) / .16) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+.readout {
+  margin-top: var(--s-8);
+  font-size: clamp(1.375rem, 2.6vw, 2.25rem);
+  /* The HOST line is the longest string the readout can hold and it wraps on
+     narrow viewports. line-height:1 makes two wrapped lines collide, so this
+     opens just enough to survive the wrap without loosening the one-line case. */
+  line-height: 1.12;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  letter-spacing: -.035em;
+  color: var(--ink);
+  transition: opacity .22s var(--ease), transform .22s var(--ease);
+}
+.readout.swapping { opacity: 0; transform: translateY(8px); }
+/* Counting is the honesty system; invariance is the argument. */
+.readout-caption {
+  margin-top: var(--s-4);
+  max-width: 62ch;
+  font-size: .9375rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ---------- PLATFORM RAIL -------------------------------------------------- */
+
+.platform-rail {
+  margin-top: var(--s-8);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: var(--s-6);
+}
+.rail-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+}
+.rail-cell {
+  font-family: var(--mono);
+  font-size: .8125rem;
+  letter-spacing: .01em;
+  color: var(--ink-soft);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+}
+
+/* ---------- CREW REGISTER -------------------------------------------------- */
+
+.crew-register {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-8);
+  margin-top: var(--s-9);
+}
+.crew-member { display: flex; flex-direction: column; gap: var(--s-3); align-items: flex-start; }
+.crew-member .plate { width: 128px; height: 128px; }
+.crew-name {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 500;
+  font-variation-settings: 'opsz' 24, 'wght' 500, 'SOFT' 0, 'WONK' 0;
+  font-size: 1.125rem;
+  line-height: 1.15;
+  letter-spacing: -.012em;
+}
+.crew-blurb { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--muted); }
+
+/* ---------- DETAIL PAGE ---------------------------------------------------- */
+
+.detail-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-9);
+  align-items: start;
+  padding-block: var(--s-11);
+}
+.detail-copy { display: flex; flex-direction: column; gap: var(--s-5); align-items: flex-start; }
+.detail-hero .plate { width: 240px; height: 240px; }
+/* The part number under the big detail plate gets the plate's width, so it
+   does not wrap at the ledger's 96px. */
+.detail-hero { --plate-size: 240px; }
+.back { font-family: var(--mono); font-size: .6875rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); text-decoration: none; }
+.back:hover { color: var(--ink); }
+
+.trust-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s-8);
+  margin-top: var(--s-8);
+}
+.trust-card { display: flex; flex-direction: column; gap: var(--s-3); border-top: 1px solid var(--line-strong); padding-top: var(--s-4); }
+.trust-card h3 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+.trust-card p, .trust-card li { margin: 0; font-size: .9375rem; line-height: 1.55; color: var(--ink-soft); }
+.trust-card ul { margin: 0; padding-left: var(--s-5); display: flex; flex-direction: column; gap: var(--s-2); }
+
+/* THRESHOLD. The seam is declared, not hidden. The destination's own colour
+   washes the surface at 12% (capped: 26% is the ceiling anywhere else), a 2px
+   accent rule caps it, and the hostname is printed above the CTA so you know
+   where you are going and that the visual system is about to change. */
+.threshold {
+  margin-top: var(--s-10);
+  padding: var(--s-8);
+  border-top: 2px solid var(--ba, var(--signal));
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: color-mix(in srgb, var(--b, var(--signal)) 12%, var(--canvas));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  align-items: flex-start;
+}
+.threshold .hostname { font-size: .9375rem; }
+.threshold-note { margin: 0; max-width: 60ch; font-size: .875rem; line-height: 1.55; color: var(--ink-soft); }
+
+/* ---------- RESPONSIVE. Three authored tiers, none automatic. ------------- */
+
+/* Tier 2: 860-1439px. ACCESS stays a column; RUNS WHERE / SOURCE / DATA LEAVES
+   drop into one mono sub-line under the tagline.
+   The breakpoint is 1439px, not the 1179px it used to be, and the number is
+   derived rather than chosen. The shell is capped at --page 1360px and the
+   rail takes --rail 104px, so the ledger's container is
+     min(1360, 100vw - 56) - 104
+   which only reaches its 1256px ceiling once the viewport passes 1416px. The
+   full-column ledger's intrinsic width is ~1215px. Between 1180px and 1415px
+   the old rule therefore showed all eight columns inside a container that
+   could never hold them, and the ACTION column — the hostname deep link plus
+   the CTA for every listing — was clipped off the right edge with no scrollbar
+   and no fade to say so. Folding at 1439px puts the fold above that whole
+   band and leaves real slack at 1440px. If --page or --rail changes, redo this
+   arithmetic; do not nudge the breakpoint by eye. */
+@media (max-width: 1439px) {
+  /* Scoped to .ledger deliberately. The bare .col-* selector (0,1,0) LOSES to
+     the block-layout rule ".ledger td" (0,1,1) in the <860px tier below, which
+     silently brought these columns back on phones and duplicated the sub-line.
+     0,2,0 wins in both tiers. */
+  .ledger .col-runs, .ledger .col-source, .ledger .col-egress { display: none; }
+  .row-subline { display: block; }
+}
+
+@media (max-width: 1079px) {
+  :root { --rail: 0px; }
+  .railed { padding-left: 0; }
+  .railed::before { display: none; }
+  .rail-num { position: static; display: block; margin-bottom: var(--s-3); }
+}
+
+@media (max-width: 1023px) {
+  .hero-inner { grid-template-columns: minmax(0, 1fr); }
+  .colonel { justify-self: start; }
+  .detail-hero { grid-template-columns: minmax(0, 1fr); }
+  .triptych { grid-template-columns: minmax(0, 1fr); gap: var(--s-9); }
+  .door { grid-row: auto; grid-template-rows: none; }
+}
+
+/* Tier 3: <=1023px. The row becomes a block. Still a table semantically, still
+   one hairline per row.
+   This boundary is derived too. Once tier 2 has folded the three spec columns,
+   the ledger still carries #, art, product, access and action, whose combined
+   intrinsic width is ~877px. Below 1080px the rail is 0, so the container is
+   100vw - 56, which means the five-column table stops fitting under a 933px
+   viewport. The old 859px boundary sat below that, so 860-932px clipped the
+   action column exactly the way the desktop range did — a full viewport band
+   that the original desktop-only measurement never looked at. 1023px is the
+   nearest standard breakpoint with real slack (968px available vs 877 needed)
+   and it matches the hero/triptych breakpoint above. */
+@media (max-width: 1023px) {
+  .ledger thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ledger, .ledger tbody, .ledger tr, .ledger td { display: block; width: 100%; }
+  .ledger tbody tr { padding-block: var(--s-7); position: relative; }
+  .ledger td { padding: 0; }
+  .ledger td + td { margin-top: var(--s-3); }
+  .cell-index { position: absolute; top: var(--s-7); right: 0; width: auto; }
+  .cell-art { float: left; margin-right: var(--s-5); margin-bottom: var(--s-4); width: auto; }
+  .cell-name { min-width: 0; overflow: hidden; }
+  .cell-action { width: auto; clear: both; padding-top: var(--s-3); }
+  .chip { height: 20px; }
+}
+
+/* Below 640px the four in-page section links leave the header. They wrapped
+   onto a third row and the header ate 161px — 19% of an 844px phone fold —
+   before a single word of content. All four are one scroll away in the footer
+   plinth, and this page is a single scroll. Brand + Sign in + Theme stay on
+   one row, which lands the header at ~56px. */
+@media (max-width: 640px) {
+  .nav .nav-section { display: none; }
+  .site-header .shell { flex-wrap: nowrap; padding-block: var(--s-3); }
+  .nav { gap: var(--s-4); flex-wrap: nowrap; }
+  .brand span { white-space: nowrap; }
+}
+
+@media (max-width: 640px) {
+  :root { --page: min(1360px, calc(100vw - var(--s-6))); }
+  .section-block { padding-block: var(--s-10); }
+  .hero-inner { padding-block: var(--s-10) var(--s-9); }
+  .legend-control { grid-template-columns: minmax(0, 1fr); }
+  .legend-btn { border-left: 0; border-top: 1px solid var(--line-strong); }
+  .legend-btn:first-child { border-top: 0; }
+  .footer-grid { gap: var(--s-7); }
+}
+
+/* ---------- MOTION BUDGET -------------------------------------------------
+   Selection still works with reduced motion; every transition collapses to 0s
+   and the state change is instantaneous. Nothing here is load-bearing. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .colonel { animation: none; }
+  .readout.swapping { opacity: 1; transform: none; }
+}
+
+/* ---------- SPA ISOLATION LAYER (must stay last) --------------------------
+   The SSR pages at /marketplace own their whole document. The SPA twin does
+   not: RootRedirect mounts <Marketplace> at "/" INSIDE the ops-center bundle,
+   so /assets/index-*.css — the admin shell's global stylesheet — is in the
+   cascade underneath this file. Loading later is not enough to win, because
+   several of the shell's selectors are more specific than ours.
+
+   MEASURED drift, SSR vs SPA, same session, cache-busted, before this block:
+     .mast          Fraunces          -> "Space Grotesk", Inter   (banned faces)
+     .door-verb     ink, 3 tones      -> #c084fc x3  (the 3-audience chord
+                                        collapsed to one Tailwind purple)
+     .brand         ink               -> #c084fc
+     .hostname/.btn ink-soft          -> #c084fc
+     section titles wght 700          -> 400
+     body ground    #090b0b           -> #111827 (blue-grey; fails this
+                                        stylesheet's own green-ground gate)
+
+   The winning shell rule for the mast was
+     h1, h2, h3, .MuiTypography-h1, ..., [class*="hero"] h1, [class*="hero"] h2
+   at (0,1,1) — our `.mast` is (0,1,0), so the shell won on specificity, not
+   order. Every rule below is scoped under `.marketplace-page` purely to clear
+   that bar, and each one re-asserts a value this file already declared. If you
+   add a type role or an accent above, add it here too, and re-run the
+   SSR-vs-SPA computed-style diff — a content-based contract test cannot see
+   any of this.                                                              */
+
+.marketplace-page .mast,
+.marketplace-page .page-title,
+.marketplace-page .section-title,
+.marketplace-page .product-name,
+.marketplace-page .crew-name,
+.marketplace-page .door-verb,
+.marketplace-page h1,
+.marketplace-page h2,
+.marketplace-page h3 {
+  font-family: var(--display);
+}
+.marketplace-page .mast { font-weight: 400; font-variation-settings: 'opsz' 144, 'wght' 400, 'SOFT' 0, 'WONK' 0; letter-spacing: -.042em; }
+.marketplace-page .page-title { font-weight: 400; font-variation-settings: 'opsz' 144, 'wght' 400, 'SOFT' 0, 'WONK' 0; letter-spacing: -.036em; }
+.marketplace-page .section-title { font-weight: 400; font-variation-settings: 'opsz' 120, 'wght' 400, 'SOFT' 0, 'WONK' 0; letter-spacing: -.03em; }
+.marketplace-page .product-name { font-weight: 500; font-variation-settings: 'opsz' 48, 'wght' 500, 'SOFT' 0, 'WONK' 0; letter-spacing: -.018em; }
+.marketplace-page .crew-name { font-weight: 500; font-variation-settings: 'opsz' 24, 'wght' 500, 'SOFT' 0, 'WONK' 0; letter-spacing: -.012em; }
+.marketplace-page .door-verb { font-weight: 500; font-variation-settings: 'opsz' 48, 'wght' 500, 'SOFT' 0, 'WONK' 0; letter-spacing: -.018em; }
+
+/* ---- THE ANCHOR OVERRIDE, AND WHY IT REPEATS THE CLASS -------------------
+   The shell paints EVERY link Tailwind purple with
+
+     a:not(.MuiButtonBase-root):not([class*="Mui"]):not(.no-accent)
+
+   Each :not() contributes its argument's specificity, so that selector scores
+   (0,3,1) — which outranks a plain `.marketplace-page .brand` (0,2,0) no
+   matter how late this file loads. That is why the first attempt at this
+   block fixed .door-verb and left .brand, .hostname and .btn purple.
+
+   Repeating the wrapper class three times scores (0,3,0) on its own and lands
+   the compound selectors at (0,4,x), clearing the shell without !important and
+   without the marketplace markup having to know the shell's opt-out class
+   name. It is deliberately ugly so nobody deletes it as a typo.
+   The chord is the argument on this page: three doors, three colours. One
+   purple for all of them makes the legend underneath ("what the three colours
+   on this page mean") literally false.                                      */
+.marketplace-page.marketplace-page.marketplace-page .brand,
+.marketplace-page.marketplace-page.marketplace-page .brand:hover { color: var(--ink); text-decoration: none; }
+.marketplace-page.marketplace-page.marketplace-page .hostname { color: var(--ink-soft); }
+.marketplace-page.marketplace-page.marketplace-page .hostname:hover { color: var(--ink); }
+.marketplace-page.marketplace-page.marketplace-page .btn-secondary { color: var(--ink-soft); }
+.marketplace-page.marketplace-page.marketplace-page .btn-primary { color: var(--canvas); }
+.marketplace-page.marketplace-page.marketplace-page .nav a { color: var(--ink-soft); }
+.marketplace-page.marketplace-page.marketplace-page .nav a.aud-host { color: var(--signal-violet); }
+.marketplace-page.marketplace-page.marketplace-page .door { color: var(--ink); }
+.marketplace-page.marketplace-page.marketplace-page .product-name a { color: inherit; }
+.marketplace-page.marketplace-page.marketplace-page .back,
+.marketplace-page.marketplace-page.marketplace-page .footer-plinth a { color: var(--ink-soft); }
+.marketplace-page.marketplace-page.marketplace-page .footer-plinth a.aud-host { color: var(--signal-violet); }
+.marketplace-page.marketplace-page.marketplace-page .publish-link { color: var(--signal-warm); }
+.marketplace-page.marketplace-page.marketplace-page a { text-decoration: none; }
+.marketplace-page.marketplace-page.marketplace-page .prose a,
+.marketplace-page.marketplace-page.marketplace-page .trust-card a,
+.marketplace-page.marketplace-page.marketplace-page .micro,
+.marketplace-page.marketplace-page.marketplace-page .small a { color: var(--signal); text-decoration: underline; text-underline-offset: .25em; }
+
+/* The ground. The shell paints <body> #111827, which shows through on
+   overscroll and behind anything the wrapper does not cover. */
+html:has(.marketplace-page),
+body:has(.marketplace-page) {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--text);
+}
+.marketplace-page { background: var(--canvas); color: var(--ink); font-family: var(--text); }
+
+/* ── BETA SIGNUP ────────────────────────────────────────────────────────────
+   The block an in-development listing carries instead of a CTA. It is a panel
+   in the same square, hairlined language as .threshold — deliberately NOT a
+   highlighted "offer" card, because it is not an offer. No radius past 8px,
+   no shadow, no glass: same rules as everything else on this sheet.
+   The honeypot input is hidden from sight AND from assistive tech, but is a
+   real focusable-by-nobody field a form-filling bot will populate. */
+.beta-signup {
+  border: 1px solid var(--line-strong);
+  padding: var(--s-7);
+  margin-top: var(--s-6);
+  max-width: 68ch;
+}
+.beta-eyebrow { color: var(--muted); }
+.beta-heading {
+  font-family: var(--display);
+  font-size: clamp(1.25rem, 2.4vw, 1.6rem);
+  line-height: 1.15;
+  margin: var(--s-4) 0 var(--s-4);
+}
+.beta-body {
+  color: var(--ink-soft);
+  max-width: 62ch;
+  margin-bottom: var(--s-4);
+}
+.beta-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--s-2);
+}
+.beta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: stretch;
+}
+.beta-input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: var(--s-3) var(--s-4);
+}
+.beta-input::placeholder { color: var(--quiet); }
+.beta-input:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+.beta-form .btn { flex: 0 0 auto; }
+.beta-form .btn[disabled] { opacity: 0.6; cursor: progress; }
+.beta-hp {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.beta-status {
+  margin-top: var(--s-4);
+  max-width: 62ch;
+  min-height: 1.2em;
+}
+.beta-status[data-state='done'] { color: var(--signal); }
+.beta-status[data-state='error'] { color: var(--signal-warm); }
+.beta-signup .micro { margin-top: var(--s-4); }

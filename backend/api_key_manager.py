@@ -168,18 +168,21 @@ class APIKeyManager:
         if not api_key or not api_key.startswith("uc_"):
             return None
 
-        # Get prefix for faster lookup
-        prefix = api_key[:7]
+        # Get prefix for faster lookup. Rows are stored with BOTH widths in the
+        # wild: api_key_manager.create_api_key writes key[:7], while the
+        # account UI + mint-via-token (uc_api_keys.py) write key[:8] — match
+        # both so every legitimately minted key validates. (P10 fix 2026-07-11)
+        prefixes = [api_key[:7], api_key[:8]]
 
         async with self.db_pool.acquire() as conn:
             # Find active keys with matching prefix
             keys = await conn.fetch("""
                 SELECT id, user_id, key_hash, permissions, expires_at
                 FROM user_api_keys
-                WHERE key_prefix = $1
+                WHERE key_prefix = ANY($1::text[])
                   AND is_active = TRUE
                   AND (expires_at IS NULL OR expires_at > NOW())
-            """, prefix)
+            """, prefixes)
 
             # Try to match hash (bcrypt is slow, so we limit candidates by prefix)
             for key_record in keys:
@@ -199,7 +202,7 @@ class APIKeyManager:
                         "key_id": str(key_record['id'])
                     }
 
-        logger.warning(f"Invalid API key attempt: {prefix}...")
+        logger.warning(f"Invalid API key attempt: {prefixes[0]}...")
         return None
 
     async def list_user_keys(self, user_id: str) -> List[Dict]:

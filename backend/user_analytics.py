@@ -21,10 +21,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/analytics/users", tags=["User Analytics"])
 
 # Database configuration
-KEYCLOAK_DB_URL = os.getenv(
-    "KEYCLOAK_DATABASE_URL",
-    "postgresql://uchub:REMOVED@uchub-postgres:5432/keycloak_db"
-)
+# No source default: the old default URL carried a real (now rotated) password.
+KEYCLOAK_DB_URL = os.getenv('KEYCLOAK_DATABASE_URL', '')
 OPS_DB_URL = os.getenv(
     "OPS_DATABASE_URL",
     "postgresql://unicorn:REMOVED@unicorn-postgresql:5432/unicorn_db"
@@ -35,14 +33,20 @@ REDIS_URL = "redis://unicorn-redis:6379"
 CACHE_TTL = 300  # 5 minutes
 
 # Initialize database engines
-keycloak_engine = create_engine(KEYCLOAK_DB_URL, pool_pre_ping=True)
+if KEYCLOAK_DB_URL:
+    keycloak_engine = create_engine(KEYCLOAK_DB_URL, pool_pre_ping=True)
+else:
+    keycloak_engine = None
+    logger.warning("KEYCLOAK_DATABASE_URL is not set; the Keycloak-backed user analytics endpoints are disabled (503)")
 ops_engine = create_engine(OPS_DB_URL, pool_pre_ping=True)
-KeycloakSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=keycloak_engine)
+KeycloakSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=keycloak_engine) if keycloak_engine is not None else None
 OpsSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ops_engine)
 
 # Dependency for database sessions
 def get_keycloak_db():
-    """Get Keycloak database session"""
+    """Get Keycloak database session (503 when KEYCLOAK_DATABASE_URL is not configured)"""
+    if KeycloakSessionLocal is None:
+        raise HTTPException(status_code=503, detail="User analytics is not configured on this node")
     db = KeycloakSessionLocal()
     try:
         yield db

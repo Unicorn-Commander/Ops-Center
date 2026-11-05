@@ -47,7 +47,7 @@ services:
       - POSTGRES_HOST=${POSTGRES_HOST:-unicorn-postgresql}
       - POSTGRES_PORT=5432
       - POSTGRES_USER=unicorn
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-REMOVED}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-bb7af95b58dcfa0b5d545d764bfbf4c293c666fe3a7c26f9}
       - POSTGRES_DB=unicorn_db
       # Credential Encryption Key (Fernet)
       - EREMOVED

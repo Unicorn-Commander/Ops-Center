@@ -11,7 +11,8 @@ Provides admin endpoints for managing the model catalog with:
 - Redis caching
 
 Database: models table in unicorn_db
-Authentication: Admin or moderator role required
+Authentication: console admin via auth_dependencies.require_admin_user (the standard admin gate;
+it replaced this module's own admin/moderator session check on 2026-09-28)
 Author: Backend API Team Lead
 Date: November 8, 2025
 """
@@ -29,6 +30,7 @@ from pydantic import BaseModel, Field, validator
 
 from audit_logger import audit_logger
 from audit_helpers import get_client_ip, get_user_agent
+from auth_dependencies import require_admin_user
 
 logger = logging.getLogger(__name__)
 
@@ -200,46 +202,6 @@ async def get_redis_client() -> aioredis.Redis:
     return _redis_client
 
 
-async def require_admin(request: Request):
-    """Verify user is authenticated and has admin/moderator role"""
-    import sys
-    import os
-
-    if '/app' not in sys.path:
-        sys.path.insert(0, '/app')
-
-    from redis_session import RedisSessionManager
-
-    # Get session token
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    # Initialize session manager
-    redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
-    redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
-
-    # Get session
-    if session_token not in sessions:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-
-    session_data = sessions[session_token]
-    user = session_data.get("user", {})
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found in session")
-
-    # Check admin or moderator role
-    role = user.get("role", "")
-    is_admin = user.get("is_admin", False)
-
-    if not is_admin and role not in ["admin", "moderator"]:
-        raise HTTPException(status_code=403, detail="Admin or moderator access required")
-
-    return user
-
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -322,7 +284,7 @@ async def list_models(
     deprecated: Optional[bool] = Query(False, description="Include deprecated models"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=500, description="Items per page"),
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool),
     redis: aioredis.Redis = Depends(get_redis_client)
 ):
@@ -450,7 +412,7 @@ async def list_models(
 async def create_model(
     request: Request,
     model: ModelCreate,
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool),
     redis: aioredis.Redis = Depends(get_redis_client)
 ):
@@ -553,7 +515,7 @@ async def create_model(
 async def get_model(
     request: Request,
     model_id: str,
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -595,7 +557,7 @@ async def update_model(
     request: Request,
     model_id: str,
     updates: ModelUpdate,
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool),
     redis: aioredis.Redis = Depends(get_redis_client)
 ):
@@ -685,7 +647,7 @@ async def update_model(
 async def delete_model(
     request: Request,
     model_id: str,
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool),
     redis: aioredis.Redis = Depends(get_redis_client)
 ):
@@ -745,7 +707,7 @@ async def delete_model(
 async def toggle_model(
     request: Request,
     model_id: str,
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool),
     redis: aioredis.Redis = Depends(get_redis_client)
 ):
@@ -817,7 +779,7 @@ async def toggle_model(
 
 @router.get("/models/stats/summary")
 async def get_model_stats(
-    user: Dict = Depends(require_admin),
+    user: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """

@@ -19,9 +19,15 @@ from pydantic import BaseModel
 from litellm_credit_system import CreditSystem
 from byok_manager import BYOKManager
 from litellm_api import get_user_id
+from auth_dependencies import require_admin_user
 
 logger = logging.getLogger(__name__)
 
+# Every route under /admin is an operator surface: the model catalog, tier access, tier markups and
+# platform-wide usage analytics. Each one takes `require_admin_user` (the console's standard admin gate:
+# session role admin/system_admin) as its FIRST dependency, so a non-admin gets 403 before any database
+# work or body validation. `get_user_id` accepts any authenticated caller and is only for the user-facing
+# routes. tests/unit/test_model_admin_authz.py fails if an /admin route is added without the gate.
 router = APIRouter(prefix="/api/v1/models", tags=["Model Management"])
 
 
@@ -367,6 +373,7 @@ async def list_categorized_models(
 
 @router.get("/admin/models")
 async def list_all_models_admin(
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -442,13 +449,13 @@ async def list_all_models_admin(
 @router.post("/admin/models")
 async def create_model(
     model: ModelCreate,
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
     Create a new model entry (admin only)
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         model_id = await db_pool.fetchval(
@@ -489,13 +496,13 @@ async def create_model(
 async def update_model(
     model_id: str,
     update: ModelUpdate,
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
     Update model entry (admin only)
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         # Build dynamic update query
@@ -583,13 +590,13 @@ async def update_model(
 @router.delete("/admin/models/{model_id}")
 async def delete_model(
     model_id: str,
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
     Delete model entry (admin only)
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         result = await db_pool.execute(
@@ -619,14 +626,12 @@ async def delete_model(
 
 @router.get("/admin/models/analytics")
 async def get_model_analytics(
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
     Get usage statistics for models (admin only)
     """
-    # TODO: Add admin role check
-
     try:
         # Get model usage stats from credit_transactions
         stats = await db_pool.fetch(
@@ -693,7 +698,7 @@ async def get_model_analytics(
 async def assign_models_to_tier(
     tier_code: str,
     model_ids: List[str],
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -702,13 +707,13 @@ async def assign_models_to_tier(
     Args:
         tier_code: Tier code (trial, starter, professional, enterprise)
         model_ids: List of model IDs to assign
-        user_id: Admin user ID
+        admin: Session user, verified admin by require_admin_user
         db_pool: Database connection pool
 
     Returns:
         Success response with count of assigned models
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         # Get tier ID
@@ -763,7 +768,7 @@ async def assign_models_to_tier(
 async def remove_model_from_tier(
     tier_code: str,
     model_id: str,
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -772,13 +777,13 @@ async def remove_model_from_tier(
     Args:
         tier_code: Tier code
         model_id: Model identifier
-        user_id: Admin user ID
+        admin: Session user, verified admin by require_admin_user
         db_pool: Database connection pool
 
     Returns:
         Success response
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         result = await db_pool.execute(
@@ -811,7 +816,7 @@ async def remove_model_from_tier(
 async def update_model_tier_access(
     model_id: str,
     tier_assignments: Dict[str, bool],
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -820,13 +825,13 @@ async def update_model_tier_access(
     Args:
         model_id: Model identifier
         tier_assignments: Dict mapping tier_code -> enabled (e.g., {"trial": true, "starter": false})
-        user_id: Admin user ID
+        admin: Session user, verified admin by require_admin_user
         db_pool: Database connection pool
 
     Returns:
         Success response with updated tier count
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         # Get model
@@ -877,7 +882,7 @@ async def update_model_tier_access(
 @router.get("/admin/tiers/{tier_code}/models")
 async def get_tier_models(
     tier_code: str,
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -885,14 +890,12 @@ async def get_tier_models(
 
     Args:
         tier_code: Tier code
-        user_id: Admin user ID
+        admin: Session user, verified admin by require_admin_user
         db_pool: Database connection pool
 
     Returns:
         List of models with tier-specific pricing
     """
-    # TODO: Add admin role check
-
     try:
         query = """
             SELECT
@@ -944,7 +947,7 @@ async def update_model_markup(
     tier_code: str,
     model_id: str,
     markup_multiplier: float = Query(..., ge=0.0, le=10.0),
-    user_id: str = Depends(get_user_id),
+    admin: Dict = Depends(require_admin_user),
     db_pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
@@ -954,13 +957,13 @@ async def update_model_markup(
         tier_code: Tier code
         model_id: Model identifier
         markup_multiplier: Pricing multiplier (1.0 = base cost, 1.5 = 50% markup)
-        user_id: Admin user ID
+        admin: Session user, verified admin by require_admin_user
         db_pool: Database connection pool
 
     Returns:
         Success response with new markup
     """
-    # TODO: Add admin role check
+    user_id = admin.get("user_id")
 
     try:
         result = await db_pool.execute(

@@ -63,7 +63,7 @@ def _build_database_url() -> str:
         db = os.getenv("POSTGRES_DB", "unicorn_db")
         return f"postgresql://{user}:{pwd}@{host}:{port}/{db}"
     # Fallback to legacy hardcoded value (preserves prior behavior on UC-Pro)
-    return "postgresql://unicorn:REMOVED@unicorn-postgresql:5432/unicorn_db"
+    return f"postgresql://unicorn:{os.environ['POSTGRES_PASSWORD']}@unicorn-postgresql:5432/unicorn_db"
 
 
 # Database connection

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from payment_methods_manager import PaymentMethodsManager
 from dependencies import get_current_user
+from billing_org_identity import resolve_billing_org
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +125,12 @@ async def list_payment_methods(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago. No customer yet (e.g. exempt/founder
+        # Resolve the selected organization before any billing lookup. No customer yet (e.g. exempt/founder
         # users, or anyone who has never been set up for billing) is NOT an error
         # for a LIST endpoint — return a clean empty list (200) so the UI shows a
         # "no payment methods on file" empty state instead of a red error toast.
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        org_id = await resolve_billing_org(user.get("user", user), user)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             return PaymentMethodsListResponse(
                 payment_methods=[],
@@ -186,8 +188,9 @@ async def create_setup_intent(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        # Resolve the selected organization before any billing lookup
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -195,8 +198,9 @@ async def create_setup_intent(
             )
 
         # Create SetupIntent
-        metadata = request.metadata if request else {}
+        metadata = dict(request.metadata or {}) if request else {}
         metadata["user_email"] = user_email
+        metadata["org_id"] = org_id
 
         result = await pm_manager.create_setup_intent(
             stripe_customer_id=stripe_customer_id,
@@ -246,8 +250,9 @@ async def set_default_payment_method(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        # Resolve the selected organization before any billing lookup
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -311,8 +316,9 @@ async def remove_payment_method(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        # Resolve the selected organization before any billing lookup
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -381,8 +387,9 @@ async def update_billing_address(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        # Resolve the selected organization before any billing lookup
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -444,8 +451,9 @@ async def get_upcoming_invoice(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        # Resolve the selected organization before any billing lookup
+        org_id = await resolve_billing_org(user.get("user", user), user)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -501,8 +509,9 @@ async def get_payment_method_details(
                 detail="User email not found"
             )
 
-        # Get Stripe customer ID from Lago
-        stripe_customer_id = await pm_manager.get_stripe_customer_id(user_email)
+        # Resolve the selected organization before any billing lookup
+        org_id = await resolve_billing_org(user.get("user", user), user)
+        stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -510,7 +519,9 @@ async def get_payment_method_details(
             )
 
         # Get payment method details
-        details = await pm_manager.get_payment_method_details(payment_method_id)
+        details = await pm_manager.get_payment_method_details(
+            payment_method_id, stripe_customer_id=stripe_customer_id
+        )
 
         if not details:
             raise HTTPException(

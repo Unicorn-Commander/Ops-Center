@@ -10,6 +10,8 @@ import asyncpg
 from typing import Optional
 import logging
 
+from key_encryption import decrypt_if_encrypted
+
 logger = logging.getLogger(__name__)
 
 # Database connection parameters
@@ -50,7 +52,7 @@ async def get_credential_from_db(key: str) -> Optional[str]:
         )
 
         await conn.close()
-        return result
+        return decrypt_if_encrypted(result)
 
     except Exception as e:
         logger.warning(f"Failed to get credential '{key}' from database: {e}")

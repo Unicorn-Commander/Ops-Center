@@ -81,7 +81,17 @@ KEYCLOAK_DB_HOST = os.getenv("KEYCLOAK_DB_HOST") or "keycloak-db"
 KEYCLOAK_DB_PORT = int(os.getenv("KEYCLOAK_DB_PORT") or "5432")
 KEYCLOAK_DB_NAME = os.getenv("KEYCLOAK_DB_NAME") or "keycloak"
 KEYCLOAK_DB_USER = os.getenv("KEYCLOAK_DB_USER") or "keycloak"
-KEYCLOAK_DB_PASSWORD = os.getenv("KEYCLOAK_DB_PASSWORD") or "keycloak_secure_password_2025"
+KEYCLOAK_DB_PASSWORD = os.getenv("KEYCLOAK_DB_PASSWORD") or ""
+if not KEYCLOAK_DB_PASSWORD:
+    # No source default: the old one was a real (now rotated) credential. The direct-DB
+    # read-only fallback below is disabled until the env provides the password.
+    logger.warning("KEYCLOAK_DB_PASSWORD is not set; the Keycloak direct-DB fallback is disabled")
+
+
+def _require_keycloak_db_password() -> str:
+    if not KEYCLOAK_DB_PASSWORD:
+        raise RuntimeError("Keycloak direct-DB fallback disabled: KEYCLOAK_DB_PASSWORD is not set")
+    return KEYCLOAK_DB_PASSWORD
 
 
 async def get_all_users_from_db() -> List[Dict[str, Any]]:
@@ -98,7 +108,7 @@ async def get_all_users_from_db() -> List[Dict[str, Any]]:
         host=KEYCLOAK_DB_HOST,
         port=KEYCLOAK_DB_PORT,
         user=KEYCLOAK_DB_USER,
-        password=KEYCLOAK_DB_PASSWORD,
+        password=_require_keycloak_db_password(),
         database=KEYCLOAK_DB_NAME,
     )
     try:
@@ -243,7 +253,7 @@ async def get_realm_session_config_from_db() -> Optional[Dict[str, Any]]:
         host=KEYCLOAK_DB_HOST,
         port=KEYCLOAK_DB_PORT,
         user=KEYCLOAK_DB_USER,
-        password=KEYCLOAK_DB_PASSWORD,
+        password=_require_keycloak_db_password(),
         database=KEYCLOAK_DB_NAME,
     )
     try:

@@ -12,6 +12,8 @@ import subprocess
 from datetime import datetime
 import logging
 
+from key_encryption import decrypt_if_encrypted, encrypt_if_plaintext
+
 logger = logging.getLogger(__name__)
 
 # Audit logging for config writes. Imported defensively so this module still
@@ -176,6 +178,14 @@ PLATFORM_SETTINGS = {
         "test_connection": True
     },
 
+    "SILICONFLOW_API_KEY": {
+        "description": "SiliconFlow API key — cloud bge-m3 embedding + rerank failover/overflow for the infinity proxy",
+        "category": "inference",
+        "is_secret": True,
+        "required": False,
+        "test_connection": False
+    },
+
     # ------------------------------------------------------------------
     # Scalar platform-config keys (non-credential).
     #
@@ -302,7 +312,7 @@ def get_current_env_value(key: str) -> Optional[str]:
         conn.close()
 
         if result:
-            return result['value']
+            return decrypt_if_encrypted(result['value'])
 
     except Exception as e:
         # If database fails, fall back to environment
@@ -457,8 +467,10 @@ async def update_platform_settings(
         for key, value in update.settings.items():
             config = PLATFORM_SETTINGS[key]
 
-            # Update environment variable (immediate effect in current process)
+            # Keep the live process value plaintext; encrypt only durable storage.
             os.environ[key] = value
+
+            stored_value = encrypt_if_plaintext(value) if config['is_secret'] else value
 
             # Store in database (persistent across restarts)
             cursor.execute("""
@@ -467,8 +479,10 @@ async def update_platform_settings(
                 ON CONFLICT (key)
                 DO UPDATE SET
                     value = EXCLUDED.value,
+                    category = EXCLUDED.category,
+                    is_secret = EXCLUDED.is_secret,
                     updated_at = CURRENT_TIMESTAMP
-            """, (key, value, config['category'], config['is_secret']))
+            """, (key, stored_value, config['category'], config['is_secret']))
 
             updated_count += 1
 
@@ -509,19 +523,20 @@ async def update_platform_settings(
         restart_warning = None
         if update.restart_required:
             try:
-                result = subprocess.run(
-                    ["docker", "restart", "ops-center-direct"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
+                # Restart AFTER this response is delivered. Restarting synchronously
+                # here kills the container mid-request -> Starlette "No response
+                # returned" -> the client receives an HTML 500 ("Unexpected token
+                # '<'"). Detach + brief delay so the 200 goes out first, then the
+                # docker daemon restarts the container. (Credentials are read from
+                # the DB at runtime and don't strictly need a restart at all.)
+                subprocess.Popen(
+                    ["sh", "-c", "sleep 3 && docker restart ops-center-direct"],
+                    start_new_session=True,
                 )
-                if result.returncode == 0:
-                    restart_output = "Container restart initiated successfully"
-                    restart_warning = "Container is restarting. This page may disconnect briefly."
-                else:
-                    restart_output = f"Error: {result.stderr}"
+                restart_output = "Container restart scheduled"
+                restart_warning = "Container will restart in a few seconds; this page may disconnect briefly."
             except Exception as e:
-                logger.error(f"Failed to restart container: {e}")
+                logger.error(f"Failed to schedule container restart: {e}")
                 restart_output = f"Error: {str(e)}"
 
         return {

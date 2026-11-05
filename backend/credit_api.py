@@ -45,15 +45,15 @@ async def get_current_user_from_request(request: Request):
         sys.path.insert(0, '/app')
 
     # Import sessions from server module
-    from redis_session import RedisSessionManager
+    from redis_session import redis_session_manager
     import os
 
     # Get Redis connection (same as server.py)
     redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-    # Initialize session manager
-    sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+    # Reuse the startup-configured session manager.
+    sessions = redis_session_manager
 
     # Get session token from cookie
     session_token = request.cookies.get("session_token")

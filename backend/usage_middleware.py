@@ -93,7 +93,7 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
             if '/app' not in sys.path:
                 sys.path.insert(0, '/app')
 
-            from redis_session import RedisSessionManager
+            from redis_session import redis_session_manager
 
             session_token = request.cookies.get("session_token")
             if not session_token:
@@ -102,7 +102,7 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
             redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
             redis_port = int(os.getenv("REDIS_PORT", "6379"))
 
-            sessions = RedisSessionManager(host=redis_host, port=redis_port, password=os.getenv("REDIS_PASSWORD"))
+            sessions = redis_session_manager
             user_data = sessions.get(session_token)
 
             if not user_data:

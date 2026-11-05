@@ -36,7 +36,10 @@ from ai_model_manager import ai_model_manager, ModelSettingsUpdate, ModelDownloa
 from storage_manager import storage_backup_manager, StorageInfo, BackupConfig, BackupInfo, BackupStatus
 from extension_manager import extension_manager, ExtensionInstallRequest, ExtensionActionRequest, ExtensionConfigUpdate
 from log_manager import log_manager, LogFilter, LogExportRequest
-from auth_manager import auth_manager, UserCreate, UserUpdate, PasswordChange, LoginCredentials, APIKeyCreate
+from auth_manager import (
+    auth_manager, UserCreate, UserUpdate, PasswordChange, LoginCredentials, APIKeyCreate,
+    require_local_auth_enabled,
+)
 from hardware_info import hardware_detector
 from update_manager import github_update_manager
 from fastapi.responses import RedirectResponse
@@ -133,6 +136,7 @@ from routers.granite_keys import router as granite_keys_router
 
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 from routers.inference_proxy import router as inference_proxy_router
+from routers.audio_proxy import router as audio_proxy_router
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
@@ -194,6 +198,9 @@ from routers.umami import router as umami_dashboard_router
 
 # Website Uptime Monitor (January 2026)
 from routers.website_monitor import router as website_monitor_router
+
+# Fleet Map (live fleet topology pushed by the bigboy fleet-map collector) - September 2026
+from fleet_map_api import router as fleet_map_router
 
 # Alerts Management API (January 2026)
 from routers.alerts_api import router as alerts_router
@@ -814,6 +821,9 @@ csrf_protect, csrf_middleware_factory = create_csrf_protection(
         "/api/v1/internal/llm/",  # Gateway local-pricing preflight - service-key m2m, not forms
         "/api/v1/uuda/",  # UUDA control plane
         "/api/v1/branding/config",  # Public runtime branding endpoint (no auth required)
+        "/api/v1/fleet/ingest",  # Fleet Map collector push - bearer-token m2m (fleet_map_api), not forms
+        "/api/v1/public/",  # Public unauthenticated surfaces (pricing, beta signup) - no session, so no double-submit cookie exists
+        "/mail/",  # Listmonk opt-in/unsubscribe pages proxied for anonymous subscribers
     },
     sessions_store=sessions,
     cookie_secure=COOKIE_SECURE
@@ -961,12 +971,15 @@ async def startup_event():
 
         # Create Redis client
         redis_url = os.getenv('REDIS_URL', f"redis://{os.getenv('REDIS_HOST', 'unicorn-redis')}:{os.getenv('REDIS_PORT', '6379')}")
-        redis_client = aioredis.from_url(
-            redis_url,
-            encoding="utf-8",
-            decode_responses=True
-        )
-        logger.info(f"Connecting to Redis at: {redis_url}")
+        redis_kwargs = {
+            "encoding": "utf-8",
+            "decode_responses": True,
+        }
+        if os.getenv("REDIS_PASSWORD"):
+            redis_kwargs["password"] = os.getenv("REDIS_PASSWORD")
+        redis_client = aioredis.from_url(redis_url, **redis_kwargs)
+        # Do not log REDIS_URL verbatim: it may contain an embedded password.
+        logger.info("Connecting to Redis for the credit system")
         await redis_client.ping()  # Test connection
         logger.info("Redis client connected")
 
@@ -976,6 +989,21 @@ async def startup_event():
         app.state.db_pool = db_pool  # Store for cleanup
         app.state.redis_client = redis_client  # Store for cleanup
         logger.info("LiteLLM credit system initialized successfully")
+
+        # Start durable post-delivery settlement retries. This is intentionally
+        # after schema self-heal. Org billing keeps its own per-call connections:
+        # OrgCreditIntegration never releases pooled connections, so handing it
+        # db_pool would leak one pool connection per org-billed request.
+        try:
+            from billing_settlement import BillingReconciler
+            from org_credit_integration import get_org_credit_integration
+            if os.getenv("BILLING_RECONCILER_ENABLED", "true").lower() == "true":
+                app.state.billing_reconciler_task = asyncio.create_task(
+                    BillingReconciler(db_pool, credit_system, get_org_credit_integration()).run()
+                )
+                logger.info("Billing reconciler started (60s interval)")
+        except Exception as e:
+            logger.error(f"Failed to start billing reconciler: {e}")
 
         # Initialize BYOK manager (uses same db_pool)
         byok_manager = BYOKManager(db_pool)
@@ -1135,6 +1163,20 @@ async def shutdown_event():
 
     # Close credit system connections
     if hasattr(app.state, 'db_pool') and app.state.db_pool:
+        task = getattr(app.state, "billing_reconciler_task", None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        # Streaming settlements run as their own tasks; let any in flight finish
+        # (or reach the queue/spool) before the pool they may use goes away.
+        try:
+            from billing_settlement import wait_for_background_settlements
+            await wait_for_background_settlements(timeout=5.0)
+        except Exception as e:
+            logger.error(f"Error waiting for streaming settlements: {e}")
         try:
             await app.state.db_pool.close()
             logger.info("PostgreSQL connection pool closed")
@@ -1382,6 +1424,7 @@ logger.info("Granite API Keys endpoints registered at /api/v1/granite-keys")
 
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 app.include_router(inference_proxy_router)
+app.include_router(audio_proxy_router)
 logger.info("Inference Proxy endpoints registered at /api/v1/inference")
 
 # GPU Compute Fabric Control Plane - April 2026
@@ -1522,6 +1565,10 @@ logger.info("Umami Dashboard API endpoints registered at /api/v1/umami")
 
 # Website Uptime Monitor (January 2026)
 app.include_router(website_monitor_router)
+
+# Fleet Map: POST /api/v1/fleet/ingest (bearer m2m) + admin GET /map, /map.js, /status
+app.include_router(fleet_map_router)
+logger.info("Fleet Map endpoints registered at /api/v1/fleet")
 logger.info("Website Monitor API endpoints registered at /api/v1/website-monitor")
 
 # Prometheus Monitoring API (Epic 3.1)
@@ -4383,6 +4430,8 @@ security = HTTPBearer()
 # Legacy JWT-based authentication (kept for backward compatibility if needed)
 async def get_current_user_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get current user from JWT token (legacy)"""
+    if not auth_manager.local_auth_enabled:
+        raise HTTPException(status_code=401, detail="Legacy local authentication is disabled")
     token = credentials.credentials
     user_info = auth_manager.verify_token(token)
 
@@ -4398,7 +4447,11 @@ async def require_admin_jwt(current_user: dict = Depends(get_current_user_jwt)):
     return current_user
 
 @app.post("/api/v1/auth/login")
-async def login(credentials: LoginCredentials, request: Request):
+async def login(
+    credentials: LoginCredentials,
+    request: Request,
+    _local_auth=Depends(require_local_auth_enabled),
+):
     """Login and get access token"""
     # Rate limiting check
     if RATE_LIMIT_ENABLED:
@@ -4895,7 +4948,12 @@ async def delete_user(user_id: str, current_user: dict = Depends(require_admin))
 
 # Password Management
 @app.post("/api/v1/auth/change-password")
-async def change_password(request: Request, password_change: PasswordChange, current_user: dict = Depends(get_current_user)):
+async def change_password(
+    request: Request,
+    password_change: PasswordChange,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Change current user's password
 
@@ -4946,7 +5004,7 @@ async def change_password(request: Request, password_change: PasswordChange, cur
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/auth/password-policy")
-async def get_password_policy():
+async def get_password_policy(_local_auth=Depends(require_local_auth_enabled)):
     """
     Get password policy requirements and examples
 
@@ -4957,7 +5015,10 @@ async def get_password_policy():
 
 # API Key Management
 @app.get("/api/v1/api-keys")
-async def get_api_keys(current_user: dict = Depends(get_current_user)):
+async def get_api_keys(
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Get current user's API keys"""
     try:
         keys = auth_manager.get_user_api_keys(current_user["user_id"])
@@ -4966,7 +5027,11 @@ async def get_api_keys(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/api-keys")
-async def create_api_key(key_create: APIKeyCreate, current_user: dict = Depends(get_current_user)):
+async def create_api_key(
+    key_create: APIKeyCreate,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Create a new API key"""
     try:
         api_key = auth_manager.create_api_key(current_user["user_id"], key_create)
@@ -4975,7 +5040,11 @@ async def create_api_key(key_create: APIKeyCreate, current_user: dict = Depends(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/api-keys/{key_id}")
-async def delete_api_key(key_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_api_key(
+    key_id: str,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Delete an API key"""
     try:
         success = auth_manager.delete_api_key(key_id, current_user["user_id"])
@@ -4987,7 +5056,10 @@ async def delete_api_key(key_id: str, current_user: dict = Depends(get_current_u
 
 # Session Management
 @app.get("/api/v1/sessions")
-async def get_sessions(current_user: dict = Depends(get_current_user)):
+async def get_sessions(
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Get current user's sessions"""
     try:
         sessions = auth_manager.get_user_sessions(current_user["user_id"])
@@ -4996,7 +5068,11 @@ async def get_sessions(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/sessions/{session_id}")
-async def revoke_session(session_id: str, current_user: dict = Depends(get_current_user)):
+async def revoke_session(
+    session_id: str,
+    _local_auth=Depends(require_local_auth_enabled),
+    current_user: dict = Depends(get_current_user),
+):
     """Revoke a session"""
     try:
         success = auth_manager.revoke_session(session_id, current_user["user_id"])
@@ -5412,7 +5488,10 @@ async def get_my_organizations(current_user: dict = Depends(get_current_user)):
 
 # User Registration endpoint
 @app.post("/auth/register")
-async def register_user(request: Request):
+async def register_user(
+    request: Request,
+    _local_auth=Depends(require_local_auth_enabled),
+):
     """
     Public user registration endpoint for UC-Cloud signup form.
     Creates user locally, in Keycloak, creates organization, and subscribes to Lago.

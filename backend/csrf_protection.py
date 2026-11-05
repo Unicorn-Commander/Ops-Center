@@ -117,6 +117,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/logout",
             "/api/v1/byok/",  # BYOK API endpoints (Bring Your Own Key)
             "/api/v1/llm/",  # LLM API endpoints (used by Brigade, Open-WebUI, etc.)
+            "/api/v1/audio/",  # OpenAI-compatible TTS (uc_ key)
+            "/api/v1/mcp/",  # MCP metering (uc_ key)
+            "/v1/",  # OpenAI-compatible /v1 alias
             "/api/v1/metered/",  # Metered compute proxy/bridge (apps + voice plane, API-key/session auth)
             "/api/v1/internal/llm/",  # Gateway local-pricing preflight (service-key m2m)
             "/api/v1/email-provider/",  # Email provider API (used for testing providers)

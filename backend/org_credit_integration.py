@@ -9,6 +9,7 @@ Author: Integration Team
 Date: November 12, 2025
 """
 
+import json
 import logging
 from typing import Optional, Dict, Tuple
 import asyncpg
@@ -168,6 +169,18 @@ class OrgCreditIntegration:
                         remaining = allocation['remaining']
                         return False, org_id, f"Insufficient credits. Available: {remaining/1000:.3f}, needed: {credits_needed:.3f}"
                     else:
+                        # No per-user allocation. If the org has never been provisioned
+                        # for org billing (no credit pool either), it is a personal /
+                        # auto-created org: return org_id=None so the caller falls back
+                        # to individual user_credits billing (the path mint-via-token
+                        # funds with trial credits). Orgs WITH a pool keep the hard 402 —
+                        # a member without an allocation is a real org-billing config issue.
+                        pool = await conn.fetchrow(
+                            "SELECT org_id FROM organization_credit_pools WHERE org_id = $1",
+                            org_id
+                        )
+                        if pool is None:
+                            return False, None, "Organization has no credit pool; using individual credits"
                         return False, org_id, "No credit allocation found for user in organization"
 
             finally:
@@ -220,8 +233,13 @@ class OrgCreditIntegration:
                 logger.error(f"Cannot deduct credits: user {user_id} has no organization")
                 return False, None, None
 
-            # Convert float credits to integer milicredits
-            credits_used_int = int(credits_used * 1000)
+            # Convert float credits to integer milicredits.
+            # int() TRUNCATES, which made every charge below 0.001 credits free
+            # (a measured 0.000693-credit call billed zero). Round instead, and
+            # never let a real, non-zero charge round down to nothing.
+            credits_used_int = int(round(credits_used * 1000))
+            if credits_used_int == 0 and credits_used > 0:
+                credits_used_int = 1
 
             # Build metadata
             metadata = {
@@ -233,19 +251,51 @@ class OrgCreditIntegration:
                 'cost': credits_used
             }
 
+            if request_id is not None:
+                request_id = str(request_id)  # credit_usage_attribution.request_id is varchar
+
             # Deduct credits using stored function
             conn = await self._get_db_connection()
             try:
-                success = await conn.fetchval(
-                    "SELECT deduct_credits($1, $2, $3, $4, $5, $6, $7)",
-                    org_id,
-                    user_id,
-                    credits_used_int,
-                    "llm_inference",  # service_type
-                    service_name,     # service_name (model)
-                    request_id,
-                    metadata
-                )
+                # Idempotency: deduct_credits() writes request_id into
+                # credit_usage_attribution in the same transaction as the
+                # deduction. Taking a transaction-scoped advisory lock on the
+                # request_id first makes "already charged?" and the charge one
+                # atomic unit: a concurrent settler of the same request (the
+                # reconciler in another worker, a retry that outlived its
+                # backoff) waits here, then sees the committed attribution row.
+                async with conn.transaction():
+                    if request_id:
+                        await conn.execute(
+                            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                            f"billing:request:{request_id}",
+                        )
+                        already_recorded = await conn.fetchval(
+                            "SELECT EXISTS (SELECT 1 FROM credit_usage_attribution WHERE request_id = $1)",
+                            request_id,
+                        )
+                        if already_recorded:
+                            remaining = await conn.fetchval(
+                                """SELECT (allocated_credits - used_credits)
+                                   FROM user_credit_allocations
+                                   WHERE org_id = $1 AND user_id = $2""",
+                                org_id, user_id,
+                            )
+                            logger.info(
+                                f"Org charge already recorded for request_id={request_id} "
+                                f"(org {org_id}, user {user_id}); not deducting again"
+                            )
+                            return True, org_id, remaining
+                    success = await conn.fetchval(
+                        "SELECT deduct_credits($1, $2, $3, $4, $5, $6, $7)",
+                        org_id,
+                        user_id,
+                        credits_used_int,
+                        "llm_inference",  # service_type
+                        service_name,     # service_name (model)
+                        request_id,
+                        json.dumps(metadata)  # p_request_metadata is jsonb: asyncpg needs a JSON string, not a dict
+                    )
 
                 if success:
                     # Get remaining credits
