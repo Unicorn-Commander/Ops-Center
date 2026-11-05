@@ -22,7 +22,7 @@ services:
     environment:
       - CREDIT_MARKUP_MULTIPLIER=1.25
       - LOCAL_PRICING_ENABLED=true
-      - ELEVENLABS_API_KEY=REMOVED
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
       # Colonel -> Brigade wiring: when BRIGADE_API_URL is set, Brigade owns
       # agent memory (Colonel skips its embedded graph, COLONEL_LOCAL_GRAPH=auto)
       # and the Colonel registers itself as a Brigade agent using the PAT below.
@@ -31,12 +31,12 @@ services:
       - EXTERNAL_HOST=${EXTERNAL_HOST:-magicunicorn.dev}
       - EXTERNAL_PROTOCOL=https
       - OAUTH_CLIENT_ID=ops-center
-      - OPS_CENTER_OAUTH_CLIENT_SECRET=REMOVED
+      - OPS_CENTER_OAUTH_CLIENT_SECRET=${OPS_CENTER_OAUTH_CLIENT_SECRET:?OPS_CENTER_OAUTH_CLIENT_SECRET must be set in the stack .env}
       - KEYCLOAK_URL=${KEYCLOAK_URL:-http://unicorn-keycloak:8080}
       - KEYCLOAK_REALM=uchub
       - KEYCLOAK_ADMIN_USER=admin
-      - KEYCLOAK_ADMIN_PASSWORD=REMOVED-KEYCLOAK_ADMIN_PASSWORD
-      - SESSION_SECRET_KEY=REMOVED-SESSION_SECRET_KEY
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set in the stack .env}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:?SESSION_SECRET_KEY must be set in the stack .env}
       # Stripe Configuration
       # /signup-flow.html is not a route and not a file — it resolved to the SPA
       # index shell, so a customer who had just paid landed on a page that said
@@ -46,7 +46,7 @@ services:
       # Lago Configuration
       - LAGO_API_URL=http://unicorn-lago-api:3000
       - LAGO_PUBLIC_URL=${LAGO_PUBLIC_URL:-https://billing-api.magicunicorn.dev}
-      - LAGO_API_KEY=${LAGO_API_KEY:-2cf90633-b407-4be4-bf8d-a26424c7f2bb}
+      - LAGO_API_KEY=${LAGO_API_KEY:-}
       # Redis for sessions
       - REDIS_HOST=${REDIS_HOST:-unicorn-redis}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@${REDIS_HOST:-unicorn-redis}:6379/0
@@ -54,10 +54,10 @@ services:
       - POSTGRES_HOST=${POSTGRES_HOST:-unicorn-postgresql}
       - POSTGRES_PORT=5432
       - POSTGRES_USER=unicorn
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-REMOVED}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in the stack .env}
       - POSTGRES_DB=unicorn_db
       # Credential Encryption Key (Fernet)
-      - EREMOVED
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in the stack .env}
       # Branding (override) — point at The Colonel for unicorncommander.ai
       - BRANDING_LOGO_URL=/logos/The_Colonel.webp
       - BRANDING_COMPANY_NAME=Unicorn Commander
@@ -67,12 +67,12 @@ services:
       - BRANDING_PRIMARY_COLOR=#7c3aed
       - BRANDING_THEME=unicorn
       # BYOK Encryption Key (for user API keys)
-      - BREMOVED
+      - BYOK_ENCRYPTION_KEY=${BYOK_ENCRYPTION_KEY:?BYOK_ENCRYPTION_KEY must be set in the stack .env}
       # Federation Node Agent
       - FEDERATION_NODE_ID=${FEDERATION_NODE_ID:-uc-magicunicorn}
       - FEDERATION_NODE_NAME=${FEDERATION_NODE_NAME:-Magic Unicorn Home Server}
       - FEDERATION_ENDPOINT_URL=${FEDERATION_ENDPOINT_URL:-https://magicunicorn.dev}
-      - FEDERATION_KEY=${FEDERATION_KEY:-REMOVED-FEDERATION_KEY}
+      - FEDERATION_KEY=${FEDERATION_KEY:-}
       - FEDERATION_PEERS=${FEDERATION_PEERS:-https://unicorncommander.ai}
       - FEDERATION_ROLES=${FEDERATION_ROLES:-inference,billing}
       - FEDERATION_REGION=${FEDERATION_REGION:-home-lan}
