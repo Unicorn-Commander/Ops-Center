@@ -234,7 +234,7 @@ Forgejo integration is configured in Ops-Center's backend:
 
 ```python
 base_url = "https://git.unicorncommander.ai"
-admin_token = "REMOVED"  # Admin API token
+admin_token = "${FORGEJO_API_TOKEN}"  # Admin API token
 timeout = 10  # Request timeout in seconds
 ```
 
@@ -362,7 +362,7 @@ nslookup git.unicorncommander.ai
 **Diagnosis**:
 ```bash
 # Check Forgejo API directly
-curl -H "Authorization: token REMOVED" \
+curl -H "Authorization: token ${FORGEJO_API_TOKEN}" \
   https://git.unicorncommander.ai/api/v1/orgs
 
 # Check Ops-Center logs
@@ -378,7 +378,7 @@ docker logs ops-center-direct | grep forgejo
 **Solution**:
 ```bash
 # Verify admin token is valid
-curl -H "Authorization: token REMOVED" \
+curl -H "Authorization: token ${FORGEJO_API_TOKEN}" \
   https://git.unicorncommander.ai/api/v1/user
 
 # Check organization visibility settings in Forgejo admin panel
