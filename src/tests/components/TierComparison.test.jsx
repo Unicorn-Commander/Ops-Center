@@ -411,7 +411,7 @@ describe.skip('UpgradeFlow Component', () => {
 
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/v1/subscriptions/upgrade'),
+        expect.stringContaining('/api/v1/billing/subscriptions/checkout'),
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('professional'),

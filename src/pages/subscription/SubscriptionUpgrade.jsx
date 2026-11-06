@@ -218,7 +218,9 @@ export default function SubscriptionUpgrade() {
     setCheckoutLoading(true);
 
     try {
-      const res = await fetch('/api/v1/subscriptions/upgrade', {
+      // Paid upgrades open a Stripe Checkout session; the org is provisioned only after the
+      // webhook confirms payment. POST /api/v1/subscriptions/upgrade is fail-closed (402) by design.
+      const res = await fetch('/api/v1/billing/subscriptions/checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -226,8 +228,8 @@ export default function SubscriptionUpgrade() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          plan_code: plan.id,
-          effective_date: 'immediate'
+          tier_id: plan.tier_code || plan.plan_code || plan.id,
+          billing_cycle: billingCycle === 'annual' ? 'yearly' : 'monthly'
         })
       });
 
