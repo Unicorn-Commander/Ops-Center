@@ -126,6 +126,12 @@ export const routes = {
           roles: ['admin', 'power_user', 'user', 'viewer'],
           name: 'API Keys (BYOK)'
         },
+        connectYourAi: {
+          path: '/admin/account/connect-your-ai',
+          component: 'ConnectYourAI',
+          roles: ['admin', 'power_user', 'user', 'viewer'],
+          name: 'Connect your AI'
+        },
         notificationSettings: {
           path: '/admin/account/notification-settings',
           component: 'NotificationSettings',
