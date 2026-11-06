@@ -60,20 +60,24 @@ def default_public_avatar_dir() -> Path:
 
 
 def public_base_url() -> Optional[str]:
-    """Absolute public origin for this deployment, without a trailing slash.
+    """Absolute public (browser-facing) origin for this deployment, no trailing slash.
 
-    ``OPS_CENTER_URL`` is intentionally not consulted: its default is the
-    in-cluster address, which is not a URL another app can render.
+    ``EXTERNAL_HOST`` (with ``EXTERNAL_PROTOCOL``, default https) is the origin a
+    browser or another app renders, so it wins. ``FEDERATION_ENDPOINT_URL`` is a
+    service-to-service address and is used only when ``EXTERNAL_HOST`` is unset and
+    it is https (on dogfood it is ``http://<tailnet-host>:8084``, which no browser
+    outside the fleet can load — measured 2026-11-06). ``OPS_CENTER_URL`` is never
+    consulted: its default is the in-cluster address.
     """
-    federation = (os.getenv("FEDERATION_ENDPOINT_URL") or "").strip().rstrip("/")
-    if federation.startswith(("http://", "https://")):
-        return federation
+    host = (os.getenv("EXTERNAL_HOST") or "").strip().strip("/")
+    if host:
+        protocol = (os.getenv("EXTERNAL_PROTOCOL") or "https").strip() or "https"
+        return f"{protocol}://{host}".rstrip("/")
 
-    host = (os.getenv("EXTERNAL_HOST") or "").strip()
-    if not host:
-        return None
-    protocol = (os.getenv("EXTERNAL_PROTOCOL") or "https").strip() or "https"
-    return f"{protocol}://{host}".rstrip("/")
+    federation = (os.getenv("FEDERATION_ENDPOINT_URL") or "").strip().rstrip("/")
+    if federation.startswith("https://"):
+        return federation
+    return None
 
 
 def avatar_version(image_bytes: bytes) -> str:

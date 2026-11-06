@@ -109,7 +109,9 @@ class FakePictureAdmin:
 @pytest.fixture
 def avatar_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(avatar_storage, "AVATAR_DIR", tmp_path)
-    monkeypatch.setenv("FEDERATION_ENDPOINT_URL", PUBLIC_BASE)
+    monkeypatch.setenv("EXTERNAL_HOST", PUBLIC_BASE.split("://", 1)[1])
+    monkeypatch.setenv("EXTERNAL_PROTOCOL", "https")
+    monkeypatch.delenv("FEDERATION_ENDPOINT_URL", raising=False)
     return tmp_path
 
 
@@ -248,19 +250,22 @@ async def test_reader_skips_our_own_avatar_url(monkeypatch):
     )
 
 
-def test_public_base_url_uses_configured_origin_only(monkeypatch):
-    monkeypatch.setenv("FEDERATION_ENDPOINT_URL", "https://dogfood.example.com/")
-    monkeypatch.setenv("EXTERNAL_HOST", "other.example.com")
-    monkeypatch.setenv("EXTERNAL_PROTOCOL", "http")
+def test_public_base_url_prefers_the_browser_origin(monkeypatch):
+    # dogfood shape (measured 2026-11-06): federation = internal http address, EXTERNAL_HOST = the console
+    monkeypatch.setenv("FEDERATION_ENDPOINT_URL", "http://fleet-node.example.net:8084")
+    monkeypatch.setenv("EXTERNAL_HOST", "console.example.com")
+    monkeypatch.setenv("EXTERNAL_PROTOCOL", "https")
     monkeypatch.setenv("OPS_CENTER_URL", "http://ops-center-direct:8084")
+    assert public_base_url() == "https://console.example.com"
+
+    # no EXTERNAL_HOST: an https federation URL is acceptable, an http one is not
+    monkeypatch.delenv("EXTERNAL_HOST", raising=False)
+    monkeypatch.setenv("FEDERATION_ENDPOINT_URL", "https://dogfood.example.com/")
     assert public_base_url() == "https://dogfood.example.com"
+    monkeypatch.setenv("FEDERATION_ENDPOINT_URL", "http://fleet-node.example.net:8084")
+    assert public_base_url() is None
 
     monkeypatch.delenv("FEDERATION_ENDPOINT_URL", raising=False)
-    monkeypatch.setenv("EXTERNAL_HOST", "prod.example.com")
-    monkeypatch.setenv("EXTERNAL_PROTOCOL", "https")
-    assert public_base_url() == "https://prod.example.com"
-
-    monkeypatch.delenv("EXTERNAL_HOST", raising=False)
     monkeypatch.setenv("OPS_CENTER_URL", "http://ops-center-direct:8084")
     assert public_base_url() is None
 
