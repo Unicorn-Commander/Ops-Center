@@ -176,7 +176,7 @@ VALUES (
     'Solo',
     'Hosted bring-your-own-AI workspace for one seat at $49/month. Every app in the suite; the model bill stays with your AI provider. Price locked while the workspace stays paid, with a 30-day money-back guarantee for the Founding 100.',
     49.00,
-    490.00,
+    NULL,  -- no annual for Solo (2026-11-06; annual comes with list pricing)
     TRUE,
     FALSE,
     2,

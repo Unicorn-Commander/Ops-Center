@@ -13,6 +13,7 @@
 -- UPDATE subscription_tiers
 --    SET tier_name = 'Suite - BYOK',
 --        description = 'Use your own API keys for OpenAI, Anthropic, Google, etc. No platform markup. Priority support included.',
+--        price_yearly = 490.00,  -- stripe_price_yearly: the archived 'byok annual' price id (reactivate it in Stripe first)
 --        updated_by = 'pricing_ladder_20261106_rollback'
 --  WHERE tier_code = 'byok';
 -- COMMIT;
@@ -27,11 +28,15 @@ UPDATE subscription_tiers
 
 UPDATE subscription_tiers
    SET tier_name = 'Solo',
+       price_yearly = NULL,
+       stripe_price_yearly = NULL,
        description = 'Hosted bring-your-own-AI workspace for one seat at $49/month. Every app in the suite; the model bill stays with your AI provider. Price locked while the workspace stays paid, with a 30-day money-back guarantee for the Founding 100.',
        updated_by = 'pricing_ladder_20261106'
  WHERE tier_code = 'byok'
    AND (
        tier_name IS DISTINCT FROM 'Solo'
+       OR price_yearly IS NOT NULL
+       OR stripe_price_yearly IS NOT NULL
        OR description IS DISTINCT FROM 'Hosted bring-your-own-AI workspace for one seat at $49/month. Every app in the suite; the model bill stays with your AI provider. Price locked while the workspace stays paid, with a 30-day money-back guarantee for the Founding 100.'
    );
 

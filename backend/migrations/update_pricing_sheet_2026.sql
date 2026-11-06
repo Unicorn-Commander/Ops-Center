@@ -47,7 +47,8 @@ UPDATE subscription_tiers
 -- ── Solo: all apps + MCP, bring your own model keys. Price 30 -> 49. ──
 UPDATE subscription_tiers
    SET price_monthly = 49.00,
-       price_yearly  = 490.00,
+       price_yearly  = NULL,  -- no annual for Solo (2026-11-06)
+       stripe_price_yearly = NULL,
        tier_name     = 'Solo',
        description   = 'Hosted bring-your-own-AI workspace for one seat at $49/month. Every app in the suite; the model bill stays with your AI provider. Price locked while the workspace stays paid, with a 30-day money-back guarantee for the Founding 100.',
        sort_order    = 3,
