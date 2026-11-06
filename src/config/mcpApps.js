@@ -63,7 +63,7 @@ export const PROD_MCP_APPS = [
     slug: 'contact-ops',
     name: 'Contact-Ops',
     url: 'https://mcp.contacts.unicorncommander.ai/mcp',
-    oauth: false,
+    oauth: true,
     dogfoodUrl: 'https://mcp.contacts.magicunicorn.dev/mcp',
     tokenLocation: 'Contact-Ops → Profile → tokens'
   }
