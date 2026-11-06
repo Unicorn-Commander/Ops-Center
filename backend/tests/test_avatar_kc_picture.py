@@ -34,8 +34,11 @@ else:
 from kc_picture_sync import (  # noqa: E402
     avatar_version,
     build_avatar_url,
+    build_public_avatar_url,
     local_avatar_index,
     public_base_url,
+    read_owner_id,
+    write_owner_id,
 )
 from PIL import Image  # noqa: E402
 from starlette.datastructures import UploadFile  # noqa: E402
@@ -420,3 +423,252 @@ async def test_live_admin_put_logs_status_only(monkeypatch, caplog):
     assert PLANTED_SECRET not in caplog.text
     assert "test-admin-token" not in caplog.text
     assert "HTTP 403" in caplog.text
+
+
+def _console_public(avatar_dir, monkeypatch):
+    public = avatar_dir / "public"
+    public.mkdir()
+    monkeypatch.setenv("PUBLIC_AVATAR_DIR", str(public))
+    return public
+
+
+@pytest.mark.asyncio
+async def test_profile_and_admin_save_stamps_picture_and_avatar_url(avatar_dir, fake_admin, monkeypatch):
+    """Both console uploads call save_console_avatar. The URL the page reads stays /avatars/."""
+    public = _console_public(avatar_dir, monkeypatch)
+    content = b"console-avatar-bytes"
+    saved = await avatar_storage.save_console_avatar(
+        email="fictional.user@example.com",
+        user_id=USER_ID,
+        content=content,
+        ext=".png",
+    )
+
+    import hashlib
+    digest = hashlib.md5(content).hexdigest()[:12]
+    filename = f"fictional.user_{digest}.png"
+    assert saved["filename"] == filename
+    assert saved["relative_url"] == f"/avatars/{filename}"
+    assert saved["public_url"] == f"{PUBLIC_BASE}/avatars/{filename}"
+    assert saved["keycloak_updated"] is True
+    assert (public / filename).read_bytes() == content
+    assert "/api/v1/users/" not in saved["public_url"]
+
+    user_id, rep = fake_admin.puts[0]
+    assert user_id == USER_ID
+    assert rep["username"] == "fictional.user"
+    assert rep["attributes"]["picture"] == [saved["public_url"]]
+    assert rep["attributes"]["avatar_url"] == [saved["public_url"]]
+    assert rep["attributes"]["subscription_tier"] == ["member"]
+    assert read_owner_id(avatar_dir, filename) == USER_ID
+
+    await avatar_storage.save_console_avatar(
+        email="fictional.user@example.com",
+        user_id=USER_ID,
+        content=content,
+        ext=".PNG",
+    )
+    assert len(fake_admin.puts) == 1
+
+
+@pytest.mark.asyncio
+async def test_profile_save_resolves_email_when_session_has_no_subject(avatar_dir, fake_admin, monkeypatch):
+    _console_public(avatar_dir, monkeypatch)
+
+    async def get_user_by_email(email):
+        assert email == "fictional.user@example.com"
+        return {"id": USER_ID, "email": email}
+
+    fake_admin.get_user_by_email = get_user_by_email
+    saved = await avatar_storage.save_console_avatar(
+        email="fictional.user@example.com",
+        user_id="",
+        content=b"face-bytes",
+        ext=".png",
+    )
+    assert saved["keycloak_updated"] is True
+    assert saved["relative_url"].startswith("/avatars/fictional.user_")
+    assert fake_admin.puts[0][0] == USER_ID
+    assert fake_admin.puts[0][1]["attributes"]["picture"] == [saved["public_url"]]
+    assert fake_admin.puts[0][1]["attributes"]["avatar_url"] == [saved["public_url"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["put", "status"])
+async def test_console_keycloak_failure_does_not_break_save(avatar_dir, fake_admin, monkeypatch, failure, caplog):
+    public = _console_public(avatar_dir, monkeypatch)
+    fake_admin.fail = failure
+    with caplog.at_level(logging.WARNING, logger="avatar_storage"):
+        saved = await avatar_storage.save_console_avatar(
+            email="fictional.user@example.com",
+            user_id=USER_ID,
+            content=b"console-avatar-bytes",
+            ext=".jpeg",
+        )
+    assert saved["keycloak_updated"] is False
+    assert saved["relative_url"].startswith("/avatars/")
+    assert any(public.iterdir())
+    assert "Keycloak picture sync failed" in caplog.text
+    assert PLANTED_SECRET not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_console_save_without_public_base_still_saves(avatar_dir, fake_admin, monkeypatch, caplog):
+    public = _console_public(avatar_dir, monkeypatch)
+    monkeypatch.delenv("FEDERATION_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("EXTERNAL_HOST", raising=False)
+    monkeypatch.setenv("OPS_CENTER_URL", "http://ops-center-direct:8084")
+    with caplog.at_level(logging.WARNING, logger="avatar_storage"):
+        saved = await avatar_storage.save_console_avatar(
+            email="fictional.user@example.com",
+            user_id=USER_ID,
+            content=b"console-avatar-bytes",
+            ext=".png",
+        )
+    assert saved["keycloak_updated"] is False
+    assert saved["public_url"] is None
+    assert saved["relative_url"].startswith("/avatars/")
+    assert any(public.iterdir())
+    assert fake_admin.puts == []
+    assert "No public base URL configured" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_admin_remove_clears_picture_and_avatar_url(avatar_dir, fake_admin, monkeypatch):
+    public = _console_public(avatar_dir, monkeypatch)
+    saved = await avatar_storage.save_console_avatar(
+        email="fictional.user@example.com",
+        user_id=USER_ID,
+        content=b"console-avatar-bytes",
+        ext=".png",
+    )
+    assert (public / saved["filename"]).exists()
+    assert read_owner_id(avatar_dir, saved["filename"]) == USER_ID
+
+    cleared = await avatar_storage.clear_console_avatar(
+        user_id=USER_ID,
+        email="fictional.user@example.com",
+    )
+    assert cleared["keycloak_updated"] is True
+    attrs = fake_admin.puts[-1][1]["attributes"]
+    assert "picture" not in attrs
+    assert "avatar_url" not in attrs
+    assert attrs["subscription_tier"] == ["member"]
+    # The file stays so an old token does not 404. The owner record does not,
+    # so a later backfill cannot put the attributes back.
+    assert (public / saved["filename"]).is_file()
+    assert read_owner_id(avatar_dir, saved["filename"]) is None
+
+    await avatar_storage.clear_console_avatar(user_id=USER_ID, email="fictional.user@example.com")
+    assert len(fake_admin.puts) == 2
+
+
+@pytest.mark.asyncio
+async def test_backfill_finds_public_avatars_and_apply_is_idempotent(tmp_path, capsys):
+    storage = tmp_path / "storage"
+    public = tmp_path / "public"
+    storage.mkdir()
+    public.mkdir()
+    image = b"stored-avatar-bytes"
+    (storage / f"{OTHER_ID}.png").write_bytes(image)
+    owned_name = "fictional.user_abc123def456.png"
+    orphan_name = "orphan.user_ffffffffffff.jpg"
+    (public / owned_name).write_bytes(b"public-avatar-bytes")
+    (public / orphan_name).write_bytes(b"orphan-bytes")
+    (public / "notes.txt").write_bytes(b"ignore")
+    write_owner_id(storage, owned_name, USER_ID)
+
+    fake = FakePictureAdmin()
+    fake.users[OTHER_ID] = _user()
+    fake.users[OTHER_ID]["id"] = OTHER_ID
+    public_url = build_public_avatar_url(owned_name, base=PUBLIC_BASE)
+    stored_url = _expected_url(OTHER_ID, image)
+    orphan_url = f"{PUBLIC_BASE}/avatars/{orphan_name}"
+
+    dry = await backfill_script.backfill_kc_picture(
+        apply=False,
+        avatar_dir=storage,
+        admin=fake,
+        base_url=PUBLIC_BASE,
+        public_dir=public,
+    )
+    out = capsys.readouterr().out
+    assert dry == 0
+    assert fake.puts == []
+    assert f"{OTHER_ID}, , {stored_url}" in out
+    assert f"{USER_ID}, , {public_url}" in out
+    assert f"{orphan_name}, , {orphan_url}" in out
+    assert "notes.txt" not in out
+    assert PLANTED_SECRET not in out
+
+    applied = await backfill_script.backfill_kc_picture(
+        apply=True,
+        avatar_dir=storage,
+        admin=fake,
+        base_url=PUBLIC_BASE,
+        public_dir=public,
+    )
+    captured = capsys.readouterr()
+    assert applied == 0
+    by_user = {user_id: rep for user_id, rep in fake.puts}
+    assert set(by_user) == {USER_ID, OTHER_ID}
+    assert by_user[USER_ID]["attributes"]["picture"] == [public_url]
+    assert by_user[USER_ID]["attributes"]["avatar_url"] == [public_url]
+    assert by_user[OTHER_ID]["attributes"]["picture"] == [stored_url]
+    assert by_user[OTHER_ID]["attributes"]["avatar_url"] == [stored_url]
+    assert PLANTED_SECRET not in captured.out
+    assert PLANTED_SECRET not in captured.err
+
+    again = await backfill_script.backfill_kc_picture(
+        apply=True,
+        avatar_dir=storage,
+        admin=fake,
+        base_url=PUBLIC_BASE,
+        public_dir=public,
+    )
+    assert again == 0
+    assert len(fake.puts) == 2
+
+
+def test_console_endpoints_call_shared_storage():
+    server = (BACKEND / "server.py").read_text(encoding="utf-8")
+    admin = (BACKEND / "user_management_api.py").read_text(encoding="utf-8")
+    profile = server[server.index("async def update_profile"): server.index("async def validate_key_endpoint")]
+    assert "save_console_avatar(" in profile
+    assert "set_user_picture" not in profile
+    upload = admin[admin.index("async def admin_set_user_avatar"): admin.index("async def admin_remove_user_avatar")]
+    assert "save_console_avatar(" in upload
+    assert "set_user_picture" not in upload
+    removal = admin[admin.index("async def admin_remove_user_avatar"):]
+    assert "clear_console_avatar(" in removal
+    assert "set_user_picture" not in removal
+
+
+def test_avatar_router_paths_do_not_match_console_uploads():
+    console = {
+        "/api/v1/auth/profile",
+        "/api/v1/admin/users/{user_id_or_email}/avatar",
+    }
+    paths = {route.path for route in avatar_storage.router.routes}
+    assert paths.isdisjoint(console)
+    assert "/api/v1/users/{user_id}/avatar" in paths
+
+
+def test_backfill_cli_lists_public_dir_without_calling_keycloak(tmp_path, monkeypatch):
+    public = tmp_path / "public"
+    public.mkdir()
+    (public / "fictional.user_abc123def456.png").write_bytes(b"x")
+
+    def explode():
+        raise AssertionError("live keycloak client must not be constructed")
+
+    monkeypatch.setattr(backfill_script, "LiveKeycloakPictureAdmin", explode)
+    monkeypatch.delenv("FEDERATION_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("EXTERNAL_HOST", raising=False)
+    monkeypatch.setenv("OPS_CENTER_URL", "http://ops-center-direct:8084")
+    code = backfill_script.main([
+        "--avatar-dir", str(tmp_path / "missing-storage"),
+        "--public-dir", str(public),
+    ])
+    assert code == 2
+    assert backfill_script.parse_args([]).public_dir is None
