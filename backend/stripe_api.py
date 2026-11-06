@@ -4,8 +4,8 @@ Provides REST API for payment processing and subscription management
 """
 
 from fastapi import APIRouter, HTTPException, Request, Depends, Header
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field
+from typing import Any, Optional, List
 import logging
 from datetime import datetime
 import os
@@ -22,6 +22,8 @@ from redis_session import redis_session_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
+
+OPS_CENTER_STRIPE_SUITE = os.getenv("OPS_CENTER_STRIPE_SUITE", "unicorn-commander")
 
 
 # Request/Response Models
@@ -72,6 +74,12 @@ class CancelSubscriptionRequest(BaseModel):
 class UpgradeSubscriptionRequest(BaseModel):
     new_tier_id: str
     billing_cycle: str = "monthly"
+
+
+class SeatQuantityRequest(BaseModel):
+    """Number of $25 extra Team seats to bill on the subscription."""
+
+    quantity: int = Field(..., ge=1)
 
 
 class WebhookResponse(BaseModel):
@@ -130,6 +138,174 @@ async def get_current_billing_org(request: Request) -> str:
 async def get_writable_billing_org(request: Request) -> str:
     """Require billing authority within the selected active organization."""
     return await _resolve_request_billing_org(request, require_write=True)
+
+
+def _stripe_value(value: Any, key: str, default: Any = None) -> Any:
+    """Read a Stripe mapping or StripeObject without assuming one SDK shape."""
+    if isinstance(value, dict):
+        return value.get(key, default)
+    try:
+        return value.get(key, default)
+    except (AttributeError, TypeError):
+        return getattr(value, key, default)
+
+
+def _stripe_mapping(value: Any) -> Any:
+    """Convert a StripeObject recursively when a mapping is required."""
+    if isinstance(value, dict):
+        return value
+    to_dict = getattr(value, "to_dict", None) or getattr(value, "_to_dict_recursive", None)
+    if callable(to_dict):
+        return to_dict()
+    return value
+
+
+def _stripe_price_id(item: Any) -> Optional[str]:
+    price = _stripe_value(item, "price", {})
+    if isinstance(price, str):
+        return price
+    price_id = _stripe_value(price, "id")
+    return str(price_id) if price_id else None
+
+
+async def get_owner_billing_org(request: Request) -> str:
+    """Resolve the selected org and require its persisted owner membership."""
+    resolved_org = await get_writable_billing_org(request)
+    bare_org = str(resolved_org)[4:] if str(resolved_org).startswith("org_") else str(resolved_org)
+
+    session_token = request.cookies.get("session_token")
+    session = redis_session_manager.get(session_token) if session_token else None
+    user = (session or {}).get("user") or {}
+    subject = user.get("sub") or user.get("user_id") or user.get("id")
+    if not subject:
+        raise HTTPException(status_code=403, detail="Organization owner role required")
+
+    conn = await asyncpg.connect(
+        host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "unicorn"),
+        password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+        database=os.getenv("POSTGRES_DB", "unicorn_db"),
+    )
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT o.plan_tier, o.stripe_customer_id
+            FROM organizations o
+            JOIN organization_members om
+              ON om.org_id = o.id AND om.user_id = $2 AND om.role = 'owner'
+            WHERE o.id::text = $1 AND o.status = 'active'
+            """,
+            bare_org,
+            subject,
+        )
+    finally:
+        await conn.close()
+
+    if not row:
+        raise HTTPException(status_code=403, detail="Organization owner role required")
+    if row["plan_tier"] != "founder_workspace":
+        raise HTTPException(
+            status_code=403,
+            detail="Additional seats are available only for Team workspaces",
+        )
+    return bare_org
+
+
+@router.post("/seats")
+async def update_extra_seat_quantity(
+    seat_request: SeatQuantityRequest,
+    org_id: str = Depends(get_owner_billing_org),
+):
+    """Add or update the Team workspace's extra-seat subscription item."""
+    conn = await asyncpg.connect(
+        host=os.getenv("POSTGRES_HOST", "unicorn-postgresql"),
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        user=os.getenv("POSTGRES_USER", "unicorn"),
+        password=os.getenv("POSTGRES_PASSWORD", "unicorn"),
+        database=os.getenv("POSTGRES_DB", "unicorn_db"),
+    )
+    try:
+        price_row = await conn.fetchrow(
+            """
+            SELECT tf.feature_value AS extra_seat_stripe_price
+            FROM subscription_tiers st
+            JOIN tier_features tf ON tf.tier_id = st.id
+            WHERE st.tier_code = 'founder_workspace'
+              AND tf.feature_key = 'extra_seat_stripe_price'
+              AND tf.enabled = TRUE
+            """
+        )
+    finally:
+        await conn.close()
+
+    seat_price_id = price_row["extra_seat_stripe_price"] if price_row else None
+    if not seat_price_id:
+        raise HTTPException(status_code=503, detail="Extra-seat pricing is not configured")
+
+    customer = await stripe_integration.get_customer_for_org(org_id)
+    if not customer:
+        raise HTTPException(status_code=409, detail="Organization billing customer not found")
+    customer_id = _stripe_value(customer, "id")
+    if not customer_id:
+        raise HTTPException(status_code=409, detail="Organization billing customer identity unavailable")
+
+    try:
+        subscriptions = stripe.Subscription.list(customer=customer_id, status="all", limit=100)
+    except stripe.error.StripeError:
+        logger.exception("Stripe subscription lookup failed for seat update")
+        raise HTTPException(status_code=503, detail="Subscription lookup unavailable") from None
+
+    if _stripe_value(subscriptions, "has_more", False):
+        raise HTTPException(status_code=409, detail="Subscription history requires reconciliation")
+    active_subscriptions = [
+        subscription
+        for subscription in (_stripe_value(subscriptions, "data", []) or [])
+        if _stripe_value(subscription, "status") in {"active", "trialing"}
+    ]
+    if len(active_subscriptions) != 1:
+        raise HTTPException(status_code=409, detail="Exactly one active Team subscription is required")
+
+    subscription = active_subscriptions[0]
+    metadata = _stripe_mapping(_stripe_value(subscription, "metadata", {}) or {})
+    if metadata.get("suite") != OPS_CENTER_STRIPE_SUITE:
+        raise HTTPException(status_code=409, detail="Subscription belongs to another suite")
+    validate_subscription_org(_stripe_mapping(subscription), org_id, customer_id)
+
+    subscription_id = _stripe_value(subscription, "id")
+    items = _stripe_value(_stripe_value(subscription, "items", {}), "data", []) or []
+    matching_items = [item for item in items if _stripe_price_id(item) == str(seat_price_id)]
+    if len(matching_items) > 1:
+        raise HTTPException(status_code=409, detail="Multiple extra-seat items require reconciliation")
+
+    item_update = {"quantity": seat_request.quantity}
+    if matching_items:
+        item_id = _stripe_value(matching_items[0], "id")
+        if not item_id:
+            raise HTTPException(status_code=409, detail="Extra-seat item identity unavailable")
+        item_update["id"] = item_id
+    else:
+        item_update["price"] = str(seat_price_id)
+
+    try:
+        stripe.Subscription.modify(subscription_id, items=[item_update])
+    except stripe.error.StripeError:
+        logger.exception("Stripe seat quantity update failed for org %s", org_id)
+        raise HTTPException(status_code=502, detail="Unable to update seat quantity") from None
+
+    logger.info(
+        "Updated extra-seat quantity for org %s subscription %s to %s",
+        org_id,
+        subscription_id,
+        seat_request.quantity,
+    )
+    return {
+        "success": True,
+        "message": "Extra seat quantity updated",
+        "org_id": org_id,
+        "subscription_id": subscription_id,
+        "quantity": seat_request.quantity,
+    }
 
 
 @router.post("/subscriptions/checkout", response_model=CheckoutSessionResponse)

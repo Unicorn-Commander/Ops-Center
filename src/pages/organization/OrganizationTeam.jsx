@@ -58,6 +58,8 @@ export default function OrganizationTeam() {
     firstName: '',
     lastName: ''
   });
+  const [seatOffer, setSeatOffer] = useState(null);
+  const [addingSeat, setAddingSeat] = useState(false);
 
   // Toast notification
   const [toast, setToast] = useState({
@@ -157,21 +159,69 @@ export default function OrganizationTeam() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inviteData)
+        body: JSON.stringify({ email: inviteData.email, role: inviteData.role })
       });
 
+      const result = await response.json().catch(() => ({}));
+      const errorDetails = result.detail && typeof result.detail === 'object'
+        ? result.detail
+        : result;
+      if (response.status === 402 && errorDetails.add_seat_url) {
+        // Team includes five seats; max_seats already includes any quantity
+        // previously purchased, so the next request grows that quantity by one.
+        const currentExtraSeats = Number(
+          errorDetails.extra_seats
+          || errorDetails.quantity
+          || Math.max(0, Number(errorDetails.max_seats || 5) - 5)
+        );
+        setSeatOffer({
+          ...errorDetails,
+          quantity: currentExtraSeats + 1
+        });
+        showToast(errorDetails.detail || 'This workspace is at its seat limit', 'error');
+        return;
+      }
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to invite member');
+        throw new Error(errorDetails.detail || result.message || 'Failed to invite member');
       }
 
-      showToast('Invitation sent successfully');
+      showToast(result.message || 'Invitation sent successfully');
       setInviteModalOpen(false);
       setInviteData({ email: '', role: 'member', firstName: '', lastName: '' });
+      setSeatOffer(null);
       fetchMembers();
       fetchStats();
     } catch (error) {
       showToast(error.message, 'error');
+    }
+  };
+
+  const handleAddSeat = async () => {
+    if (!seatOffer) return;
+
+    setAddingSeat(true);
+    try {
+      const response = await fetch('/api/v1/billing/seats', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: seatOffer.quantity || 1 })
+      });
+      const result = await response.json().catch(() => ({}));
+      const errorDetails = result.detail && typeof result.detail === 'object'
+        ? result.detail
+        : result;
+      if (!response.ok) {
+        throw new Error(errorDetails.detail || result.message || 'Failed to add seat');
+      }
+
+      showToast(result.message || 'Seat added successfully');
+      setSeatOffer(null);
+      await Promise.all([fetchMembers(), fetchStats()]);
+    } catch (error) {
+      showToast(error.message, 'error');
+    } finally {
+      setAddingSeat(false);
     }
   };
 
@@ -327,7 +377,10 @@ export default function OrganizationTeam() {
               Refresh
             </button>
             <button
-              onClick={() => setInviteModalOpen(true)}
+              onClick={() => {
+                setSeatOffer(null);
+                setInviteModalOpen(true);
+              }}
               className={`flex items-center gap-2 px-4 py-2 ${theme.button} rounded-lg transition-colors`}
             >
               <UserPlusIcon className="h-4 w-4" />
@@ -523,6 +576,20 @@ export default function OrganizationTeam() {
                 </select>
               </div>
             </div>
+            {seatOffer && (
+              <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+                <p className={`text-sm ${theme.text.secondary} mb-3`}>
+                  {seatOffer.detail || 'This workspace needs another seat before you can invite this member.'}
+                </p>
+                <button
+                  onClick={handleAddSeat}
+                  disabled={addingSeat}
+                  className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {addingSeat ? 'Adding seat...' : 'Add a seat ($25/month)'}
+                </button>
+              </div>
+            )}
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setInviteModalOpen(false)}
