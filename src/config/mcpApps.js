@@ -16,6 +16,7 @@ export const PROD_MCP_APPS = [
     name: 'Email-Ops',
     url: 'https://email-ops.unicorncommander.ai/api/v1/mcp',
     oauth: true,
+    dogfoodUrl: 'https://email-ops.magicunicorn.dev/api/v1/mcp',
     tokenLocation: 'Email-Ops → Settings → API tokens'
   },
   {
@@ -23,6 +24,7 @@ export const PROD_MCP_APPS = [
     name: 'Project-Ops',
     url: 'https://api.projectops.unicorncommander.ai/api/v1/mcp',
     oauth: true,
+    dogfoodUrl: 'https://api.projectops.magicunicorn.dev/api/v1/mcp',
     tokenLocation: 'Project-Ops → Settings → API tokens'
   },
   {
@@ -30,6 +32,7 @@ export const PROD_MCP_APPS = [
     name: 'Customer-Ops',
     url: 'https://api.customer-ops.unicorncommander.ai/api/v1/mcp',
     oauth: true,
+    dogfoodUrl: 'https://customer-ops.magicunicorn.dev/api/v1/mcp',
     tokenLocation: 'Customer-Ops → Settings → API tokens'
   },
   {
@@ -37,6 +40,7 @@ export const PROD_MCP_APPS = [
     name: 'Accounting-Ops',
     url: 'https://accounting-ops.unicorncommander.ai/mcp/',
     oauth: true,
+    dogfoodUrl: 'https://accounting-ops.magicunicorn.dev/mcp/',
     tokenLocation: 'Accounting-Ops → Settings → Personal access tokens'
   },
   {
@@ -44,6 +48,7 @@ export const PROD_MCP_APPS = [
     name: 'Tax-Planning-Ops',
     url: 'https://api.taxplanningops.unicorncommander.ai/api/v1/mcp',
     oauth: true,
+    dogfoodUrl: 'https://api.taxplanningops.magicunicorn.dev/api/v1/mcp',
     tokenLocation: 'Tax-Planning-Ops → Connect your AI'
   },
   {
@@ -51,6 +56,7 @@ export const PROD_MCP_APPS = [
     name: 'Meeting-Ops',
     url: 'https://meeting-ops.unicorncommander.ai/mcp/',
     oauth: false,
+    dogfoodUrl: 'https://meetingops.magicunicorn.dev/mcp',
     tokenLocation: 'Meeting-Ops → Settings → Personal access tokens'
   },
   {
