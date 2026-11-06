@@ -12,6 +12,7 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../components/Toast';
 import { safeFind } from '../../utils/safeArrayUtils';
+import { normalizeTierFeatures } from '../../utils/tierFeatureNormalizer';
 
 // Animation variants
 const itemVariants = {
@@ -191,7 +192,7 @@ export default function SubscriptionPlan() {
       }
 
       const data = await res.json();
-      setTierFeatures(data);
+      setTierFeatures(normalizeTierFeatures(data));
       console.log('Loaded tier features:', data);
     } catch (error) {
       console.error('Error loading tier features:', error);
@@ -225,6 +226,7 @@ export default function SubscriptionPlan() {
         priceYearly: plan.price_yearly,
         period: 'month',
         description: plan.description || '',
+        features: Array.isArray(plan.features) ? plan.features : [],
         popular: plan.is_popular || false  // Backend flags the recommended tier
       }));
 
@@ -248,17 +250,21 @@ export default function SubscriptionPlan() {
   };
 
   // Helper function to get features for a tier
-  const getFeaturesForTier = (tierCode) => {
+  const getFeaturesForTier = (tierCode, planFeatures = []) => {
     // Use safeFind to handle potentially undefined tierFeatures
     const tierData = safeFind(tierFeatures, t => t.tier_code === tierCode);
-    if (!tierData || !tierData.features) return [];
+    const features = Array.isArray(tierData?.features)
+      ? tierData.features
+      : Array.isArray(planFeatures)
+      ? planFeatures
+      : [];
 
     // Return features in display format with included: true
-    return tierData.features.map(f => ({
-      name: f.feature_name,
+    return features.map(feature => ({
+      name: typeof feature === 'string' ? feature : feature?.feature_name || feature?.name || '',
       included: true,
-      category: f.category,
-      description: f.description
+      category: feature?.category,
+      description: feature?.description
     }));
   };
 
@@ -751,8 +757,8 @@ export default function SubscriptionPlan() {
 
                 <div className="text-center mb-6">
                   <p className={`text-3xl font-bold ${theme.text.primary}`}>
-                    {billingCycle === 'yearly' && Number(plan.priceYearly) > 0
-                      ? formatCurrency(plan.priceYearly)
+                    {billingCycle === 'yearly'
+                      ? plan.priceYearly == null ? '—' : formatCurrency(plan.priceYearly)
                       : formatCurrency(plan.price)}
                   </p>
                   <p className={`text-sm ${theme.text.secondary}`}>
@@ -768,7 +774,7 @@ export default function SubscriptionPlan() {
                 </div>
 
                 <div className="space-y-2 mb-6">
-                  {(getFeaturesForTier(plan.tier_code || plan.tier) || []).slice(0, 4).map((feature, index) => (
+                  {(getFeaturesForTier(plan.tier_code || plan.tier, plan.features) || []).slice(0, 4).map((feature, index) => (
                     <div key={index} className="flex items-start gap-2">
                       {feature.included ? (
                         <CheckCircleIcon className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />

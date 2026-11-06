@@ -14,6 +14,7 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { useToast } from '../../components/Toast';
 import { useNavigate } from 'react-router-dom';
+import { normalizeTierFeatures } from '../../utils/tierFeatureNormalizer';
 
 // Animation variants
 const containerVariants = {
@@ -160,7 +161,7 @@ export default function SubscriptionUpgrade() {
 
       if (featuresRes.ok) {
         const featuresData = await featuresRes.json();
-        setTierFeatures(featuresData);
+        setTierFeatures(normalizeTierFeatures(featuresData));
       }
 
     } catch (error) {
@@ -171,14 +172,18 @@ export default function SubscriptionUpgrade() {
     }
   };
 
-  const getFeaturesForTier = (tierCode) => {
+  const getFeaturesForTier = (tierCode, planFeatures = []) => {
     const tierData = tierFeatures.find(t => t.tier_code === tierCode);
-    if (!tierData || !tierData.features) return [];
+    const features = Array.isArray(tierData?.features)
+      ? tierData.features
+      : Array.isArray(planFeatures)
+      ? planFeatures
+      : [];
 
-    return tierData.features.map(f => ({
-      name: f.feature_name,
-      category: f.category,
-      description: f.description
+    return features.map(feature => ({
+      name: typeof feature === 'string' ? feature : feature?.feature_name || feature?.name || '',
+      category: feature?.category,
+      description: feature?.description
     }));
   };
 
@@ -472,11 +477,12 @@ export default function SubscriptionUpgrade() {
       >
         {plans.map((plan, index) => {
           const tierCode = plan.tier_code || plan.id;
-          const features = getFeaturesForTier(tierCode);
+          const features = getFeaturesForTier(tierCode, plan.features);
           const isCurrentPlan = currentSubscription && (currentSubscription.tier_code || currentSubscription.tier) === tierCode;
           const isPopular = plan.is_popular || tierCode === 'managed';
-          const price = billingCycle === 'annual' && plan.price_yearly ? plan.price_yearly : plan.price_monthly;
-          const displayPrice = billingCycle === 'annual' ? price / 12 : price;
+          const displayPrice = billingCycle === 'annual'
+            ? plan.price_yearly == null ? null : plan.price_yearly / 12
+            : plan.price_monthly;
 
           return (
             <motion.div
@@ -511,14 +517,14 @@ export default function SubscriptionUpgrade() {
                 </h3>
                 <div className="mb-4">
                   <span className={`text-4xl font-bold ${theme.text.primary}`}>
-                    {formatCurrency(displayPrice)}
+                    {displayPrice == null ? '—' : formatCurrency(displayPrice)}
                   </span>
                   <span className={`text-sm ${theme.text.secondary}`}>
                     /{billingCycle === 'annual' ? 'mo' : 'month'}
                   </span>
                 </div>
 
-                {billingCycle === 'annual' && plan.price_yearly && (
+                {billingCycle === 'annual' && plan.price_yearly != null && (
                   <p className="text-xs text-green-400">
                     {formatCurrency(plan.price_yearly)} billed annually
                   </p>
