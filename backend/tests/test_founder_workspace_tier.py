@@ -1,12 +1,12 @@
 """Focused regression tests for the founder workspace tier wiring."""
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 
 from my_apps_api import get_user_tier_features
 import org_api
@@ -80,16 +80,19 @@ async def test_founder_workspace_rejects_sixth_member(monkeypatch):
     monkeypatch.setattr(org_api, "_get_user_role_in_org", no_existing_member)
     monkeypatch.setattr(org_api, "get_db_connection", connection)
 
-    with pytest.raises(HTTPException) as exc_info:
-        await org_api.add_organization_member(
-            "00000000-0000-4000-8000-000000000001",
-            org_api.OrganizationMemberAdd(user_id="member-6@example.com"),
-            object(),
-        )
+    response = await org_api.add_organization_member(
+        "00000000-0000-4000-8000-000000000001",
+        org_api.OrganizationMemberAdd(user_id="member-6@example.com"),
+        object(),
+    )
 
-    assert exc_info.value.status_code == 400
-    assert "Extra seats are not self-serve yet" in str(exc_info.value.detail)
-    assert "6th member" in str(exc_info.value.detail)
+    assert response.status_code == 402
+    assert json.loads(response.body) == {
+        "detail": "Organization has reached its seat limit (5/5).",
+        "seats_used": 5,
+        "max_seats": 5,
+        "add_seat_url": "/api/v1/billing/seats/checkout",
+    }
     assert conn.insert_count == 0
     assert conn.closed is True
 

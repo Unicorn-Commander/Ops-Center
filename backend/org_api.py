@@ -4,6 +4,7 @@ Provides organization CRUD operations, member management, and settings
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 import logging
@@ -21,8 +22,14 @@ if '/app' not in sys.path:
 # than the orphaned org_manager JSON store. org_manager.py is intentionally left
 # in place (other modules may import it) but is no longer used here.
 
-# Import Keycloak user lookup
-from keycloak_integration import get_user_by_id
+# Import Keycloak user operations.  Invited users are keyed by their Keycloak
+# subject, which is the same identity stored in organization_members.
+from keycloak_integration import (
+    create_user as keycloak_create_user,
+    get_user_by_email,
+    get_user_by_id,
+    send_account_action_email,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/org", tags=["organizations"])
@@ -59,7 +66,8 @@ async def _get_org_row(conn, org_id: str) -> Optional[asyncpg.Record]:
             o.lago_customer_id,
             o.stripe_customer_id,
             COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' '))) AS tier_name,
-            COALESCE(st.team_seats, o.max_seats, 1) AS seat_cap
+            o.max_seats AS seat_cap,
+            COALESCE(st.team_seats, 1) AS included_seats
         FROM organizations o
         LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
         WHERE o.id::text = $1
@@ -98,8 +106,13 @@ async def _get_user_role_in_org(conn, org_id: str, user_id: str) -> Optional[str
 
 class OrganizationMemberAdd(BaseModel):
     """Request model for adding a member to organization"""
-    user_id: str
+    # ``user_id`` remains optional for the legacy caller.  The console uses
+    # email-based invitations and resolves the Keycloak subject below.
+    user_id: Optional[str] = None
+    email: Optional[str] = None
     role: str = "member"
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
 
 
 class OrganizationMemberRoleUpdate(BaseModel):
@@ -220,7 +233,7 @@ async def verify_org_access(request: Request, org_id: str, required_role: Option
 
     # Check required role if specified
     if required_role:
-        role_hierarchy = ["member", "billing_admin", "owner"]
+        role_hierarchy = ["member", "billing_admin", "admin", "owner"]
         user_role_level = role_hierarchy.index(user_role) if user_role in role_hierarchy else -1
         required_role_level = role_hierarchy.index(required_role) if required_role in role_hierarchy else 99
 
@@ -397,8 +410,9 @@ async def list_all_organizations(
                 o.id::text AS id,
                 o.name,
                 o.plan_tier,
-                o.status,
-                o.created_at,
+            o.status,
+            o.max_seats,
+            o.created_at,
                 o.lago_customer_id,
                 o.stripe_customer_id,
                 (SELECT COUNT(*) FROM organization_members m WHERE m.org_id = o.id) AS member_count,
@@ -938,27 +952,28 @@ async def add_organization_member(
     request: Request
 ):
     """
-    Add a new member to the organization
+    Add a member to the organization, optionally inviting by email.
 
     Args:
         org_id: Organization ID
-        member_data: User ID and role to assign
+        member_data: Legacy user ID or an email invitation and role
 
     Returns:
         Success confirmation
 
     Example:
         POST /api/v1/org/org_12345/members
-        Body: {"user_id": "newuser@example.com", "role": "member"}
+        Body: {"email": "member@example.com", "role": "member"}
         Response: {
             "success": true,
-            "message": "User added to organization",
-            "user_id": "newuser@example.com",
+            "message": "Invitation sent successfully",
+            "email": "member@example.com",
             "role": "member"
         }
     """
-    # Require owner role to add members
-    await verify_org_access(request, org_id, required_role="owner")
+    # Owners and organization admins may invite.  Billing admins can manage
+    # billing, but cannot change membership.
+    await verify_org_access(request, org_id, required_role="admin")
 
     conn = await get_db_connection()
     try:
@@ -967,31 +982,83 @@ async def add_organization_member(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
 
-        # Reject if user already a member
-        existing_role = await _get_user_role_in_org(conn, org_id, member_data.user_id)
-        if existing_role:
-            raise HTTPException(
-                status_code=400,
-                detail=f"User {member_data.user_id} already in organization {org_id}"
-            )
+        requested_email = (member_data.email or "").strip().lower() or None
+        legacy_user_id = (member_data.user_id or "").strip() or None
+        if not requested_email and not legacy_user_id:
+            raise HTTPException(status_code=422, detail="email or user_id is required")
 
+        # Use the persisted organization cap, not the tier catalog's original
+        # included-seat count.  max_seats is updated by the Stripe webhook when
+        # a Team workspace buys extra seats.
         member_count = await conn.fetchval(
             "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
             org_id,
         )
-        seat_cap = int(org["seat_cap"] or 1)
-        # Only the founder workspace tier enforces its seat allowance on this
-        # path; every other tier keeps today's behaviour (no cap here), so
-        # existing orgs on 1-seat comp tiers are not locked out of adding members.
-        if org["plan_tier"] == "founder_workspace" and int(member_count or 0) >= seat_cap:
-            # TODO(OC-founder-tier): add a Stripe quantity flow before allowing
-            # self-serve seats beyond the founder_workspace base allowance.
+        try:
+            seat_cap = int(org["max_seats"] or 1)
+        except (KeyError, TypeError):
+            # ``seat_cap`` keeps old unit fixtures and old records readable;
+            # deployed organizations use the max_seats column above.
+            seat_cap = int(org.get("seat_cap") or 1)
+        seats_used = int(member_count or 0)
+        if seats_used >= seat_cap:
+            return JSONResponse(
+                status_code=402,
+                content={
+                    "detail": (
+                        f"Organization has reached its seat limit ({seats_used}/{seat_cap})."
+                    ),
+                    "seats_used": seats_used,
+                    "max_seats": seat_cap,
+                    "add_seat_url": "/api/v1/billing/seats/checkout",
+                },
+            )
+
+        member_user_id = legacy_user_id
+        created_new_user = False
+        if requested_email and not legacy_user_id:
+            keycloak_user = await get_user_by_email(requested_email)
+            if keycloak_user:
+                member_user_id = keycloak_user.get("id") or keycloak_user.get("sub")
+                if not member_user_id:
+                    raise HTTPException(status_code=502, detail="Invited user identity unavailable")
+            else:
+                attributes = {
+                    "org_id": [str(org_id)],
+                    "org_name": [str(org["name"])],
+                    "org_role": [member_data.role],
+                }
+                created_user = await keycloak_create_user(
+                    email=requested_email,
+                    username=requested_email,
+                    first_name=member_data.firstName or "",
+                    last_name=member_data.lastName or "",
+                    attributes=attributes,
+                    email_verified=False,
+                )
+                if isinstance(created_user, dict):
+                    member_user_id = created_user.get("id") or created_user.get("sub")
+                else:
+                    member_user_id = created_user
+                if not member_user_id:
+                    raise HTTPException(status_code=502, detail="Unable to create invited user")
+
+                action_result = await send_account_action_email(
+                    str(member_user_id), ["UPDATE_PASSWORD", "VERIFY_EMAIL"]
+                )
+                if isinstance(action_result, dict) and action_result.get("success") is False:
+                    raise HTTPException(status_code=502, detail="Unable to send invitation email")
+                created_new_user = True
+
+        if not member_user_id:
+            raise HTTPException(status_code=422, detail="Could not identify invited user")
+
+        # Reject if the resolved Keycloak subject is already a member.
+        existing_role = await _get_user_role_in_org(conn, org_id, str(member_user_id))
+        if existing_role:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Team workspace includes 5 seats. Extra seats are not self-serve yet; "
-                    "contact support to add a 6th member."
-                ),
+                detail=f"User {member_user_id} already in organization {org_id}",
             )
 
         # Insert membership row
@@ -1001,17 +1068,19 @@ async def add_organization_member(
             VALUES ($1::uuid, $2, $3)
             """,
             org_id,
-            member_data.user_id,
+            str(member_user_id),
             member_data.role,
         )
 
-        logger.info(f"Added user {member_data.user_id} to org {org_id} with role {member_data.role}")
+        logger.info(f"Added user {member_user_id} to org {org_id} with role {member_data.role}")
 
         return {
             "success": True,
-            "message": "User added to organization",
-            "user_id": member_data.user_id,
-            "role": member_data.role
+            "message": "Invitation sent successfully" if requested_email else "User added to organization",
+            "user_id": str(member_user_id),
+            "email": requested_email,
+            "role": member_data.role,
+            "created": created_new_user,
         }
 
     except HTTPException:
