@@ -14,7 +14,7 @@ const MEASURED = [
   ['Accounting-Ops', 'https://accounting-ops.unicorncommander.ai/mcp/', true, 'Accounting-Ops → Settings → Personal access tokens'],
   ['Tax-Planning-Ops', 'https://api.taxplanningops.unicorncommander.ai/api/v1/mcp', true, 'Tax-Planning-Ops → Connect your AI'],
   ['Meeting-Ops', 'https://meeting-ops.unicorncommander.ai/mcp/', false, 'Meeting-Ops → Settings → Personal access tokens'],
-  ['Contact-Ops', 'https://mcp.contacts.unicorncommander.ai/mcp', false, 'Contact-Ops → Profile → tokens']
+  ['Contact-Ops', 'https://mcp.contacts.unicorncommander.ai/mcp', true, 'Contact-Ops → Profile → tokens']
 ];
 
 describe('PROD_MCP_APPS', () => {
