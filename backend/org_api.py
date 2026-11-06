@@ -1010,7 +1010,7 @@ async def add_organization_member(
                     ),
                     "seats_used": seats_used,
                     "max_seats": seat_cap,
-                    "add_seat_url": "/api/v1/billing/seats/checkout",
+                    "add_seat_url": "/api/v1/billing/seats",
                 },
             )
 

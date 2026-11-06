@@ -221,7 +221,7 @@ async def test_invite_over_cap_returns_seat_details(monkeypatch):
         "detail": "Organization has reached its seat limit (5/5).",
         "seats_used": 5,
         "max_seats": 5,
-        "add_seat_url": "/api/v1/billing/seats/checkout",
+        "add_seat_url": "/api/v1/billing/seats",
     }
     lookup.assert_not_awaited()
     assert connection.inserted is None
