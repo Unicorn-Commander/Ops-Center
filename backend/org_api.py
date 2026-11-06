@@ -478,13 +478,13 @@ async def create_organization(
 
     Example:
         POST /api/v1/org
-        Body: {"name": "Acme Corp", "plan_tier": "professional"}
+        Body: {"name": "Acme Corp", "plan_tier": "free"}
         Response: {
             "success": true,
             "organization": {
                 "id": "org_12345",
                 "name": "Acme Corp",
-                "plan_tier": "professional",
+                "plan_tier": "free",
                 "status": "active",
                 "created_at": "2025-10-28T10:30:00Z",
                 "owner": "admin@example.com",
@@ -492,9 +492,26 @@ async def create_organization(
             }
         }
     """
+    requested_tier = org_data.plan_tier.strip()
+
+    # Self-serve organization creation is always free. Any paid, managed, or
+    # invite-only tier must go through the existing platform-admin guard so a
+    # client bug cannot silently turn into an entitlement grant.
+    if requested_tier == "free":
+        user = await get_current_user(request)
+    else:
+        try:
+            user = await require_admin(request)
+        except HTTPException as exc:
+            if exc.status_code != 403:
+                raise
+            raise HTTPException(
+                status_code=403,
+                detail="Only platform admins may create organizations with a non-free plan_tier",
+            ) from exc
+
     # Get current user. Prefer the Keycloak subject UUID (matches how
     # organization_members.user_id is stored elsewhere) and fall back to email.
-    user = await get_current_user(request)
     user_id = user.get("id") or user.get("sub") or user.get("user_id") or user.get("email")
 
     if not user_id:
@@ -502,6 +519,17 @@ async def create_organization(
 
     conn = await get_db_connection()
     try:
+        if requested_tier != "free":
+            tier_row = await conn.fetchrow(
+                "SELECT tier_code FROM subscription_tiers WHERE tier_code = $1",
+                requested_tier,
+            )
+            if not tier_row:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown organization plan_tier '{requested_tier}'",
+                )
+
         # Reject duplicate org name (organizations.name has a UNIQUE constraint)
         existing = await conn.fetchrow(
             "SELECT 1 FROM organizations WHERE LOWER(name) = LOWER($1)",
@@ -523,7 +551,7 @@ async def create_organization(
                           lago_customer_id, stripe_customer_id
                 """,
                 org_data.name.strip(),
-                org_data.plan_tier,
+                requested_tier,
             )
 
             await conn.execute(
