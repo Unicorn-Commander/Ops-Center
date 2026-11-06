@@ -109,8 +109,14 @@ import redis.asyncio as aioredis
 from local_users_api import router as admin_local_users_router
 from platform_settings_api import router as platform_settings_router
 from user_management_api import router as user_management_router
-# TODO: Install Pillow dependency before enabling avatar storage
-# from avatar_storage import router as avatar_storage_router  # Avatar storage & caching
+# Pillow is in requirements (10.2). Register the router below only when this
+# import works and its paths do not collide with the console upload routes.
+try:
+    from avatar_storage import router as avatar_storage_router
+    _avatar_storage_import_error = None
+except Exception as exc:
+    avatar_storage_router = None
+    _avatar_storage_import_error = type(exc).__name__
 from redis_session import redis_session_manager
 from account_management_api import router as account_management_router
 from system_settings_api import router as system_settings_admin_router
@@ -1380,10 +1386,42 @@ app.include_router(internal_llm_preflight_router)
 app.include_router(paid_org_provisioning_router)
 logger.info("Metered Compute API endpoints registered at /api/v1/metered")
 
-# Avatar Storage API (November 2025 - CORS fix for bolt.diy)
-# TODO: Uncomment when Pillow dependency is installed
-# app.include_router(avatar_storage_router)
-logger.info("Avatar storage API endpoints registered at /api/v1/users/{user_id}/avatar")
+# Avatar storage API. Pillow is installed. Skip registration when the import
+# failed or a path+method already belongs to the console upload endpoints
+# (PUT /api/v1/auth/profile, POST/DELETE /api/v1/admin/users/{id}/avatar).
+_CONSOLE_AVATAR_PATHS = {
+    "/api/v1/auth/profile",
+    "/api/v1/admin/users/{user_id_or_email}/avatar",
+}
+if avatar_storage_router is None:
+    logger.warning(
+        "Avatar storage router not registered (import failed: %s)",
+        _avatar_storage_import_error or "unknown",
+    )
+else:
+    _avatar_collision = None
+    for _route in avatar_storage_router.routes:
+        _path = getattr(_route, "path", "") or ""
+        _methods = set(getattr(_route, "methods", None) or ())
+        if _path in _CONSOLE_AVATAR_PATHS:
+            _avatar_collision = _path
+            break
+        for _existing in app.routes:
+            _existing_path = getattr(_existing, "path", "") or ""
+            _existing_methods = set(getattr(_existing, "methods", None) or ())
+            if _path == _existing_path and _methods & _existing_methods:
+                _avatar_collision = _path
+                break
+        if _avatar_collision:
+            break
+    if _avatar_collision:
+        logger.warning(
+            "Avatar storage router not registered (path collision on %s)",
+            _avatar_collision,
+        )
+    else:
+        app.include_router(avatar_storage_router)
+        logger.info("Avatar storage API endpoints registered at /api/v1/users/{user_id}/avatar")
 
 # Subscription Tier Management API (Epic 4.4)
 app.include_router(subscription_tiers_router)
@@ -4659,23 +4697,20 @@ async def update_profile(
             if len(content) > 2 * 1024 * 1024:  # 2MB
                 raise HTTPException(status_code=400, detail="File size must be less than 2MB")
 
-            # Create avatars directory if it doesn't exist
-            avatar_dir = "/app/public/avatars"
-            os.makedirs(avatar_dir, exist_ok=True)
-
-            # Generate unique filename
-            file_hash = hashlib.md5(content).hexdigest()[:12]
-            avatar_filename = f"{user_email.split('@')[0]}_{file_hash}{file_ext}"
-            avatar_path = os.path.join(avatar_dir, avatar_filename)
-
-            # Save avatar file
-            with open(avatar_path, "wb") as f:
-                f.write(content)
-
-            # Store avatar URL (relative path)
-            avatar_url = f"/avatars/{avatar_filename}"
+            # One writer for every console avatar. The relative URL stays
+            # /avatars/{local}_{hash}{ext}. picture + avatar_url are stamped
+            # on the Keycloak user; a Keycloak miss does not fail the save.
+            kc_user_id = str(user.get("sub") or user.get("id") or user.get("user_id") or "")
+            from avatar_storage import save_console_avatar
+            saved = await save_console_avatar(
+                email=user_email,
+                user_id=kc_user_id,
+                content=content,
+                ext=file_ext,
+            )
+            avatar_url = saved["relative_url"]
             updates["avatar"] = avatar_url
-            logger.info(f"Saved avatar to {avatar_path}")
+            logger.info("Saved avatar %s", saved["filename"])
 
             # Persist the avatar URL durably so it survives session expiry / re-login.
             # The session copy below is still kept for the fast path; this row is the
@@ -4694,23 +4729,6 @@ async def update_profile(
                 # Non-fatal: the file is saved and the session is updated; durability
                 # is best-effort so a DB hiccup doesn't break the profile update.
                 logger.error(f"Failed to persist avatar_url for {user_email}: {avatar_db_err}")
-
-            # Suite-wide avatar spine: stamp the ABSOLUTE public URL into the
-            # Keycloak user's `picture` attribute. The uchub `profile` client
-            # scope's picture mapper flows it into every suite app's tokens /
-            # userinfo, making this upload the canonical photo suite-wide.
-            # /avatars/* is served unauthenticated at the public edge (verified),
-            # so any app/browser can render the URL without auth.
-            try:
-                from keycloak_integration import set_user_picture
-                public_avatar_url = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}{avatar_url}"
-                if await set_user_picture(user_email, public_avatar_url):
-                    logger.info(f"Stamped Keycloak picture for {user_email}: {public_avatar_url}")
-                else:
-                    logger.warning(f"Keycloak picture stamp FAILED for {user_email} (avatar still saved locally)")
-            except Exception as kc_pic_err:
-                # Non-fatal: the local avatar works; only suite-wide propagation degrades.
-                logger.error(f"Keycloak picture stamp error for {user_email}: {kc_pic_err}")
 
         # Handle name update
         if name:

@@ -39,9 +39,24 @@ _CUSTOM_SUFFIX = "-custom.png"
 _PLAIN_SUFFIX = ".png"
 
 
+# Console uploads (profile + admin) keep this name: ``{email local}_{md5[:12]}{ext}``
+# under public/avatars, served at ``/avatars/{filename}``.
+_CONSOLE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+def is_keycloak_user_id(value: str) -> bool:
+    """True when ``value`` is a Keycloak user id (UUID)."""
+    return bool(value) and _USER_ID_RE.fullmatch(value) is not None
+
+
 def default_avatar_dir() -> Path:
     """Same directory ``avatar_storage`` writes. ``AVATAR_STORAGE_DIR`` already exists."""
     return Path(os.getenv("AVATAR_STORAGE_DIR", "/app/avatars"))
+
+
+def default_public_avatar_dir() -> Path:
+    """Directory the profile and admin uploads write. ``PUBLIC_AVATAR_DIR`` already exists."""
+    return Path(os.getenv("PUBLIC_AVATAR_DIR", "/app/public/avatars"))
 
 
 def public_base_url() -> Optional[str]:
@@ -64,6 +79,40 @@ def public_base_url() -> Optional[str]:
 def avatar_version(image_bytes: bytes) -> str:
     """Cache-busting suffix. Twelve hex chars of sha256 is enough to change with the bytes."""
     return hashlib.sha256(image_bytes).hexdigest()[:12]
+
+
+def console_avatar_filename(email: str, content: bytes, ext: str) -> Optional[str]:
+    """Filename the console already stores. None when the name would leave the directory.
+
+    ``{local-part}_{12 hex chars of md5}{ext}``. The md5 is only the historical
+    name, matching files already under public/avatars. It is not a secret.
+    """
+    local = (email or "").split("@", 1)[0]
+    if not local or "/" in local or "\\" in local or local in {".", ".."} or ".." in local:
+        return None
+    suffix = (ext or "").lower()
+    if suffix and not suffix.startswith("."):
+        suffix = f".{suffix}"
+    if suffix not in _CONSOLE_EXTENSIONS:
+        return None
+    digest = hashlib.md5(content).hexdigest()[:12]
+    return f"{local}_{digest}{suffix}"
+
+
+def build_public_avatar_url(filename: str, base: Optional[str] = None) -> Optional[str]:
+    """Absolute URL of a console file at ``/avatars/{filename}``, or None."""
+    if (
+        not filename
+        or "/" in filename
+        or "\\" in filename
+        or filename.startswith(".")
+        or ".." in filename
+    ):
+        return None
+    origin = public_base_url() if base is None else base.rstrip("/")
+    if not origin or not origin.startswith(("http://", "https://")):
+        return None
+    return f"{origin}/avatars/{filename}"
 
 
 def build_avatar_url(user_id: str, version: str, base: Optional[str] = None) -> Optional[str]:
@@ -163,6 +212,79 @@ def local_avatar_index(avatar_dir: Path) -> dict[str, Path]:
     }
 
 
+def public_avatar_index(public_dir: Path) -> list[Path]:
+    """Image files written by the console, sorted by name.
+
+    Non-images are ignored. This is a flat directory: subdirectories are not users.
+    """
+    if not public_dir.is_dir():
+        return []
+    found = [
+        path
+        for path in public_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in _CONSOLE_EXTENSIONS
+    ]
+    return sorted(found, key=lambda path: path.name)
+
+
+def _owner_record_path(storage_dir: Path, filename: str) -> Path:
+    return storage_dir / "owners" / filename
+
+
+def read_owner_id(storage_dir: Path, filename: str) -> Optional[str]:
+    """Keycloak user id recorded for a console file, or None.
+
+    The record lives under the storage dir, not in public/avatars, so it is
+    not served at ``/avatars/``.
+    """
+    if not filename or "/" in filename or "\\" in filename:
+        return None
+    path = _owner_record_path(storage_dir, filename)
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if _USER_ID_RE.fullmatch(text):
+        return text
+    return None
+
+
+def write_owner_id(storage_dir: Path, filename: str, user_id: str) -> None:
+    """Remember which user a console file belongs to. One current file per user."""
+    if not is_keycloak_user_id(user_id) or not filename or "/" in filename or "\\" in filename:
+        return
+    owners = storage_dir / "owners"
+    owners.mkdir(parents=True, exist_ok=True)
+    for existing in owners.iterdir():
+        if not existing.is_file() or existing.name == filename:
+            continue
+        try:
+            if existing.read_text(encoding="utf-8").strip() == user_id:
+                existing.unlink()
+        except OSError:
+            continue
+    _owner_record_path(storage_dir, filename).write_text(user_id + "\n", encoding="utf-8")
+
+
+def forget_owner_id(storage_dir: Path, user_id: str) -> None:
+    """Drop console owner records for ``user_id`` so a later backfill does not restore the photo."""
+    if not is_keycloak_user_id(user_id):
+        return
+    owners = storage_dir / "owners"
+    if not owners.is_dir():
+        return
+    for existing in owners.iterdir():
+        if not existing.is_file():
+            continue
+        try:
+            if existing.read_text(encoding="utf-8").strip() == user_id:
+                existing.unlink()
+        except OSError:
+            continue
+
+
 class LiveKeycloakPictureAdmin:
     """Admin reads and writes using the Keycloak client the backend already has.
 
@@ -174,6 +296,11 @@ class LiveKeycloakPictureAdmin:
         from keycloak_integration import get_user_by_id
 
         return await get_user_by_id(user_id)
+
+    async def get_user_by_email(self, email: str) -> Optional[dict]:
+        from keycloak_integration import get_user_by_email
+
+        return await get_user_by_email(email)
 
     async def put_user(self, user_id: str, representation: dict) -> bool:
         import httpx
