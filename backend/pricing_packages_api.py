@@ -41,7 +41,7 @@ router = APIRouter(prefix="/api/v1/public/pricing", tags=["Public Pricing"])
 # managed $65/$650), so the pricing surface must show what checkout accepts.
 # A tier that is listed here but inactive in the DB is still filtered out by the
 # is_active predicate below — this list only narrows, never widens.
-PUBLIC_TIER_CODES = ['free', 'app', 'byok', 'managed']
+PUBLIC_TIER_CODES = ['free', 'app', 'byok', 'founder_workspace', 'managed']
 
 
 # ============================================================================

@@ -175,7 +175,7 @@ async def get_tier_limits(
 
         # Get all tier limits
         all_limits = {}
-        for tier_code in ["trial", "starter", "professional", "enterprise", "vip_founder", "byok"]:
+        for tier_code in ["trial", "starter", "professional", "enterprise", "vip_founder", "byok", "founder_workspace"]:
             limits = usage_tracker.get_tier_limits(tier_code)
             all_limits[tier_code] = {
                 "tier_code": tier_code,

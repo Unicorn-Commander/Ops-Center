@@ -64,7 +64,7 @@ async def get_current_user_tier(request: Request) -> str:
     Uses Redis session manager (same pattern as require_admin dependency).
 
     Returns:
-        User's subscription tier (vip_founder, byok, managed)
+        User's subscription tier (vip_founder, byok, managed, founder_workspace)
         Defaults to 'managed' if not authenticated or tier not found
 
     Database tiers:
@@ -110,7 +110,7 @@ async def get_current_user_tier(request: Request) -> str:
         # Valid tiers: All tiers from subscription_tiers table
         valid_tiers = [
             'free', 'app',
-            'vip_founder', 'byok', 'managed', 'founder_friend', 'founder-friend',
+            'vip_founder', 'byok', 'managed', 'founder_workspace', 'founder_friend', 'founder-friend',
             'trial', 'starter', 'professional', 'enterprise',
             'nda-autopilot', 'partnerpulse', 'm10_partner',
             'human_interest', 'loopnet_starter', 'loopnet_professional'
@@ -200,6 +200,7 @@ def get_tier_level(tier_name: str) -> int:
         'trial': 1,
         'starter': 2,
         'professional': 3,
+        'founder_workspace': 3,
         'enterprise': 4
     }
     return tier_levels.get(tier_name.lower(), 0)
@@ -318,7 +319,7 @@ async def get_user_tier_features(user_tier: str, conn) -> set:
     valid_tiers = [
         'free', 'app',
         'trial', 'starter', 'professional', 'enterprise',
-        'vip_founder', 'founder_friend', 'founder-friend', 'byok', 'managed',
+        'vip_founder', 'founder_friend', 'founder-friend', 'byok', 'managed', 'founder_workspace',
         'nda-autopilot', 'partnerpulse', 'm10_partner',
         'human_interest', 'loopnet_starter', 'loopnet_professional'
     ]
@@ -414,7 +415,7 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
     conn = await get_db_connection()
     try:
         # User's tier is now extracted from session via dependency injection
-        # Valid tiers: 'vip_founder', 'byok', 'managed' (defaults to 'managed')
+        # Valid tiers: 'vip_founder', 'byok', 'managed', 'founder_workspace'
 
         # Get tier-based features for determining access_type
         tier_features = await get_user_tier_features(user_tier, conn)

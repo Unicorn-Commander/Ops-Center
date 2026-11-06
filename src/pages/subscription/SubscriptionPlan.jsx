@@ -57,6 +57,7 @@ const TierBadge = ({ tier }) => {
     professional: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     managed: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     byok: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+    founder_workspace: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
     enterprise: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     vip_founder: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     founder_friend: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -837,6 +838,16 @@ export default function SubscriptionPlan() {
 
 // Helper function to determine tier level for comparison
 function getTierLevel(tier) {
-  const levels = { trial: 1, starter: 2, professional: 3, enterprise: 4 };
+  const levels = {
+    free: 0,
+    trial: 1,
+    app: 2,
+    starter: 2,
+    byok: 3,
+    professional: 3,
+    founder_workspace: 4,
+    managed: 5,
+    enterprise: 6
+  };
   return levels[tier] || 0;
 }

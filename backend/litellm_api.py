@@ -1865,6 +1865,7 @@ def calculate_image_cost(model: str, size: str, quality: str, n: int, user_tier:
     tier_multipliers = {
         'free': 1.5,        # 50% markup for free tier
         'byok': 1.0,        # No markup (BYOK users pay provider directly)
+        'founder_workspace': 1.0,  # Team workspace uses BYOK semantics
         'managed': 1.2,     # 20% markup for managed tier
         'vip_founder': 1.0  # No markup for VIP founders
     }
