@@ -30,6 +30,21 @@ STRIPE_WEBHOOK_SECRET = get_credential("STRIPE_WEBHOOK_SECRET")
 # just paid landed on a dead page. Both are now real routes.
 STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://unicorncommander.ai/checkout/success")
 STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "https://unicorncommander.ai/pricing?canceled=true")
+# Stripe Tax: OFF unless STRIPE_AUTOMATIC_TAX=1. Turning it on is a business decision (product tax codes +
+# registrations live in the Stripe dashboard); when on, Checkout computes tax and saves the billing address
+# to the existing customer (customer_update) so renewals keep being taxed the same way.
+STRIPE_AUTOMATIC_TAX = os.getenv("STRIPE_AUTOMATIC_TAX", "").strip().lower() in ("1", "true", "yes")
+
+
+def _tax_kwargs() -> dict:
+    if not STRIPE_AUTOMATIC_TAX:
+        return {}
+    return {
+        'automatic_tax': {'enabled': True},
+        'customer_update': {'address': 'auto', 'name': 'auto'},
+        'billing_address_collection': 'required',
+        'tax_id_collection': {'enabled': True},
+    }
 
 
 def _with_query(url: str, extra: str) -> str:
@@ -187,6 +202,7 @@ class StripeIntegration:
                     'tier_name': tier_name,
                     'billing_cycle': billing_cycle
                 },
+                **_tax_kwargs(),
                 subscription_data={
                     'metadata': {
                         'suite': OPS_CENTER_STRIPE_SUITE,
