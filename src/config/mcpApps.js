@@ -54,8 +54,8 @@ export const PROD_MCP_APPS = [
   {
     slug: 'meeting-ops',
     name: 'Meeting-Ops',
-    url: 'https://meeting-ops.unicorncommander.ai/mcp/',
-    oauth: false,
+    url: 'https://meeting-ops.unicorncommander.ai/mcp',
+    oauth: true,
     dogfoodUrl: 'https://meetingops.magicunicorn.dev/mcp',
     tokenLocation: 'Meeting-Ops → Settings → Personal access tokens'
   },

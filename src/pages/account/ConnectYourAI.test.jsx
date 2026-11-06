@@ -31,7 +31,7 @@ describe('ConnectYourAI', () => {
     expect(screen.getByText(/developer mode/)).toBeInTheDocument();
     expect(screen.getByText(/Then run \/mcp to sign in/)).toBeInTheDocument();
     expect(screen.getByText(/plus a token from the app's settings/)).toBeInTheDocument();
-    expect(screen.getByText(/Token only for now: Meeting-Ops\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Token only for now/)).not.toBeInTheDocument();
 
     for (const app of PROD_MCP_APPS) {
       expect(screen.getByRole('heading', { name: app.name })).toBeInTheDocument();
@@ -39,8 +39,8 @@ describe('ConnectYourAI', () => {
       expect(screen.getByText(app.tokenLocation)).toBeInTheDocument();
     }
 
-    expect(screen.getAllByText('OAuth')).toHaveLength(6);
-    expect(screen.getAllByText('Token only')).toHaveLength(1);
+    expect(screen.getAllByText('OAuth')).toHaveLength(7);
+    expect(screen.queryAllByText('Token only')).toHaveLength(0);
   });
 
   test('copies an MCP URL and a Claude Code command', async () => {
