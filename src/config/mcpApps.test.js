@@ -58,8 +58,15 @@ describe('resolveMcpApps', () => {
     expect(apps.map((app) => app.url)).toEqual(PROD_MCP_APPS.map((app) => app.url));
   });
 
-  test('keeps prod URLs on the dogfood host when no dogfood URL is configured', () => {
+  test('uses each app\'s dogfoodUrl on the dogfood host by default', () => {
     const apps = resolveMcpApps({ hostname: 'magicunicorn.dev', appsJson: '' });
+    expect(apps.map((app) => app.url)).toEqual(PROD_MCP_APPS.map((app) => app.dogfoodUrl || app.url));
+    expect(apps.every((app) => app.url.includes('magicunicorn.dev'))).toBe(true);
+  });
+
+  test('keeps the prod URL on the dogfood host when an entry has no dogfoodUrl', () => {
+    const noDogfood = PROD_MCP_APPS.map(({ dogfoodUrl, ...app }) => app);
+    const apps = resolveMcpApps({ hostname: 'magicunicorn.dev', appsJson: JSON.stringify(noDogfood) });
     expect(apps.map((app) => app.url)).toEqual(PROD_MCP_APPS.map((app) => app.url));
   });
 

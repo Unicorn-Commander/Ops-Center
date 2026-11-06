@@ -143,15 +143,18 @@ export function resolveMcpApps({ hostname = '', appsJson } = {}) {
   const override = parseMcpAppsJson(raw);
   const dogfood = isDogfoodHost(hostname);
   let apps = PROD_MCP_APPS;
+  let explicitDogfoodList = false;
 
   if (Array.isArray(override)) {
     apps = override;
   } else if (override) {
+    explicitDogfoodList = Boolean(dogfood && override.dogfood);
     const picked = dogfood ? (override.dogfood || override.prod) : override.prod;
     apps = picked || PROD_MCP_APPS;
   }
 
-  const resolved = dogfood ? applyDogfoodUrls(apps) : apps.map((app) => ({ ...app }));
+  // An explicit dogfood list is already the ring's list: its `url` wins over any dogfoodUrl.
+  const resolved = dogfood && !explicitDogfoodList ? applyDogfoodUrls(apps) : apps.map((app) => ({ ...app }));
   return resolved;
 }
 
