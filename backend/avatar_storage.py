@@ -25,13 +25,26 @@ from PIL import Image
 import io
 import logging
 
+from kc_picture_sync import (
+    LiveKeycloakPictureAdmin,
+    avatar_version,
+    build_avatar_url,
+    is_ops_center_avatar_url,
+    sync_picture,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/users", tags=["avatars"])
 
 # Avatar storage configuration
 AVATAR_DIR = Path(os.getenv("AVATAR_STORAGE_DIR", "/app/avatars"))
-AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+except OSError as exc:
+    # Import must succeed where the volume is not mounted (tests, a mis-set path).
+    # Writes call _ensure_avatar_dir() and still fail loudly if they cannot.
+    logger.warning("Avatar directory not created at import (%s)", type(exc).__name__)
 
 DEFAULT_AVATAR_PATH = Path(__file__).parent.parent / "static" / "default-avatar.png"
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
@@ -43,6 +56,55 @@ def get_avatar_path(user_id: str, custom: bool = False) -> Path:
     """Get the file path for a user's avatar"""
     suffix = "-custom" if custom else ""
     return AVATAR_DIR / f"{user_id}{suffix}.png"
+
+
+def _ensure_avatar_dir() -> Path:
+    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+    return AVATAR_DIR
+
+
+def get_picture_admin():
+    """Keycloak admin client. Tests replace this with a fake."""
+    return LiveKeycloakPictureAdmin()
+
+
+async def _stamp_keycloak_picture(user_id: str, picture_url: Optional[str]) -> None:
+    """Set or clear the suite picture claim. A Keycloak miss must not fail the upload."""
+    try:
+        ok = await sync_picture(get_picture_admin(), user_id, picture_url)
+        if not ok:
+            logger.warning(
+                "Keycloak picture sync failed for user %s; local avatar kept",
+                user_id,
+            )
+    except Exception as exc:
+        logger.warning(
+            "Keycloak picture sync failed for user %s (%s); local avatar kept",
+            user_id,
+            type(exc).__name__,
+        )
+
+
+async def _stamp_served_avatar(user_id: str) -> None:
+    """Point the claim at the file a normal GET would serve, or clear it."""
+    custom_avatar_path = get_avatar_path(user_id, custom=True)
+    cached_avatar_path = get_avatar_path(user_id, custom=False)
+    if custom_avatar_path.exists():
+        path = custom_avatar_path
+    elif cached_avatar_path.exists():
+        path = cached_avatar_path
+    else:
+        await _stamp_keycloak_picture(user_id, None)
+        return
+
+    picture_url = build_avatar_url(user_id, avatar_version(path.read_bytes()))
+    if picture_url is None:
+        logger.warning(
+            "No public base URL configured; skipped Keycloak picture sync for %s",
+            user_id,
+        )
+        return
+    await _stamp_keycloak_picture(user_id, picture_url)
 
 
 def get_gravatar_url(email: str, size: int = 256) -> str:
@@ -106,14 +168,15 @@ async def get_keycloak_avatar_url(user_id: str) -> Optional[str]:
             return None
         attributes = user.get("attributes", {})
 
-        # Check for avatar_url attribute
+        # Check for avatar_url attribute. Skip our own avatar URL: once the
+        # claim points here, fetching it would call this route again.
         avatar_urls = attributes.get("avatar_url", [])
-        if avatar_urls and avatar_urls[0]:
+        if avatar_urls and avatar_urls[0] and not is_ops_center_avatar_url(avatar_urls[0], user_id):
             return avatar_urls[0]
 
-        # Fallback to picture attribute (Google/Microsoft)
+        # Fallback to picture attribute (Google/Microsoft, or our own claim)
         picture_urls = attributes.get("picture", [])
-        if picture_urls and picture_urls[0]:
+        if picture_urls and picture_urls[0] and not is_ops_center_avatar_url(picture_urls[0], user_id):
             return picture_urls[0]
 
         # Fallback to Gravatar using email
@@ -259,10 +322,21 @@ async def upload_user_avatar(
     # Process and save
     try:
         processed_avatar = process_avatar_image(content)
+        _ensure_avatar_dir()
         custom_avatar_path = get_avatar_path(user_id, custom=True)
         custom_avatar_path.write_bytes(processed_avatar)
 
         logger.info(f"Uploaded custom avatar for user {user_id}")
+
+        # Suite-wide claim. The local file is already saved; Keycloak is best-effort.
+        picture_url = build_avatar_url(user_id, avatar_version(processed_avatar))
+        if picture_url is None:
+            logger.warning(
+                "No public base URL configured; skipped Keycloak picture sync for %s",
+                user_id,
+            )
+        else:
+            await _stamp_keycloak_picture(user_id, picture_url)
 
         return {
             "success": True,
@@ -291,6 +365,9 @@ async def delete_custom_avatar(user_id: str):
     if custom_avatar_path.exists():
         custom_avatar_path.unlink()
         logger.info(f"Deleted custom avatar for user {user_id}")
+        # The custom photo is gone, so the suite claim is cleared. A cached
+        # provider file is not the user's uploaded photo; refresh re-stamps it.
+        await _stamp_keycloak_picture(user_id, None)
         return {
             "success": True,
             "message": "Custom avatar deleted. Reverted to provider avatar."
@@ -320,6 +397,9 @@ async def refresh_avatar_cache(user_id: str):
 
     # Fetch new avatar
     await get_user_avatar(user_id, refresh=True)
+    # Custom file still wins for a normal GET. Otherwise stamp the new cache,
+    # or clear the claim when the provider returned nothing.
+    await _stamp_served_avatar(user_id)
 
     logger.info(f"Refreshed avatar cache for user {user_id}")
 
