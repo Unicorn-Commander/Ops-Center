@@ -75,6 +75,11 @@ class UsageTracker:
             "daily_limit": -1,  # Unlimited (user pays their own API costs)
             "monthly_limit": -1,
             "reset_period": "monthly"
+        },
+        "founder_workspace": {
+            "daily_limit": -1,  # BYOK semantics; the tier owns seat limits, not calls
+            "monthly_limit": -1,
+            "reset_period": "monthly"
         }
     }
 

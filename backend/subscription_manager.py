@@ -220,6 +220,37 @@ DEFAULT_PLANS = [
         team_seats=10,
         stripe_price_id="price_1SI0FIDzk9HqAZnHZFRzBjgP",  # Monthly
         stripe_annual_price_id=None
+    ),
+    SubscriptionPlan(
+        id="founder_workspace",
+        name="founder_workspace",
+        display_name="Team workspace",
+        price_monthly=149.00,
+        price_yearly=None,
+        features=[
+            "Hosted bring-your-own-AI workspace",
+            "5 seats included",
+            "$25/month per additional seat",
+            "Price locked while the workspace stays paid",
+            "30-day money-back guarantee",
+            "Founding 100"
+        ],
+        services=[
+            ServiceType.OPS_CENTER,
+            ServiceType.CHAT,
+            ServiceType.SEARCH,
+            ServiceType.TTS,
+            ServiceType.STT,
+            ServiceType.LITELLM
+        ],
+        api_calls_limit=-1,
+        byok_enabled=True,
+        priority_support=True,
+        team_seats=5,
+        # The database-backed checkout path supplies the live price ID after
+        # wire_founder_workspace_prices.py runs. This fallback is display-only.
+        stripe_price_id=None,
+        stripe_annual_price_id=None
     )
 ]
 
@@ -232,7 +263,7 @@ SERVICE_ACCESS = [
         icon="⚙️",
         url="/",
         required_permission=PermissionLevel.USER,
-        required_plans=["trial", "starter", "professional", "enterprise"]
+        required_plans=["trial", "starter", "professional", "enterprise", "founder_workspace"]
     ),
     ServiceAccessConfig(
         service=ServiceType.CHAT,
@@ -241,7 +272,7 @@ SERVICE_ACCESS = [
         icon="💬",
         url="https://chat.unicorncommander.ai",
         required_permission=PermissionLevel.USER,
-        required_plans=["trial", "starter", "professional", "enterprise"],
+        required_plans=["trial", "starter", "professional", "enterprise", "founder_workspace"],
         is_external=True
     ),
     ServiceAccessConfig(
@@ -251,7 +282,7 @@ SERVICE_ACCESS = [
         icon="🔍",
         url="https://search.unicorncommander.ai",
         required_permission=PermissionLevel.USER,
-        required_plans=["starter", "professional", "enterprise"],
+        required_plans=["starter", "professional", "enterprise", "founder_workspace"],
         is_external=True
     ),
     ServiceAccessConfig(
@@ -261,7 +292,7 @@ SERVICE_ACCESS = [
         icon="🎙️",
         url="https://tts.unicorncommander.ai",
         required_permission=PermissionLevel.USER,
-        required_plans=["professional", "enterprise"],
+        required_plans=["professional", "enterprise", "founder_workspace"],
         is_external=True
     ),
     ServiceAccessConfig(
@@ -271,7 +302,7 @@ SERVICE_ACCESS = [
         icon="🎤",
         url="https://stt.unicorncommander.ai",
         required_permission=PermissionLevel.USER,
-        required_plans=["professional", "enterprise"],
+        required_plans=["professional", "enterprise", "founder_workspace"],
         is_external=True
     ),
     ServiceAccessConfig(
@@ -291,7 +322,7 @@ SERVICE_ACCESS = [
         icon="🤖",
         url="https://ai.unicorncommander.ai",
         required_permission=PermissionLevel.USER,
-        required_plans=["professional", "enterprise"],
+        required_plans=["professional", "enterprise", "founder_workspace"],
         is_external=True
     ),
     ServiceAccessConfig(

@@ -91,7 +91,7 @@ class ModelCreate(BaseModel):
     @validator('tier_access')
     def validate_tier_access(cls, v):
         """Validate tier codes"""
-        valid_tiers = {'trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'byok', 'managed'}
+        valid_tiers = {'trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'byok', 'managed', 'founder_workspace'}
         invalid = set(v) - valid_tiers
         if invalid:
             raise ValueError(f"Invalid tier codes: {invalid}")
@@ -130,7 +130,7 @@ class ModelUpdate(BaseModel):
     def validate_tier_access(cls, v):
         """Validate tier codes"""
         if v is not None:
-            valid_tiers = {'trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'byok', 'managed'}
+            valid_tiers = {'trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'byok', 'managed', 'founder_workspace'}
             invalid = set(v) - valid_tiers
             if invalid:
                 raise ValueError(f"Invalid tier codes: {invalid}")
@@ -807,7 +807,7 @@ async def get_model_stats(
 
             # Tier coverage
             tier_counts = {}
-            for tier in ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'byok', 'managed']:
+            for tier in ['trial', 'starter', 'professional', 'enterprise', 'vip_founder', 'byok', 'managed', 'founder_workspace']:
                 count = await conn.fetchval(
                     "SELECT COUNT(*) FROM models WHERE tier_access @> $1::jsonb",
                     json.dumps([tier])

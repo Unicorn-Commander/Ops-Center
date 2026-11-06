@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-const PRODUCT_TIERS = ['free', 'app', 'byok', 'managed'];
+const PRODUCT_TIERS = ['free', 'app', 'byok', 'founder_workspace', 'managed'];
 
 const formatPrice = (value) => {
   const amount = Number(value || 0);

@@ -25,19 +25,19 @@ logger = logging.getLogger("federation.access_control")
 # If a service type is not listed, it's open to all tiers
 DEFAULT_SERVICE_ACL = {
     "llm": {
-        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "managed", "professional", "enterprise"],
+        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "founder_workspace", "managed", "professional", "enterprise"],
         "blocked_tiers": ["trial"],
         "require_credits": True,
         "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
     },
     "tts": {
-        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "managed", "professional", "enterprise"],
+        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "founder_workspace", "managed", "professional", "enterprise"],
         "blocked_tiers": ["trial"],
         "require_credits": True,
         "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
     },
     "stt": {
-        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "managed", "professional", "enterprise"],
+        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "founder_workspace", "managed", "professional", "enterprise"],
         "blocked_tiers": ["trial"],
         "require_credits": True,
         "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
@@ -73,7 +73,7 @@ DEFAULT_SERVICE_ACL = {
         "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],
     },
     "extraction": {
-        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "managed", "professional", "enterprise"],
+        "allowed_tiers": ["vip_founder", "founder_friend", "byok", "founder_workspace", "managed", "professional", "enterprise"],
         "blocked_tiers": ["trial"],
         "require_credits": True,
         "free_tiers": ["vip_founder", "founder_friend", "admin", "internal"],

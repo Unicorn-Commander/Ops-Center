@@ -57,6 +57,7 @@ _API_KEY_ELIGIBLE_TIERS = frozenset(
     {
         "app",
         "byok",
+        "founder_workspace",
         "enterprise",
         "founder_friend",
         "managed",

@@ -34,6 +34,7 @@ TIER_HIERARCHY = {
     "enterprise": 1,
     "professional": 2,
     "starter": 3,
+    "founder_workspace": 3,
     "trial": 4,
     "free": 5
 }

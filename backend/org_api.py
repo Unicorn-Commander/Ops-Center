@@ -54,10 +54,12 @@ async def _get_org_row(conn, org_id: str) -> Optional[asyncpg.Record]:
             o.display_name,
             o.plan_tier,
             o.status,
+            o.max_seats,
             o.created_at,
             o.lago_customer_id,
             o.stripe_customer_id,
-            COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' '))) AS tier_name
+            COALESCE(st.tier_name, INITCAP(REPLACE(o.plan_tier, '_', ' '))) AS tier_name,
+            COALESCE(st.team_seats, o.max_seats, 1) AS seat_cap
         FROM organizations o
         LEFT JOIN subscription_tiers st ON o.plan_tier = st.tier_code
         WHERE o.id::text = $1
@@ -943,6 +945,25 @@ async def add_organization_member(
             raise HTTPException(
                 status_code=400,
                 detail=f"User {member_data.user_id} already in organization {org_id}"
+            )
+
+        member_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
+            org_id,
+        )
+        seat_cap = int(org["seat_cap"] or 1)
+        # Only the founder workspace tier enforces its seat allowance on this
+        # path; every other tier keeps today's behaviour (no cap here), so
+        # existing orgs on 1-seat comp tiers are not locked out of adding members.
+        if org["plan_tier"] == "founder_workspace" and int(member_count or 0) >= seat_cap:
+            # TODO(OC-founder-tier): add a Stripe quantity flow before allowing
+            # self-serve seats beyond the founder_workspace base allowance.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Team workspace includes 5 seats. Extra seats are not self-serve yet; "
+                    "contact support to add a 6th member."
+                ),
             )
 
         # Insert membership row

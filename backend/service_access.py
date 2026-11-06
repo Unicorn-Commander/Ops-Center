@@ -23,6 +23,12 @@ SERVICE_ACCESS_MATRIX = {
         "api_calls": 1000,
         "valid_days": 30
     },
+    "founder_workspace": {  # Team workspace; same BYOK access semantics
+        "services": ["ops-center", "chat", "search"],
+        "features": ["basic_models", "byok"],
+        "api_calls": -1,
+        "valid_days": 30
+    },
     "professional": {
         "services": ["ops-center", "chat", "search", "billing", "litellm", "lago", "tts", "stt"],
         "features": ["all_models", "byok", "priority_support", "team_management"],

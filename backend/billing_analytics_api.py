@@ -60,7 +60,7 @@ async def get_billing_dashboard(
                 SELECT
                     COUNT(DISTINCT org_id) as total_orgs,
                     SUM(CASE WHEN subscription_plan IN ('managed', 'professional') THEN 1 ELSE 0 END) as platform_count,
-                    SUM(CASE WHEN subscription_plan = 'byok' THEN 1 ELSE 0 END) as byok_count,
+                    SUM(CASE WHEN subscription_plan IN ('byok', 'founder_workspace') THEN 1 ELSE 0 END) as byok_count,
                     SUM(CASE WHEN subscription_plan IN ('enterprise', 'vip_founder') THEN 1 ELSE 0 END) as hybrid_count
                 FROM organization_subscriptions
                 WHERE status = 'active'
@@ -174,6 +174,7 @@ async def get_revenue_trends(
                     SUM(CASE
                         WHEN subscription_plan = 'platform' THEN 50.00
                         WHEN subscription_plan = 'byok' THEN 30.00
+                        WHEN subscription_plan = 'founder_workspace' THEN 149.00
                         WHEN subscription_plan = 'hybrid' THEN 99.00
                         ELSE 0
                     END) as revenue
@@ -221,6 +222,7 @@ async def get_top_customers(
                         CASE
                             WHEN s.subscription_plan = 'platform' THEN 50.00
                             WHEN s.subscription_plan = 'byok' THEN 30.00
+                            WHEN s.subscription_plan = 'founder_workspace' THEN 149.00
                             WHEN s.subscription_plan = 'hybrid' THEN 99.00
                             ELSE 0
                         END as monthly_spend,
@@ -358,6 +360,7 @@ async def export_revenue_report(
                     CASE
                         WHEN s.subscription_plan = 'platform' THEN 50.00
                         WHEN s.subscription_plan = 'byok' THEN 30.00
+                        WHEN s.subscription_plan = 'founder_workspace' THEN 149.00
                         WHEN s.subscription_plan = 'hybrid' THEN 99.00
                         ELSE 0
                     END as monthly_revenue,

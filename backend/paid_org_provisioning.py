@@ -41,7 +41,8 @@ async def _load_tier(tier_code: str):
             """
             SELECT tier_code,
                    COALESCE(lago_plan_code, tier_code) AS lago_plan_code,
-                   max_monthly_llm_budget AS cloud_cap
+                   max_monthly_llm_budget AS cloud_cap,
+                   team_seats
             FROM subscription_tiers WHERE tier_code = $1
             """,
             tier_code,
@@ -70,7 +71,7 @@ async def provision_paid_org(
     out: Dict[str, Any] = {
         "org_id": org_id, "tier": tier_code, "source": source,
         "tier_set": False, "lago_sub": False, "key_capped": False,
-        "cloud_cap": None, "wallet_funded": False,
+        "cloud_cap": None, "team_seats": None, "wallet_funded": False,
     }
     if not org_id or not tier_code:
         out["error"] = "org_id and tier_code required"
@@ -81,8 +82,10 @@ async def provision_paid_org(
         out["error"] = f"unknown tier_code '{tier_code}'"
         return out
     cloud_cap = float(tier["cloud_cap"]) if tier["cloud_cap"] is not None else None
+    team_seats = int(tier["team_seats"]) if tier["team_seats"] is not None else 1
     lago_plan = tier["lago_plan_code"]
     out["cloud_cap"] = cloud_cap
+    out["team_seats"] = team_seats
 
     # ID forms differ by subsystem: organizations.id is a bare UUID, while the
     # gateway key (litellm user_id) and Lago external_id use the "org_<uuid>"
@@ -101,7 +104,10 @@ async def provision_paid_org(
         from database import get_db_connection
         async with await get_db_connection() as conn:
             status = await conn.execute(
-                "UPDATE organizations SET plan_tier = $1 WHERE id = $2", tier_code, bare_id
+                "UPDATE organizations SET plan_tier = $1, max_seats = $2 WHERE id = $3",
+                tier_code,
+                team_seats,
+                bare_id,
             )
         # asyncpg returns the command tag, e.g. "UPDATE 1"
         rows = int(str(status).rsplit(" ", 1)[-1]) if str(status).startswith("UPDATE") else 0
