@@ -1,5 +1,6 @@
 -- Locked self-service price sheet (decision 2026-06-24, project P-00107)
--- Free $0 / App (Meeting-Ops) $22 / Suite-BYOK $49 / Suite-Managed $65 + à-la-carte add-ons.
+-- Current ladder: Free $0 / Solo $49 / Team workspace $149 + quote-only Enterprise.
+-- App and Managed remain as inactive legacy rows for existing records.
 -- REPRICED 2026-08-08: App was $15/$150 at the 2026-06-24 lock. Aaron, 2026-08-08:
 --   "Shouldn't meeting-ops be more? We didn't want a race to the bottom."
 --   New standing price $22/mo, $216/yr ($18/mo billed annually), matching his written
@@ -23,38 +24,41 @@ VALUES
    0.00, 0.00, TRUE, FALSE, 0, 0, 1, FALSE, FALSE, 'free', 'system')
 ON CONFLICT (tier_code) DO NOTHING;
 
--- ── App: single-app entry — Meeting-Ops + Contact-Ops, MCP included, starter credits. ──
+-- ── App: retired single-app entry; retain the row for existing records. ──
 INSERT INTO subscription_tiers
   (tier_code, tier_name, description, price_monthly, price_yearly, is_active, is_invite_only,
    sort_order, api_calls_limit, team_seats, byok_enabled, priority_support, lago_plan_code, created_by)
 VALUES
   ('app', 'App (Meeting + Contact)',
    'Meeting-Ops Pro. $22/month or $216/year ($18/month billed annually, $48 less than twelve monthly payments). MCP included, ~$4/mo platform credits, 1 seat.',
-   22.00, 216.00, TRUE, FALSE, 2, -1, 1, FALSE, FALSE, 'app', 'system')
+   22.00, 216.00, FALSE, FALSE, 2, -1, 1, FALSE, FALSE, 'app', 'system')
 ON CONFLICT (tier_code) DO NOTHING;
 
--- ── App: the INSERT above is ON CONFLICT DO NOTHING, so an existing row keeps its old
---    price. Repricing therefore needs an explicit UPDATE, exactly like byok/managed.
---    Price 15 -> 22, 150 -> 216. ──
+-- ── App: the INSERT above is ON CONFLICT DO NOTHING, so explicitly retain its
+--    retired state on an existing row. ──
 UPDATE subscription_tiers
    SET price_monthly = 22.00,
        price_yearly  = 216.00,
+       is_active      = FALSE,
        updated_by    = 'system',
        updated_at    = NOW()
  WHERE tier_code = 'app';
 
--- ── Suite BYOK: all apps + MCP, bring your own model keys. Price 30 -> 49. ──
+-- ── Solo: all apps + MCP, bring your own model keys. Price 30 -> 49. ──
 UPDATE subscription_tiers
    SET price_monthly = 49.00,
-       price_yearly  = 490.00,
-       tier_name     = 'Suite - BYOK',
+       price_yearly  = NULL,  -- no annual for Solo (2026-11-06)
+       stripe_price_yearly = NULL,
+       tier_name     = 'Solo',
+       description   = 'Hosted bring-your-own-AI workspace for one seat at $49/month. Every app in the suite; the model bill stays with your AI provider. Price locked while the workspace stays paid, with a 30-day money-back guarantee for the Founding 100.',
        sort_order    = 3,
        byok_enabled  = TRUE,
+       is_active     = TRUE,
        updated_by    = 'system',
        updated_at    = NOW()
  WHERE tier_code = 'byok';
 
--- ── Suite Managed: all apps + MCP + UC-hosted inference (~$10-12/mo credits). Price 50 -> 65, 3 seats. ──
+-- ── Managed: retired all-apps + UC-hosted inference tier. ──
 UPDATE subscription_tiers
    SET price_monthly    = 65.00,
        price_yearly     = 650.00,
@@ -62,6 +66,7 @@ UPDATE subscription_tiers
        team_seats       = 3,
        sort_order       = 4,
        priority_support = TRUE,
+       is_active        = FALSE,
        updated_by       = 'system',
        updated_at       = NOW()
  WHERE tier_code = 'managed';
