@@ -129,17 +129,21 @@ export default function UpgradeFlow() {
 
     try {
       const isUpgrade = compareTiers(currentTier, selectedTier) === -1;
+      // Upgrades open a paid Stripe Checkout session (POST /api/v1/subscriptions/upgrade is
+      // fail-closed with 402 by design); downgrades keep the scheduled-change route.
       const endpoint = isUpgrade
-        ? '/api/v1/subscriptions/upgrade'
+        ? '/api/v1/billing/subscriptions/checkout'
         : '/api/v1/subscriptions/downgrade';
 
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          targetTier: selectedTier
-        })
+        body: JSON.stringify(
+          isUpgrade
+            ? { tier_id: selectedTier, billing_cycle: 'monthly' }
+            : { targetTier: selectedTier }
+        )
       });
 
       if (!response.ok) {
@@ -150,8 +154,9 @@ export default function UpgradeFlow() {
       const data = await response.json();
 
       // If Stripe Checkout URL provided, redirect
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
+      const checkoutUrl = data.checkout_url || data.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
       } else {
         // Immediate change (e.g., downgrade scheduled for next billing cycle)
         alert('Subscription change scheduled successfully!');
