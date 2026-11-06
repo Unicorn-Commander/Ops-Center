@@ -236,6 +236,7 @@ const PurchaseHistory = lazy(() => import('./pages/extensions/PurchaseHistory'))
 const AccountProfile = lazy(() => import('./pages/account/AccountProfile'));
 const AccountSecurity = lazy(() => import('./pages/account/AccountSecurity'));
 const AccountAPIKeys = lazy(() => import('./pages/account/AccountAPIKeys'));
+const ConnectYourAI = lazy(() => import('./pages/account/ConnectYourAI'));
 const NotificationSettings = lazy(() => import('./pages/NotificationSettings'));
 
 // Subscription pages (lazy loaded)
@@ -590,6 +591,7 @@ function AppRoutes() {
                   <Route path="account/notification-settings" element={<NotificationSettings />} />
                   <Route path="account/security" element={<AccountSecurity />} />
                   <Route path="account/api-keys" element={<AccountAPIKeys />} />
+                  <Route path="account/connect-your-ai" element={<ConnectYourAI />} />
 
                   {/* ============================================================ */}
                   {/* SUBSCRIPTION SECTION - Personal billing & usage */}
