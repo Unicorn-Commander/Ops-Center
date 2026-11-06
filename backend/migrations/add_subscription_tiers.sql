@@ -147,7 +147,7 @@ CREATE TRIGGER trg_tier_features_update
 
 -- ==================================================
 -- SEED DATA: Default subscription tiers
--- Based on roadmap: VIP/Founder ($0), BYOK ($30), Managed ($50)
+-- Based on the current ladder: VIP/Founder ($0), Solo ($49), retired Managed.
 -- ==================================================
 
 -- 1. VIP/Founder Tier (Invite-only, $0)
@@ -169,14 +169,14 @@ VALUES (
     'system'
 ) ON CONFLICT (tier_code) DO NOTHING;
 
--- 2. BYOK Tier ($30/month)
+-- 2. Solo Tier ($49/month)
 INSERT INTO subscription_tiers (tier_code, tier_name, description, price_monthly, price_yearly, is_active, is_invite_only, sort_order, api_calls_limit, team_seats, byok_enabled, priority_support, lago_plan_code, created_by)
 VALUES (
     'byok',
-    'BYOK (Bring Your Own Key)',
-    'Use your own API keys for OpenAI, Anthropic, Google, etc. No platform markup. Priority support included.',
-    30.00,
-    300.00,  -- ~$25/month annually
+    'Solo',
+    'Hosted bring-your-own-AI workspace for one seat at $49/month. Every app in the suite; the model bill stays with your AI provider. Price locked while the workspace stays paid, with a 30-day money-back guarantee for the Founding 100.',
+    49.00,
+    490.00,
     TRUE,
     FALSE,
     2,
@@ -188,7 +188,7 @@ VALUES (
     'system'
 ) ON CONFLICT (tier_code) DO NOTHING;
 
--- 3. Managed Tier ($50/month - Recommended)
+-- 3. Managed Tier (retired; retained for existing records)
 INSERT INTO subscription_tiers (tier_code, tier_name, description, price_monthly, price_yearly, is_active, is_invite_only, sort_order, api_calls_limit, team_seats, byok_enabled, priority_support, lago_plan_code, created_by)
 VALUES (
     'managed',
@@ -196,7 +196,7 @@ VALUES (
     'Platform manages all API keys and billing. Access to 100+ models via OpenRouter. Includes monthly credits. Priority support.',
     50.00,
     500.00,  -- ~$42/month annually
-    TRUE,
+    FALSE,
     FALSE,
     3,
     50000,  -- 50k API calls/month
