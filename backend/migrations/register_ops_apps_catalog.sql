@@ -65,7 +65,7 @@ INSERT INTO add_ons (
    'Customer relationship and lifecycle operations',
    'Customer-Ops manages the customer lifecycle: accounts, engagements, and federated customer actors across the platform.',
    'productivity', 'customer_ops_access',
-   'https://customers.magicunicorn.dev', '/logos/customer-ops.png',
+   'https://customers.magicunicorn.dev', '/logos/customer-ops.png?v=3',
    0.00, 'monthly', TRUE, FALSE, TRUE, 'tier_included', 'member', 14,
    '{"accounts": "Customer accounts", "lifecycle": "Lifecycle management", "sso": "Keycloak SSO"}'::jsonb),
 
