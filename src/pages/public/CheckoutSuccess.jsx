@@ -116,6 +116,7 @@ export default function CheckoutSuccess() {
             >
               Go to your dashboard
             </a>
+            <a href="/admin/account/connect-your-ai" className="mt-3 block text-sm text-purple-300 hover:text-purple-200">Connect your AI</a>
           </>
         )}
 
