@@ -29,8 +29,14 @@ from kc_picture_sync import (
     LiveKeycloakPictureAdmin,
     avatar_version,
     build_avatar_url,
+    build_public_avatar_url,
+    console_avatar_filename,
+    default_public_avatar_dir,
+    forget_owner_id,
+    is_keycloak_user_id,
     is_ops_center_avatar_url,
     sync_picture,
+    write_owner_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,7 +74,7 @@ def get_picture_admin():
     return LiveKeycloakPictureAdmin()
 
 
-async def _stamp_keycloak_picture(user_id: str, picture_url: Optional[str]) -> None:
+async def _stamp_keycloak_picture(user_id: str, picture_url: Optional[str]) -> bool:
     """Set or clear the suite picture claim. A Keycloak miss must not fail the upload."""
     try:
         ok = await sync_picture(get_picture_admin(), user_id, picture_url)
@@ -77,12 +83,118 @@ async def _stamp_keycloak_picture(user_id: str, picture_url: Optional[str]) -> N
                 "Keycloak picture sync failed for user %s; local avatar kept",
                 user_id,
             )
+        return bool(ok)
     except Exception as exc:
         logger.warning(
             "Keycloak picture sync failed for user %s (%s); local avatar kept",
             user_id,
             type(exc).__name__,
         )
+        return False
+
+
+# Console (profile + admin) writes. Same 2MB cap and extensions the endpoints already enforced.
+CONSOLE_MAX_BYTES = 2 * 1024 * 1024
+
+
+def public_avatar_dir() -> Path:
+    """public/avatars, read at call time so tests can point it at a temp directory."""
+    return default_public_avatar_dir()
+
+
+async def _resolve_console_user_id(user_id: str, email: str) -> Optional[str]:
+    """Keycloak user id from the caller, or from the email when the session has no subject."""
+    if is_keycloak_user_id(user_id or ""):
+        return user_id
+    admin = get_picture_admin()
+    finder = getattr(admin, "get_user_by_email", None)
+    if finder is None or not email:
+        logger.warning("No Keycloak user id; skipped picture sync")
+        return None
+    try:
+        user = await finder(email)
+    except Exception as exc:
+        logger.warning(
+            "Keycloak picture sync failed for user lookup (%s); local avatar kept",
+            type(exc).__name__,
+        )
+        return None
+    found = user.get("id") if isinstance(user, dict) else None
+    if is_keycloak_user_id(str(found or "")):
+        return str(found)
+    logger.warning("No Keycloak user id; skipped picture sync")
+    return None
+
+
+async def save_console_avatar(*, email: str, user_id: str, content: bytes, ext: str) -> dict:
+    """Write one console avatar and stamp Keycloak ``picture`` and ``avatar_url``.
+
+    The profile upload and the admin upload both call this. The file name and
+    the relative URL stay ``/avatars/{local-part}_{hash}{ext}``, which is what
+    the console already puts in ``<img src>``. The Keycloak attributes get the
+    absolute form of that same URL. A Keycloak failure is a warning; the file
+    is still saved and this does not raise.
+    """
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > CONSOLE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File size must be less than 2MB")
+    filename = console_avatar_filename(email, content, ext)
+    if not filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Allowed: .gif, .jpeg, .jpg, .png, .webp",
+        )
+
+    dest_dir = public_avatar_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = (dest_dir / filename).resolve()
+    if dest_dir.resolve() not in path.parents:
+        raise HTTPException(status_code=400, detail="Invalid file type. Allowed: .gif, .jpeg, .jpg, .png, .webp")
+    path.write_bytes(content)
+
+    relative_url = f"/avatars/{filename}"
+    public_url = build_public_avatar_url(filename)
+    resolved = await _resolve_console_user_id(user_id, email)
+    kc_ok = False
+    if resolved:
+        try:
+            write_owner_id(Path(AVATAR_DIR), filename, resolved)
+        except OSError as exc:
+            logger.warning("Avatar owner record not written (%s)", type(exc).__name__)
+        if public_url is None:
+            logger.warning(
+                "No public base URL configured; skipped Keycloak picture sync for %s",
+                resolved,
+            )
+        else:
+            kc_ok = await _stamp_keycloak_picture(resolved, public_url)
+
+    logger.info("Saved console avatar %s", filename)
+    return {
+        "relative_url": relative_url,
+        "public_url": public_url,
+        "filename": filename,
+        "keycloak_updated": kc_ok,
+    }
+
+
+async def clear_console_avatar(*, user_id: str, email: str = "") -> dict:
+    """Clear Keycloak ``picture`` and ``avatar_url`` for a console removal.
+
+    The image file stays, matching the admin endpoint: old tokens must not 404
+    mid-session. The owner record is dropped so a later backfill does not put
+    the attributes back. A Keycloak failure is a warning; this does not raise.
+    """
+    resolved = await _resolve_console_user_id(user_id, email)
+    if not resolved:
+        return {"keycloak_updated": False}
+    try:
+        forget_owner_id(Path(AVATAR_DIR), resolved)
+    except OSError as exc:
+        logger.warning("Avatar owner record not cleared (%s)", type(exc).__name__)
+    kc_ok = await _stamp_keycloak_picture(resolved, None)
+    return {"keycloak_updated": kc_ok}
 
 
 async def _stamp_served_avatar(user_id: str) -> None:

@@ -1388,22 +1388,16 @@ async def stop_impersonation(user_id: str, admin: bool = Depends(require_admin))
 # ============================================================================
 # AVATAR MANAGEMENT (admin) - suite-wide user photo spine
 #
-# Saves the image under the same /app/public/avatars convention as the
-# self-service PUT /api/v1/auth/profile path, then stamps the ABSOLUTE
-# public URL into the Keycloak user's `picture` attribute so it flows to
-# every suite app via the uchub `profile` scope's picture claim mapper.
+# Both this endpoint and PUT /api/v1/auth/profile call save_console_avatar,
+# which writes public/avatars/{local}_{hash}{ext} and stamps Keycloak
+# picture + avatar_url. A Keycloak miss logs a warning and the upload
+# still succeeds.
 # ============================================================================
 
-import hashlib
-
 from auth_dependencies import require_admin_user
-from keycloak_integration import set_user_picture
 
 ALLOWED_AVATAR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_AVATAR_BYTES = 2 * 1024 * 1024  # 2MB - mirrors the self-service cap
-AVATAR_DIR = "/app/public/avatars"
-EXTERNAL_HOST = os.environ.get("EXTERNAL_HOST", "localhost")
-EXTERNAL_PROTOCOL = os.environ.get("EXTERNAL_PROTOCOL", "https")
 
 
 async def _resolve_kc_user(user_id_or_email: str) -> Optional[Dict[str, Any]]:
@@ -1438,9 +1432,9 @@ async def admin_set_user_avatar(
     """
     Admin: upload a profile photo for any user.
 
-    Saves the file publicly under /avatars/, writes the absolute URL into
-    the Keycloak `picture` attribute (canonical suite-wide photo) and the
-    local ops-center users row when one exists.
+    Saves the file publicly under /avatars/, writes that absolute URL into
+    the Keycloak `picture` and `avatar_url` attributes, and the relative
+    URL into the local ops-center users row when one exists.
     """
     user = await _resolve_kc_user(user_id_or_email)
     if not user or not user.get("email"):
@@ -1460,16 +1454,16 @@ async def admin_set_user_avatar(
     if len(content) > MAX_AVATAR_BYTES:
         raise HTTPException(status_code=400, detail="File size must be less than 2MB")
 
-    os.makedirs(AVATAR_DIR, exist_ok=True)
-    file_hash = hashlib.md5(content).hexdigest()[:12]
-    avatar_filename = f"{email.split('@')[0]}_{file_hash}{file_ext}"
-    with open(os.path.join(AVATAR_DIR, avatar_filename), "wb") as f:
-        f.write(content)
-
-    relative_url = f"/avatars/{avatar_filename}"
-    public_url = f"{EXTERNAL_PROTOCOL}://{EXTERNAL_HOST}{relative_url}"
-
-    kc_ok = await set_user_picture(email, public_url)
+    from avatar_storage import save_console_avatar
+    saved = await save_console_avatar(
+        email=email,
+        user_id=str(user.get("id") or ""),
+        content=content,
+        ext=file_ext,
+    )
+    relative_url = saved["relative_url"]
+    public_url = saved["public_url"]
+    kc_ok = saved["keycloak_updated"]
     db_ok = await _update_local_avatar_url(email, relative_url)
 
     await audit_logger.log(
@@ -1491,12 +1485,8 @@ async def admin_set_user_avatar(
         f"(keycloak={kc_ok}, local_db={db_ok})"
     )
 
-    if not kc_ok:
-        raise HTTPException(
-            status_code=502,
-            detail="Avatar file saved but the Keycloak picture attribute update failed"
-        )
-
+    # Keycloak is best-effort, same as the storage writer: the file is saved
+    # and this response is success even when the stamp did not land.
     return {
         "success": True,
         "picture": public_url,
@@ -1513,16 +1503,22 @@ async def admin_remove_user_avatar(
     admin: Dict[str, Any] = Depends(require_admin_user),
 ):
     """
-    Admin: remove a user's profile photo (Keycloak `picture` attribute +
-    local ops-center users.avatar_url). The stored image file is left on
-    disk (content-hashed name, harmless) so old tokens don't 404 mid-session.
+    Admin: remove a user's profile photo (Keycloak `picture` and `avatar_url`
+    attributes + local ops-center users.avatar_url). The stored image file
+    is left on disk (content-hashed name, harmless) so old tokens don't 404
+    mid-session. A Keycloak miss does not fail the request.
     """
     user = await _resolve_kc_user(user_id_or_email)
     if not user or not user.get("email"):
         raise HTTPException(status_code=404, detail="User not found")
     email = user["email"]
 
-    kc_ok = await set_user_picture(email, None)
+    from avatar_storage import clear_console_avatar
+    cleared = await clear_console_avatar(
+        user_id=str(user.get("id") or ""),
+        email=email,
+    )
+    kc_ok = cleared["keycloak_updated"]
     db_ok = await _update_local_avatar_url(email, None)
 
     await audit_logger.log(
@@ -1539,11 +1535,5 @@ async def admin_remove_user_avatar(
         f"Admin {admin.get('email')} removed avatar for {email} "
         f"(keycloak={kc_ok}, local_db={db_ok})"
     )
-
-    if not kc_ok:
-        raise HTTPException(
-            status_code=502,
-            detail="Keycloak picture attribute removal failed"
-        )
 
     return {"success": True, "keycloak_updated": kc_ok, "local_db_updated": db_ok}
