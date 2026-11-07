@@ -144,13 +144,24 @@ from routers.granite_keys import router as granite_keys_router
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 from routers.inference_proxy import router as inference_proxy_router
 from routers.audio_proxy import router as audio_proxy_router
+from openai_v1_alias import OpenAIV1AliasMiddleware
+from rate_limit_keys import uuda_aware_rate_limit_key
+from uc_key_validation import check_required_permission
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
 try:
     from routers.uuda import router as uuda_router
-except ImportError:
-    uuda_router = None
+    from routers.uuda_mcp import router as uuda_mcp_router
+    from routers.uuda_drift_api import router as uuda_drift_router
+    from routers import uuda_scheduler as uuda_scheduler_mod
+except ImportError as _uuda_err:
+    # Do NOT swallow this silently. A missing router must not make the entire
+    # UUDA control plane disappear without an operator-visible error.
+    uuda_router = uuda_mcp_router = uuda_drift_router = uuda_scheduler_mod = None
+    _UUDA_IMPORT_ERROR = _uuda_err
+else:
+    _UUDA_IMPORT_ERROR = None
 
 # Billing Events API - April 2026
 from routers.billing_events import router as billing_events_router
@@ -391,7 +402,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+limiter = Limiter(key_func=uuda_aware_rate_limit_key, default_limits=["1000/hour"])
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
@@ -756,7 +767,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+limiter = Limiter(key_func=uuda_aware_rate_limit_key, default_limits=["1000/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logger.info("Rate limiting enabled (1000 requests/hour default)")
@@ -858,6 +869,11 @@ if TIER_ENFORCEMENT_ENABLED:
 # Automatically deducts credits for LLM API calls
 app.add_middleware(CreditDeductionMiddleware)
 logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
+
+# OpenAI-compatible /v1/* aliases — stock SDKs default to baseURL .../v1.
+# Keep this outermost so downstream middleware sees the canonical API path.
+app.add_middleware(OpenAIV1AliasMiddleware)
+logger.info("OpenAI /v1/* alias middleware registered -> /api/v1/llm/* and /api/v1/audio/*")
 
 logger.info(f"CSRF Protection: {'Enabled' if CSRF_ENABLED else 'Disabled'}")
 logger.info(f"Rate Limiting: {'Enabled' if RATE_LIMIT_ENABLED else 'Disabled'}")
@@ -1281,6 +1297,10 @@ logger.info("Extensions Catalog API endpoints registered at /api/v1/extensions (
 # My Apps API - Tier-filtered apps for authenticated users
 app.include_router(my_apps_router)
 app.include_router(entitlements_router)
+from trial_codes_api import admin_router as trial_codes_admin_router, user_router as trial_codes_user_router
+app.include_router(trial_codes_admin_router)
+app.include_router(trial_codes_user_router)
+logger.info("Trial Codes API registered at /api/v1/admin/trial-codes and /api/v1/trial-codes")
 logger.info("My Apps API endpoints registered at /api/v1/my-apps (RBAC-filtered)")
 
 # Advanced Log Search API (Epic 2.5)
@@ -1473,7 +1493,13 @@ logger.info("GPU Compute Fabric endpoints registered at /api/v1/compute")
 # UUDA control plane (Phase 1) — April 2026
 if uuda_router is not None:
     app.include_router(uuda_router)
-    logger.info("UUDA control-plane endpoints registered at /api/v1/uuda")
+    app.include_router(uuda_mcp_router)
+    app.include_router(uuda_drift_router)
+    app.include_router(uuda_scheduler_mod.router)
+    uuda_scheduler_mod.attach(app)
+    logger.info("UUDA control plane registered at /api/v1/uuda (core, mcp, drift, scheduler)")
+else:
+    logger.error("UUDA control plane NOT mounted - import failed: %s", _UUDA_IMPORT_ERROR)
 
 
 # Billing Events API - April 2026
@@ -1509,6 +1535,12 @@ app.include_router(litellm_api_router)
 from litellm_api import set_sessions_store as litellm_set_sessions_store
 litellm_set_sessions_store(sessions)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
+
+# MCP metering (uc_ key debit onto the shared credit ledger)
+from mcp_meter_api import router as mcp_meter_router
+app.include_router(mcp_meter_router)
+logger.info("MCP meter API registered at /api/v1/mcp/meter")
+
 app.include_router(model_catalog_router)
 logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")
 # model_access_router already registered earlier (line ~547) - REMOVED DUPLICATE
@@ -4771,7 +4803,7 @@ async def validate_key_endpoint(request: Request):
     that carry a user's UC API key. Returns user identity, subscription tier,
     organization, and role so the caller can apply its own tier/quota policy.
 
-    Request body: {"key": "uc_..."}
+    Request body: {"key": "uc_...", "required_permission": "mcp:accounting-ops"}
 
     Responses:
       200 {"valid": true, "user": {...}}   valid key
@@ -4787,6 +4819,12 @@ async def validate_key_endpoint(request: Request):
     if not api_key or not isinstance(api_key, str):
         raise HTTPException(status_code=400, detail="Missing 'key' field")
 
+    required_permission = None
+    if isinstance(body, dict):
+        requested_permission = body.get("required_permission")
+        if isinstance(requested_permission, str) and requested_permission.strip():
+            required_permission = requested_permission.strip()
+
     try:
         from api_key_manager import get_api_key_manager
         manager = get_api_key_manager()
@@ -4799,7 +4837,19 @@ async def validate_key_endpoint(request: Request):
         return JSONResponse(status_code=200, content={"valid": False})
 
     user_id = key_info.get("user_id")
-    permissions = key_info.get("permissions") or []
+    permissions, permission_ok = check_required_permission(
+        key_info.get("permissions"), required_permission
+    )
+    if required_permission and not permission_ok:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "valid": False,
+                "reason": "missing_permission",
+                "required_permission": required_permission,
+                "permissions": permissions,
+            },
+        )
 
     org_info = None
     try:
@@ -4847,6 +4897,7 @@ async def validate_key_endpoint(request: Request):
                 "permissions": permissions,
                 "subscription_tier": effective_tier,
                 "organization": org_info,
+                "key_id": key_info.get("key_id"),
             },
         },
     )
@@ -6158,7 +6209,12 @@ async def oauth_login(request: Request):
         f"&scope=openid%20profile%20email"
         f"&state={state}"
     )
-    if signup:
+    if signup and os.getenv("KEYCLOAK_REGISTRATION_ENABLED", "").lower() in ("1", "true", "yes"):
+        # prompt=create asks Keycloak for its local registration page. The uchub
+        # realm keeps registrationAllowed=false (2026-08-13), so requesting it
+        # renders "Registration not allowed" and kills the storefront funnel.
+        # New users self-provision through the brokered IdPs on the plain login
+        # page instead; state still carries return_url so checkout continues.
         auth_url += "&prompt=create"
     return RedirectResponse(url=auth_url)
 
@@ -6896,6 +6952,14 @@ async def serve_admin(request: Request, path: str = ""):
         return response
 
     raise HTTPException(status_code=404, detail="Admin interface not found")
+
+# Public beta-signup front door + the narrow public Listmonk surface.
+# NOTE: mail_router claims /mail/*, so it MUST be included before the SPA
+# catch-all @app.get("/{full_path:path}") below.
+from beta_signup_api import router as beta_signup_router, mail_router as listmonk_public_router
+app.include_router(beta_signup_router)
+app.include_router(listmonk_public_router)
+logger.info("Beta signup registered at /api/v1/public/beta; Listmonk public opt-in surface at /mail")
 
 # Serve the React app for all non-API routes
 @app.get("/{full_path:path}")
