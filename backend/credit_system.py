@@ -14,6 +14,7 @@ import asyncio
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from decimal import Decimal
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -22,6 +23,24 @@ from email_notifications import EmailNotificationService
 
 # Logging setup
 logger = logging.getLogger(__name__)
+
+
+def _jsonb_dict(value):
+    """asyncpg returns jsonb as text unless the pool registers a codec; this pool does not.
+
+    Accept a dict, a JSON string or NULL and always return a dict.
+    """
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode()
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 logger.setLevel(logging.INFO)
 
 # Email notification service
@@ -780,13 +799,14 @@ class CreditManager:
                     "amount": Decimal(row["amount_cents"]) / 100,  # Convert cents to decimal
                     "balance_after": Decimal(row["balance_after_cents"]) / 100,
                     "transaction_type": row["type"],
-                    "service": row["metadata"].get("service") if row["metadata"] else None,
-                    "model": row["metadata"].get("model") if row["metadata"] else None,
-                    "cost_breakdown": row["metadata"].get("cost_breakdown") if row["metadata"] else None,
-                    "metadata": row["metadata"],
+                    "service": metadata.get("service"),
+                    "model": metadata.get("model"),
+                    "cost_breakdown": metadata.get("cost_breakdown"),
+                    "metadata": metadata,
                     "created_at": row["created_at"]
                 }
                 for row in rows
+                for metadata in (_jsonb_dict(row["metadata"]),)
             ]
 
     async def check_sufficient_balance(

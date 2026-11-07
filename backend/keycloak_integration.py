@@ -3,6 +3,7 @@ Keycloak Integration for UC-1 Pro
 Provides admin token management and user operations
 """
 
+import asyncio
 import httpx
 import os
 import logging
@@ -26,18 +27,42 @@ _admin_token_cache = {
     "token": None,
     "expires_at": None
 }
+# One login at a time. A console page load fans out into several requests that all need the admin
+# token; without this each one did its own admin-cli password login inside the same second, and
+# Keycloak's quick-login brute-force check locked the master admin out for 60 s (prod, 2026-11-07).
+_admin_token_lock: Optional[asyncio.Lock] = None
+
+
+def _cached_admin_token() -> Optional[str]:
+    if _admin_token_cache["token"] and _admin_token_cache["expires_at"]:
+        if datetime.now() < _admin_token_cache["expires_at"]:
+            return _admin_token_cache["token"]
+    return None
+
+
+def _get_admin_token_lock() -> asyncio.Lock:
+    global _admin_token_lock
+    if _admin_token_lock is None:
+        _admin_token_lock = asyncio.Lock()
+    return _admin_token_lock
 
 
 async def get_admin_token() -> str:
     """
     Get Keycloak admin access token
-    Uses cached token if still valid
+    Uses cached token if still valid; concurrent callers share one login.
     """
-    # Check if cached token is still valid
-    if _admin_token_cache["token"] and _admin_token_cache["expires_at"]:
-        if datetime.now() < _admin_token_cache["expires_at"]:
-            return _admin_token_cache["token"]
+    cached = _cached_admin_token()
+    if cached:
+        return cached
+    async with _get_admin_token_lock():
+        cached = _cached_admin_token()
+        if cached:
+            return cached
+        return await _fetch_admin_token()
 
+
+async def _fetch_admin_token() -> str:
     # Request new token from master realm (admin user exists in master, not uchub)
     try:
         async with httpx.AsyncClient(verify=False) as client:
