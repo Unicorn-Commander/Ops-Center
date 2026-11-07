@@ -6991,6 +6991,10 @@ async def serve_spa(full_path: str, request: Request):
         file_path = os.path.join("dist", full_path)
         if os.path.exists(file_path):
             return FileResponse(file_path)
+        # A missing static file is a 404, never the SPA shell: an <img> that gets index.html shows a
+        # broken icon, and the CDN then caches that HTML under the image URL (prod, 2026-11-07).
+        if not full_path.endswith(".html"):
+            raise HTTPException(status_code=404, detail="Not Found")
 
     # For all other routes, return the index.html (for React Router)
     # Check public directory first (deployed build), then dist
