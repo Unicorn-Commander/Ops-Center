@@ -146,6 +146,7 @@ from routers.inference_proxy import router as inference_proxy_router
 from routers.audio_proxy import router as audio_proxy_router
 from openai_v1_alias import OpenAIV1AliasMiddleware
 from rate_limit_keys import uuda_aware_rate_limit_key
+from uc_key_validation import check_required_permission
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
@@ -4778,7 +4779,7 @@ async def validate_key_endpoint(request: Request):
     that carry a user's UC API key. Returns user identity, subscription tier,
     organization, and role so the caller can apply its own tier/quota policy.
 
-    Request body: {"key": "uc_..."}
+    Request body: {"key": "uc_...", "required_permission": "mcp:accounting-ops"}
 
     Responses:
       200 {"valid": true, "user": {...}}   valid key
@@ -4794,6 +4795,12 @@ async def validate_key_endpoint(request: Request):
     if not api_key or not isinstance(api_key, str):
         raise HTTPException(status_code=400, detail="Missing 'key' field")
 
+    required_permission = None
+    if isinstance(body, dict):
+        requested_permission = body.get("required_permission")
+        if isinstance(requested_permission, str) and requested_permission.strip():
+            required_permission = requested_permission.strip()
+
     try:
         from api_key_manager import get_api_key_manager
         manager = get_api_key_manager()
@@ -4806,7 +4813,19 @@ async def validate_key_endpoint(request: Request):
         return JSONResponse(status_code=200, content={"valid": False})
 
     user_id = key_info.get("user_id")
-    permissions = key_info.get("permissions") or []
+    permissions, permission_ok = check_required_permission(
+        key_info.get("permissions"), required_permission
+    )
+    if required_permission and not permission_ok:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "valid": False,
+                "reason": "missing_permission",
+                "required_permission": required_permission,
+                "permissions": permissions,
+            },
+        )
 
     org_info = None
     try:
@@ -4854,6 +4873,7 @@ async def validate_key_endpoint(request: Request):
                 "permissions": permissions,
                 "subscription_tier": effective_tier,
                 "organization": org_info,
+                "key_id": key_info.get("key_id"),
             },
         },
     )
