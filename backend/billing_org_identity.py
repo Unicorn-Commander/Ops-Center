@@ -30,7 +30,7 @@ def lago_org_id(value):
 async def _membership_orgs(subject, pool=None):
     """Read the deployed direct-sub schema before considering optional mapping."""
     direct_query = """
-        SELECT DISTINCT om.org_id::text AS org_id, om.role
+        SELECT DISTINCT om.org_id::text AS org_id, om.role, om.is_default
         FROM public.organization_members om
         JOIN public.organizations o ON o.id = om.org_id
         WHERE om.user_id = $1 AND o.status = 'active'
@@ -51,7 +51,7 @@ async def _membership_orgs(subject, pool=None):
         if not has_mapping:
             return []
         return await conn.fetch("""
-            SELECT DISTINCT om.org_id::text AS org_id, om.role
+            SELECT DISTINCT om.org_id::text AS org_id, om.role, om.is_default
             FROM public."user" u
             JOIN public.organization_members om ON om.user_id = u.id::text
             JOIN public.organizations o ON o.id = om.org_id
@@ -75,12 +75,31 @@ async def _membership_orgs(subject, pool=None):
         await conn.close()
 
 
-async def resolve_billing_org(user, session=None, pool=None, *, require_write=False):
+def _cookie_org_hint(request):
+    """The console's org switcher stores its choice in the ``current_org_id`` cookie.
+
+    It is a hint only: it never grants membership, and a stale value (an org the
+    user has since left) is ignored rather than refused.
+    """
+    cookies = getattr(request, "cookies", None) if request is not None else None
+    value = cookies.get("current_org_id") if cookies else None
+    if not value:
+        return None
+    try:
+        return lago_org_id(value)
+    except HTTPException:
+        return None
+
+
+async def resolve_billing_org(user, session=None, pool=None, *, require_write=False, request=None):
     """Authorize the selected org against current active persisted membership.
 
     Session/Keycloak attributes express selection, never membership or billing
-    privilege. A sole membership can supply a missing selection. Mutation roles
-    are taken only from that org's membership row, never global/session claims.
+    privilege. Without one, the selection comes from (in order): a sole
+    membership, the console's ``current_org_id`` cookie when it names an org the
+    user belongs to, or the single membership flagged ``is_default``. Mutation
+    roles are taken only from that org's membership row, never global/session
+    claims.
     """
     session = session or {}
     selected = [v for v in (user.get("org_id"), session.get("org_id")) if v]
@@ -103,16 +122,25 @@ async def resolve_billing_org(user, session=None, pool=None, *, require_write=Fa
         logger.warning("Billing organization membership lookup failed")
         raise HTTPException(503, "Organization lookup unavailable") from None
     memberships = {}
+    defaults = set()
     for row in rows:
         org = lago_org_id(row["org_id"])
         memberships.setdefault(org, set()).add(str(row.get("role") or "").lower())
+        if row.get("is_default"):
+            defaults.add(org)
     if selected_org is not None:
         if selected_org not in memberships:
             raise HTTPException(403, "No active membership in selected organization")
-    elif len(memberships) != 1:
-        raise HTTPException(409, "Select an organization before billing")
-    else:
+    elif len(memberships) == 1:
         selected_org = next(iter(memberships))
+    else:
+        hint = _cookie_org_hint(request)
+        if hint in memberships:
+            selected_org = hint
+        elif len(defaults & set(memberships)) == 1:
+            selected_org = next(iter(defaults & set(memberships)))
+        else:
+            raise HTTPException(409, "Select an organization before billing")
     if require_write:
         roles = memberships[selected_org]
         # Conflicting duplicate rows must not silently grant a higher privilege.

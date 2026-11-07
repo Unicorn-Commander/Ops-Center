@@ -1,0 +1,16 @@
+{
+  "$schema": "https://brigade.unicorncommander.ai/.well-known/mcps-schema-v1.json",
+  "name": "Unicorn Commander",
+  "kind": "index",
+  "version": "1.0.0",
+  "docs": "https://git.unicorncommander.ai/UnicornCommander/Ops-Center/src/branch/main/docs/P-00039-mcp-discovery.md",
+  "mcps": [
+    {"name": "accounting-ops", "mcp_endpoint": "https://accounting-ops.unicorncommander.ai/mcp/", "tool_namespace": "accounting-ops", "auth": {"type": "bearer"}},
+    {"name": "contact-ops", "mcp_endpoint": "https://mcp.contacts.unicorncommander.ai/mcp", "tool_namespace": "contact-ops", "auth": {"type": "bearer"}},
+    {"name": "customer-ops", "mcp_endpoint": "https://api.customer-ops.unicorncommander.ai/api/v1/mcp", "tool_namespace": "customer-ops", "auth": {"type": "bearer"}},
+    {"name": "email-ops", "mcp_endpoint": "https://email-ops.unicorncommander.ai/api/v1/mcp", "tool_namespace": "email-ops", "auth": {"type": "bearer"}},
+    {"name": "meeting-ops", "mcp_endpoint": "https://meeting-ops.unicorncommander.ai/mcp", "tool_namespace": "meeting-ops", "auth": {"type": "bearer"}},
+    {"name": "project-ops", "mcp_endpoint": "https://api.projectops.unicorncommander.ai/api/v1/mcp", "tool_namespace": "project-ops", "auth": {"type": "bearer"}},
+    {"name": "tax-planning-ops", "mcp_endpoint": "https://api.taxplanningops.unicorncommander.ai/api/v1/mcp", "tool_namespace": "tax-planning-ops", "auth": {"type": "bearer"}}
+  ]
+}

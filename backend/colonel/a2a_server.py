@@ -63,18 +63,28 @@ COLONEL_PROVIDER_URL = os.getenv(
 COLONEL_PUBLIC_URL = os.getenv("COLONEL_PUBLIC_URL", "").rstrip("/")
 
 MCP_INDEX_PATH = Path(__file__).resolve().parent.parent / "config" / "mcps-index.json"
+# The customer ring publishes its own index: only apps with a live prod MCP door, at prod hosts.
+MCP_INDEX_PROD_PATH = Path(__file__).resolve().parent.parent / "config" / "mcps-index.unicorncommander.json"
+MCP_INDEX_PROD_HOST_SUFFIX = "unicorncommander.ai"
 # The transport implementation is JSON-RPC 2.0; this is the current A2A card
 # shape used by clients of the discovery endpoint.
 CURRENT_A2A_PROTOCOL_VERSION = "0.3.0"
 
 
-def _load_mcp_index() -> Dict[str, Any]:
-    """Load the committed suite MCP discovery index."""
-    with MCP_INDEX_PATH.open(encoding="utf-8") as config_file:
+def _load_mcp_index(path: Path = MCP_INDEX_PATH) -> Dict[str, Any]:
+    """Load a committed suite MCP discovery index."""
+    with path.open(encoding="utf-8") as config_file:
         return json.load(config_file)
 
 
+def _request_host(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-host") or ""
+    host = forwarded.split(",")[0].strip() or request.headers.get("host") or (request.url.hostname or "")
+    return host.split(":")[0].strip().lower()
+
+
 MCP_INDEX = _load_mcp_index()
+MCP_INDEX_PROD = _load_mcp_index(MCP_INDEX_PROD_PATH)
 
 
 def _public_base_url(request) -> str:
@@ -286,8 +296,15 @@ async def agent_card_named(colonel_id: str, request: Request):
 
 
 @router.get("/.well-known/mcps.json", response_class=JSONResponse)
-async def mcp_index():
-    """Publish the public Unicorn Commander suite MCP discovery index."""
+async def mcp_index(request: Request):
+    """Publish the suite MCP discovery index for the ring this host serves.
+
+    unicorncommander.ai (customers) lists the prod MCP doors; every other host
+    (magicunicorn.dev dogfood, local) lists the dogfood ring.
+    """
+    host = _request_host(request)
+    if host == MCP_INDEX_PROD_HOST_SUFFIX or host.endswith("." + MCP_INDEX_PROD_HOST_SUFFIX):
+        return JSONResponse(content=MCP_INDEX_PROD)
     return JSONResponse(content=MCP_INDEX)
 
 
