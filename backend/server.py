@@ -6948,6 +6948,14 @@ async def serve_admin(request: Request, path: str = ""):
 
     raise HTTPException(status_code=404, detail="Admin interface not found")
 
+# Public beta-signup front door + the narrow public Listmonk surface.
+# NOTE: mail_router claims /mail/*, so it MUST be included before the SPA
+# catch-all @app.get("/{full_path:path}") below.
+from beta_signup_api import router as beta_signup_router, mail_router as listmonk_public_router
+app.include_router(beta_signup_router)
+app.include_router(listmonk_public_router)
+logger.info("Beta signup registered at /api/v1/public/beta; Listmonk public opt-in surface at /mail")
+
 # Serve the React app for all non-API routes
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str, request: Request):
