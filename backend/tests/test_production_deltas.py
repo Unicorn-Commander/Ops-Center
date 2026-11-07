@@ -21,10 +21,38 @@ def test_platform_encryption_helpers_support_plaintext_and_ciphertext(monkeypatc
 
 
 def test_audio_router_registers_openai_speech_route():
-    fake_litellm = types.ModuleType("litellm_api")
-    fake_litellm.get_user_id = lambda: None
-    sys.modules["litellm_api"] = fake_litellm
-    from routers.audio_proxy import router
+    """server.py includes routers.audio_proxy.router; that is prod's handler.
 
-    routes = {route.path for route in router.routes}
-    assert "/api/v1/audio/speech" in routes
+    Stubs satisfy audio_speech_api on a fresh import (no billing DB). When
+    the parity tests already loaded the module, keep that module: replacing
+    litellm_api in sys.modules would not change the bound handler.
+    """
+    if "audio_speech_api" not in sys.modules:
+        fake_litellm = types.ModuleType("litellm_api")
+        fake_litellm.get_user_id = lambda: None
+        fake_litellm.get_credit_system = lambda: None
+        fake_litellm.is_credit_exempt = lambda _tier: False
+        sys.modules["litellm_api"] = fake_litellm
+        if "litellm_credit_system" not in sys.modules:
+            fake_credits = types.ModuleType("litellm_credit_system")
+
+            class CreditSystem:
+                pass
+
+            fake_credits.CreditSystem = CreditSystem
+            sys.modules["litellm_credit_system"] = fake_credits
+        if "org_credit_integration" not in sys.modules:
+            fake_org = types.ModuleType("org_credit_integration")
+            fake_org.get_org_credit_integration = lambda: None
+            sys.modules["org_credit_integration"] = fake_org
+
+    from routers.audio_proxy import router
+    import audio_speech_api
+
+    assert router is audio_speech_api.router
+    speech = [
+        route for route in router.routes
+        if getattr(route, "path", None) == "/api/v1/audio/speech"
+    ]
+    assert len(speech) == 1
+    assert speech[0].endpoint.__module__ == "audio_speech_api"

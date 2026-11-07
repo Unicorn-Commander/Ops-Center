@@ -11,8 +11,11 @@ uc_ key / JWT / service key) and the same org-pool-vs-individual credit
 split. Cost is per input character (TTS_CREDIT_PER_CHAR), charged AFTER a
 successful synthesis; credit-exempt tiers are never charged.
 
-Synthesis is proxied to the Kokoro OpenAI-compatible backends in
-TTS_SPEECH_BACKENDS order (primary GPU box first, CPU fallback second).
+Synthesis is proxied to Kokoro OpenAI-compatible backends. When
+KOKORO_TTS_URL is set it is tried first, then TTS_SPEECH_BACKENDS
+(primary GPU box, then CPU fallback); duplicates are dropped. Prod sets
+neither variable, so the tailnet pair is unchanged.
+
 This route is the credit-billing authority for uc_-key TTS — it does NOT
 also report to the Lago unit-metering bridge (/api/v1/metered/report), which
 is the separate org-plan rail fed by the LiteLLM gateway hook.
@@ -35,15 +38,35 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/audio", tags=["Audio Speech"])
 
-# Primary = kokoro on the GPU box, fallback = CPU kokoro on bigboy.
-TTS_SPEECH_BACKENDS = [
-    u.strip()
-    for u in os.getenv(
-        "TTS_SPEECH_BACKENDS",
-        "http://100.94.145.98:8880,http://100.126.207.157:8882",
-    ).split(",")
-    if u.strip()
-]
+# Prod's Kokoro pair when TTS_SPEECH_BACKENDS is unset: GPU box, then CPU.
+_DEFAULT_TTS_SPEECH_BACKENDS = "http://100.94.145.98:8880,http://100.126.207.157:8882"
+
+
+def _resolve_tts_speech_backends():
+    """Kokoro backends in try order, read from the environment per request.
+
+    TTS_SPEECH_BACKENDS is the chain (default: the two tailnet URLs above).
+    When KOKORO_TTS_URL is set it is tried first, then the chain, with
+    duplicates dropped. Prod sets neither variable, so the default pair
+    and its order are unchanged.
+    """
+    chain = []
+    for raw in os.getenv("TTS_SPEECH_BACKENDS", _DEFAULT_TTS_SPEECH_BACKENDS).split(","):
+        url = raw.strip().rstrip("/")
+        if url:
+            chain.append(url)
+    preferred = (os.getenv("KOKORO_TTS_URL") or "").strip().rstrip("/")
+    ordered = ([preferred] if preferred else []) + chain
+    seen = set()
+    backends = []
+    for url in ordered:
+        if url in seen:
+            continue
+        seen.add(url)
+        backends.append(url)
+    return backends
+
+
 # Credits per input character. Default tracks the Lago tts_characters unit
 # price ($15/1M chars with the standard markup ≈ 0.00002/char).
 TTS_CREDIT_PER_CHAR = float(os.getenv("TTS_CREDIT_PER_CHAR", "0.00002"))
@@ -177,7 +200,7 @@ async def create_speech(
                 payload["response_format"] = body.response_format
             if body.speed is not None:
                 payload["speed"] = body.speed
-            for backend in TTS_SPEECH_BACKENDS:
+            for backend in _resolve_tts_speech_backends():
                 try:
                     resp = await client.post(f"{backend}/v1/audio/speech", json=payload)
                     if resp.status_code == 200 and resp.content:
