@@ -24,14 +24,23 @@ NEW_EMAIL = "tomas@example.com"
 
 
 class FakeOrgConnection:
-    def __init__(self, *, member_count=1, max_seats=5, existing_role=None):
+    def __init__(
+        self,
+        *,
+        member_count=1,
+        max_seats=5,
+        included_seats=5,
+        plan_tier="founder_workspace",
+        existing_role=None,
+    ):
         self.member_count = member_count
         self.org = {
             "id": ORG_ID,
             "name": "Fictional Lantern Labs",
-            "plan_tier": "founder_workspace",
+            "plan_tier": plan_tier,
             "max_seats": max_seats,
             "seat_cap": max_seats,
+            "included_seats": included_seats,
         }
         self.existing_role = existing_role
         self.inserted = None
@@ -225,6 +234,102 @@ async def test_invite_over_cap_returns_seat_details(monkeypatch):
     }
     lookup.assert_not_awaited()
     assert connection.inserted is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("plan_tier", "max_seats", "included_seats"),
+    [
+        ("free", 1, 1),
+        ("founder_friend", 1, 5),
+    ],
+)
+async def test_uncapped_tiers_allow_invites_past_persisted_seat_value(
+    monkeypatch, plan_tier, max_seats, included_seats
+):
+    connection = FakeOrgConnection(
+        member_count=1,
+        max_seats=max_seats,
+        included_seats=included_seats,
+        plan_tier=plan_tier,
+    )
+    allow_org_write(monkeypatch)
+    monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(
+        org_api,
+        "get_user_by_email",
+        AsyncMock(return_value={"id": INVITED_SUB, "email": NEW_EMAIL}),
+    )
+
+    result = await org_api.add_organization_member(
+        ORG_ID,
+        org_api.OrganizationMemberAdd(email=NEW_EMAIL),
+        object(),
+    )
+
+    assert result["success"] is True
+    assert connection.inserted == (ORG_ID, INVITED_SUB, "member")
+
+
+@pytest.mark.asyncio
+async def test_byok_cap_uses_solo_detail_without_add_seat_url(monkeypatch):
+    connection = FakeOrgConnection(
+        member_count=1,
+        max_seats=1,
+        included_seats=1,
+        plan_tier="byok",
+    )
+    allow_org_write(monkeypatch)
+    monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
+    lookup = AsyncMock()
+    monkeypatch.setattr(org_api, "get_user_by_email", lookup)
+
+    response = await org_api.add_organization_member(
+        ORG_ID,
+        org_api.OrganizationMemberAdd(email=NEW_EMAIL),
+        object(),
+    )
+
+    body = json.loads(response.body)
+    assert response.status_code == 402
+    assert body["detail"] == "Solo includes 1 seat; upgrade to the Team workspace to invite teammates."
+    assert body["seats_used"] == 1
+    assert body["max_seats"] == 1
+    assert "add_seat_url" not in body
+    lookup.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("max_seats", "included_seats", "expected_cap"),
+    [(5, 5, 5), (7, 5, 7), (1, 5, 5)],
+)
+async def test_founder_workspace_cap_uses_max_of_persisted_and_included_seats(
+    monkeypatch, max_seats, included_seats, expected_cap
+):
+    connection = FakeOrgConnection(
+        member_count=expected_cap,
+        max_seats=max_seats,
+        included_seats=included_seats,
+        plan_tier="founder_workspace",
+    )
+    allow_org_write(monkeypatch)
+    monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
+    lookup = AsyncMock()
+    monkeypatch.setattr(org_api, "get_user_by_email", lookup)
+
+    response = await org_api.add_organization_member(
+        ORG_ID,
+        org_api.OrganizationMemberAdd(email=NEW_EMAIL),
+        object(),
+    )
+
+    body = json.loads(response.body)
+    assert response.status_code == 402
+    assert body["seats_used"] == expected_cap
+    assert body["max_seats"] == expected_cap
+    assert body["add_seat_url"] == "/api/v1/billing/seats"
+    lookup.assert_not_awaited()
 
 
 @pytest.mark.asyncio

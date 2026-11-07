@@ -34,6 +34,10 @@ from keycloak_integration import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/org", tags=["organizations"])
 
+# Only the paid self-serve tiers enforce a seat cap on the invite path. Free and
+# internally assigned tiers keep production's uncapped behavior.
+SEAT_CAPPED_PLAN_TIERS = frozenset({"founder_workspace", "byok"})
+
 
 # ==================== Database Connection ====================
 
@@ -987,32 +991,43 @@ async def add_organization_member(
         if not requested_email and not legacy_user_id:
             raise HTTPException(status_code=422, detail="email or user_id is required")
 
-        # Use the persisted organization cap, not the tier catalog's original
-        # included-seat count.  max_seats is updated by the Stripe webhook when
-        # a Team workspace buys extra seats.
-        member_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
-            org_id,
-        )
-        try:
-            seat_cap = int(org["max_seats"] or 1)
-        except (KeyError, TypeError):
-            # ``seat_cap`` keeps old unit fixtures and old records readable;
-            # deployed organizations use the max_seats column above.
-            seat_cap = int(org.get("seat_cap") or 1)
-        seats_used = int(member_count or 0)
-        if seats_used >= seat_cap:
-            return JSONResponse(
-                status_code=402,
-                content={
+        # Cap only the paid self-serve tiers.  max_seats is updated by the
+        # Stripe webhook when a Team workspace buys extra seats, but a stale
+        # persisted value must never reduce the tier's included allowance.
+        plan_tier = org.get("plan_tier")
+        if plan_tier in SEAT_CAPPED_PLAN_TIERS:
+            member_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
+                org_id,
+            )
+            try:
+                persisted_max_seats = int(org["max_seats"] or 1)
+            except (KeyError, TypeError):
+                # ``seat_cap`` keeps old unit fixtures and old records readable;
+                # deployed organizations use the max_seats column above.
+                persisted_max_seats = int(org.get("seat_cap") or 1)
+            try:
+                included_seats = int(org["included_seats"] or 1)
+            except (KeyError, TypeError):
+                included_seats = 1
+            seat_cap = max(persisted_max_seats, included_seats, 1)
+            seats_used = int(member_count or 0)
+            if seats_used >= seat_cap:
+                content = {
                     "detail": (
                         f"Organization has reached its seat limit ({seats_used}/{seat_cap})."
                     ),
                     "seats_used": seats_used,
                     "max_seats": seat_cap,
-                    "add_seat_url": "/api/v1/billing/seats",
-                },
-            )
+                }
+                if plan_tier == "founder_workspace":
+                    content["add_seat_url"] = "/api/v1/billing/seats"
+                else:
+                    content["detail"] = (
+                        "Solo includes 1 seat; upgrade to the Team workspace "
+                        "to invite teammates."
+                    )
+                return JSONResponse(status_code=402, content=content)
 
         member_user_id = legacy_user_id
         created_new_user = False
