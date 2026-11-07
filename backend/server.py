@@ -144,6 +144,7 @@ from routers.granite_keys import router as granite_keys_router
 # Inference Proxy (Majiks Studio, Artwork Studio, Whisper) - March 2026
 from routers.inference_proxy import router as inference_proxy_router
 from routers.audio_proxy import router as audio_proxy_router
+from openai_v1_alias import OpenAIV1AliasMiddleware
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
@@ -858,6 +859,11 @@ if TIER_ENFORCEMENT_ENABLED:
 # Automatically deducts credits for LLM API calls
 app.add_middleware(CreditDeductionMiddleware)
 logger.info("Credit Deduction Middleware enabled (automatic credit tracking)")
+
+# OpenAI-compatible /v1/* aliases — stock SDKs default to baseURL .../v1.
+# Keep this outermost so downstream middleware sees the canonical API path.
+app.add_middleware(OpenAIV1AliasMiddleware)
+logger.info("OpenAI /v1/* alias middleware registered -> /api/v1/llm/* and /api/v1/audio/*")
 
 logger.info(f"CSRF Protection: {'Enabled' if CSRF_ENABLED else 'Disabled'}")
 logger.info(f"Rate Limiting: {'Enabled' if RATE_LIMIT_ENABLED else 'Disabled'}")
