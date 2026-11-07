@@ -2,8 +2,11 @@
 
 import pytest
 from unittest.mock import AsyncMock
+import importlib.util
+from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
 
-import subscription_api
 import asyncpg
 
 
@@ -75,6 +78,7 @@ class FakeSubscriptionConnection:
 
 @pytest.mark.asyncio
 async def test_purchasable_tiers_exclude_zero_price_and_internal_tiers(monkeypatch):
+    subscription_api = _load_subscription_module(monkeypatch)
     connection = FakeSubscriptionConnection()
     monkeypatch.setattr(asyncpg, "connect", AsyncMock(return_value=connection))
 
@@ -82,3 +86,36 @@ async def test_purchasable_tiers_exclude_zero_price_and_internal_tiers(monkeypat
 
     assert [plan["tier_code"] for plan in plans] == ["byok", "founder_workspace"]
     assert connection.closed is True
+
+
+def _load_subscription_module(monkeypatch):
+    def fake_module(name, **attributes):
+        module = ModuleType(name)
+        module.__dict__.update(attributes)
+        monkeypatch.setitem(sys.modules, name, module)
+
+    fake_module("billing_org_identity", resolve_billing_org=AsyncMock())
+    fake_module("get_credential", get_credential=lambda name: "")
+    import subscription_manager
+
+    monkeypatch.setitem(sys.modules, "subscription_manager", subscription_manager)
+    fake_module(
+        "lago_integration",
+        **{name: AsyncMock() for name in (
+            "get_customer",
+            "get_subscription",
+            "get_subscription_by_email",
+            "get_subscription_for",
+            "create_subscription",
+            "terminate_subscription",
+            "get_or_create_customer",
+            "get_current_usage",
+            "get_invoices",
+        )},
+    )
+    fake_module("email_notifications", EmailNotificationService=lambda: SimpleNamespace())
+    spec = importlib.util.spec_from_file_location("subscription_fixture", Path(__file__).resolve().parents[1] / "subscription_api.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
