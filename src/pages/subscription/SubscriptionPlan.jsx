@@ -514,6 +514,10 @@ export default function SubscriptionPlan() {
   }
 
   const currentFeatures = subscription ? getFeaturesForTier(subscription.tier_code || subscription.tier) : [];
+  // Comped / invite-only tiers (VIP Founder, Founder Friend, ...) are not in the public plan list. From
+  // one of those, every public plan is a switch that starts a paid subscription, not an up- or downgrade.
+  const onPublicPlan = !!subscription && availablePlans.some((p) => p.tier === subscription.tier);
+  const planLabel = (plan) => plan.name || plan.display_name || formatTierLabel(plan.tier);
 
   return (
     <div className="space-y-6">
@@ -595,6 +599,18 @@ export default function SubscriptionPlan() {
                 </p>
               </div>
             </div>
+
+            {subscription && !onPublicPlan && (
+              <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-sm">
+                <p className={`font-medium ${theme.text.primary}`}>
+                  You are on {subscription.plan_name || formatTierLabel(subscription.tier)}
+                  {Number(subscription.price) === 0 ? ', complimentary: nothing is billed for this plan.' : '.'}
+                </p>
+                <p className={theme.text.secondary}>
+                  Choosing Solo or Team workspace below starts a paid subscription for this organization. Your current access stays as it is until you do.
+                </p>
+              </div>
+            )}
 
             {/* Features List */}
             <div className="border-t border-slate-700 pt-6">
@@ -794,6 +810,14 @@ export default function SubscriptionPlan() {
                     className="w-full bg-slate-700 text-slate-500 rounded-lg py-2 text-sm font-medium cursor-not-allowed"
                   >
                     Current Plan
+                  </button>
+                ) : subscription && !onPublicPlan ? (
+                  <button
+                    onClick={() => handleUpgrade(plan.tier)}
+                    disabled={checkoutLoading}
+                    className={`w-full ${theme.button} rounded-lg py-2 text-sm font-medium ${checkoutLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {checkoutLoading ? 'Processing...' : `Switch to ${planLabel(plan)}`}
                   </button>
                 ) : subscription && getTierLevel(plan.tier) > getTierLevel(subscription.tier) ? (
                   <button
