@@ -1535,6 +1535,12 @@ app.include_router(litellm_api_router)
 from litellm_api import set_sessions_store as litellm_set_sessions_store
 litellm_set_sessions_store(sessions)
 logger.info("LiteLLM chat completions API endpoints registered at /api/v1/llm (chat/completions, credits, BYOK)")
+
+# MCP metering (uc_ key debit onto the shared credit ledger)
+from mcp_meter_api import router as mcp_meter_router
+app.include_router(mcp_meter_router)
+logger.info("MCP meter API registered at /api/v1/mcp/meter")
+
 app.include_router(model_catalog_router)
 logger.info("Model Catalog API endpoints registered at /api/v1/llm (models, providers)")
 # model_access_router already registered earlier (line ~547) - REMOVED DUPLICATE
