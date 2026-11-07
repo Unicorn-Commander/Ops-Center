@@ -5,7 +5,7 @@ RESTful API endpoints for managing user payment methods
 
 import logging
 from typing import Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from payment_methods_manager import PaymentMethodsManager
@@ -107,6 +107,7 @@ def get_payment_methods_manager() -> PaymentMethodsManager:
     description="Get all payment methods for the current user"
 )
 async def list_payment_methods(
+    http_request: Request,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
 ):
@@ -129,7 +130,7 @@ async def list_payment_methods(
         # users, or anyone who has never been set up for billing) is NOT an error
         # for a LIST endpoint — return a clean empty list (200) so the UI shows a
         # "no payment methods on file" empty state instead of a red error toast.
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             return PaymentMethodsListResponse(
@@ -166,6 +167,7 @@ async def list_payment_methods(
     description="Create a Stripe SetupIntent for adding a new payment method"
 )
 async def create_setup_intent(
+    http_request: Request,
     request: SetupIntentRequest = None,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
@@ -189,7 +191,7 @@ async def create_setup_intent(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -228,6 +230,7 @@ async def create_setup_intent(
     description="Set a payment method as the default for future invoices"
 )
 async def set_default_payment_method(
+    http_request: Request,
     payment_method_id: str,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
@@ -251,7 +254,7 @@ async def set_default_payment_method(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -292,6 +295,7 @@ async def set_default_payment_method(
     description="Remove a payment method from the customer"
 )
 async def remove_payment_method(
+    http_request: Request,
     payment_method_id: str,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
@@ -317,7 +321,7 @@ async def remove_payment_method(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -366,6 +370,7 @@ async def remove_payment_method(
     description="Update the billing address for the customer"
 )
 async def update_billing_address(
+    http_request: Request,
     request: UpdateBillingAddressRequest,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
@@ -388,7 +393,7 @@ async def update_billing_address(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True)
+        org_id = await resolve_billing_org(user.get("user", user), user, require_write=True, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -431,6 +436,7 @@ async def update_billing_address(
     description="Get the next invoice that will be charged"
 )
 async def get_upcoming_invoice(
+    http_request: Request,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
 ):
@@ -452,7 +458,7 @@ async def get_upcoming_invoice(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
@@ -487,6 +493,7 @@ async def get_upcoming_invoice(
     description="Get detailed information about a specific payment method"
 )
 async def get_payment_method_details(
+    http_request: Request,
     payment_method_id: str,
     user: Dict = Depends(get_current_user),
     pm_manager: PaymentMethodsManager = Depends(get_payment_methods_manager)
@@ -510,7 +517,7 @@ async def get_payment_method_details(
             )
 
         # Resolve the selected organization before any billing lookup
-        org_id = await resolve_billing_org(user.get("user", user), user)
+        org_id = await resolve_billing_org(user.get("user", user), user, request=http_request)
         stripe_customer_id = await pm_manager.get_stripe_customer_id(org_id)
         if not stripe_customer_id:
             raise HTTPException(
