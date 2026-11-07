@@ -145,6 +145,7 @@ from routers.granite_keys import router as granite_keys_router
 from routers.inference_proxy import router as inference_proxy_router
 from routers.audio_proxy import router as audio_proxy_router
 from openai_v1_alias import OpenAIV1AliasMiddleware
+from rate_limit_keys import uuda_aware_rate_limit_key
 
 # GPU Compute Fabric Control Plane - April 2026
 from routers.compute_api import router as compute_api_router
@@ -392,7 +393,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+limiter = Limiter(key_func=uuda_aware_rate_limit_key, default_limits=["1000/hour"])
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
@@ -757,7 +758,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["1000/hour"])
+limiter = Limiter(key_func=uuda_aware_rate_limit_key, default_limits=["1000/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logger.info("Rate limiting enabled (1000 requests/hour default)")
