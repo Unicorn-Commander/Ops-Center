@@ -152,8 +152,16 @@ from uc_key_validation import check_required_permission
 from routers.compute_api import router as compute_api_router
 try:
     from routers.uuda import router as uuda_router
-except ImportError:
-    uuda_router = None
+    from routers.uuda_mcp import router as uuda_mcp_router
+    from routers.uuda_drift_api import router as uuda_drift_router
+    from routers import uuda_scheduler as uuda_scheduler_mod
+except ImportError as _uuda_err:
+    # Do NOT swallow this silently. A missing router must not make the entire
+    # UUDA control plane disappear without an operator-visible error.
+    uuda_router = uuda_mcp_router = uuda_drift_router = uuda_scheduler_mod = None
+    _UUDA_IMPORT_ERROR = _uuda_err
+else:
+    _UUDA_IMPORT_ERROR = None
 
 # Billing Events API - April 2026
 from routers.billing_events import router as billing_events_router
@@ -1481,7 +1489,13 @@ logger.info("GPU Compute Fabric endpoints registered at /api/v1/compute")
 # UUDA control plane (Phase 1) — April 2026
 if uuda_router is not None:
     app.include_router(uuda_router)
-    logger.info("UUDA control-plane endpoints registered at /api/v1/uuda")
+    app.include_router(uuda_mcp_router)
+    app.include_router(uuda_drift_router)
+    app.include_router(uuda_scheduler_mod.router)
+    uuda_scheduler_mod.attach(app)
+    logger.info("UUDA control plane registered at /api/v1/uuda (core, mcp, drift, scheduler)")
+else:
+    logger.error("UUDA control plane NOT mounted - import failed: %s", _UUDA_IMPORT_ERROR)
 
 
 # Billing Events API - April 2026
