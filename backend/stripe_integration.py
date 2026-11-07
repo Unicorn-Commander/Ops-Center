@@ -18,6 +18,11 @@ from keycloak_integration import update_user_attributes, get_user_by_email
 
 # Import universal credential helper
 from get_credential import get_credential
+try:
+    from get_credential import get_credential_async
+except ImportError:  # Keep focused legacy test doubles importable.
+    async def get_credential_async(key: str, default: str = "") -> str:
+        return os.getenv(key, default).strip()
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +35,21 @@ STRIPE_WEBHOOK_SECRET = get_credential("STRIPE_WEBHOOK_SECRET")
 # just paid landed on a dead page. Both are now real routes.
 STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://unicorncommander.ai/checkout/success")
 STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "https://unicorncommander.ai/pricing?canceled=true")
-# Stripe Tax: OFF unless STRIPE_AUTOMATIC_TAX=1. Turning it on is a business decision (product tax codes +
-# registrations live in the Stripe dashboard); when on, Checkout computes tax and saves the billing address
-# to the existing customer (customer_update) so renewals keep being taxed the same way.
-STRIPE_AUTOMATIC_TAX = os.getenv("STRIPE_AUTOMATIC_TAX", "").strip().lower() in ("1", "true", "yes")
 
 
-def _tax_kwargs() -> dict:
-    if not STRIPE_AUTOMATIC_TAX:
+async def automatic_tax_enabled() -> bool:
+    """Read the tax toggle at checkout time, with platform settings over env.
+
+    ``get_credential_async`` checks and decrypts ``platform_settings`` before
+    falling back to the environment, and caches truthy values per process. A
+    toggle therefore means changing the row and restarting the process.
+    """
+    value = await get_credential_async("STRIPE_AUTOMATIC_TAX")
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+async def _tax_kwargs() -> dict:
+    if not await automatic_tax_enabled():
         return {}
     return {
         'automatic_tax': {'enabled': True},
@@ -183,6 +195,7 @@ class StripeIntegration:
         """
         canonical = lago_org_id(org_id)
         try:
+            tax_kwargs = await _tax_kwargs()
             session = stripe.checkout.Session.create(
                 customer=customer_id,
                 payment_method_types=['card'],
@@ -202,7 +215,7 @@ class StripeIntegration:
                     'tier_name': tier_name,
                     'billing_cycle': billing_cycle
                 },
-                **_tax_kwargs(),
+                **tax_kwargs,
                 subscription_data={
                     'metadata': {
                         'suite': OPS_CENTER_STRIPE_SUITE,
