@@ -6209,7 +6209,12 @@ async def oauth_login(request: Request):
         f"&scope=openid%20profile%20email"
         f"&state={state}"
     )
-    if signup:
+    if signup and os.getenv("KEYCLOAK_REGISTRATION_ENABLED", "").lower() in ("1", "true", "yes"):
+        # prompt=create asks Keycloak for its local registration page. The uchub
+        # realm keeps registrationAllowed=false (2026-08-13), so requesting it
+        # renders "Registration not allowed" and kills the storefront funnel.
+        # New users self-provision through the brokered IdPs on the plain login
+        # page instead; state still carries return_url so checkout continues.
         auth_url += "&prompt=create"
     return RedirectResponse(url=auth_url)
 
