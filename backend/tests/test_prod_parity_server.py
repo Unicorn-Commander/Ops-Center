@@ -3,13 +3,17 @@
 import ast
 import asyncio
 import hashlib
+import json
+import logging
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
@@ -115,11 +119,12 @@ def test_uuda_rate_limit_key_uses_agent_bucket_only_for_uuda_paths():
     assert uuda_aware_rate_limit_key(_request("/api/v1/compute/heartbeat", (("X-Agent-Key", agent_key),))) == "198.51.100.10"
 
 
-def test_required_permission_handles_present_absent_mcp_scopes_and_json_columns():
-    def fake_mcp_permission_checker(permissions, app=None):
-        return "mcp:*" in permissions or (app is not None and f"mcp:{app}" in permissions)
+def _fake_mcp_permission_checker(permissions, app=None):
+    return "mcp:*" in permissions or (app is not None and f"mcp:{app}" in permissions)
 
-    checker = fake_mcp_permission_checker
+
+def test_required_permission_handles_present_absent_mcp_scopes_and_json_columns():
+    checker = _fake_mcp_permission_checker
     permissions, allowed = check_required_permission(["llm:models"], None, checker)
     assert permissions == ["llm:models"] and allowed
 
@@ -148,6 +153,98 @@ def test_validate_key_handler_contains_prod_permission_and_key_context_fields():
     assert '"permissions": permissions' in SERVER_SOURCE
     assert '"key_id": key_info.get("key_id")' in SERVER_SOURCE
     assert 'logger.info(f"validate-key' not in SERVER_SOURCE
+
+
+def _load_validate_key_handler(monkeypatch, manager, db_pool):
+    tree = ast.parse(SERVER_SOURCE)
+    function = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "validate_key_endpoint")
+    function.decorator_list = []
+    fake_api_key_manager = ModuleType("api_key_manager")
+    fake_api_key_manager.get_api_key_manager = lambda: manager
+    monkeypatch.setitem(sys.modules, "api_key_manager", fake_api_key_manager)
+    fake_uc_api_keys = ModuleType("uc_api_keys")
+    fake_uc_api_keys.key_has_mcp_permission = _fake_mcp_permission_checker
+    monkeypatch.setitem(sys.modules, "uc_api_keys", fake_uc_api_keys)
+    namespace = {
+        "Request": Request,
+        "HTTPException": HTTPException,
+        "JSONResponse": JSONResponse,
+        "check_required_permission": check_required_permission,
+        "db_pool": db_pool,
+        "logger": logging.getLogger("test.validate-key"),
+    }
+    module = ast.Module(body=[function], type_ignores=[])
+    ast.fix_missing_locations(module)
+    exec(compile(module, str(SERVER_PATH), "exec"), namespace)
+    return namespace["validate_key_endpoint"]
+
+
+class _FakePoolAcquire:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def fetchrow(self, query, user_id):
+        return None
+
+
+class _FakePool:
+    def acquire(self):
+        return _FakePoolAcquire()
+
+
+class _FakeKeyManager:
+    def __init__(self, info):
+        self.info = info
+        self.presented_key = None
+
+    async def validate_api_key(self, presented_key):
+        self.presented_key = presented_key
+        return self.info
+
+
+class _FakeRequest:
+    def __init__(self, body):
+        self.body = body
+
+    async def json(self):
+        return self.body
+
+
+def test_validate_key_handler_returns_prod_permission_denial_and_key_id(monkeypatch):
+    denial_manager = _FakeKeyManager(
+        {"user_id": "fake-user", "permissions": ["llm:models"], "key_id": "fake-key-id"}
+    )
+    handler = _load_validate_key_handler(monkeypatch, denial_manager, _FakePool())
+    denial_response = asyncio.run(
+        handler(_FakeRequest({"key": "uc_test_fake", "required_permission": "mcp:accounting-ops"}))
+    )
+    denial = json.loads(denial_response.body)
+    assert denial_response.status_code == 200
+    assert denial == {
+        "valid": False,
+        "reason": "missing_permission",
+        "required_permission": "mcp:accounting-ops",
+        "permissions": ["llm:models"],
+    }
+
+    valid_manager = _FakeKeyManager(
+        {
+            "user_id": "fake-user",
+            "permissions": '["mcp:accounting-ops"]',
+            "key_id": "fake-key-id",
+        }
+    )
+    handler = _load_validate_key_handler(monkeypatch, valid_manager, _FakePool())
+    valid_response = asyncio.run(
+        handler(_FakeRequest({"key": "uc_test_fake", "required_permission": "mcp:accounting-ops"}))
+    )
+    valid = json.loads(valid_response.body)
+    assert valid["valid"] is True
+    assert valid["user"]["key_id"] == "fake-key-id"
+    assert valid["user"]["permissions"] == ["mcp:accounting-ops"]
 
 
 def _signup_condition():
