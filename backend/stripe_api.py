@@ -127,7 +127,7 @@ async def _resolve_request_billing_org(request: Request, *, require_write: bool)
         raise HTTPException(status_code=401, detail="Invalid session")
     return await resolve_billing_org(
         session["user"], session, getattr(request.app.state, "db_pool", None),
-        require_write=require_write
+        require_write=require_write, request=request
     )
 
 

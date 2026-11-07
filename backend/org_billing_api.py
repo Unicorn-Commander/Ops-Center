@@ -223,7 +223,7 @@ async def authorize_org_billing_mutation(request: Request, user: Dict, target_or
     session = sessions.get(token) or {}
     org_id = await resolve_billing_org(
         user.get("user", user), session,
-        getattr(request.app.state, "db_pool", None), require_write=True,
+        getattr(request.app.state, "db_pool", None), require_write=True, request=request,
     )
     if lago_org_id(target_org) != org_id:
         raise HTTPException(403, "Billing target differs from selected organization")

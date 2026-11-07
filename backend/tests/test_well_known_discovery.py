@@ -121,3 +121,38 @@ async def test_reserved_card_colonel_id_returns_pointer_404():
 
     assert exc_info.value.status_code == 404
     assert "agent-card.json" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host", ["unicorncommander.ai", "api.unicorncommander.ai"])
+async def test_mcp_index_on_the_customer_ring_lists_prod_doors_only(app, host):
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/.well-known/mcps.json", headers={"host": host})
+        forwarded = await client.get(
+            "/.well-known/mcps.json", headers={"x-forwarded-host": host, "host": "ops-center-direct:8084"}
+        )
+
+    assert response.status_code == 200
+    manifest = response.json()
+    assert manifest["name"] == "Unicorn Commander"
+    assert len(manifest["mcps"]) == 7
+    assert all(
+        entry["mcp_endpoint"].startswith("https://")
+        and ".unicorncommander.ai/" in entry["mcp_endpoint"]
+        and "magicunicorn.dev" not in entry["mcp_endpoint"]
+        and entry["auth"]["type"] == "bearer"
+        for entry in manifest["mcps"]
+    )
+    assert forwarded.json() == manifest
+
+
+@pytest.mark.asyncio
+async def test_mcp_index_elsewhere_keeps_the_dogfood_ring(app):
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.get("/.well-known/mcps.json", headers={"host": "magicunicorn.dev"})
+    assert len(response.json()["mcps"]) == 9
+    assert all("magicunicorn.dev" in e["mcp_endpoint"] for e in response.json()["mcps"])

@@ -103,7 +103,7 @@ def _load_session(request: Request) -> dict:
 async def get_user_org_id(request: Request) -> str:
     """Resolve the canonical org from trusted session context or membership."""
     session_data = _load_session(request)
-    return await resolve_billing_org(session_data.get("user") or {}, session_data)
+    return await resolve_billing_org(session_data.get("user") or {}, session_data, request=request)
 
 
 async def get_user_email(request: Request) -> str:
@@ -267,7 +267,7 @@ async def get_invoice_pdf(invoice_id: str, request: Request):
     """
     session_data = _load_session(request)
     user = session_data.get("user", {}) or {}
-    org_id = await resolve_billing_org(user, session_data)
+    org_id = await resolve_billing_org(user, session_data, request=request)
     email = user.get("email") or session_data.get("email")
 
     # Ownership check: find the invoice among the caller's invoices
@@ -421,7 +421,7 @@ async def retry_invoice(invoice_id: str, request: Request):
     """
     session_data = _load_session(request)
     user = session_data.get("user", {}) or {}
-    org_id = await resolve_billing_org(user, session_data, require_write=True)
+    org_id = await resolve_billing_org(user, session_data, require_write=True, request=request)
     email = user.get("email") or session_data.get("email")
 
     # Ownership check: find the invoice among the caller's invoices

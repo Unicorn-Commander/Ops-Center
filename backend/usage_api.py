@@ -66,7 +66,7 @@ async def get_user_org_id(request: Request) -> str:
     if not session or not session.get("user"):
         raise HTTPException(status_code=401, detail="Invalid session")
     return await resolve_billing_org(
-        session["user"], session, getattr(request.app.state, "db_pool", None)
+        session["user"], session, getattr(request.app.state, "db_pool", None), request=request
     )
 
 
