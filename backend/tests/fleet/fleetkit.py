@@ -70,7 +70,7 @@ def make_fleet(generated_at: datetime = NOW) -> Dict[str, Any]:
         "gpu-b": host("gpu-b", models=[
             "Tesla P40 #0: overnight batch jobs",
             "Tesla P40 #1: speaker labels for recordings",
-            "imaging workers for the demo clinic",
+            "imaging workers for the demo lab",
         ], **inventoried(gpu=["Tesla P40, 23040 MiB", "Tesla P40, 23040 MiB"])),
         # An APU: the inventory names the codename only; the note names the Radeon.
         "apu-1": host("apu-1", site="lab", models=["Radeon 8060S gfx1151 (ROCm): long-context chat"],

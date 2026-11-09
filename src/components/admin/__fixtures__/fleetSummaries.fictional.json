@@ -46,7 +46,7 @@
         "stale": false,
         "memory_gib": 62,
         "notes": [
-          "imaging workers for the demo clinic"
+          "imaging workers for the demo lab"
         ],
         "gpus": [
           {

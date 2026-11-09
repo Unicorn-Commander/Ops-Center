@@ -114,7 +114,7 @@ def test_normal_snapshot_counts_every_gpu_with_hosts_and_detail():
     gpu_b = body["hosts"][0]
     assert [g["notes"] for g in gpu_b["gpus"]] == [["Tesla P40 #0: overnight batch jobs"],
                                                    ["Tesla P40 #1: speaker labels for recordings"]]
-    assert gpu_b["notes"] == ["imaging workers for the demo clinic"]
+    assert gpu_b["notes"] == ["imaging workers for the demo lab"]
 
 
 def test_stale_snapshot_marks_every_gpu_host_stale_with_its_last_seen():
