@@ -18,7 +18,15 @@ export function organizationsFromPayload(payload) {
   return { organizations: [], payload: null };
 }
 
-export function pickCurrentOrganization(organizations, payload, storedId) {
+// X-Current-Org-Id names the organization the backend serves this browser, the
+// one My Apps loads. Absent on the fallback route and on older backends.
+function currentOrgHeader(response) {
+  return response?.headers?.get?.('X-Current-Org-Id') || null;
+}
+
+export function pickCurrentOrganization(organizations, payload, storedId, backendOrgId = null) {
+  const backendOrg = backendOrgId && organizations.find(org => String(org.id) === String(backendOrgId));
+  if (backendOrg) return backendOrg;
   const preferred = payload?.current_org_id || payload?.default_org_id || storedId;
   return organizations.find(org => String(org.id) === String(preferred)) || organizations[0] || null;
 }
@@ -44,7 +52,7 @@ async function loadOrganizations(fetchImpl) {
         sawFailure = true;
         continue;
       }
-      return organizationsFromPayload(await readJson(response));
+      return { ...organizationsFromPayload(await readJson(response)), backendOrgId: currentOrgHeader(response) };
     } catch {
       sawFailure = true;
     }
@@ -92,7 +100,7 @@ export default function HomeActivitySpine({
           loading: false,
           error: null,
           organizations: result.organizations,
-          current: pickCurrentOrganization(result.organizations, result.payload, storedId)
+          current: pickCurrentOrganization(result.organizations, result.payload, storedId, result.backendOrgId)
         });
       })
       .catch(() => {

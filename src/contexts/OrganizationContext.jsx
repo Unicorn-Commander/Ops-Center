@@ -108,6 +108,20 @@ export function OrganizationProvider({ children }) {
       const orgs = data.organizations || data || [];
       setOrganizations(orgs);
 
+      // X-Current-Org-Id names the organization the backend serves this browser
+      // (the current_org_id cookie, else the session org: the rule my-apps uses).
+      // Follow it when it is in the list, so the header and switcher never name
+      // one organization while the page loads another one's apps.
+      const backendOrgId = response.headers?.get?.('X-Current-Org-Id') || null;
+      if (backendOrgId && orgs.some(org => String(org.id) === String(backendOrgId))) {
+        if (String(backendOrgId) !== String(currentOrgId)) {
+          console.log('[OrganizationContext] Following the backend organization:', backendOrgId);
+        }
+        setCurrentOrgId(backendOrgId);
+        localStorage.setItem('currentOrgId', backendOrgId);
+        return;
+      }
+
       // If no current org is set, or the saved one is no longer in the user's list
       // (membership removed, org deactivated), use the API's current/default org.
       // Otherwise a stale saved id leaves the switcher on "Select Organization".
