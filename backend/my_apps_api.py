@@ -714,23 +714,6 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
     import logging
     logger = logging.getLogger(__name__)
 
-    session_data = _session_data_from_request(request) or {}
-    user_data = session_data.get("user", {}) or {}
-    roles = set()
-    for role_source in (user_data.get("roles"), session_data.get("roles")):
-        if isinstance(role_source, str):
-            roles.update(role_source.split())
-        elif role_source:
-            roles.update(role_source)
-    for role_source in (user_data.get("role"), session_data.get("role")):
-        if isinstance(role_source, str):
-            roles.update(role_source.split())
-    is_admin = bool(
-        user_data.get("is_admin")
-        or session_data.get("is_admin")
-        or roles.intersection({"admin", "super_admin", "platform_admin"})
-    )
-
     # Resolve the selected org before opening the catalog. An invalid current-org
     # cookie is fail-closed and must not fall back to the session's old org.
     org_id = await get_user_org_from_session(request)
@@ -754,8 +737,9 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
             org_features_set = await get_org_features(org_id, conn)
             enabled_features = tier_features.union(org_features_set)
 
-        # Admins are still allowed to inspect every active catalog entry, but the
-        # response uses the same safe metadata contract as ordinary users.
+        # Every person, platform admins included, sees only the apps the selected
+        # organization is entitled to. The full catalog lives in the admin console
+        # (add-on management), not on "My Apps", the launcher or the home.
         apps_query = """
             SELECT id, name, slug, description, icon_url, launch_url,
                    category, feature_key, base_price, metadata
@@ -775,7 +759,7 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
                 continue
 
             if feature_key:
-                if (not is_admin or org_context_invalid) and feature_key not in enabled_features:
+                if feature_key not in enabled_features:
                     continue
                 access_type = "tier_included" if feature_key in tier_features else "org_granted"
             elif app_dict.get("base_price") == 0:
