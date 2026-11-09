@@ -197,9 +197,12 @@ async def build_home_state(ctx: HomeContext, providers: HomeProviders) -> Dict[s
     cursor_part = result_of(cursor_task) or ops_center_timeout_part("cursor", ctx)
     usage_part = (result_of(usage_task) or ops_center_timeout_part("usage", ctx)) if usage_task else None
 
+    # The home actions are offered on items only when HOME_ACTIONS_ENABLED is
+    # on; off, the document is exactly what it was before they existed.
+    offer = settings.home_actions_enabled()
     modules: List[Dict[str, Any]] = [
-        build_needs_you(ctx, snaps),
-        build_today(ctx, snaps),
+        build_needs_you(ctx, snaps, offer=offer),
+        build_today(ctx, snaps, offer=offer),
         build_since_last_visit(ctx, snaps, cursor_part),
         build_apps(ctx, snaps, apps_part),
         build_recent_meetings(ctx, snaps),

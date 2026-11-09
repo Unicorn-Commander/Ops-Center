@@ -16,14 +16,29 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+import home_api
+from home import actions
 from home.aggregator import build_home_state
 from home.markdown import render_markdown
-from homekit import FIXTURES, ORG_ID, FakeSuite, load, make_ctx, make_providers, suite_routes
-from test_home_actions import AO_ITEM, EO_ITEM, PO_PROPOSAL, PO_TASK
+from homekit import (
+    FIXTURES,
+    NOW,
+    ORG_ID,
+    FakeSuite,
+    load,
+    make_ctx,
+    make_providers,
+    module_by_id,
+    suite_routes,
+)
+from test_home_actions import AO_ITEM, EO_ITEM, PO_PROPOSAL, PO_TASK, ReceiptsDB, action_routes, writes
+from test_home_actions import make_providers as action_providers
 
 GOLDEN_JSON = FIXTURES / "golden_state_actions_off.json"
 GOLDEN_MD = FIXTURES / "golden_state_actions_off.md"
@@ -130,6 +145,37 @@ def as_text(document: Dict[str, Any]) -> str:
     return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
 
+def items_by_key(document: Dict[str, Any]) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    return {
+        (module["id"], item["id"]): item
+        for module in document["modules"] for item in module.get("items") or [] if "id" in item
+    }
+
+
+def offers_in(document: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
+    """(module id, item, action) for every offered action (the ones with a method)."""
+
+    return [
+        (module["id"], item, action)
+        for module in document["modules"] for item in module.get("items") or []
+        for action in item.get("actions") or [] if "method" in action
+    ]
+
+
+def without_offers(node: Any) -> Any:
+    """The document with every offered action taken out of every actions list."""
+
+    if isinstance(node, dict):
+        return {
+            key: [without_offers(a) for a in value if not (isinstance(a, dict) and "method" in a)]
+            if key == "actions" and isinstance(value, list) else without_offers(value)
+            for key, value in node.items()
+        }
+    if isinstance(node, list):
+        return [without_offers(value) for value in node]
+    return node
+
+
 # --------------------------------------------------------------------------- #
 # The flag off: nothing changes
 # --------------------------------------------------------------------------- #
@@ -145,3 +191,201 @@ async def test_with_actions_off_the_state_document_is_byte_for_byte_what_it_was(
     document = frozen(await state_document())
     assert as_text(document) == GOLDEN_JSON.read_text(encoding="utf-8")
     assert render_markdown(document) == GOLDEN_MD.read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- #
+# The flag on: what is offered, and how
+# --------------------------------------------------------------------------- #
+
+ITEM_UUID = "0f1e2d3c-4b5a-4968-8776-655443322110"
+
+# The brief's labels, per (source, kind of the item id), in table order.
+LABELS = {
+    ("email-ops", "draft"): [("approve", "Approve", "Sends the email now"), ("reject", "Reject", None)],
+    ("accounting-ops", "approval"): [("approve", "Approve", None), ("reject", "Reject", None)],
+    ("project-ops", "triage"): [("accept", "Accept", None), ("reject", "Reject", None)],
+    ("project-ops", "task"): [("done", "Mark done", None)],
+}
+
+
+def offer(source: str, item_id: str, action: str, label: str, note: str = "") -> Dict[str, Any]:
+    entry = {"id": action, "label": label, "method": "POST",
+             "href": f"/api/v1/home/actions/{source}/{item_id}/{action}"}
+    if note:
+        entry["note"] = note
+    return entry
+
+
+# What the suite's plain rows carry after Open, keyed by (module, item id).
+OFFERED = {
+    ("needs_you", f"eo:draft:{EO_ITEM}"): [
+        offer("email-ops", f"eo:draft:{EO_ITEM}", "approve", "Approve", "Sends the email now"),
+        offer("email-ops", f"eo:draft:{EO_ITEM}", "reject", "Reject"),
+    ],
+    ("needs_you", f"ao:approval:{AO_ITEM}"): [
+        offer("accounting-ops", f"ao:approval:{AO_ITEM}", "approve", "Approve"),
+        offer("accounting-ops", f"ao:approval:{AO_ITEM}", "reject", "Reject"),
+    ],
+    ("needs_you", f"po:triage:{PO_PROPOSAL}"): [
+        offer("project-ops", f"po:triage:{PO_PROPOSAL}", "accept", "Accept"),
+        offer("project-ops", f"po:triage:{PO_PROPOSAL}", "reject", "Reject"),
+    ],
+    ("today", f"po:task:{PO_TASK}"): [
+        offer("project-ops", f"po:task:{PO_TASK}", "done", "Mark done"),
+    ],
+}
+
+
+def test_the_label_table_covers_every_action_the_route_takes():
+    assert set(LABELS) == {(spec.source, spec.kind) for spec in actions.ACTIONS}
+    for spec in actions.ACTIONS:
+        assert spec.label, spec  # no action is offered without a label
+        assert "\u2014" not in spec.label + (spec.note or "")
+
+
+@pytest.mark.parametrize("source, kind", sorted(LABELS))
+def test_offered_actions_are_the_specs_in_table_order_with_their_labels(source, kind):
+    item_id = f"{actions.SOURCE_CODES[source]}:{kind}:{ITEM_UUID}"
+    offered = actions.offered_actions(item_id, {}, NOW)
+    # Derived from SPECS: the same actions in the same order, no second copy.
+    assert [o["id"] for o in offered] == [
+        spec.action for spec in actions.ACTIONS if (spec.source, spec.kind) == (source, kind)
+    ]
+    assert [(o["id"], o["label"], o.get("note")) for o in offered] == LABELS[(source, kind)]
+    for entry in offered:
+        assert set(entry) <= {"id", "label", "method", "href", "note"}
+        assert entry["method"] == "POST"
+        assert entry["href"] == f"/api/v1/home/actions/{source}/{item_id}/{entry['id']}"
+        # The route's own parser takes the href back to this very spec.
+        prefix, href_source, href_item, href_action = entry["href"].rsplit("/", 3)
+        target, refusal = actions.resolve_target(href_source, href_item, href_action)
+        assert prefix == "/api/v1/home/actions" and refusal is None
+        assert target.spec is actions.SPECS[(source, kind, entry["id"])]
+
+
+def test_an_offered_href_uses_the_routes_own_form_of_the_id():
+    upper = ITEM_UUID.upper()
+    offered = actions.offered_actions(f"po:task:{upper}", {}, NOW)
+    assert [o["href"] for o in offered] == [f"/api/v1/home/actions/project-ops/po:task:{ITEM_UUID}/done"]
+
+
+@pytest.mark.parametrize(
+    "item_id",
+    ["eo:draft:eo-item-1", "eo:draft", f"eo:draft:{ITEM_UUID}:extra", f"mo:session:{ITEM_UUID}",
+     f"co:followup:{ITEM_UUID}", f"po:proposal:{ITEM_UUID}", f"ao:priority:{ITEM_UUID}",
+     f"cdr:notification:{ITEM_UUID}", "", None],
+)
+def test_an_id_the_route_would_refuse_is_offered_nothing(item_id):
+    assert actions.offered_actions(item_id, {}, NOW) == []
+
+
+@pytest.mark.asyncio
+async def test_with_actions_on_each_item_carries_its_actions_after_open(monkeypatch):
+    monkeypatch.delenv("HOME_ACTIONS_ENABLED", raising=False)
+    off = items_by_key(await state_document())
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    on = items_by_key(await state_document())
+    for key, expected in OFFERED.items():
+        before = off[key]["actions"]
+        assert [a["id"] for a in before] == ["open"], key
+        assert on[key]["actions"] == before + expected, key
+
+
+@pytest.mark.asyncio
+async def test_with_actions_on_the_document_only_gains_the_offered_actions(monkeypatch):
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    document = frozen(await state_document())
+    offers = offers_in(document)
+    assert len(offers) >= sum(len(expected) for expected in OFFERED.values())
+    assert {module_id for module_id, _, _ in offers} == {"needs_you", "today"}
+    # Take the offers out again and it is the flag-off document, byte for byte.
+    assert as_text(without_offers(document)) == GOLDEN_JSON.read_text(encoding="utf-8")
+    for module in document["modules"]:
+        for item in module.get("items") or []:
+            ids = [a["id"] for a in item.get("actions") or []]
+            if "open" in ids:
+                assert ids[0] == "open", item["id"]  # Open stays first
+
+
+@pytest.mark.asyncio
+async def test_closed_tasks_since_the_last_visit_are_offered_nothing(monkeypatch):
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    since = module_by_id(await state_document(), "since_last_visit")
+    closed = [item for item in since["items"] if item["id"].startswith("po:task:")]
+    assert closed and all("actions" not in item for item in closed)
+
+
+# --------------------------------------------------------------------------- #
+# Accounting-Ops journal proposals: Open only
+# --------------------------------------------------------------------------- #
+
+
+def test_accounting_ops_journal_proposals_withhold_both_decisions():
+    # ebd7796 app/api/approvals.py:254-264 refuses approve and reject on a
+    # journal_entry_post unless the token was issued to Accounting-Ops' own client.
+    journal = {"subject_type": "journal_entry_post"}
+    assert actions.withheld_actions("accounting-ops", "approval", journal, NOW) == {"approve", "reject"}
+    assert actions.offered_actions(f"ao:approval:{ITEM_UUID}", journal, NOW) == []
+    for subject in ("bank_transaction_import", "journal_recategorization", "compliance_rule", "", None):
+        offered = actions.offered_actions(f"ao:approval:{ITEM_UUID}", {"subject_type": subject}, NOW)
+        assert [o["id"] for o in offered] == ["approve", "reject"], subject
+
+
+@pytest.mark.asyncio
+async def test_a_journal_proposal_in_needs_you_keeps_open_only(monkeypatch):
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    items = items_by_key(await state_document())
+    journal = items[("needs_you", f"ao:approval:{AO_JOURNAL}")]
+    assert journal["title"] == "Approve journal entry post of 412.00 USD for Rivergreen Coffee Co."
+    assert journal["actions"] == [{"id": "open", "label": "Open", "href": "https://ledger.example.com/approvals"}]
+    assert [a["id"] for a in items[("needs_you", f"ao:approval:{AO_ITEM}")]["actions"]] == [
+        "open", "approve", "reject",
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Round trip: an href from the state document, POSTed through the real route
+# --------------------------------------------------------------------------- #
+
+
+def round_trip_client(suite: FakeSuite, db: ReceiptsDB) -> TestClient:
+    """Both real routes on a bare app, reading and writing the same fake apps."""
+
+    app = FastAPI()
+    app.include_router(home_api.router)
+    app.dependency_overrides[home_api.get_home_context] = lambda: make_ctx()
+    app.dependency_overrides[home_api.get_home_providers] = lambda: make_providers(suite)
+    app.dependency_overrides[home_api.get_action_providers] = lambda: action_providers(suite, db)
+    return TestClient(app)
+
+
+def test_every_offered_href_round_trips_through_the_real_action_route(monkeypatch):
+    monkeypatch.setenv("HOME_STATE_ENABLED", "true")
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    # The state reads, plus H1b's membership reads and write answers for the
+    # same four item ids.
+    suite = FakeSuite({**action_routes(), **actionable_routes()})
+    db = ReceiptsDB()
+    client = round_trip_client(suite, db)
+
+    state = client.get("/api/v1/home/state")
+    assert state.status_code == 200, state.text
+    offers = offers_in(state.json())
+    assert {(item["id"], action["id"]) for _, item, action in offers} >= {
+        (item_id, entry["id"]) for (_, item_id), expected in OFFERED.items() for entry in expected
+    }
+
+    for number, (_, item, action) in enumerate(offers):
+        written = len(writes(suite))
+        response = client.request(
+            action["method"], action["href"], headers={"Idempotency-Key": f"round-trip-{number:04d}"}
+        )
+        assert response.status_code == 200, (action["href"], response.text)
+        receipt = response.json()
+        assert receipt["schema"] == "uc.home.action_receipt/1" and receipt["replayed"] is False
+        assert (receipt["source"], receipt["item_id"], receipt["action"]) == (item["app"], item["id"], action["id"])
+        assert receipt["outcome"] in actions.OUTCOMES
+        if (item["id"], action["id"]) in {(i, e["id"]) for (_, i), x in OFFERED.items() for e in x}:
+            assert receipt["outcome"] == "done", receipt
+            assert len(writes(suite)) == written + 1
+    assert len(db.rows) == len(offers)
