@@ -1,8 +1,9 @@
-"""Signed-in home state: ``GET /api/v1/home/state``.
+"""Signed-in home: ``GET /api/v1/home/state`` and
+``POST /api/v1/home/actions/{source}/{item_id}/{action}``.
 
-Returns the home-state document (User Home design, section g) for the signed-in
-person in their CURRENT organization, as JSON (default) or, with
-``Accept: text/markdown``, as markdown with the same modules and items.
+The state route returns the home-state document (User Home design, section g)
+for the signed-in person in their CURRENT organization, as JSON (default) or,
+with ``Accept: text/markdown``, as markdown with the same modules and items.
 
 * Off unless ``HOME_STATE_ENABLED`` is true; when off the route answers 404,
   exactly like a route that does not exist.
@@ -15,6 +16,13 @@ person in their CURRENT organization, as JSON (default) or, with
   resolve it (``my_apps_api.get_user_org_from_session``: the
   ``current_org_id`` cookie or the session org, membership-checked).
 
+The action route (``home.actions``) forwards one approve, reject, accept or done
+to the app that owns the item, with the same token, organization and hosts, and
+returns a receipt. It is off (404) unless ``HOME_ACTIONS_ENABLED`` is true,
+independent of ``HOME_STATE_ENABLED``. It is cookie-authenticated and
+state-changing, so the CSRF middleware checks it like every other browser POST:
+it is on no exemption list (``server.py:785-849``).
+
 The heavy lifting lives in the ``home`` package, which imports nothing from
 ``server.py``. This module only binds the request to it.
 """
@@ -26,9 +34,10 @@ from datetime import timezone
 from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from home import actions as home_actions
 from home import settings
 from home.aggregator import build_home_state
 from home.context import HomeContext, HomeProviders, utc_now
@@ -49,6 +58,7 @@ ROLE_SQL = """
 """
 
 RESPONSE_HEADERS = {"Cache-Control": "no-store", "Vary": "Accept, Cookie"}
+ACTION_HEADERS = {"Cache-Control": "no-store"}
 
 
 def _request_host(request: Request) -> str:
@@ -96,6 +106,11 @@ def wants_markdown(accept: Optional[str]) -> bool:
 
 async def require_home_enabled() -> None:
     if not settings.home_state_enabled():
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+async def require_actions_enabled() -> None:
+    if not settings.home_actions_enabled():
         raise HTTPException(status_code=404, detail="Not Found")
 
 
@@ -234,3 +249,47 @@ async def get_home_state(
             headers=RESPONSE_HEADERS,
         )
     return JSONResponse(document, headers=RESPONSE_HEADERS)
+
+
+async def get_action_providers(
+    ctx: HomeContext = Depends(get_home_context),
+) -> home_actions.ActionProviders:
+    """Bind the receipt table and the org's workspace links to this request."""
+
+    from my_apps_api import get_db_connection
+
+    async def workspace_rows():
+        conn = await get_db_connection()
+        try:
+            return await load_workspace_rows(conn, ctx.org_id)
+        finally:
+            await conn.close()
+
+    return home_actions.ActionProviders(
+        store=home_actions.PgReceiptStore(get_db_connection), workspace_rows=workspace_rows
+    )
+
+
+@router.post("/actions/{source}/{item_id}/{action}", dependencies=[Depends(require_actions_enabled)])
+async def post_home_action(
+    source: str,
+    item_id: str,
+    action: str,
+    ctx: HomeContext = Depends(get_home_context),
+    providers: home_actions.ActionProviders = Depends(get_action_providers),
+    idempotency_key: Optional[str] = Header(default=None),
+):
+    """Approve, reject, accept or mark done one home item in the app that owns
+    it, once per ``Idempotency-Key``, and return the receipt."""
+
+    try:
+        reply = await home_actions.run_action(ctx, providers, source, item_id, action, idempotency_key)
+    except Exception as exc:  # noqa: BLE001 - the person gets a problem document, never a 500
+        logger.warning("home action: request failed (%s)", type(exc).__name__)
+        reply = home_actions.unexpected_problem()
+    return JSONResponse(
+        reply.body,
+        status_code=reply.status_code,
+        media_type="application/problem+json" if reply.problem else "application/json",
+        headers={**ACTION_HEADERS, **reply.headers},
+    )

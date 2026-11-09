@@ -53,6 +53,7 @@ _TRUE = {"1", "true", "yes", "on"}
 
 DEFAULT_APP_TIMEOUT_SECONDS = 2.5
 DEFAULT_TOTAL_BUDGET_SECONDS = 4.0
+DEFAULT_ACTION_TIMEOUT_SECONDS = 10.0
 
 
 def _env(name: str) -> str:
@@ -63,6 +64,13 @@ def home_state_enabled() -> bool:
     """``HOME_STATE_ENABLED`` (default false). Off means the route answers 404."""
 
     return _env("HOME_STATE_ENABLED").lower() in _TRUE
+
+
+def home_actions_enabled() -> bool:
+    """``HOME_ACTIONS_ENABLED`` (default false). Off means the action route
+    answers 404. Independent of ``HOME_STATE_ENABLED``."""
+
+    return _env("HOME_ACTIONS_ENABLED").lower() in _TRUE
 
 
 def _float_env(name: str, default: float, low: float, high: float) -> float:
@@ -86,6 +94,15 @@ def total_budget_seconds() -> float:
     """Whole-document time budget (``HOME_TOTAL_BUDGET_SECONDS``, default 4 s)."""
 
     return _float_env("HOME_TOTAL_BUDGET_SECONDS", DEFAULT_TOTAL_BUDGET_SECONDS, 0.1, 30.0)
+
+
+def action_timeout_seconds() -> float:
+    """Time limit for the one write a home action makes
+    (``HOME_ACTION_TIMEOUT_SECONDS``, default 10 s). Longer than the read limit
+    because an Email-Ops approve hands the mail to the mail server inside the
+    request."""
+
+    return _float_env("HOME_ACTION_TIMEOUT_SECONDS", DEFAULT_ACTION_TIMEOUT_SECONDS, 1.0, 30.0)
 
 
 def default_timezone() -> str:
