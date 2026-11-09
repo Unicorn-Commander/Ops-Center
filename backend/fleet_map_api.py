@@ -23,6 +23,14 @@ GET  /api/v1/fleet/map.js   admin session. Same payload as `window.FLEET = ...;`
                             plain <script src> so the session cookie rides along.
 GET  /api/v1/fleet/status   admin session. Metadata only (age, counts, whether
                             ingest is configured) - what the React page polls.
+GET  /api/v1/fleet/gpus     admin session. Every GPU in the snapshot: totals, GPU
+                            hosts (last seen, stale, Owned/Leased) and per-GPU detail
+                            (fleet_gpus.gpu_summary). No snapshot -> 200 with
+                            state "not_connected". Read by the dashboard GPU card.
+GET  /api/v1/fleet/inference
+                            admin session. Model-serving containers/units grouped
+                            by host with the Private (Owned/Leased) label
+                            (fleet_gpus.inference_summary). Same not_connected rule.
 GET  /api/v1/fleet/viewer/{file}
                             admin session. The vendored viewer itself
                             (public/fleet-map/{index.html,d3.v7.min.js,
@@ -68,6 +76,7 @@ from typing import Any, Dict, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
+import fleet_gpus
 from auth_dependencies import require_admin_user
 
 logger = logging.getLogger(__name__)
@@ -299,6 +308,25 @@ async def fleet_map_js(user: Dict = Depends(require_admin_user)):
             json.dumps(fleet, separators=(",", ":")), json.dumps(_status_doc(fleet, meta)))
     return Response(content=js, media_type="application/javascript",
                     headers={"Cache-Control": "no-store"})
+
+
+# --------------------------------------------------------------------------- GPUs + private inference (admin)
+@router.get("/gpus")
+async def fleet_gpus_summary(user: Dict = Depends(require_admin_user)):
+    """Every GPU the latest snapshot holds. Missing data stays null; no snapshot is "not_connected"."""
+    fleet, meta = _load()
+    body = fleet_gpus.gpu_summary(fleet, meta, stale_seconds=STALE_SECONDS,
+                                  ingest_configured=_ingest_token() is not None)
+    return JSONResponse(content=body, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/inference")
+async def fleet_inference_summary(user: Dict = Depends(require_admin_user)):
+    """Model-serving services the latest snapshot holds, grouped by host, with the controller label."""
+    fleet, meta = _load()
+    body = fleet_gpus.inference_summary(fleet, meta, stale_seconds=STALE_SECONDS,
+                                        ingest_configured=_ingest_token() is not None)
+    return JSONResponse(content=body, headers={"Cache-Control": "no-store"})
 
 
 # --------------------------------------------------------------------------- viewer (admin)
