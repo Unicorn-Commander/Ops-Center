@@ -14,15 +14,18 @@ an ``azp``/``aud`` in ``KEYCLOAK_EXPECTED_AUDIENCES`` (same file, :400-428).
 * ``GET /api/v1/tasks/my-tasks`` (``backend/src/tasks/tasks.controller.ts:90-95``,
   ``tasks.service.ts:1352-1400``): the caller's own tasks, every status, not
   paged. Rows carry ``id, title, status, priority, dueDate, completedAt``
-  (``prisma/schema.prisma:693-723``) and ``project{id, projectNumber, title,
-  status}``. ``dueDate`` uses the UTC-midnight date-only convention
-  (``tasks.service.ts:462-470``). ``GET /tasks?assignedToId=`` needs the
-  Project-Ops user id, so the caller's own list is used instead.
+  (``prisma/schema.prisma:693-723``), ``project{id, projectNumber, title,
+  status}`` and ``isBlocked``, an open finish-to-start blocker
+  (``tasks.service.ts:1389-1395``). ``dueDate`` uses the UTC-midnight
+  date-only convention (``tasks.service.ts:462-470``).
+  ``GET /tasks?assignedToId=`` needs the Project-Ops user id, so the caller's
+  own list is used instead.
 * ``GET /api/v1/triage/proposals?status=PENDING&limit=N``
   (``backend/src/triage/triage.controller.ts:83-92``, ``triage.service.ts:674-689``,
   ``dto/triage-proposals.dto.ts:155-178``): an array (no total) of pending
   proposals with ``id, proposedTitle, proposedPriority, rawText, owner,
-  sourceType, reasoning, createdAt, proposedProject{projectNumber, title}``
+  sourceType, reasoning, createdAt, proposedProjectId,
+  proposedProject{projectNumber, title}``
   (``schema.prisma:1063-1107``). Ruling needs ADMIN, MANAGER or STAFF
   (``triage.controller.ts:94-121``), so it is fetched for those roles only.
 
@@ -82,6 +85,7 @@ def normalize_task(row: Dict[str, Any], env: AdapterEnv) -> Dict[str, Any]:
         "all_day": all_day,
         "completed_at": parse_iso(row.get("completedAt")),
         "project": short(project.get("title")),
+        "blocked": bool(row.get("isBlocked")),
         "href": env.screen(f"/dashboard/tasks/{path_segment(task_id)}") if task_id else None,
     }
 
@@ -98,6 +102,7 @@ def normalize_proposal(row: Dict[str, Any]) -> Dict[str, Any]:
         "reasoning": row.get("reasoning"),
         "created_at": parse_iso(row.get("createdAt")),
         "project": short(project.get("title")),
+        "project_id": row.get("proposedProjectId") or None,
     }
 
 

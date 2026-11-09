@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 import pytest
@@ -208,6 +209,15 @@ LABELS = {
 }
 
 
+# A normalized row of each kind on which nothing is withheld.
+PLAIN_ROWS = {
+    ("email-ops", "draft"): {"kind": "EMAIL", "sends_at": None},
+    ("accounting-ops", "approval"): {"subject_type": "bank_transaction_import"},
+    ("project-ops", "triage"): {"project_id": "6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e21"},
+    ("project-ops", "task"): {"blocked": False},
+}
+
+
 def offer(source: str, item_id: str, action: str, label: str, note: str = "") -> Dict[str, Any]:
     entry = {"id": action, "label": label, "method": "POST",
              "href": f"/api/v1/home/actions/{source}/{item_id}/{action}"}
@@ -246,7 +256,7 @@ def test_the_label_table_covers_every_action_the_route_takes():
 @pytest.mark.parametrize("source, kind", sorted(LABELS))
 def test_offered_actions_are_the_specs_in_table_order_with_their_labels(source, kind):
     item_id = f"{actions.SOURCE_CODES[source]}:{kind}:{ITEM_UUID}"
-    offered = actions.offered_actions(item_id, {}, NOW)
+    offered = actions.offered_actions(item_id, PLAIN_ROWS[(source, kind)], NOW)
     # Derived from SPECS: the same actions in the same order, no second copy.
     assert [o["id"] for o in offered] == [
         spec.action for spec in actions.ACTIONS if (spec.source, spec.kind) == (source, kind)
@@ -265,7 +275,7 @@ def test_offered_actions_are_the_specs_in_table_order_with_their_labels(source, 
 
 def test_an_offered_href_uses_the_routes_own_form_of_the_id():
     upper = ITEM_UUID.upper()
-    offered = actions.offered_actions(f"po:task:{upper}", {}, NOW)
+    offered = actions.offered_actions(f"po:task:{upper}", PLAIN_ROWS[("project-ops", "task")], NOW)
     assert [o["href"] for o in offered] == [f"/api/v1/home/actions/project-ops/po:task:{ITEM_UUID}/done"]
 
 
@@ -276,7 +286,7 @@ def test_an_offered_href_uses_the_routes_own_form_of_the_id():
      f"cdr:notification:{ITEM_UUID}", "", None],
 )
 def test_an_id_the_route_would_refuse_is_offered_nothing(item_id):
-    assert actions.offered_actions(item_id, {}, NOW) == []
+    assert actions.offered_actions(item_id, {"kind": "EMAIL", "project_id": "p", "blocked": False}, NOW) == []
 
 
 @pytest.mark.asyncio
@@ -340,6 +350,64 @@ async def test_a_journal_proposal_in_needs_you_keeps_open_only(monkeypatch):
     assert journal["actions"] == [{"id": "open", "label": "Open", "href": "https://ledger.example.com/approvals"}]
     assert [a["id"] for a in items[("needs_you", f"ao:approval:{AO_ITEM}")]["actions"]] == [
         "open", "approve", "reject",
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Rows an app would refuse, or where the label would not be true
+# --------------------------------------------------------------------------- #
+
+LATER = datetime(2026, 11, 10, 14, 0, tzinfo=timezone.utc)  # NOW is 2026-11-09 15:00 UTC
+EARLIER = datetime(2026, 11, 9, 14, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    "source, kind, row, offered",
+    [
+        # Email-Ops 2810e17: only EMAIL rows are drafts (unset means EMAIL there).
+        ("email-ops", "draft", {"kind": "EMAIL"}, ["approve", "reject"]),
+        ("email-ops", "draft", {"kind": None}, ["approve", "reject"]),
+        ("email-ops", "draft", {"kind": "email"}, ["approve", "reject"]),
+        ("email-ops", "draft", {"kind": "CLEANUP"}, []),  # approve would trash or archive mail
+        ("email-ops", "draft", {"kind": "NOTICE"}, []),  # approve would add a calendar event
+        # Approve leaves a draft with a send time still ahead as it is.
+        ("email-ops", "draft", {"kind": "EMAIL", "sends_at": LATER}, ["reject"]),
+        ("email-ops", "draft", {"kind": "EMAIL", "sends_at": EARLIER}, ["approve", "reject"]),
+        ("email-ops", "draft", {"kind": "EMAIL", "sends_at": "2026-11-10T14:00:00Z"}, ["reject"]),
+        ("email-ops", "draft", {"kind": "EMAIL", "sends_at": "not a time"}, ["approve", "reject"]),
+        # Accounting-Ops ebd7796: journal proposals need its own client's token.
+        ("accounting-ops", "approval", {"subject_type": "journal_entry_post"}, []),
+        ("accounting-ops", "approval", {"subject_type": "bank_transaction_import"}, ["approve", "reject"]),
+        # Project-Ops ffc5bd5: accept needs a project; done is refused with a blocker open.
+        ("project-ops", "triage", {"project_id": "6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e21"}, ["accept", "reject"]),
+        ("project-ops", "triage", {"project_id": None}, ["reject"]),
+        ("project-ops", "triage", {}, ["reject"]),
+        ("project-ops", "task", {"blocked": False}, ["done"]),
+        ("project-ops", "task", {"blocked": True}, []),
+    ],
+)
+def test_an_action_the_app_would_refuse_for_the_row_is_not_offered(source, kind, row, offered):
+    item_id = f"{actions.SOURCE_CODES[source]}:{kind}:{ITEM_UUID}"
+    assert [o["id"] for o in actions.offered_actions(item_id, row, NOW)] == offered
+
+
+@pytest.mark.asyncio
+async def test_in_the_document_such_rows_keep_what_works(monkeypatch):
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    document = await state_document()
+    items = items_by_key(document)
+
+    def ids(module_id: str, item_id: str) -> List[str]:
+        return [action["id"] for action in items[(module_id, item_id)]["actions"]]
+
+    assert ids("needs_you", f"eo:draft:{EO_CLEANUP}") == ["open"]
+    assert ids("needs_you", f"eo:draft:{EO_SCHEDULED}") == ["open", "reject"]
+    assert ids("needs_you", f"ao:approval:{AO_JOURNAL}") == ["open"]
+    assert ids("needs_you", f"po:triage:{PO_NO_PROJECT}") == ["open", "reject"]
+    assert ids("today", f"po:task:{PO_BLOCKED}") == ["open"]
+    # "Sends the email now" is only on a draft that approve would send now.
+    assert [item["id"] for _, item, action in offers_in(document) if action.get("note")] == [
+        f"eo:draft:{EO_ITEM}"
     ]
 
 

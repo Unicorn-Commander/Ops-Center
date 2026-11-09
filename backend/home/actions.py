@@ -583,15 +583,43 @@ ACTION_ROUTE = "/api/v1/home/actions"
 # token, so it never offers a decision on one; Open still leads there.
 ACCOUNTING_OPS_OWN_CLIENT_SUBJECTS = frozenset({"journal_entry_post"})
 
+# Email-Ops 2810e17 agent-inbox rows are EMAIL, CLEANUP or NOTICE
+# (prisma/schema.prisma:196-200; the list says EMAIL when unset,
+# email.service.ts:6371). Only EMAIL is a draft. Approving a CLEANUP row trashes,
+# archives or unsubscribes (:4032-4096) and approving a NOTICE adds a calendar
+# event or acknowledges it (:3886-3913), so neither is offered a draft's Approve
+# ("Sends the email now") or Reject. Review still opens it in Email-Ops.
+EMAIL_OPS_DRAFT_KIND = "EMAIL"
+
 
 def withheld_actions(source: str, kind: str, row: Mapping[str, Any], now: datetime) -> FrozenSet[str]:
     """Actions SPECS has for this source and kind that the home does not offer
-    on this row, because the owning app is known to refuse them for it.
-    ``row`` is the adapter's normalized row (``adapters/*.normalize_*``)."""
+    on this row: the owning app is known to refuse them for it, or would not do
+    what the label says. ``row`` is the adapter's normalized row
+    (``adapters/*.normalize_*``)."""
 
-    if (source, kind) == ("accounting-ops", "approval"):
+    if (source, kind) == ("email-ops", "draft"):
+        if str(row.get("kind") or EMAIL_OPS_DRAFT_KIND).upper() != EMAIL_OPS_DRAFT_KIND:
+            return frozenset({"approve", "reject"})
+        # Approve leaves a draft whose send time is still ahead exactly as it
+        # is (email.service.ts:3950-3958), so only Reject is offered on it.
+        sends_at = parse_iso(row.get("sends_at"))
+        if sends_at is not None and sends_at > now:
+            return frozenset({"approve"})
+    elif (source, kind) == ("accounting-ops", "approval"):
         if row.get("subject_type") in ACCOUNTING_OPS_OWN_CLIENT_SUBJECTS:
             return frozenset({"approve", "reject"})
+    elif (source, kind) == ("project-ops", "triage"):
+        # Accept sends no project, and Project-Ops ffc5bd5 answers 400 "no
+        # project resolved" for a proposal without one (triage.service.ts:740-744).
+        if not row.get("project_id"):
+            return frozenset({"accept"})
+    elif (source, kind) == ("project-ops", "task"):
+        # Marked done without force, a task with an open blocker is refused
+        # with 409 (tasks.service.ts:157-171); isBlocked is that same test
+        # (:120-142, :1389-1395).
+        if row.get("blocked"):
+            return frozenset({"done"})
     return frozenset()
 
 

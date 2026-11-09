@@ -120,9 +120,11 @@ async def test_project_ops_normalizes_tasks_and_proposals():
     assert tasks["task-roaster-maint"]["all_day"] is True
     assert tasks["task-price-sheet"]["all_day"] is False
     assert tasks["task-roaster-maint"]["href"] == "https://po.example.com/dashboard/tasks/task-roaster-maint"
+    assert tasks["task-roaster-maint"]["blocked"] is False
     triage = snap.parts["triage"].data
     assert triage["count"] == 2 and triage["count_is_lower_bound"] is False
     assert triage["items"][0]["title"] == "Send Harbor Market the January price sheet"
+    assert [item["project_id"] for item in triage["items"]] == ["proj-sales", None]
     calls = [(r.url.path, dict(r.url.params)) for r in suite.calls]
     assert ("/api/v1/triage/proposals", {"status": "PENDING", "limit": "50"}) in calls
     await env.client.aclose()
