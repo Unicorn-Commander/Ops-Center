@@ -160,7 +160,7 @@ async def test_internal_ring_receives_legal_ops_org_grant(monkeypatch):
     apps = await authorized(
         monkeypatch,
         connection,
-        org_name="ops-center-dogfood",
+        org_name="existing-internal-org",
     )
 
     assert [app["slug"] for app in apps] == ["legal-ops"]
@@ -171,7 +171,6 @@ async def test_internal_ring_receives_legal_ops_org_grant(monkeypatch):
 async def test_customer_ring_does_not_receive_internal_legal_ops(monkeypatch):
     connection = FakeConnection(
         [_row("legal-ops", "legal_ops_access", metadata=_metadata(extra={"internal_ring": True}))],
-        org_features={"legal_ops_access"},
     )
 
     apps = await authorized(monkeypatch, connection, org_name="customer-org")

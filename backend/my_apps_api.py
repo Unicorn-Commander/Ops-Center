@@ -736,7 +736,6 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
     org_id = await get_user_org_from_session(request)
     org_context_invalid = bool(getattr(getattr(request, "state", None), "current_org_invalid", False))
     org_tier = getattr(getattr(request, "state", None), "current_org_tier", None)
-    org_name = getattr(getattr(request, "state", None), "current_org_name", None)
 
     conn = await get_db_connection()
     try:
@@ -803,9 +802,12 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
                 ) from exc
 
             dashboard = metadata.dashboard
-            if dashboard.internal_ring and org_name != "ops-center-dogfood":
-                # Internal cards are not an admin shortcut. The org context is
-                # the ring boundary, including for platform administrators.
+            if dashboard.internal_ring and (
+                not feature_key or feature_key not in org_features_set
+            ):
+                # Internal cards require the explicit operator grant. This keeps
+                # the ring boundary independent of a seeded organization name,
+                # including for platform administrators.
                 continue
             state = app_state_from_metadata(dashboard)
 
