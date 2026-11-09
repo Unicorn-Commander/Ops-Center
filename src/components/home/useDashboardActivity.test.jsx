@@ -105,4 +105,29 @@ describe('useDashboardActivity', () => {
     ));
     expect(cursorWriter).toHaveBeenCalledWith('org-fictional-beta', item.timestamp);
   });
+
+  test('advances an empty successful feed to the server clock', async () => {
+    const cursorWriter = vi.fn().mockResolvedValue('2026-11-08T13:05:00.000Z');
+    render(
+      <Probe
+        orgId="org-fictional-alpha"
+        cursorReader={vi.fn().mockResolvedValue({
+          lastSeenAt: null,
+          serverNow: '2026-11-08T13:05:00.000Z'
+        })}
+        activityAdapter={vi.fn().mockResolvedValue({
+          items: [],
+          complete: true,
+          sourceStatus: { 'project-ops': 'ready', 'meeting-ops': 'ready' },
+          errors: {}
+        })}
+        cursorWriter={cursorWriter}
+      />
+    );
+
+    await waitFor(() => expect(cursorWriter).toHaveBeenCalledWith(
+      'org-fictional-alpha',
+      '2026-11-08T13:05:00.000Z'
+    ));
+  });
 });
