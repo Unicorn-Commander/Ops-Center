@@ -4,6 +4,10 @@ export const DUPLICATE_MEMBER_MESSAGE = 'That email is already a member of this 
 
 export const DUPLICATE_PENDING_MESSAGE = 'An invitation for that email is already waiting. They join when they sign in.';
 
+export function inviteSentMessage(email, organizationName) {
+  return `We emailed ${email} an invitation and added them to ${organizationName || 'this organization'}.`;
+}
+
 export function inviteErrorMessage(status, errorDetails = {}) {
   const detail = typeof errorDetails.detail === 'string' ? errorDetails.detail : '';
   if (status === 409) return DUPLICATE_PENDING_MESSAGE;

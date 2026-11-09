@@ -23,6 +23,7 @@ import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from '../components/Log
 import { useBranding } from '../contexts/BrandingContext';
 import { useTheme } from '../contexts/ThemeContext';
 import EntitledAppCard from '../components/EntitledAppCard';
+import HomeActivitySpine from '../components/home/HomeActivitySpine';
 
 export default function PublicLanding() {
   const navigate = useNavigate();
@@ -608,6 +609,8 @@ export default function PublicLanding() {
           </motion.div>
         </div>
       </header>
+
+      <HomeActivitySpine className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12" />
 
       {/* Services Grid */}
       <motion.div

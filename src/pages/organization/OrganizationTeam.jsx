@@ -3,7 +3,11 @@ import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useOrganization } from '../../contexts/OrganizationContext';
-import { INVITE_PENDING_MESSAGE, inviteErrorMessage } from '../../components/home/inviteMessages';
+import {
+  INVITE_PENDING_MESSAGE,
+  inviteErrorMessage,
+  inviteSentMessage
+} from '../../components/home/inviteMessages';
 import {
   UsersIcon,
   UserPlusIcon,
@@ -215,7 +219,11 @@ export default function OrganizationTeam() {
         throw new Error(inviteErrorMessage(response.status, errorDetails));
       }
 
-      showToast(result.pending === false ? (result.message || 'Member added to this organization.') : INVITE_PENDING_MESSAGE);
+      showToast(
+        result.pending === true
+          ? (result.message || INVITE_PENDING_MESSAGE)
+          : (result.message || inviteSentMessage(inviteData.email, currentOrg.name))
+      );
       setInviteModalOpen(false);
       setInviteData({ email: '', role: 'member', firstName: '', lastName: '' });
       setSeatOffer(null);
@@ -570,7 +578,7 @@ export default function OrganizationTeam() {
           >
             <h3 id="team-invite-title" className={`text-xl font-semibold ${theme.text.primary} mb-4`}>Invite a teammate</h3>
             <p className={`text-sm ${theme.text.secondary} mb-4`}>
-              They are not added yet. They join this organization the first time they sign in.
+              Send an invitation by email and choose their role in this organization.
             </p>
             <div className="space-y-4">
               <div>

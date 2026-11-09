@@ -17,7 +17,7 @@ describe('InviteTeammateAction', () => {
     expect(screen.queryByRole('button', { name: 'Invite a teammate' })).not.toBeInTheDocument();
   });
 
-  test('explains the pending sign-in and the seat limit in plain words', async () => {
+  test('explains the email invitation and the seat limit in plain words', async () => {
     const user = userEvent.setup();
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce({
@@ -43,7 +43,7 @@ describe('InviteTeammateAction', () => {
       />
     );
 
-    expect(screen.getByText(/first time they sign in/i)).toBeInTheDocument();
+    expect(screen.getByText(/Send an invitation by email/i)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Invite a teammate' }));
     await user.type(screen.getByLabelText('Email'), 'mira@example.com');
     await user.click(screen.getByRole('button', { name: 'Send invitation' }));
@@ -55,6 +55,33 @@ describe('InviteTeammateAction', () => {
     await user.click(screen.getByRole('button', { name: 'Send invitation' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'An invitation for that email is already waiting. They join when they sign in.'
+    );
+  });
+
+  test('shows the organization named in the immediate invitation response', async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        pending: false,
+        message: 'We emailed mira@example.com an invitation and added them to Fictional Lantern Labs.'
+      })
+    });
+
+    render(
+      <InviteTeammateAction
+        organization={{ id: 'org-fictional', name: 'Fictional Lantern Labs', role: 'owner' }}
+        fetchImpl={fetchImpl}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Invite a teammate' }));
+    await user.type(screen.getByLabelText('Email'), 'mira@example.com');
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'We emailed mira@example.com an invitation and added them to Fictional Lantern Labs.'
     );
   });
 });

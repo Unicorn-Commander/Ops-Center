@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlusIcon } from '@heroicons/react/24/outline';
-import { INVITE_PENDING_MESSAGE, inviteErrorMessage } from './inviteMessages';
+import { INVITE_PENDING_MESSAGE, inviteErrorMessage, inviteSentMessage } from './inviteMessages';
 
 export function canInviteFromOrganization(organization, role) {
   const currentRole = role || organization?.role || organization?.org_role;
@@ -56,7 +56,7 @@ export default function InviteTeammateAction({
       setNotice({
         tone: 'success',
         text: result.pending === false
-          ? (result.message || 'Member added to this organization.')
+          ? (result.message || inviteSentMessage(email, organization.name))
           : INVITE_PENDING_MESSAGE
       });
     } catch {
@@ -73,7 +73,7 @@ export default function InviteTeammateAction({
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold text-white">Invite a teammate</h2>
           <p className="mt-1 text-sm text-slate-300">
-            They are not added yet. They join this organization the first time they sign in.
+            Send an invitation by email and choose their role in this organization.
           </p>
           <button
             type="button"
@@ -94,7 +94,7 @@ export default function InviteTeammateAction({
           >
             <h3 id="invite-teammate-title" className="text-xl font-semibold">Invite a teammate</h3>
             <p className="mt-2 text-sm text-slate-300">
-              They are not added yet. They join this organization the first time they sign in.
+              Send an invitation by email and choose their role in this organization.
             </p>
             <form className="mt-4 space-y-4" onSubmit={submitInvite}>
               <div>
