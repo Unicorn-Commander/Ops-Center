@@ -687,11 +687,18 @@ def withheld_actions(source: str, kind: str, row: Mapping[str, Any], now: dateti
     (``adapters/*.normalize_*``)."""
 
     if (source, kind) == ("email-ops", "draft"):
-        if str(row.get("kind") or EMAIL_OPS_DRAFT_KIND).upper() != EMAIL_OPS_DRAFT_KIND:
+        # A row without a kind is not offered approve or reject, matching the
+        # approve route, which refuses a missing or unknown kind (fail closed).
+        if str(row.get("kind") or "").strip().upper() != EMAIL_OPS_DRAFT_KIND:
             return frozenset({"approve", "reject"})
         # Approve leaves a draft whose send time is still ahead exactly as it
         # is (email.service.ts:3950-3958), so only Reject is offered on it.
-        sends_at = parse_iso(row.get("sends_at"))
+        raw_sends_at = row.get("sends_at")
+        sends_at = parse_iso(raw_sends_at)
+        # An unreadable send time is refused by the approve route (fail closed),
+        # so Approve is not offered on it either.
+        if raw_sends_at not in (None, "") and sends_at is None:
+            return frozenset({"approve"})
         if sends_at is not None and sends_at > now:
             return frozenset({"approve"})
     elif (source, kind) == ("accounting-ops", "approval"):
