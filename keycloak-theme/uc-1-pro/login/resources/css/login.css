@@ -111,20 +111,10 @@ body.uc1-pro-login {
     padding: 40px;
     max-width: 500px;
     width: 100%;
-    animation: cardFloat 6s ease-in-out infinite;
     position: relative;
     overflow: hidden;
 }
 
-/* Subtle floating animation */
-@keyframes cardFloat {
-    0%, 100% {
-        transform: translateY(0px);
-    }
-    50% {
-        transform: translateY(-10px);
-    }
-}
 
 /* Card glow effect */
 .uc1-card::before {
