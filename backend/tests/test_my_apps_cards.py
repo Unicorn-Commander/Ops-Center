@@ -136,7 +136,9 @@ async def test_org_grant_uses_the_current_org(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_sees_active_launchable_apps_but_not_internal_ring(monkeypatch):
+async def test_admin_without_entitlements_sees_no_feature_gated_apps(monkeypatch):
+    # Platform admins get the selected organization's apps like everyone else;
+    # the whole catalog is for the admin console, not "My Apps" or the home.
     public = _row("public-app", "public_access")
     internal = _row("legal-ops", "legal_ops_access", metadata=_metadata(extra={"internal_ring": True}))
     connection = FakeConnection([public, internal])
@@ -144,10 +146,28 @@ async def test_admin_sees_active_launchable_apps_but_not_internal_ring(monkeypat
     apps = await authorized(
         monkeypatch,
         connection,
-        session={"user": {"role": "admin"}},
+        session={"user": {"role": "admin", "roles": ["platform_admin", "super_admin"]}, "is_admin": True},
     )
 
-    assert [app["slug"] for app in apps] == ["public-app"]
+    assert [app["slug"] for app in apps] == []
+
+
+@pytest.mark.asyncio
+async def test_admin_in_a_customer_workspace_sees_only_that_orgs_apps(monkeypatch):
+    connection = FakeConnection(
+        [_row("customer-app", "customer_access"), _row("studio-app", "studio_access"), _row("ads-app", "ads_access")],
+        org_features={"customer_access"},
+    )
+
+    apps = await authorized(
+        monkeypatch,
+        connection,
+        org_id="org-customer",
+        session={"user": {"role": "admin", "is_admin": True}, "is_admin": True},
+    )
+
+    assert [app["slug"] for app in apps] == ["customer-app"]
+    assert connection.requested_org_ids == ["org-customer"]
 
 
 @pytest.mark.asyncio
