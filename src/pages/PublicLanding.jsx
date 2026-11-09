@@ -17,8 +17,7 @@ import {
   ChevronDownIcon,
   ArrowRightOnRectangleIcon,
   CreditCardIcon,
-  WrenchScrewdriverIcon,
-  DocumentTextIcon
+  WrenchScrewdriverIcon
 } from '@heroicons/react/24/outline';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from '../components/Logos';
 import { useBranding } from '../contexts/BrandingContext';
@@ -31,7 +30,6 @@ export default function PublicLanding() {
   const dropdownRef = useRef(null);
   const { branding } = useBranding();
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentHost, setCurrentHost] = useState('localhost');
   const [userTier, setUserTier] = useState('trial');
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -77,9 +75,6 @@ export default function PublicLanding() {
       searchInputRef.current.focus();
     }
 
-    // Get current hostname for service links
-    setCurrentHost(window.location.hostname);
-
     // Fetch user session to determine subscription tier and roles
     const fetchUserSession = async () => {
       const controller = new AbortController();
@@ -97,9 +92,10 @@ export default function PublicLanding() {
           const username = data?.user?.username || data?.username || 'User';
           const email = data?.user?.email || data?.email || '';
           const roles = data?.user?.roles || data?.roles || [];
+          const role = data?.user?.role || data?.role || '';
 
           setUserTier(tier);
-          setUserInfo({ username, email, tier, roles });
+          setUserInfo({ username, email, tier, roles, role });
         }
       } catch (error) {
         // Silent fail - default to trial tier
@@ -113,7 +109,8 @@ export default function PublicLanding() {
               username: parsedUser.username || 'User',
               email: parsedUser.email || '',
               tier: parsedUser.tier || 'trial',
-              roles: parsedUser.roles || []
+              roles: parsedUser.roles || [],
+              role: parsedUser.role || ''
             });
           } catch (e) {
             console.debug('Failed to parse stored user info');
@@ -285,6 +282,21 @@ export default function PublicLanding() {
     // Check for admin or moderator role (could also check userTier for 'enterprise')
     const roles = userInfo.roles || [];
     return roles.includes('admin') || roles.includes('moderator');
+  };
+
+  const isPlatformAdmin = () => {
+    if (!userInfo) return false;
+    const roleValues = [
+      userInfo.role,
+      ...(Array.isArray(userInfo.roles)
+        ? userInfo.roles
+        : typeof userInfo.roles === 'string'
+        ? userInfo.roles.split(/[,\s]+/)
+        : [])
+    ];
+    return roleValues.some((role) => (
+      role === 'admin' || role === 'super_admin' || role === 'platform_admin'
+    ));
   };
 
   // Handle admin tools toggle with persistence
@@ -478,22 +490,24 @@ export default function PublicLanding() {
 
                     {/* Menu Items */}
                     <div className="py-2">
-                      <button
-                        onClick={() => {
-                          setIsDropdownOpen(false);
-                          navigate('/admin');
-                        }}
-                        className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                          currentTheme === 'unicorn'
-                            ? 'text-purple-200 hover:bg-white/10'
-                            : currentTheme === 'light'
-                            ? 'text-gray-700 hover:bg-gray-100'
-                            : 'text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        <CpuChipIcon className="h-5 w-5" />
-                        <span>Admin Dashboard</span>
-                      </button>
+                      {isPlatformAdmin() && (
+                        <button
+                          onClick={() => {
+                            setIsDropdownOpen(false);
+                            navigate('/admin');
+                          }}
+                          className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
+                            currentTheme === 'unicorn'
+                              ? 'text-purple-200 hover:bg-white/10'
+                              : currentTheme === 'light'
+                              ? 'text-gray-700 hover:bg-gray-100'
+                              : 'text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          <CpuChipIcon className="h-5 w-5" />
+                          <span>Admin console</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => {
@@ -529,22 +543,6 @@ export default function PublicLanding() {
                         <span>Billing</span>
                       </button>
 
-                      <button
-                        onClick={() => {
-                          window.open(`http://${currentHost}:8086`, '_blank');
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                          currentTheme === 'unicorn'
-                            ? 'text-purple-200 hover:bg-white/10'
-                            : currentTheme === 'light'
-                            ? 'text-gray-700 hover:bg-gray-100'
-                            : 'text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        <DocumentTextIcon className="h-5 w-5" />
-                        <span>Documentation</span>
-                      </button>
                     </div>
 
                     {/* Divider */}
@@ -833,35 +831,37 @@ export default function PublicLanding() {
         </motion.div>
       )}
 
-      {/* Admin Dashboard Access */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.6 }}
-        className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-8"
-      >
-        <div className={`${styles.cardOverlay} rounded-lg p-6 text-center`}>
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <CogIcon className={`h-6 w-6 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`} />
-            <h3 className={`text-xl font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
-              System Administration
-            </h3>
+      {/* Admin console access */}
+      {isPlatformAdmin() && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.6 }}
+          className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-8"
+        >
+          <div className={`${styles.cardOverlay} rounded-lg p-6 text-center`}>
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <CogIcon className={`h-6 w-6 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`} />
+              <h3 className={`text-xl font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
+                Admin console
+              </h3>
+            </div>
+
+            <p className={`${styles.subText} mb-4`}>
+              Access the admin console to manage your Magic Unicorn services
+            </p>
+
+            <button
+              onClick={() => navigate('/admin')}
+              className={`px-8 py-3 rounded-lg transition-all duration-200 flex items-center gap-2 mx-auto text-white ${styles.searchButton}`}
+            >
+              <CpuChipIcon className="h-5 w-5" />
+              <span>Admin console</span>
+              <ArrowRightIcon className="h-4 w-4" />
+            </button>
           </div>
-
-          <p className={`${styles.subText} mb-4`}>
-            Access the admin dashboard to manage your Magic Unicorn services
-          </p>
-
-          <button
-            onClick={() => navigate('/admin')}
-            className={`px-8 py-3 rounded-lg transition-all duration-200 flex items-center gap-2 mx-auto text-white ${styles.searchButton}`}
-          >
-            <CpuChipIcon className="h-5 w-5" />
-            <span>Admin Dashboard</span>
-            <ArrowRightIcon className="h-4 w-4" />
-          </button>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
 
       {/* Footer */}
       <footer className={`${styles.footerBg} py-8 mt-16`}>
