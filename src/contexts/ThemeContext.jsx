@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { DEFAULT_APPEARANCE, normalizeAppearance } from '../components/home/homeTokens';
 
 const ThemeContext = createContext();
 
@@ -161,9 +162,69 @@ const themes = {
  * See /docs/UI_CONTRAST_AUDIT.md for complete audit report.
  */
 
+// The signed-in home's appearance (User Home design, sections f and k): a theme
+// family, a mode (match my system, light, dark or high contrast), the section
+// colour intensity and a typeface. It is the same choice as the theme above:
+// where a family and mode have an original theme, picking one sets the other,
+// so there is one theme system. Stored per browser like the theme, every read
+// and write in try and catch. New people start on Professional light.
+const APPEARANCE_KEY = 'uc1-appearance';
+
+const LEGACY_THEME_FOR_APPEARANCE = {
+  'pro/light': 'light',
+  'pro/dark': 'dark',
+  'unicorn/dark': 'unicorn',
+  'galaxy/dark': 'galaxy',
+  'special/dark': 'underground'
+};
+
+const APPEARANCE_FOR_LEGACY_THEME = {
+  light: { family: 'pro', mode: 'light' },
+  dark: { family: 'pro', mode: 'dark' },
+  unicorn: { family: 'unicorn', mode: 'dark' },
+  galaxy: { family: 'galaxy', mode: 'dark' },
+  underground: { family: 'special', mode: 'dark' }
+};
+
+function readStoredAppearance() {
+  try {
+    const raw = window.localStorage.getItem(APPEARANCE_KEY);
+    return raw ? normalizeAppearance(JSON.parse(raw)) : { ...DEFAULT_APPEARANCE };
+  } catch {
+    return { ...DEFAULT_APPEARANCE };
+  }
+}
+
+function storeAppearance(value) {
+  try {
+    window.localStorage.setItem(APPEARANCE_KEY, JSON.stringify(value));
+  } catch {
+    // Storage can be unavailable (private windows); the choice still applies for this visit.
+  }
+}
+
 export function ThemeProvider({ children }) {
   const [currentTheme, setCurrentTheme] = useState('underground'); // Default to Unicorn Commander theme
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [appearance, setAppearanceState] = useState(readStoredAppearance);
+  const appearanceRef = useRef(appearance);
+
+  const applyAppearance = useCallback((patch) => {
+    const next = normalizeAppearance({ ...appearanceRef.current, ...patch });
+    appearanceRef.current = next;
+    storeAppearance(next);
+    setAppearanceState(next);
+    return next;
+  }, []);
+
+  // A pick on the home also sets the original theme where one matches.
+  const setAppearance = useCallback((patch) => {
+    const next = applyAppearance(patch);
+    const legacy = LEGACY_THEME_FOR_APPEARANCE[`${next.family}/${next.mode}`];
+    if (legacy && themes[legacy]) {
+      setCurrentTheme(legacy);
+    }
+  }, [applyAppearance]);
 
   useEffect(() => {
     // Apply theme to document
@@ -196,6 +257,10 @@ export function ThemeProvider({ children }) {
   const switchTheme = (themeName) => {
     if (themes[themeName]) {
       setCurrentTheme(themeName);
+      // A theme picked elsewhere carries over to the home's appearance.
+      if (APPEARANCE_FOR_LEGACY_THEME[themeName]) {
+        applyAppearance(APPEARANCE_FOR_LEGACY_THEME[themeName]);
+      }
     }
   };
 
@@ -210,6 +275,8 @@ export function ThemeProvider({ children }) {
     switchTheme,
     isDarkMode,
     toggleDarkMode,
+    appearance,
+    setAppearance,
   };
 
   return (
