@@ -214,7 +214,8 @@ import { ColonelProvider } from './contexts/ColonelContext';
 import RootRedirect from './components/RootRedirect';
 
 // Lazy load all pages (loaded on-demand when route is accessed)
-const PublicLanding = lazy(() => import('./pages/PublicLanding'));
+// /dashboard: the new home when GET /api/v1/home/state answers, otherwise PublicLanding as before.
+const DashboardHome = lazy(() => import('./pages/DashboardHome'));
 const PublicStatusPage = lazy(() => import('./pages/PublicStatusPage'));
 const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -611,7 +612,7 @@ function AppRoutes() {
           {/* User Landing Page - Authenticated users (search bar, apps, user dropdown) */}
           <Route path="/dashboard" element={
             <ProtectedRoute>
-              <PublicLanding />
+              <DashboardHome />
             </ProtectedRoute>
           } />
 
