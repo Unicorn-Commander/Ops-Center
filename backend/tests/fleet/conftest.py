@@ -14,8 +14,10 @@ from pathlib import Path
 import pytest
 
 HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+BACKEND = HERE.parents[1]
+for path in (HERE, BACKEND):  # runnable as `cd backend && pytest tests/fleet` or from anywhere
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import fleet_map_api  # noqa: E402
 

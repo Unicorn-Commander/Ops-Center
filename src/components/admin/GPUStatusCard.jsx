@@ -179,8 +179,8 @@ function GpuLine({ gpu }) {
         <span className="ml-auto text-xs text-gray-400 shrink-0">{memory}</span>
       </div>
       {facts.length > 0 && <p className="pl-[3.25rem] text-xs text-gray-400">{facts.join(', ')}</p>}
-      {(gpu.notes || []).map((note) => (
-        <p key={note} className="pl-[3.25rem] text-xs text-gray-500 line-clamp-2" title={note}>
+      {(gpu.notes || []).map((note, i) => (
+        <p key={`${i}-${note}`} className="pl-[3.25rem] text-xs text-gray-500 line-clamp-2" title={note}>
           {note}
         </p>
       ))}
