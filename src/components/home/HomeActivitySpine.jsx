@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DashboardActivityFeed from './DashboardActivityFeed';
 import InviteTeammateAction from './InviteTeammateAction';
 
+// The activity feed reads Project-Ops and Meeting-Ops from the browser, which those apps do not
+// allow (Project-Ops accepts only a bearer token; Meeting-Ops allows only its own origins), so it
+// would name healthy apps as unavailable. It stays off until a server-side aggregator in Ops-Center
+// feeds it. Set VITE_HOME_ACTIVITY_FEED=true at build time to turn it on.
+export const HOME_ACTIVITY_FEED_ENABLED = import.meta.env?.VITE_HOME_ACTIVITY_FEED === 'true';
+
 const ORG_LIST_URLS = ['/api/v1/org/my-orgs', '/api/v1/users/me/organizations'];
 
 export function organizationsFromPayload(payload) {
@@ -59,7 +65,8 @@ export default function HomeActivitySpine({
   hostname = typeof window !== 'undefined' ? window.location.hostname : '',
   storage = typeof window !== 'undefined' ? window.localStorage : null,
   reload = () => window.location.reload(),
-  adapterOptions
+  adapterOptions,
+  showActivity = HOME_ACTIVITY_FEED_ENABLED
 }) {
   const [orgState, setOrgState] = useState({
     loading: true,
@@ -136,7 +143,9 @@ export default function HomeActivitySpine({
           <h1 className="mt-1 text-2xl font-semibold text-white">
             {orgState.loading ? 'Loading your workspace...' : current?.name || 'Choose a workspace'}
           </h1>
-          <p className="mt-1 text-sm text-slate-300">Your activity, apps, and teammates in one place.</p>
+          <p className="mt-1 text-sm text-slate-300">
+            {showActivity ? 'Your activity, apps, and teammates in one place.' : 'Your apps and teammates in one place.'}
+          </p>
         </div>
         {orgState.organizations.length > 1 && (
           <label className="text-sm font-medium text-slate-200">
@@ -182,7 +191,7 @@ export default function HomeActivitySpine({
 
       {current && (
         <>
-          <DashboardActivityFeed orgId={current.id} adapterOptions={resolvedAdapterOptions} />
+          {showActivity && <DashboardActivityFeed orgId={current.id} adapterOptions={resolvedAdapterOptions} />}
           <InviteTeammateAction organization={current} role={role} fetchImpl={fetchImpl} />
         </>
       )}

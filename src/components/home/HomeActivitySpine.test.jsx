@@ -47,7 +47,7 @@ describe('HomeActivitySpine', () => {
       organizations: [{ ...ORG_ALPHA, role: 'member' }]
     });
 
-    render(<HomeActivitySpine fetchImpl={fetchImpl} storage={{ getItem: () => null, setItem: () => {} }} />);
+    render(<HomeActivitySpine showActivity fetchImpl={fetchImpl} storage={{ getItem: () => null, setItem: () => {} }} />);
 
     expect(await screen.findByRole('heading', { name: 'Here is recent activity' })).toBeInTheDocument();
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -64,7 +64,7 @@ describe('HomeActivitySpine', () => {
     const storage = { getItem: () => null, setItem: vi.fn() };
     const { fetchImpl } = activityFetch({ organizations: [ORG_ALPHA, ORG_BETA] });
 
-    render(<HomeActivitySpine fetchImpl={fetchImpl} storage={storage} reload={reload} />);
+    render(<HomeActivitySpine showActivity fetchImpl={fetchImpl} storage={storage} reload={reload} />);
 
     const switcher = await screen.findByRole('combobox', { name: 'Organization' });
     expect(switcher).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('HomeActivitySpine', () => {
       projectItem
     });
 
-    render(<HomeActivitySpine fetchImpl={fetchImpl} storage={{ getItem: () => null, setItem: () => {} }} />);
+    render(<HomeActivitySpine showActivity fetchImpl={fetchImpl} storage={{ getItem: () => null, setItem: () => {} }} />);
 
     expect(await screen.findByText('Updated the brief: Lantern')).toBeInTheDocument();
     expect(screen.getByText('Meeting-Ops is unavailable right now.')).toBeInTheDocument();
@@ -102,6 +102,7 @@ describe('HomeActivitySpine', () => {
     const reload = vi.fn();
     render(
       <HomeActivitySpine
+        showActivity
         fetchImpl={fetchImpl}
         reload={reload}
         storage={{ getItem: () => null, setItem: () => {} }}
@@ -113,4 +114,20 @@ describe('HomeActivitySpine', () => {
     );
     expect(screen.queryByRole('button', { name: 'Invite a teammate' })).not.toBeInTheDocument();
   });
+
+  test('keeps the activity feed off by default and never calls the other apps from the browser', async () => {
+    const { fetchImpl, calls } = activityFetch({
+      organizations: [{ ...ORG_ALPHA, role: 'owner' }]
+    });
+
+    render(<HomeActivitySpine fetchImpl={fetchImpl} storage={{ getItem: () => null, setItem: () => {} }} />);
+
+    expect(await screen.findByRole('button', { name: 'Invite a teammate' })).toBeInTheDocument();
+    expect(screen.getByText('Your apps and teammates in one place.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Here is recent activity' })).not.toBeInTheDocument();
+    const urls = calls.map((c) => String(c.address));
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.some((u) => /projectops|meetingops|meeting-ops|recent-activity/.test(u))).toBe(false);
+  });
 });
+
