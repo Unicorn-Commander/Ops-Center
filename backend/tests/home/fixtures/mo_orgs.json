@@ -1,0 +1,4 @@
+[
+  {"id": 7, "name": "Mara Okonkwo Personal", "slug": "mara-okonkwo-personal", "role": "admin", "is_active": true, "plan": "free"},
+  {"id": 41, "name": "Rivergreen Coffee", "slug": "rivergreen-coffee", "role": "admin", "is_active": true, "plan": "pro"}
+]

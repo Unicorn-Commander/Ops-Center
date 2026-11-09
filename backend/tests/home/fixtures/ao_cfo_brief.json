@@ -1,0 +1,10 @@
+{"workspace_id": "{{ORG_ID}}", "entity_id": null, "as_of": "2026-11-09T14:59:58+00:00",
+ "priorities": [
+   {"id": "pri-1", "kind": "decision", "severity": "medium", "headline": "1 transaction needs your OK", "detail": "Northside Burner Service, $1,284.50", "action_href": "/approvals", "action_label": "Review", "score": 70}
+ ],
+ "action_required_total": 1,
+ "cash": {"configured": true, "headline": "$18,420 in the bank", "detail": "~7 months runway", "assets_total": "18420.00", "liabilities_total": "0.00", "net_total": "18420.00", "months_runway": "7.2", "monthly_burn": "2550.00", "tone": "credit"},
+ "summary_line": "1 thing needs your OK; you have ~7 months of runway.",
+ "onboarding": false,
+ "ask_cfo_href": "/cfo",
+ "sources_ok": {"open_items": true, "cash": true, "sentinel": true}}

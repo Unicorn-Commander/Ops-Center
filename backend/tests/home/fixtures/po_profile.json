@@ -1,0 +1,16 @@
+{
+  "id": "0c9a7d52-3f1e-4b6a-9d84-2e5f7a1b3c90",
+  "email": "mara@rivergreen.example",
+  "username": "mara.okonkwo",
+  "firstName": "Mara",
+  "lastName": "Okonkwo",
+  "role": "MANAGER",
+  "isActive": true,
+  "forcePasswordChange": false,
+  "lastLoginAt": "2026-11-08T13:02:11.000Z",
+  "createdAt": "2026-10-02T15:20:00.000Z",
+  "workspaces": [
+    {"workspaceId": "{{ORG_ID}}", "slug": "rivergreen-coffee", "displayName": "Rivergreen Coffee Co.", "role": "OWNER", "isDefault": true},
+    {"workspaceId": "a1b2c3d4-0000-4000-8000-000000000001", "slug": "mara-personal", "displayName": "Mara's workspace", "role": "OWNER", "isDefault": false}
+  ]
+}

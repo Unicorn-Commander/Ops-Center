@@ -1,0 +1,3 @@
+{"approvals": [
+  {"id": "ap-1", "entity_id": "ent-1", "entity_display_name": "Rivergreen Coffee Co.", "entity_slug": "rivergreen", "subject_type": "bank_transaction_import", "subject_id": "txn-88", "amount": 1284.5, "currency_code": "USD", "status": "pending", "reasoning": "Card charge from Northside Burner Service looks like equipment maintenance.", "requested_by_identity": "agent:categorizer", "decided_by_uc_uid": null, "decided_at": null, "created_at": "2026-11-08T21:10:00+00:00", "payload": {"category": "repairs_maintenance"}}
+], "total": 1}
