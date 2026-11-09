@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import Icon from './homeIcons';
 import { AppMark, AsOf, ExtLink, ModuleFrame, TypePill, useRowPresence } from './HomeParts';
-import { NeedsYou, RowActions, rowClass, useItemActions, useResolvedRows } from './HomeNeedsYou';
+import { NeedsYou, ReceiptLine, RowActions, rowClass, useItemActions, useResolvedRows } from './HomeNeedsYou';
 import {
   appInfo, appKey, cursorLabel, durationLabel, formatMoney, formatNumber, hhmm, hueVar, itemApp, itemType,
   openAction, parseAmount, plural, whenLabel
@@ -9,9 +9,9 @@ import {
 
 // ------------------------------------------------------------- today
 
-export function Today({ mod, tz, nowIso, fetchImpl, onResolved, onRetry, lastGood, loading }) {
+export function Today({ mod, tz, nowIso, fetchImpl, onResolved, onRetry, lastGood, loading, announce }) {
   const { resolved, onDone } = useResolvedRows(onResolved);
-  const { states, run } = useItemActions({ fetchImpl, onDone });
+  const { states, run } = useItemActions({ fetchImpl, onDone, announce });
   const items = useMemo(() => (mod.items || []).filter(item => !resolved.has(item.id)), [mod.items, resolved]);
   const rows = useRowPresence(items, item => item.id);
   const counts = mod.counts || {};
@@ -46,6 +46,7 @@ export function Today({ mod, tz, nowIso, fetchImpl, onResolved, onRetry, lastGoo
                     <span className="uh-s-app">{info.label}</span>
                     {bits.length > 0 && <>{' · '}{bits.join(' · ')}</>}
                   </div>
+                  <ReceiptLine state={states[item.id]} />
                 </div>
                 <RowActions item={item} state={states[item.id]} run={run} />
               </div>

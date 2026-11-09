@@ -142,6 +142,13 @@ export default function HomePage({ initialDoc, fromCache = false, onOff, prepare
   const [overlay, setOverlay] = useState(() => (readFlag(TOUR_KEY) === '1' ? null : { kind: 'tour', step: 0, first: true }));
   const [currentId, setCurrentId] = useState(null);
   const [retrying, setRetrying] = useState(() => new Set());
+  // One polite live region for receipts (DESIGN m, accessibility): a region created
+  // together with its text is often not read, so rows hand their words to this one.
+  const [spoken, setSpoken] = useState('');
+  const announce = useCallback((text) => {
+    setSpoken('');
+    if (text) setTimeout(() => setSpoken(text), 50);
+  }, []);
   const rootRef = useRef(null);
   const lastGood = useRef({});
   const tz = doc?.timezone || 'UTC';
@@ -295,6 +302,7 @@ export default function HomePage({ initialDoc, fromCache = false, onOff, prepare
         onRetry={() => retryModule(mod.id)}
         onResolved={retry}
         loading={retrying.has(mod.id)}
+        announce={announce}
         lastGood={mod.status === 'unavailable' ? lastGood.current[mod.id] : null}
         currentId={currentId}
         setCurrentId={setCurrentId}
@@ -346,6 +354,7 @@ export default function HomePage({ initialDoc, fromCache = false, onOff, prepare
           )}
         </div>
       </main>
+      <div className="uh-sr" role="status" aria-live="polite" aria-atomic="true">{spoken}</div>
       {overlay?.kind === 'palette' && <CommandPalette entries={paletteEntries} onClose={closeOverlay} onRun={runEntry} />}
       {overlay?.kind === 'tour' && <HowItWorks start={overlay.step || 0} onClose={closeOverlay} />}
       {overlay?.kind === 'keys' && <ShortcutsDialog onClose={closeOverlay} />}

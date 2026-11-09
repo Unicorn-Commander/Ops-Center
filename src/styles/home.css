@@ -73,6 +73,8 @@
 .uh .uh-kbd { font-family: var(--uh-mono); font-size: 11px; color: var(--uh-dim); border: 1px solid var(--uh-line-2); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; line-height: 17px; background: var(--uh-surface); display: inline-block; }
 .uh .uh-link { color: var(--uh-accent); }
 .uh .uh-link:hover { text-decoration: underline; color: var(--uh-accent); }
+/* a link inside running text is underlined, so it is not told apart by colour alone */
+.uh p .uh-link, .uh .uh-receipt-line .uh-link, .uh .uh-note .uh-link { text-decoration: underline; text-underline-offset: 2px; }
 .uh .uh-skip { position: absolute; left: 12px; top: -48px; z-index: 60; padding: 8px 12px; background: var(--uh-surface); color: var(--uh-text); border: 1px solid var(--uh-line-2); border-radius: var(--uh-r-s); }
 .uh .uh-skip:focus { top: 8px; }
 
@@ -245,9 +247,9 @@
 .uh .uh-receipt { font-size: var(--uh-fs-13); line-height: var(--uh-lh-text); max-width: 340px; text-align: right; }
 .uh .uh-receipt.is-pending { color: var(--uh-warn); }
 .uh .uh-receipt.is-done { color: var(--uh-ok); }
-.uh .uh-receipt.is-refused, .uh .uh-receipt.is-reauth { color: var(--uh-warn); }
-.uh .uh-receipt.is-failed { color: var(--uh-bad); }
-.uh .uh-receipt .uh-link { margin-left: 6px; }
+.uh .uh-receipt-line { font-size: var(--uh-fs-12); line-height: 18px; margin-top: 4px; white-space: normal; }
+.uh .uh-receipt-line.is-refused, .uh .uh-receipt-line.is-reauth { color: var(--uh-warn); }
+.uh .uh-receipt-line.is-failed { color: var(--uh-bad); }
 .uh .uh-empty { color: var(--uh-muted); padding: 4px 0 2px; line-height: var(--uh-lh-text); }
 .uh .uh-hint { color: var(--uh-dim); font-size: var(--uh-fs-12); }
 .uh .uh-agentname { color: var(--uh-dim); font-weight: 400; }
@@ -351,6 +353,7 @@
 .uh .uh-palette-in { display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--uh-line); color: var(--uh-dim); }
 .uh .uh-palette-in input { flex: 1; min-width: 0; padding: 16px 0; background: transparent; border: none; color: var(--uh-text); font: inherit; font-size: var(--uh-fs-15); outline: none; }
 .uh .uh-palette-in input::placeholder { color: var(--uh-dim); }
+.uh .uh-palette-in input:focus-visible { box-shadow: none; } /* the open dialog and the caret show where focus is */
 .uh .uh-palette-list { list-style: none; margin: 0; padding: 8px; max-height: 50vh; overflow: auto; }
 .uh .uh-palette-opt { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--uh-r-s); color: var(--uh-text); cursor: pointer; min-width: 0; }
 .uh .uh-palette-opt > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

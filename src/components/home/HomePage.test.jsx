@@ -217,6 +217,39 @@ describe('module states', () => {
     expect(calls.some(c => c.url.startsWith('/api/v1/home/state'))).toBe(true);
   });
 
+  const MODULE_IDS = golden.modules.map(mod => mod.id);
+  const NAMES = {
+    needs_you: 'Needs you', today: 'Today', since_last_visit: 'Since you were last here', apps: 'Your apps',
+    recent_meetings: 'Meetings', watched_topics: 'Watched topics', money: 'Money', usage: 'Usage'
+  };
+
+  test.each(MODULE_IDS)('%s has its empty, not set up, unavailable and loading states', async (id) => {
+    const states = [
+      ['empty', mod => Object.assign(mod, { status: 'empty', items: [], count: 0, cursor: mod.cursor })],
+      ['not_set_up', mod => { mod.status = 'not_set_up'; mod.source.forEach(src => Object.assign(src, { status: 'not_set_up', note: `${src.label} is not linked to this organization yet.` })); }],
+      ['unavailable', mod => { Object.assign(mod, { status: 'unavailable', reason: 'error' }); mod.source.forEach(src => Object.assign(src, { status: 'unavailable', reason: 'error' })); }]
+    ];
+    for (const [state, change] of states) {
+      const doc = clone(golden);
+      change(doc.modules.find(mod => mod.id === id));
+      const { container, unmount } = renderHome(doc);
+      const box = container.querySelector(`[data-module="${id}"]`);
+      expect(box).toHaveAttribute('data-status', state);
+      expect(within(box).getByRole('heading', { level: 2, name: new RegExp(`^${NAMES[id]}`) })).toBeInTheDocument();
+      if (state === 'empty') expect(box.querySelector('.uh-empty, .uh-since-line')).not.toBeNull();
+      if (state === 'not_set_up') expect(within(box).getAllByText(/is not linked to this organization yet\./).length).toBeGreaterThan(0);
+      if (state === 'unavailable') {
+        expect(within(box).getByText(/is not answering\.|are not answering\./)).toBeInTheDocument();
+        routes.push(['/api/v1/home/state', () => new Promise(() => {})]);
+        fireEvent.click(within(box).getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(container.querySelector(`[data-module="${id}"]`)).toHaveAttribute('data-status', 'loading'));
+        expect(container.querySelector(`[data-module="${id}"] .uh-sk`)).not.toBeNull();
+        routes.pop();
+      }
+      unmount();
+    }
+  });
+
   test('a module whose sources partly answered says which app is missing', () => {
     const doc = clone(golden);
     const needs = doc.modules.find(mod => mod.id === 'needs_you');
@@ -257,7 +290,9 @@ describe('acting on an item', () => {
     const id = 'ao:approval:7d1e9f20-3c4b-4a5d-8e6f-1a2b3c4d5e66';
     const row = container.querySelector(`[data-item="${id}"]`);
     fireEvent.click(within(row).getByRole('button', { name: 'Approve' }));
-    expect(await within(row).findByText('Accounting-Ops did not allow this. Open it in Accounting-Ops to finish it.')).toHaveAttribute('role', 'status');
+    expect(await within(row).findByText('Accounting-Ops did not allow this. Open it in Accounting-Ops to finish it.')).toBeInTheDocument();
+    // The receipt is also spoken through the page's polite live region.
+    await waitFor(() => expect(container.querySelector('.uh > [aria-live="polite"][role="status"]')).toHaveTextContent('Accounting-Ops did not allow this.'));
     expect(within(row).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(container.querySelector(`[data-item="${id}"]`)).not.toBeNull();
   });
@@ -362,6 +397,18 @@ describe('navigation', () => {
     const again = await screen.findByRole('combobox', { name: 'Search' });
     fireEvent.keyDown(again, { key: 'Escape' });
     expect(screen.queryByRole('combobox', { name: 'Search' })).not.toBeInTheDocument();
+  });
+
+  test('Cmd or Ctrl+period opens Apps with focus on its first link, and Escape closes it', async () => {
+    renderHome(clone(golden));
+    fireEvent.keyDown(document, { key: '.', metaKey: true });
+    const menu = await screen.findByRole('menu', { name: 'Apps' });
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus());
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(within(menu).getAllByRole('menuitem')[1]).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu', { name: 'Apps' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Apps/ })).toHaveFocus();
   });
 
   test('How it works opens once on a first visit and not again after Done', () => {

@@ -13,7 +13,7 @@ import {
  * after a problem resends that same click with the same key. The receipt's
  * plain message is shown in the row, in a polite live region.
  */
-export function useItemActions({ fetchImpl, onDone }) {
+export function useItemActions({ fetchImpl, onDone, announce }) {
   const [states, setStates] = useState({});
   const statesRef = useRef(states);
   statesRef.current = states;
@@ -23,13 +23,15 @@ export function useItemActions({ fetchImpl, onDone }) {
     if (previous?.phase === 'pending') return;
     const key = again && previous?.key && previous.actionId === action.id ? previous.key : newIdempotencyKey();
     setStates(s => ({ ...s, [item.id]: { phase: 'pending', actionId: action.id, key, message: pendingText(item, action) } }));
+    announce?.(`${pendingText(item, action)}: ${item.title}`);
     const result = await sendAction(action.href, key, { fetchImpl });
+    announce?.(result.message || '');
     setStates(s => ({
       ...s,
       [item.id]: { phase: result.outcome, actionId: action.id, key, message: result.message, retry: Boolean(result.retry) }
     }));
     if (result.outcome === 'done') onDone?.(item, action, result);
-  }, [fetchImpl, onDone]);
+  }, [fetchImpl, onDone, announce]);
 
   return { states, run };
 }
@@ -55,19 +57,13 @@ export function RowActions({ item, state, run, compact = false }) {
   if (state?.phase === 'pending' || state?.phase === 'done') {
     return (
       <div className="uh-acts">
-        <span className={`uh-receipt is-${state.phase}`} role="status">{state.message || (state.phase === 'done' ? 'Done.' : '')}</span>
+        <span className={`uh-receipt is-${state.phase}`}>{state.message || (state.phase === 'done' ? 'Done.' : '')}</span>
       </div>
     );
   }
   const offeredAction = offered.find(a => a.id === state?.actionId);
   return (
     <div className="uh-acts">
-      {state && (
-        <span className={`uh-receipt is-${state.phase === 'problem' ? 'failed' : state.phase}`} role="status">
-          {state.message}
-          {state.phase === 'reauth' && <a className="uh-link no-accent" href="/admin/login?next=%2Fdashboard">Sign in</a>}
-        </span>
-      )}
       {state?.phase === 'problem' && state.retry && offeredAction && (
         <button type="button" className={`uh-btn${size}`} onClick={() => run(item, offeredAction, { again: true })}>Try again</button>
       )}
@@ -95,15 +91,29 @@ export function RowActions({ item, state, run, compact = false }) {
   );
 }
 
+/**
+ * A receipt the row keeps (refused, failed, reauth, or a problem with no
+ * receipt) is a line under the title, so the buttons keep their places.
+ */
+export function ReceiptLine({ state }) {
+  if (!state || !['refused', 'failed', 'reauth', 'problem'].includes(state.phase)) return null;
+  return (
+    <div className={`uh-receipt-line is-${state.phase === 'problem' ? 'failed' : state.phase}`}>
+      {state.message}
+      {state.phase === 'reauth' && <> <a className="uh-link no-accent" href="/admin/login?next=%2Fdashboard">Sign in</a></>}
+    </div>
+  );
+}
+
 export function rowClass(row, extra = '') {
   return `uh-row${extra}${row.state === 'new' ? ' is-new' : ''}${row.state === 'leaving' ? ' is-leaving' : ''}`;
 }
 
 // ------------------------------------------------------------- needs you
 
-export function NeedsYou({ mod, tz, nowIso, fetchImpl, onResolved, currentId, setCurrentId, onRetry, lastGood, loading }) {
+export function NeedsYou({ mod, tz, nowIso, fetchImpl, onResolved, currentId, setCurrentId, onRetry, lastGood, loading, announce }) {
   const { resolved, onDone } = useResolvedRows(onResolved);
-  const { states, run } = useItemActions({ fetchImpl, onDone });
+  const { states, run } = useItemActions({ fetchImpl, onDone, announce });
   const items = useMemo(() => (mod.items || []).filter(item => !resolved.has(item.id)), [mod.items, resolved]);
   const rows = useRowPresence(items, item => item.id);
   const hidden = (mod.items || []).length - items.length;
@@ -143,6 +153,7 @@ export function NeedsYou({ mod, tz, nowIso, fetchImpl, onResolved, currentId, se
                       {when ? `, ${when}` : ''}
                       {extra && <span className="uh-s-src">{' · '}{extra}</span>}
                     </div>
+                    <ReceiptLine state={states[item.id]} />
                   </div>
                   <RowActions item={item} state={states[item.id]} run={run} />
                 </div>

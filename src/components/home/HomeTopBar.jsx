@@ -17,7 +17,7 @@ function useMenuKeys(open, menuRef, onClose, focusFirst) {
     if (!open || !menuRef.current) return undefined;
     const menu = menuRef.current;
     const items = () => Array.from(menu.querySelectorAll('[role^="menuitem"], [role="radio"], a[href], button:not([disabled])'))
-      .filter(el => el.offsetParent !== null || el === document.activeElement);
+      .filter(el => !el.closest('[hidden]') && window.getComputedStyle(el).display !== 'none');
     if (focusFirst) {
       const first = items()[0];
       if (first) first.focus();

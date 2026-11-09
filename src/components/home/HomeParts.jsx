@@ -159,7 +159,7 @@ export function ModuleFrame({
         <h2 className="uh-mod-title" id={titleId}>
           <span className="uh-chip" aria-hidden="true"><Icon name={spec.icon} /></span>
           <span>{spec.title || mod.title}</span>
-          {count !== undefined && count !== null && count !== '' && status !== 'loading' && status !== 'unavailable'
+          {count !== undefined && count !== null && count !== '' && (status === 'ok' || status === 'empty')
             && <span className="uh-count uh-tnum">{count}</span>}
         </h2>
         <div className={`uh-meta uh-tnum${metaAct ? ' is-act' : ''}`}>
