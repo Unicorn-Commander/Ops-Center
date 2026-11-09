@@ -264,6 +264,24 @@ async def test_money_is_present_for_an_owner_and_an_org_admin():
 
 
 @pytest.mark.asyncio
+async def test_an_accounting_ops_accountant_sees_its_approvals_in_needs_you():
+    # An Ops-Center member who is an accountant in Accounting-Ops: the approval
+    # is in Needs you and counted; the money module and its routes stay out.
+    routes = suite_routes()
+    routes[f"/api/workspaces/{ORG_ID}"] = dict(load("ao_workspace"), role="accountant")
+    document, suite = await build(ctx=make_ctx(role="member"), suite=FakeSuite(routes))
+    needs = module_by_id(document, "needs_you")
+    assert source_for(needs, "accounting-ops", "approvals")["status"] == "ok"
+    approval = next(item for item in needs["items"] if item["app"] == "accounting-ops")
+    assert approval["id"] == "ao:approval:ap-1"
+    assert approval["title"] == "Approve bank transaction import of 1,284.50 USD for Rivergreen Coffee Co."
+    assert needs["count"] == 6
+    assert module_by_id(document, "money") is None
+    assert f"/api/workspaces/{ORG_ID}/approvals" in suite.paths()
+    assert not any(path.endswith(("/cfo-brief", "/invoices")) for path in suite.paths())
+
+
+@pytest.mark.asyncio
 async def test_billing_admin_and_unknown_role_get_the_member_view():
     for role in ("billing_admin", None):
         document, _ = await build(ctx=make_ctx(role=role))

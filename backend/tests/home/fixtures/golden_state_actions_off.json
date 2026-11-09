@@ -1,0 +1,1055 @@
+{
+  "schema": "uc.home.state/1",
+  "generated_at": "2026-11-09T15:00:00Z",
+  "person": {
+    "id": "8d1e2f3a-4b5c-4d6e-8f70-9a0b1c2d3e4f",
+    "display_name": "Mara Okonkwo",
+    "role": "owner"
+  },
+  "organization": {
+    "id": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70",
+    "name": "Rivergreen Coffee Co.",
+    "ring": "customer"
+  },
+  "timezone": "America/New_York",
+  "status_line": {
+    "text": "Eight things need you, and five are due today.",
+    "needs_you_count": 8,
+    "due_today_count": 5,
+    "as_of": "2026-11-09T15:00:00Z",
+    "dots": [
+      {
+        "module": "needs_you",
+        "status": "ok",
+        "lit": true
+      },
+      {
+        "module": "today",
+        "status": "ok",
+        "lit": true
+      },
+      {
+        "module": "since_last_visit",
+        "status": "ok",
+        "lit": true
+      },
+      {
+        "module": "apps",
+        "status": "ok",
+        "lit": false
+      },
+      {
+        "module": "recent_meetings",
+        "status": "ok",
+        "lit": false
+      },
+      {
+        "module": "watched_topics",
+        "status": "ok",
+        "lit": true
+      },
+      {
+        "module": "money",
+        "status": "ok",
+        "lit": true
+      },
+      {
+        "module": "usage",
+        "status": "ok",
+        "lit": false
+      }
+    ]
+  },
+  "modules": [
+    {
+      "id": "needs_you",
+      "title": "Needs you",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "email-ops",
+          "label": "Email-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://mail-ops.example.com/agent-inbox",
+          "route": "/api/v1/workspaces/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/agent-inbox",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        },
+        {
+          "app": "accounting-ops",
+          "label": "Accounting-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://ledger.example.com/approvals",
+          "route": "/api/workspaces/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/approvals?status_filter=pending&limit=20",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        },
+        {
+          "app": "project-ops",
+          "label": "Project-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://projectops.example.com/dashboard/triage",
+          "route": "/api/v1/triage/proposals?status=PENDING&limit=50",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        }
+      ],
+      "count": 8,
+      "count_is_lower_bound": false,
+      "items": [
+        {
+          "id": "eo:draft:3f6c2a1e-8b4d-4c2a-9e1f-5a7b8c9d0e11",
+          "app": "email-ops",
+          "kind": "approval",
+          "scope": "mine",
+          "title": "Re: Wholesale pricing for January",
+          "origin": "third_party",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "Email-Ops drafter"
+          },
+          "created_at": "2026-11-08T22:20:00Z",
+          "summary": {
+            "text": "Draft reply confirming the January price sheet.",
+            "origin": "system"
+          },
+          "preview": {
+            "text": "Hi Dana, thanks for the note. The January sheet is attached.",
+            "origin": "third_party"
+          },
+          "to": "dana@harbormarket.example",
+          "href": "https://mail-ops.example.com/agent-inbox",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Review",
+              "href": "https://mail-ops.example.com/agent-inbox"
+            }
+          ]
+        },
+        {
+          "id": "ao:approval:7d1e9f20-3c4b-4a5d-8e6f-1a2b3c4d5e66",
+          "app": "accounting-ops",
+          "kind": "approval",
+          "scope": "mine",
+          "title": "Approve bank transaction import of 1,284.50 USD for Rivergreen Coffee Co.",
+          "origin": "system",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "agent:categorizer"
+          },
+          "created_at": "2026-11-08T21:10:00Z",
+          "summary": {
+            "text": "Card charge from Northside Burner Service looks like equipment maintenance.",
+            "origin": "third_party"
+          },
+          "amount": "1,284.50",
+          "currency": "USD",
+          "entity": "Rivergreen Coffee Co.",
+          "href": "https://ledger.example.com/approvals",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://ledger.example.com/approvals"
+            }
+          ]
+        },
+        {
+          "id": "eo:draft:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e02",
+          "app": "email-ops",
+          "kind": "approval",
+          "scope": "mine",
+          "title": "Clean up 14 promotional threads",
+          "origin": "third_party",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "Email-Ops cleaner"
+          },
+          "created_at": "2026-11-08T20:00:00Z",
+          "summary": {
+            "text": "Move 14 promotional threads to Trash.",
+            "origin": "system"
+          },
+          "preview": {
+            "text": "14 threads from a coffee supplier's mailing list.",
+            "origin": "third_party"
+          },
+          "href": "https://mail-ops.example.com/agent-inbox",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Review",
+              "href": "https://mail-ops.example.com/agent-inbox"
+            }
+          ]
+        },
+        {
+          "id": "ao:approval:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e03",
+          "app": "accounting-ops",
+          "kind": "approval",
+          "scope": "mine",
+          "title": "Approve journal entry post of 412.00 USD for Rivergreen Coffee Co.",
+          "origin": "system",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "agent:bookkeeper"
+          },
+          "created_at": "2026-11-08T19:30:00Z",
+          "summary": {
+            "text": "Deposit from Harbor Market matches invoice INV-0042.",
+            "origin": "third_party"
+          },
+          "amount": "412.00",
+          "currency": "USD",
+          "entity": "Rivergreen Coffee Co.",
+          "href": "https://ledger.example.com/approvals",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://ledger.example.com/approvals"
+            }
+          ]
+        },
+        {
+          "id": "eo:draft:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e01",
+          "app": "email-ops",
+          "kind": "approval",
+          "scope": "mine",
+          "title": "Holiday hours for the cafe",
+          "origin": "third_party",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "Email-Ops drafter"
+          },
+          "created_at": "2026-11-08T18:00:00Z",
+          "summary": {
+            "text": "Draft announcement of holiday hours.",
+            "origin": "system"
+          },
+          "preview": {
+            "text": "We will close at 2 pm on December 24.",
+            "origin": "third_party"
+          },
+          "to": "list@rivergreen.example",
+          "sends_at": "2026-11-10T14:00:00Z",
+          "href": "https://mail-ops.example.com/agent-inbox",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Review",
+              "href": "https://mail-ops.example.com/agent-inbox"
+            }
+          ]
+        },
+        {
+          "id": "po:triage:b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d77",
+          "app": "project-ops",
+          "kind": "proposal",
+          "scope": "workspace",
+          "title": "Send Harbor Market the January price sheet",
+          "origin": "third_party",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "Meeting-Ops action item"
+          },
+          "created_at": "2026-11-07T16:05:00Z",
+          "summary": {
+            "text": "Matches the wholesale accounts project.",
+            "origin": "system"
+          },
+          "preview": {
+            "text": "Dana asked us to send the January price sheet by Friday.",
+            "origin": "third_party"
+          },
+          "project": "Wholesale accounts",
+          "priority": "HIGH",
+          "href": "https://projectops.example.com/dashboard/triage",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Review",
+              "href": "https://projectops.example.com/dashboard/triage"
+            }
+          ]
+        },
+        {
+          "id": "po:triage:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e04",
+          "app": "project-ops",
+          "kind": "proposal",
+          "scope": "workspace",
+          "title": "Inspect grinder burrs",
+          "origin": "third_party",
+          "proposed_by": {
+            "kind": "agent",
+            "name": "Meeting-Ops action item"
+          },
+          "created_at": "2026-11-07T14:10:00Z",
+          "preview": {
+            "text": "Check the grinder burrs before the holiday rush.",
+            "origin": "third_party"
+          },
+          "priority": "MEDIUM",
+          "href": "https://projectops.example.com/dashboard/triage",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Review",
+              "href": "https://projectops.example.com/dashboard/triage"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "today",
+      "title": "Today",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "project-ops",
+          "label": "Project-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://projectops.example.com/dashboard/my-tasks",
+          "route": "/api/v1/tasks/my-tasks",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        },
+        {
+          "app": "customer-ops",
+          "label": "Customer-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://customers.example.com/dashboard/customers",
+          "route": "/api/v1/workspaces/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/customers?ownerUserKey=8d1e2f3a-4b5c-4d6e-8f70-9a0b1c2d3e4f&limit=200",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        }
+      ],
+      "date": "2026-11-09",
+      "counts": {
+        "tasks_due_today": 3,
+        "tasks_overdue": 1,
+        "follow_ups_due": 2
+      },
+      "items": [
+        {
+          "id": "po:task:c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e88",
+          "app": "project-ops",
+          "kind": "task",
+          "title": "Roaster maintenance window",
+          "origin": "system",
+          "due_date": "2026-11-09",
+          "all_day": true,
+          "priority": "HIGH",
+          "status": "PENDING",
+          "project": "Roastery operations",
+          "href": "https://projectops.example.com/dashboard/tasks/c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e88",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://projectops.example.com/dashboard/tasks/c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e88"
+            }
+          ]
+        },
+        {
+          "id": "co:followup:cust-dockside",
+          "app": "customer-ops",
+          "kind": "follow_up",
+          "title": "Follow up with Dockside Hotel",
+          "origin": "system",
+          "due_at": "2026-11-08T14:00:00Z",
+          "all_day": false,
+          "overdue": true,
+          "stage": "PROSPECT",
+          "priority": "MEDIUM",
+          "href": "https://customers.example.com/dashboard/customers/cust-dockside",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://customers.example.com/dashboard/customers/cust-dockside"
+            }
+          ]
+        },
+        {
+          "id": "co:followup:cust-harbor",
+          "app": "customer-ops",
+          "kind": "follow_up",
+          "title": "Follow up with Harbor Market",
+          "origin": "system",
+          "due_at": "2026-11-09T16:00:00Z",
+          "all_day": false,
+          "overdue": false,
+          "stage": "CUSTOMER",
+          "priority": "HIGH",
+          "href": "https://customers.example.com/dashboard/customers/cust-harbor",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://customers.example.com/dashboard/customers/cust-harbor"
+            }
+          ]
+        },
+        {
+          "id": "po:task:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e05",
+          "app": "project-ops",
+          "kind": "task",
+          "title": "Q4 price sheet due",
+          "origin": "system",
+          "due_date": "2026-11-09",
+          "due_at": "2026-11-09T19:00:00Z",
+          "all_day": false,
+          "priority": "MEDIUM",
+          "status": "IN_PROGRESS",
+          "project": "Wholesale accounts",
+          "href": "https://projectops.example.com/dashboard/tasks/6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e05",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://projectops.example.com/dashboard/tasks/6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e05"
+            }
+          ]
+        },
+        {
+          "id": "po:task:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e11",
+          "app": "project-ops",
+          "kind": "task",
+          "title": "Call the roaster technician",
+          "origin": "system",
+          "due_date": "2026-11-09",
+          "due_at": "2026-11-10T03:00:00Z",
+          "all_day": false,
+          "priority": "LOW",
+          "status": "PENDING",
+          "project": "Roastery operations",
+          "href": "https://projectops.example.com/dashboard/tasks/6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e11",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://projectops.example.com/dashboard/tasks/6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e11"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "since_last_visit",
+      "title": "Since you were last here",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "ops-center",
+          "label": "Ops-Center",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://home.example.com/dashboard",
+          "route": "/api/v1/org/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/dashboard-cursor",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        },
+        {
+          "app": "meeting-ops",
+          "label": "Meeting-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://meetings.example.com/#/sessions",
+          "route": "/api/analytics/sessions?limit=20",
+          "workspace": "rivergreen-coffee"
+        },
+        {
+          "app": "project-ops",
+          "label": "Project-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://projectops.example.com/dashboard/my-tasks",
+          "route": "/api/v1/tasks/my-tasks",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        },
+        {
+          "app": "center-deep",
+          "label": "Center Deep Research",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://research.example.com/",
+          "route": "/api/notifications?limit=100",
+          "workspace": null
+        }
+      ],
+      "cursor": "2026-11-06T23:12:00Z",
+      "counts": {
+        "meetings_summarized": 2,
+        "tasks_closed": 1,
+        "monitor_updates": 2
+      },
+      "items": [
+        {
+          "id": "cdr:notification:ntf-3",
+          "app": "center-deep",
+          "kind": "monitor_update",
+          "title": "Arabica futures and freight to the US east coast",
+          "origin": "system",
+          "at": "2026-11-09T10:41:00Z",
+          "href": "https://research.example.com/#/run/run-903"
+        },
+        {
+          "id": "po:task:6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e14",
+          "app": "project-ops",
+          "kind": "task_closed",
+          "title": "Renew the espresso machine lease",
+          "origin": "system",
+          "at": "2026-11-08T20:15:00Z",
+          "href": "https://projectops.example.com/dashboard/tasks/6a1d2e3f-4b5c-4d6e-8f70-1a2b3c4d5e14"
+        },
+        {
+          "id": "cdr:notification:ntf-2",
+          "app": "center-deep",
+          "kind": "monitor_update",
+          "title": "Specialty wholesale pricing",
+          "origin": "system",
+          "at": "2026-11-08T11:01:00Z",
+          "href": "https://research.example.com/#/run/run-880"
+        },
+        {
+          "id": "mo:session:sess-pricing",
+          "app": "meeting-ops",
+          "kind": "meeting_summarized",
+          "title": "Wholesale pricing review",
+          "origin": "system",
+          "at": "2026-11-07T15:00:00Z",
+          "href": "https://meetings.example.com/#/sessions/sess-pricing"
+        },
+        {
+          "id": "mo:session:sess-roast-plan",
+          "app": "meeting-ops",
+          "kind": "meeting_summarized",
+          "title": "Weekly roast plan",
+          "origin": "system",
+          "at": "2026-11-07T13:30:00Z",
+          "href": "https://meetings.example.com/#/sessions/sess-roast-plan"
+        }
+      ]
+    },
+    {
+      "id": "apps",
+      "title": "Your apps",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "ops-center",
+          "label": "Ops-Center",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://home.example.com/dashboard",
+          "route": "/api/v1/my-apps/authorized",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        }
+      ],
+      "items": [
+        {
+          "slug": "project-ops",
+          "name": "Project-Ops",
+          "purpose": "Run projects, tasks, approvals, time tracking, and capacity planning.",
+          "origin": "system",
+          "state": "ready",
+          "open": "https://projectops.example.com",
+          "connect_ai": {
+            "label": "Connect your AI",
+            "mcp_url": "https://projectops.example.com/api/v1/mcp",
+            "claude_code_command": "claude mcp add --transport http project-ops https://projectops.example.com/api/v1/mcp",
+            "client_config": {
+              "mcpServers": {
+                "project-ops": {
+                  "url": "https://projectops.example.com/api/v1/mcp"
+                }
+              }
+            },
+            "chatgpt_url": "https://projectops.example.com/api/v1/mcp",
+            "desktop": [],
+            "mobile": []
+          },
+          "numbers": [
+            {
+              "label": "due today",
+              "value": 3,
+              "href": "https://projectops.example.com/dashboard/my-tasks"
+            },
+            {
+              "label": "overdue",
+              "value": 1,
+              "href": "https://projectops.example.com/dashboard/my-tasks"
+            }
+          ],
+          "live": {
+            "status": "ok"
+          }
+        },
+        {
+          "slug": "meeting-ops",
+          "name": "Meeting-Ops",
+          "purpose": "Record, transcribe, summarize, and track action items from meetings.",
+          "origin": "system",
+          "state": "ready",
+          "open": "https://meetings.example.com",
+          "connect_ai": {
+            "label": "Connect your AI",
+            "mcp_url": "https://meetings.example.com/mcp",
+            "claude_code_command": "claude mcp add --transport http meeting-ops https://meetings.example.com/mcp",
+            "client_config": {
+              "mcpServers": {
+                "meeting-ops": {
+                  "url": "https://meetings.example.com/mcp"
+                }
+              }
+            },
+            "chatgpt_url": "https://meetings.example.com/mcp",
+            "desktop": [],
+            "mobile": []
+          },
+          "numbers": [
+            {
+              "label": "open action items",
+              "value": 3,
+              "href": "https://meetings.example.com/#/action-items"
+            }
+          ],
+          "live": {
+            "status": "ok"
+          }
+        },
+        {
+          "slug": "email-ops",
+          "name": "Email-Ops",
+          "purpose": "Run mailbox cleanup and agent-assisted email operations with audit controls.",
+          "origin": "system",
+          "state": "ready",
+          "open": "https://mail-ops.example.com",
+          "connect_ai": {
+            "label": "Connect your AI",
+            "mcp_url": "https://mail-ops.example.com/api/v1/mcp",
+            "claude_code_command": "claude mcp add --transport http email-ops https://mail-ops.example.com/api/v1/mcp",
+            "client_config": {
+              "mcpServers": {
+                "email-ops": {
+                  "url": "https://mail-ops.example.com/api/v1/mcp"
+                }
+              }
+            },
+            "chatgpt_url": "https://mail-ops.example.com/api/v1/mcp",
+            "desktop": [],
+            "mobile": []
+          },
+          "numbers": [
+            {
+              "label": "drafts waiting",
+              "value": 4,
+              "href": "https://mail-ops.example.com/agent-inbox"
+            }
+          ],
+          "live": {
+            "status": "ok"
+          }
+        },
+        {
+          "slug": "accounting-ops",
+          "name": "Accounting-Ops",
+          "purpose": "Track financial operations with ledger lineage and agent-assisted bookkeeping.",
+          "origin": "system",
+          "state": "ready",
+          "open": "https://ledger.example.com",
+          "connect_ai": {
+            "label": "Connect your AI",
+            "mcp_url": "https://ledger.example.com/mcp",
+            "claude_code_command": "claude mcp add --transport http accounting-ops https://ledger.example.com/mcp",
+            "client_config": {
+              "mcpServers": {
+                "accounting-ops": {
+                  "url": "https://ledger.example.com/mcp"
+                }
+              }
+            },
+            "chatgpt_url": "https://ledger.example.com/mcp",
+            "desktop": [],
+            "mobile": []
+          },
+          "numbers": [
+            {
+              "label": "approvals waiting",
+              "value": 2,
+              "href": "https://ledger.example.com/approvals"
+            }
+          ],
+          "live": {
+            "status": "ok"
+          }
+        },
+        {
+          "slug": "customer-ops",
+          "name": "Customer-Ops",
+          "purpose": "Manage customer accounts, engagements, and lifecycle operations.",
+          "origin": "system",
+          "state": "ready",
+          "open": "https://customers.example.com",
+          "connect_ai": {
+            "label": "Connect your AI",
+            "mcp_url": "https://customers.example.com/api/v1/mcp",
+            "claude_code_command": "claude mcp add --transport http customer-ops https://customers.example.com/api/v1/mcp",
+            "client_config": {
+              "mcpServers": {
+                "customer-ops": {
+                  "url": "https://customers.example.com/api/v1/mcp"
+                }
+              }
+            },
+            "chatgpt_url": "https://customers.example.com/api/v1/mcp",
+            "desktop": [],
+            "mobile": []
+          },
+          "numbers": [
+            {
+              "label": "follow-ups due",
+              "value": 2,
+              "href": "https://customers.example.com/dashboard/customers"
+            }
+          ],
+          "live": {
+            "status": "ok"
+          }
+        }
+      ]
+    },
+    {
+      "id": "recent_meetings",
+      "title": "Recent meetings",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "meeting-ops",
+          "label": "Meeting-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://meetings.example.com/#/sessions",
+          "route": "/api/analytics/sessions?limit=20",
+          "workspace": "rivergreen-coffee"
+        },
+        {
+          "app": "meeting-ops",
+          "label": "Meeting-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://meetings.example.com/#/action-items",
+          "route": "/api/action-items?status=todo&limit=200",
+          "workspace": "rivergreen-coffee"
+        }
+      ],
+      "items": [
+        {
+          "id": "mo:session:sess-pricing",
+          "app": "meeting-ops",
+          "kind": "meeting",
+          "title": "Wholesale pricing review",
+          "origin": "system",
+          "created_at": "2026-11-07T15:00:00Z",
+          "duration_seconds": 2520,
+          "speakers": 3,
+          "status": "completed",
+          "has_summary": true,
+          "open_action_items": 2,
+          "href": "https://meetings.example.com/#/sessions/sess-pricing",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://meetings.example.com/#/sessions/sess-pricing"
+            }
+          ]
+        },
+        {
+          "id": "mo:session:sess-roast-plan",
+          "app": "meeting-ops",
+          "kind": "meeting",
+          "title": "Weekly roast plan",
+          "origin": "system",
+          "created_at": "2026-11-07T13:30:00Z",
+          "duration_seconds": 1500,
+          "speakers": 2,
+          "status": "completed",
+          "has_summary": true,
+          "open_action_items": 1,
+          "href": "https://meetings.example.com/#/sessions/sess-roast-plan",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://meetings.example.com/#/sessions/sess-roast-plan"
+            }
+          ]
+        },
+        {
+          "id": "mo:session:sess-dockside",
+          "app": "meeting-ops",
+          "kind": "meeting",
+          "title": "Dockside Hotel renewal",
+          "origin": "system",
+          "created_at": "2026-11-06T20:00:00Z",
+          "duration_seconds": 1800,
+          "speakers": 2,
+          "status": "processing",
+          "has_summary": false,
+          "open_action_items": 0,
+          "href": "https://meetings.example.com/#/sessions/sess-dockside",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://meetings.example.com/#/sessions/sess-dockside"
+            }
+          ]
+        },
+        {
+          "id": "mo:session:1188",
+          "app": "meeting-ops",
+          "kind": "meeting",
+          "title": "Session 1188",
+          "origin": "system",
+          "created_at": "2026-11-03T10:00:00Z",
+          "duration_seconds": 600,
+          "speakers": 1,
+          "status": "completed",
+          "has_summary": true,
+          "open_action_items": 0,
+          "href": "https://meetings.example.com/#/sessions/1188",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://meetings.example.com/#/sessions/1188"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "watched_topics",
+      "title": "Watched topics",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "center-deep",
+          "label": "Center Deep Research",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://research.example.com/",
+          "route": "/api/briefs",
+          "workspace": null
+        },
+        {
+          "app": "center-deep",
+          "label": "Center Deep Research",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://research.example.com/",
+          "route": "/api/notifications?limit=100",
+          "workspace": null
+        }
+      ],
+      "changed_count": 1,
+      "items": [
+        {
+          "monitor_id": "brf-arabica",
+          "app": "center-deep",
+          "title": "Arabica futures and freight to the US east coast",
+          "origin": "system",
+          "changed": true,
+          "unread": true,
+          "cadence": "daily",
+          "last_run_at": "2026-11-09T10:40:00Z",
+          "next_run_at": "2026-11-10T10:40:00Z",
+          "drift_line": {
+            "text": "Freight quotes rose for the second week; futures held steady.",
+            "origin": "third_party"
+          },
+          "href": "https://research.example.com/#/brief/brf-arabica",
+          "run_href": "https://research.example.com/#/run/run-903",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open run",
+              "href": "https://research.example.com/#/run/run-903"
+            }
+          ]
+        },
+        {
+          "monitor_id": "brf-events",
+          "app": "center-deep",
+          "title": "charleston food events",
+          "origin": "system",
+          "changed": false,
+          "unread": false,
+          "cadence": "weekly",
+          "last_run_at": "2026-11-04T12:00:00Z",
+          "next_run_at": "2026-11-11T12:00:00Z",
+          "href": "https://research.example.com/#/brief/brf-events",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://research.example.com/#/brief/brf-events"
+            }
+          ]
+        },
+        {
+          "monitor_id": "brf-wholesale",
+          "app": "center-deep",
+          "title": "Specialty wholesale pricing",
+          "origin": "system",
+          "changed": false,
+          "unread": false,
+          "cadence": "weekly",
+          "last_run_at": "2026-11-08T11:00:00Z",
+          "next_run_at": "2026-11-15T11:00:00Z",
+          "href": "https://research.example.com/#/brief/brf-wholesale",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Open",
+              "href": "https://research.example.com/#/brief/brf-wholesale"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "money",
+      "title": "Money",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "accounting-ops",
+          "label": "Accounting-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://ledger.example.com/dashboard",
+          "route": "/api/workspaces/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/cfo-brief",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        },
+        {
+          "app": "accounting-ops",
+          "label": "Accounting-Ops",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://ledger.example.com/invoices",
+          "route": "/api/workspaces/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/invoices?limit=500",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        }
+      ],
+      "cash": {
+        "configured": true,
+        "headline": {
+          "text": "$18,420 in the bank",
+          "origin": "system"
+        },
+        "detail": {
+          "text": "~7 months runway",
+          "origin": "system"
+        },
+        "net_total": "18420.00",
+        "assets_total": "18420.00",
+        "liabilities_total": "0.00"
+      },
+      "runway_months": "7.2",
+      "monthly_burn": "2550.00",
+      "action_required_total": 1,
+      "summary_line": {
+        "text": "1 thing needs your OK; you have ~7 months of runway.",
+        "origin": "system"
+      },
+      "invoiced_not_due": {
+        "amount": "2,900.00",
+        "currency": "USD",
+        "count": 2,
+        "complete": true
+      },
+      "items": [
+        {
+          "id": "ao:priority:pri-1",
+          "app": "accounting-ops",
+          "kind": "decision",
+          "severity": "medium",
+          "title": "1 transaction needs your OK",
+          "origin": "system",
+          "detail": {
+            "text": "Northside Burner Service, $1,284.50",
+            "origin": "third_party"
+          },
+          "href": "https://ledger.example.com/approvals",
+          "actions": [
+            {
+              "id": "open",
+              "label": "Review",
+              "href": "https://ledger.example.com/approvals"
+            }
+          ]
+        }
+      ],
+      "onboarding": false,
+      "upstream_as_of": "2026-11-09T14:59:58+00:00",
+      "sources_ok": {
+        "open_items": true,
+        "cash": true,
+        "sentinel": true
+      }
+    },
+    {
+      "id": "usage",
+      "title": "AI usage and credits",
+      "status": "ok",
+      "as_of": "2026-11-09T15:00:00Z",
+      "source": [
+        {
+          "app": "ops-center",
+          "label": "Ops-Center",
+          "status": "ok",
+          "as_of": "2026-11-09T15:00:00Z",
+          "url": "https://home.example.com/admin/subscription/usage",
+          "route": "/api/v1/org-billing/credits/5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70/usage?days=30",
+          "workspace": "5f2b9c1e-7a3d-4e6f-9b20-1c8d4a6e3f70"
+        }
+      ],
+      "credits": {
+        "last_24_hours": 14,
+        "last_30_days": 312,
+        "pool": {
+          "total": 1000,
+          "used": 312,
+          "available": 688
+        }
+      },
+      "people_using_ai_30_days": 3,
+      "services": [
+        {
+          "service": "llm",
+          "credits": 290
+        },
+        {
+          "service": "embeddings",
+          "credits": 22
+        }
+      ]
+    }
+  ],
+  "links": {
+    "self": "/api/v1/home/state",
+    "markdown": "/api/v1/home/state (Accept: text/markdown)"
+  }
+}

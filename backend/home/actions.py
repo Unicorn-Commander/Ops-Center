@@ -36,6 +36,12 @@ Rules:
   (``email.service.ts:3859-3870,3950-3958``). The answer's ``inbox.state`` is
   read (and nothing else kept) and such a receipt says ``refused``.
 * A receipt stores no token, no request or response body and no email address.
+
+The state document offers these actions on its items when
+``HOME_ACTIONS_ENABLED`` is on (``offered_actions``, called by ``modules``):
+each item carries the SPECS entries for its source and kind, after its Open
+action, less any the owning app is known to refuse for that row
+(``withheld_actions``).
 """
 
 from __future__ import annotations
@@ -48,7 +54,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 import httpx
 
@@ -123,6 +129,10 @@ class ActionSpec:
     done: DoneReader  # (2xx body or None, now) -> (outcome, message)
     # Upstream answers that mean "already handled" for this action, not a failure.
     already_handled: Tuple[int, ...] = ()
+    # How the home offers it on an item (``offered_actions``): the button label
+    # and, where the person should know something before the tap, a short note.
+    label: str = ""
+    note: Optional[str] = None
 
 
 def _constant(message: str) -> DoneReader:
@@ -221,33 +231,41 @@ def _project_ops_task_done(workspace_id: str, item: str) -> UpstreamCall:
 
 
 ACTIONS: Tuple[ActionSpec, ...] = (
-    ActionSpec("email-ops", "eo", "draft", "approve", _email_ops_call("approve"), _email_ops_done("approve")),
-    ActionSpec("email-ops", "eo", "draft", "reject", _email_ops_call("reject"), _email_ops_done("reject")),
+    ActionSpec(
+        "email-ops", "eo", "draft", "approve", _email_ops_call("approve"), _email_ops_done("approve"),
+        # A single approve sends inside the request: there is no hold window
+        # (email.service.ts:4273-4310).
+        label="Approve", note="Sends the email now",
+    ),
+    ActionSpec(
+        "email-ops", "eo", "draft", "reject", _email_ops_call("reject"), _email_ops_done("reject"),
+        label="Reject",
+    ),
     ActionSpec(
         "accounting-ops", "ao", "approval", "approve", _accounting_ops_call("approve"),
-        _constant("Approved. Accounting-Ops applied it."),
+        _constant("Approved. Accounting-Ops applied it."), label="Approve",
     ),
     ActionSpec(
         "accounting-ops", "ao", "approval", "reject", _accounting_ops_call("reject"),
-        _constant("Rejected. Accounting-Ops left the books as they were."),
+        _constant("Rejected. Accounting-Ops left the books as they were."), label="Reject",
     ),
     ActionSpec(
         "project-ops", "po", "triage", "accept", _project_ops_triage_call("approve"),
         _constant("Accepted. Project-Ops created the task."),
         # Project-Ops answers 400 when the proposal was already ruled or has no
         # project (ffc5bd5 backend/src/triage/triage.service.ts:739-743).
-        already_handled=(400,),
+        already_handled=(400,), label="Accept",
     ),
     ActionSpec(
         "project-ops", "po", "triage", "reject", _project_ops_triage_call("reject"),
         _constant("Rejected. Project-Ops did not create a task."),
         # Project-Ops answers 400 when the proposal was already ruled or has no
         # project (ffc5bd5 backend/src/triage/triage.service.ts:739-743).
-        already_handled=(400,),
+        already_handled=(400,), label="Reject",
     ),
     ActionSpec(
         "project-ops", "po", "task", "done", _project_ops_task_done,
-        _constant("Marked done in Project-Ops."),
+        _constant("Marked done in Project-Ops."), label="Mark done",
     ),
 )
 
@@ -547,6 +565,99 @@ def check_idempotency_key(raw: Optional[str]) -> Tuple[Optional[str], Optional[A
             fix,
         )
     return key, None
+
+
+# --------------------------------------------------------------------------- #
+# Offering actions on the items of the state document
+# --------------------------------------------------------------------------- #
+
+ACTION_ROUTE = "/api/v1/home/actions"
+
+# Accounting-Ops ebd7796 decides a journal proposal (subject_type
+# journal_entry_post, app/journal/pending_post.py:15) only for a human session
+# whose token was issued to Accounting-Ops' own Keycloak client: before it reads
+# the decision, decide_approval answers 403 "Journal proposal requires a human
+# session" to approve and reject alike when the token's azp is not its
+# keycloak_client_id, or the token is an agent, PAT, service or machine token
+# (app/api/approvals.py:254-264). The home forwards the person's Ops-Center
+# token, so it never offers a decision on one; Open still leads there.
+ACCOUNTING_OPS_OWN_CLIENT_SUBJECTS = frozenset({"journal_entry_post"})
+
+# Email-Ops 2810e17 agent-inbox rows are EMAIL, CLEANUP or NOTICE
+# (prisma/schema.prisma:196-200; the list says EMAIL when unset,
+# email.service.ts:6371). Only EMAIL is a draft. Approving a CLEANUP row trashes,
+# archives or unsubscribes (:4032-4096) and approving a NOTICE adds a calendar
+# event or acknowledges it (:3886-3913), so neither is offered a draft's Approve
+# ("Sends the email now") or Reject. Review still opens it in Email-Ops.
+EMAIL_OPS_DRAFT_KIND = "EMAIL"
+
+
+def withheld_actions(source: str, kind: str, row: Mapping[str, Any], now: datetime) -> FrozenSet[str]:
+    """Actions SPECS has for this source and kind that the home does not offer
+    on this row: the owning app is known to refuse them for it, or would not do
+    what the label says. ``row`` is the adapter's normalized row
+    (``adapters/*.normalize_*``)."""
+
+    if (source, kind) == ("email-ops", "draft"):
+        if str(row.get("kind") or EMAIL_OPS_DRAFT_KIND).upper() != EMAIL_OPS_DRAFT_KIND:
+            return frozenset({"approve", "reject"})
+        # Approve leaves a draft whose send time is still ahead exactly as it
+        # is (email.service.ts:3950-3958), so only Reject is offered on it.
+        sends_at = parse_iso(row.get("sends_at"))
+        if sends_at is not None and sends_at > now:
+            return frozenset({"approve"})
+    elif (source, kind) == ("accounting-ops", "approval"):
+        if row.get("subject_type") in ACCOUNTING_OPS_OWN_CLIENT_SUBJECTS:
+            return frozenset({"approve", "reject"})
+    elif (source, kind) == ("project-ops", "triage"):
+        # Accept sends no project, and Project-Ops ffc5bd5 answers 400 "no
+        # project resolved" for a proposal without one (triage.service.ts:740-744).
+        if not row.get("project_id"):
+            return frozenset({"accept"})
+    elif (source, kind) == ("project-ops", "task"):
+        # Marked done without force, a task with an open blocker is refused
+        # with 409 (tasks.service.ts:157-171); isBlocked is that same test
+        # (:120-142, :1389-1395).
+        if row.get("blocked"):
+            return frozenset({"done"})
+    return frozenset()
+
+
+def offered_actions(item_id: Any, row: Mapping[str, Any], now: datetime) -> List[Dict[str, Any]]:
+    """The actions the home offers on one item, for its ``actions`` list.
+
+    Every SPECS entry for the item's source and kind, in table order, less the
+    ``withheld_actions`` for its row, each as ``{id, label, method, href}`` plus
+    ``note`` where the entry has one. Source and kind come from the item id, the
+    middle part of ``eo:draft:<uuid>`` (not the item's own ``kind`` field), and
+    each href is checked with ``resolve_target``, the route's own parser, so
+    every offered href is one the route accepts. An id it would refuse (another
+    source or kind, or no UUID) is offered nothing.
+    """
+
+    raw = str(item_id or "")
+    parts = raw.split(":")
+    if len(parts) != 3:
+        return []
+    specs = [spec for spec in ACTIONS if (spec.code, spec.kind) == (parts[0].lower(), parts[1].lower())]
+    if not specs:
+        return []
+    withheld = withheld_actions(specs[0].source, specs[0].kind, row, now)
+    offered: List[Dict[str, Any]] = []
+    for spec in specs:
+        target, _ = resolve_target(spec.source, raw, spec.action)
+        if target is None or target.spec is not spec or spec.action in withheld:
+            continue
+        entry: Dict[str, Any] = {
+            "id": spec.action,
+            "label": spec.label,
+            "method": "POST",
+            "href": f"{ACTION_ROUTE}/{spec.source}/{target.item_id}/{spec.action}",
+        }
+        if spec.note:
+            entry["note"] = spec.note
+        offered.append(entry)
+    return offered
 
 
 # --------------------------------------------------------------------------- #

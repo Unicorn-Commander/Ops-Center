@@ -24,8 +24,12 @@ accountant 3 (cpa 3), admin 4, owner 5 (client_owner 5).
   (``app/api/approvals.py:88-157``): ``{approvals: [{id, entity_id,
   entity_display_name, entity_slug, subject_type, subject_id, amount,
   currency_code, status, reasoning, requested_by_identity, decided_by_uc_uid,
-  decided_at, created_at, payload}], total}``. Read floor accountant; only
-  admin decides, so it is fetched for Accounting-Ops admins and owners only.
+  decided_at, created_at, payload}], total}``. The read floor is accountant
+  (``:107``) and so is the decide floor: ``decide_approval`` calls
+  ``require_role(workspace, "accountant")`` (``:189-206``; the notes at ``:10``
+  and ``:99-101`` that still say admin are stale). So it is fetched for every
+  Accounting-Ops role from accountant up: accountant and cpa, admin, owner and
+  client_owner.
 * ``GET /api/workspaces/{id}/cfo-brief`` (``app/api/cfo_brief.py:482-...``,
   model ``:92-145``): ``as_of, priorities[{id, kind, severity, headline,
   detail, action_href, action_label, score}], action_required_total,
@@ -84,7 +88,8 @@ ROLE_RANK = {
     "client_owner": 5,
     "platform_admin": 100,
 }
-DECIDER_RANK = ROLE_RANK["admin"]
+# Lists and decides approvals (app/api/approvals.py:107, :206).
+DECIDER_RANK = ROLE_RANK["accountant"]
 APPROVALS_LIMIT = 20
 INVOICES_LIMIT = 500
 OPEN_INVOICE_STATUSES = frozenset({"sent", "viewed", "partial"})
@@ -198,7 +203,7 @@ async def _fetch(env: AdapterEnv) -> AppSnapshot:
     if "approvals" not in results:
         parts["approvals"] = Part(
             "approvals", NOT_ENTITLED, route=approvals_route, screen=approvals_screen, as_of=iso(),
-            note="Only Accounting-Ops admins and owners decide approvals.",
+            note="Deciding approvals needs the accountant role or higher in Accounting-Ops.",
         )
     elif isinstance(results["approvals"], BaseException):
         parts["approvals"] = part_from_error(

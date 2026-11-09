@@ -9,6 +9,11 @@ number, the API route (a path, never a host) and the workspace used.
 A module is ``ok`` or ``empty`` as soon as one of its sources answered; it is
 marked ``partial`` when another source did not. Counts that could not be read
 are ``null``, never zero.
+
+Every item's ``actions`` list starts with its Open action. With ``offer`` on
+(``HOME_ACTIONS_ENABLED``, read once per build by the aggregator) the Needs you
+and Today items also carry the home actions the route can take on them, after
+Open (``actions.offered_actions``). Off, the items are exactly as before.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from collections import Counter
 from datetime import date, datetime, timezone, tzinfo
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from .actions import offered_actions
 from .adapters.base import (
     EMPTY,
     ERROR,
@@ -84,6 +90,12 @@ def _compact(item: Dict[str, Any], keep: Iterable[str] = ()) -> Dict[str, Any]:
 
 def _open_action(label: str, href: Optional[str]) -> List[Dict[str, str]]:
     return [{"id": "open", "label": label, "href": href}] if href else []
+
+
+def _offered(offer: bool, item_id: str, row: Dict[str, Any], ctx: HomeContext) -> List[Dict[str, Any]]:
+    """The home actions on this item, to follow its Open action; none when off."""
+
+    return offered_actions(item_id, row, ctx.now) if offer else []
 
 
 def source_entry(snap: AppSnapshot, part: Part, ctx: HomeContext) -> Dict[str, Any]:
@@ -225,12 +237,13 @@ def _humanize(value: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _email_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
+def _email_item(row: Dict[str, Any], part: Part, ctx: HomeContext, offer: bool) -> Dict[str, Any]:
     href = part.screen
+    item_id = f"eo:draft:{row.get('id')}"
     title = row.get("subject") or short(row.get("summary")) or "Email draft waiting for approval"
     return _compact(
         {
-            "id": f"eo:draft:{row.get('id')}",
+            "id": item_id,
             "app": "email-ops",
             "kind": "approval",
             "scope": "mine",
@@ -243,14 +256,15 @@ def _email_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
             "to": row.get("to"),
             "sends_at": _iso_or_none(row.get("sends_at")),
             "href": href,
-            "actions": _open_action("Review", href),
+            "actions": _open_action("Review", href) + _offered(offer, item_id, row, ctx),
         },
         keep=("href",),
     )
 
 
-def _approval_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
+def _approval_item(row: Dict[str, Any], part: Part, ctx: HomeContext, offer: bool) -> Dict[str, Any]:
     href = part.screen
+    item_id = f"ao:approval:{row.get('id')}"
     subject = _humanize(row.get("subject_type") or "") or "item"
     title = f"Approve {subject}"
     if row.get("amount"):
@@ -259,7 +273,7 @@ def _approval_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
         title += f" for {row['entity']}"
     return _compact(
         {
-            "id": f"ao:approval:{row.get('id')}",
+            "id": item_id,
             "app": "accounting-ops",
             "kind": "approval",
             "scope": "mine",
@@ -272,18 +286,19 @@ def _approval_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
             "currency": row.get("currency"),
             "entity": row.get("entity"),
             "href": href,
-            "actions": _open_action("Open", href),
+            "actions": _open_action("Open", href) + _offered(offer, item_id, row, ctx),
         },
         keep=("href",),
     )
 
 
-def _proposal_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
+def _proposal_item(row: Dict[str, Any], part: Part, ctx: HomeContext, offer: bool) -> Dict[str, Any]:
     href = part.screen
+    item_id = f"po:triage:{row.get('id')}"
     proposer = "Meeting-Ops action item" if row.get("source_type") == "MEETING_OPS" else "Project-Ops triage"
     return _compact(
         {
-            "id": f"po:triage:{row.get('id')}",
+            "id": item_id,
             "app": "project-ops",
             "kind": "proposal",
             "scope": "workspace",
@@ -296,13 +311,13 @@ def _proposal_item(row: Dict[str, Any], part: Part) -> Dict[str, Any]:
             "project": row.get("project"),
             "priority": row.get("priority"),
             "href": href,
-            "actions": _open_action("Review", href),
+            "actions": _open_action("Review", href) + _offered(offer, item_id, row, ctx),
         },
         keep=("href",),
     )
 
 
-def build_needs_you(ctx: HomeContext, snaps: Dict[str, AppSnapshot]) -> Dict[str, Any]:
+def build_needs_you(ctx: HomeContext, snaps: Dict[str, AppSnapshot], *, offer: bool = False) -> Dict[str, Any]:
     email, accounting, project = snaps["email-ops"], snaps["accounting-ops"], snaps["project-ops"]
     inbox, approvals, triage = email.part("agent_inbox"), accounting.part("approvals"), project.part("triage")
 
@@ -315,7 +330,7 @@ def build_needs_you(ctx: HomeContext, snaps: Dict[str, AppSnapshot]) -> Dict[str
         rows = part.data.get("items") or []
         count += int(part.data.get("count") or len(rows))
         lower_bound = lower_bound or bool(part.data.get("count_is_lower_bound"))
-        items.extend(make(row, part) for row in rows[:MAX_ITEMS_PER_SOURCE])
+        items.extend(make(row, part, ctx, offer) for row in rows[:MAX_ITEMS_PER_SOURCE])
     items.sort(key=lambda item: item.get("created_at") or "", reverse=True)
 
     sources = [
@@ -334,13 +349,14 @@ def build_needs_you(ctx: HomeContext, snaps: Dict[str, AppSnapshot]) -> Dict[str
 # --------------------------------------------------------------------------- #
 
 
-def _task_item(task: Dict[str, Any], tz: tzinfo) -> Dict[str, Any]:
+def _task_item(task: Dict[str, Any], ctx: HomeContext, offer: bool) -> Dict[str, Any]:
     due = task.get("due")
     all_day = bool(task.get("all_day"))
-    due_date = _task_local_date(task, tz)
+    due_date = _task_local_date(task, ctx.tz)
+    item_id = f"po:task:{task.get('id')}"
     return _compact(
         {
-            "id": f"po:task:{task.get('id')}",
+            "id": item_id,
             "app": "project-ops",
             "kind": "task",
             "title": task.get("title"),
@@ -352,7 +368,7 @@ def _task_item(task: Dict[str, Any], tz: tzinfo) -> Dict[str, Any]:
             "status": task.get("status"),
             "project": task.get("project"),
             "href": task.get("href"),
-            "actions": _open_action("Open", task.get("href")),
+            "actions": _open_action("Open", task.get("href")) + _offered(offer, item_id, task, ctx),
         },
         keep=("href",),
     )
@@ -381,7 +397,7 @@ def _followup_item(row: Dict[str, Any], ctx: HomeContext) -> Dict[str, Any]:
     )
 
 
-def build_today(ctx: HomeContext, snaps: Dict[str, AppSnapshot]) -> Dict[str, Any]:
+def build_today(ctx: HomeContext, snaps: Dict[str, AppSnapshot], *, offer: bool = False) -> Dict[str, Any]:
     project, customers = snaps["project-ops"], snaps["customer-ops"]
     tasks_part, followups_part = project.part("my_tasks"), customers.part("followups")
     today = _local_date(ctx.now, ctx.tz)
@@ -396,7 +412,7 @@ def build_today(ctx: HomeContext, snaps: Dict[str, AppSnapshot]) -> Dict[str, An
         due_today, overdue = project_task_counts(tasks_part, ctx)
         counts["tasks_due_today"] = len(due_today)
         counts["tasks_overdue"] = overdue
-        items.extend(_task_item(task, ctx.tz) for task in due_today[:MAX_TODAY_ITEMS_PER_SOURCE])
+        items.extend(_task_item(task, ctx, offer) for task in due_today[:MAX_TODAY_ITEMS_PER_SOURCE])
     if followups_part.status in ANSWERED:
         due = followups_due(followups_part, ctx)
         counts["follow_ups_due"] = len(due)
