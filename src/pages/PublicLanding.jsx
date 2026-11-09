@@ -3,9 +3,6 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   MagnifyingGlassIcon,
-  ChatBubbleLeftRightIcon,
-  CodeBracketIcon,
-  DocumentTextIcon,
   ChartBarIcon,
   CogIcon,
   ArrowRightIcon,
@@ -16,17 +13,16 @@ import {
   SunIcon,
   MoonIcon,
   PaintBrushIcon,
-  LockClosedIcon,
   UserCircleIcon,
   ChevronDownIcon,
   ArrowRightOnRectangleIcon,
   CreditCardIcon,
-  WrenchScrewdriverIcon,
-  ArchiveBoxIcon
+  WrenchScrewdriverIcon
 } from '@heroicons/react/24/outline';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from '../components/Logos';
 import { useBranding } from '../contexts/BrandingContext';
 import { useTheme } from '../contexts/ThemeContext';
+import EntitledAppCard from '../components/EntitledAppCard';
 
 export default function PublicLanding() {
   const navigate = useNavigate();
@@ -34,7 +30,6 @@ export default function PublicLanding() {
   const dropdownRef = useRef(null);
   const { branding } = useBranding();
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentHost, setCurrentHost] = useState('localhost');
   const [userTier, setUserTier] = useState('trial');
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -45,6 +40,8 @@ export default function PublicLanding() {
   });
   const [myApps, setMyApps] = useState([]);
   const [isLoadingApps, setIsLoadingApps] = useState(true);
+  const [appsError, setAppsError] = useState('');
+  const [appsRetry, setAppsRetry] = useState(0);
   const { theme, currentTheme, switchTheme, availableThemes } = useTheme();
   
   // Theme display configurations
@@ -72,27 +69,11 @@ export default function PublicLanding() {
 
   const getCardColor = (index) => CARD_COLORS[index % CARD_COLORS.length];
 
-  // Service tier mapping
-  const serviceTiers = {
-    'Open-WebUI': 'trial',
-    'User Documentation': 'starter',
-    'Bolt.diy': 'professional',
-    'Grafana Monitoring': 'professional',
-    'Portainer': 'professional',
-    'Unicorn Orator': 'enterprise'
-  };
-
-  // Tier hierarchy for access control
-  const tierHierarchy = ['trial', 'starter', 'professional', 'enterprise'];
-
   useEffect(() => {
     // Auto-focus search input when page loads
     if (searchInputRef.current) {
       searchInputRef.current.focus();
     }
-
-    // Get current hostname for service links
-    setCurrentHost(window.location.hostname);
 
     // Fetch user session to determine subscription tier and roles
     const fetchUserSession = async () => {
@@ -111,9 +92,10 @@ export default function PublicLanding() {
           const username = data?.user?.username || data?.username || 'User';
           const email = data?.user?.email || data?.email || '';
           const roles = data?.user?.roles || data?.roles || [];
+          const role = data?.user?.role || data?.role || '';
 
           setUserTier(tier);
-          setUserInfo({ username, email, tier, roles });
+          setUserInfo({ username, email, tier, roles, role });
         }
       } catch (error) {
         // Silent fail - default to trial tier
@@ -127,7 +109,8 @@ export default function PublicLanding() {
               username: parsedUser.username || 'User',
               email: parsedUser.email || '',
               tier: parsedUser.tier || 'trial',
-              roles: parsedUser.roles || []
+              roles: parsedUser.roles || [],
+              role: parsedUser.role || ''
             });
           } catch (e) {
             console.debug('Failed to parse stored user info');
@@ -145,26 +128,22 @@ export default function PublicLanding() {
     const fetchMyApps = async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
+      setAppsError('');
+      setIsLoadingApps(true);
       try {
         const response = await fetch('/api/v1/my-apps/authorized', {
           credentials: 'include',
           signal: controller.signal
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          setMyApps(Array.isArray(data) ? data : []);
-        } else {
-          console.debug('my-apps returned', response.status, '— using fallback');
-          setMyApps([]);
-        }
+        if (!response.ok) throw new Error('authorized apps request failed');
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error('authorized apps response was invalid');
+        setMyApps(data.filter((app) => app?.state !== 'not_entitled'));
       } catch (error) {
-        if (error.name === 'AbortError') {
-          console.debug('my-apps fetch timed out — using fallback');
-        } else {
-          console.debug('Error loading apps:', error);
-        }
+        console.debug('Error loading authorized apps:', error);
         setMyApps([]);
+        setAppsError('We could not load the apps for this organization. Try again.');
       } finally {
         clearTimeout(timeoutId);
         setIsLoadingApps(false);
@@ -172,7 +151,7 @@ export default function PublicLanding() {
     };
 
     fetchMyApps();
-  }, []);
+  }, [appsRetry]);
 
   // Handle click outside dropdown to close it
   useEffect(() => {
@@ -239,152 +218,6 @@ export default function PublicLanding() {
     window.location.href = '/auth/logout';
   };
 
-  // Check if user has access to a service based on tier
-  const hasAccess = (serviceName) => {
-    // All services unlocked for now
-    return true;
-    // const requiredTier = serviceTiers[serviceName];
-    // const userTierIndex = tierHierarchy.indexOf(userTier);
-    // const requiredTierIndex = tierHierarchy.indexOf(requiredTier);
-    // return userTierIndex >= requiredTierIndex;
-  };
-
-  // Handle service click
-  const handleServiceClick = (e, service) => {
-    if (!hasAccess(service.title)) {
-      e.preventDefault();
-      // Could add a modal or toast notification here
-      alert(`Upgrade to ${serviceTiers[service.title]} tier or higher to access ${service.title}`);
-    }
-  };
-
-  // Map API app data to service card format with appropriate styling
-  const getServiceColorForCategory = (category) => {
-    const categoryColors = {
-      'AI & Chat': { color: 'from-blue-500 to-blue-700', textColor: 'text-blue-100' },
-      'Search & Research': { color: 'from-green-500 to-green-700', textColor: 'text-green-100' },
-      'Development': { color: 'from-purple-500 to-purple-700', textColor: 'text-purple-100' },
-      'AI Agents': { color: 'from-purple-600 to-pink-600', textColor: 'text-purple-100' },
-      'Productivity': { color: 'from-orange-500 to-orange-700', textColor: 'text-orange-100' },
-      'Voice Services': { color: 'from-pink-500 to-pink-700', textColor: 'text-pink-100' }
-    };
-    return categoryColors[category] || { color: 'from-gray-500 to-gray-700', textColor: 'text-gray-100' };
-  };
-
-  // Convert API apps to service card format. If the API gave us nothing
-  // (anonymous visitor, or the call timed out), use fallbackServices so the
-  // page is never blank — restores pre-federation fast-fail behavior.
-  const apiServices = myApps.map(app => {
-    const colorScheme = getServiceColorForCategory(app.category);
-    return {
-      title: app.name,
-      description: app.description,
-      icon: null, // Use iconImage instead
-      iconImage: app.icon_url,
-      url: app.launch_url,
-      color: colorScheme.color,
-      textColor: colorScheme.textColor,
-      accessType: app.access_type,
-      featureKey: app.feature_key
-    };
-  });
-
-  // Fallback static services array (used if API fails to load)
-  const fallbackServices = [
-    {
-      title: 'Open-WebUI',
-      description: 'Chat with AI models and explore advanced language capabilities',
-      icon: ChatBubbleLeftRightIcon,
-      iconImage: '/logos/Open-WebUI_White.png',
-      url: 'https://chat.unicorncommander.ai',
-      color: 'from-blue-500 to-blue-700',
-      textColor: 'text-blue-100'
-    },
-    {
-      title: 'Bolt.diy',
-      description: 'AI-powered development environment for rapid prototyping',
-      icon: CodeBracketIcon,
-      iconImage: '/logos/bolt-diy-logo.png',
-      url: 'https://bolt.unicorncommander.ai',
-      color: 'from-purple-500 to-purple-700',
-      textColor: 'text-purple-100'
-    },
-    {
-      title: 'MagiCode',
-      description: 'AI-powered code generation with 47+ agents - Run code locally with privacy & speed',
-      icon: CodeBracketIcon,
-      iconImage: '/logos/magicode-logo.png',
-      url: 'https://magicode.unicorncommander.ai',
-      color: 'from-purple-600 to-pink-600',
-      textColor: 'text-purple-100'
-    },
-    {
-      title: 'User Documentation',
-      description: 'End-user guides and application documentation',
-      icon: DocumentTextIcon,
-      url: 'https://docs.unicorncommander.ai',
-      color: 'from-orange-500 to-orange-700',
-      textColor: 'text-orange-100'
-    },
-    {
-      title: 'Unicorn Orator',
-      description: 'Professional AI voice synthesis platform with 50+ voice options',
-      icon: null,
-      iconImage: '/logos/Unicorn_Orator.png',
-      url: 'https://tts.unicorncommander.ai',
-      color: 'from-pink-500 to-pink-700',
-      textColor: 'text-pink-100'
-    },
-    {
-      title: 'Unicorn Brigade',
-      description: 'AI agent platform - Build and deploy intelligent agents',
-      icon: null,
-      iconImage: '/logos/The_General_Logo.png',
-      url: 'https://brigade.unicorncommander.ai',
-      color: 'from-purple-600 to-pink-600',
-      textColor: 'text-purple-100'
-    },
-    {
-      title: 'Forgejo',
-      description: 'Self-hosted Git repository platform with CI/CD, issue tracking, and AI agent integration',
-      icon: ArchiveBoxIcon,
-      iconImage: null,
-      url: 'https://git.unicorncommander.ai',
-      color: 'from-green-500 to-emerald-600',
-      textColor: 'text-green-100'
-    },
-    {
-      title: 'Unicorn Amanuensis',
-      description: 'Professional speech-to-text with speaker diarization',
-      icon: null,
-      iconImage: '/logos/Unicorn_Orator.png',
-      url: 'https://stt.unicorncommander.ai',
-      color: 'from-teal-600 to-cyan-600',
-      textColor: 'text-teal-100'
-    },
-    {
-      title: 'PresentOn',
-      description: 'AI-powered presentation generation and design',
-      icon: null,
-      iconImage: '/logos/presenton-logo.png',
-      url: 'https://presentations.unicorncommander.ai',
-      color: 'from-blue-600 to-cyan-600',
-      textColor: 'text-blue-100'
-    },
-    {
-      title: 'MagicDeck',
-      description: 'AI-powered presentation generator with 200+ templates and multi-agent collaboration',
-      icon: null,
-      iconImage: '/logos/magicdeck-logo.png',
-      url: 'https://magicdeck.unicorncommander.ai',
-      color: 'from-purple-600 to-indigo-600',
-      textColor: 'text-purple-100'
-    }
-  ];
-
-  // Use API result when present, otherwise fall back to the static list
-  const services = (apiServices.length > 0 ? apiServices : fallbackServices);
-
   // Admin-only services (infrastructure & monitoring)
   const adminServices = [
     {
@@ -449,6 +282,21 @@ export default function PublicLanding() {
     // Check for admin or moderator role (could also check userTier for 'enterprise')
     const roles = userInfo.roles || [];
     return roles.includes('admin') || roles.includes('moderator');
+  };
+
+  const isPlatformAdmin = () => {
+    if (!userInfo) return false;
+    const roleValues = [
+      userInfo.role,
+      ...(Array.isArray(userInfo.roles)
+        ? userInfo.roles
+        : typeof userInfo.roles === 'string'
+        ? userInfo.roles.split(/[,\s]+/)
+        : [])
+    ];
+    return roleValues.some((role) => (
+      role === 'admin' || role === 'super_admin' || role === 'platform_admin'
+    ));
   };
 
   // Handle admin tools toggle with persistence
@@ -642,22 +490,24 @@ export default function PublicLanding() {
 
                     {/* Menu Items */}
                     <div className="py-2">
-                      <button
-                        onClick={() => {
-                          setIsDropdownOpen(false);
-                          navigate('/admin');
-                        }}
-                        className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                          currentTheme === 'unicorn'
-                            ? 'text-purple-200 hover:bg-white/10'
-                            : currentTheme === 'light'
-                            ? 'text-gray-700 hover:bg-gray-100'
-                            : 'text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        <CpuChipIcon className="h-5 w-5" />
-                        <span>Admin Dashboard</span>
-                      </button>
+                      {isPlatformAdmin() && (
+                        <button
+                          onClick={() => {
+                            setIsDropdownOpen(false);
+                            navigate('/admin');
+                          }}
+                          className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
+                            currentTheme === 'unicorn'
+                              ? 'text-purple-200 hover:bg-white/10'
+                              : currentTheme === 'light'
+                              ? 'text-gray-700 hover:bg-gray-100'
+                              : 'text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          <CpuChipIcon className="h-5 w-5" />
+                          <span>Admin console</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => {
@@ -693,22 +543,6 @@ export default function PublicLanding() {
                         <span>Billing</span>
                       </button>
 
-                      <button
-                        onClick={() => {
-                          window.open(`http://${currentHost}:8086`, '_blank');
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                          currentTheme === 'unicorn'
-                            ? 'text-purple-200 hover:bg-white/10'
-                            : currentTheme === 'light'
-                            ? 'text-gray-700 hover:bg-gray-100'
-                            : 'text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        <DocumentTextIcon className="h-5 w-5" />
-                        <span>Documentation</span>
-                      </button>
                     </div>
 
                     {/* Divider */}
@@ -794,146 +628,43 @@ export default function PublicLanding() {
               <p>Loading your apps...</p>
             </div>
           </div>
-        ) : services.length === 0 ? (
-          /* Empty State */
-          <div className={`${styles.cardOverlay} rounded-xl p-12 text-center`}>
+        ) : appsError ? (
+          <div className={`${styles.cardOverlay} rounded-xl p-10 text-center`} role="alert">
             <ServerIcon className={`h-16 w-16 mx-auto mb-4 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary}`} />
             <h3 className={`text-xl font-semibold mb-2 ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
-              No Apps Available
+              We could not load your apps
+            </h3>
+            <p className={styles.subText}>{appsError}</p>
+            <button
+              type="button"
+              onClick={() => setAppsRetry((value) => value + 1)}
+              className={`mt-5 rounded-lg px-5 py-2.5 font-semibold text-white ${styles.searchButton}`}
+            >
+              Try again
+            </button>
+          </div>
+        ) : myApps.length === 0 ? (
+          <div className={`${styles.cardOverlay} rounded-xl p-10 text-center`}>
+            <ServerIcon className={`h-16 w-16 mx-auto mb-4 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.secondary}`} />
+            <h3 className={`text-xl font-semibold mb-2 ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
+              No apps are available for this organization
             </h3>
             <p className={styles.subText}>
-              Upgrade your subscription to access apps, or contact support if you believe this is an error.
+              Your organization does not currently have access to any apps.
             </p>
-            <p className={`mt-4 text-sm ${styles.subText}`}><a href="/admin/account/connect-your-ai" className="underline">Connect your AI</a></p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {services.map((service, index) => {
-            const isLocked = !hasAccess(service.title);
-            const requiredTier = serviceTiers[service.title];
-            const cardColor = getCardColor(index);
-
-            return (
+            {myApps.map((app, index) => (
               <motion.div
-                key={service.title}
+                key={app.slug || app.id}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, delay: 0.05 * index }}
               >
-                <a
-                  href={service.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`block group ${isLocked ? 'cursor-not-allowed' : ''}`}
-                  onClick={(e) => handleServiceClick(e, service)}
-                >
-                  <div
-                    className={`relative rounded-lg overflow-hidden transition-all duration-300 ops-app-card ${
-                      isLocked
-                        ? 'opacity-40'
-                        : 'hover:-translate-y-1 hover:shadow-[0_16px_36px_rgba(8,47,73,0.28)]'
-                    }`}
-                    style={{ minHeight: '250px' }}
-                  >
-                    {/* Gradient background */}
-                    <div className="absolute inset-0" style={{ background: cardColor.gradient }} />
-
-                    {/* Subtle noise texture overlay */}
-                    <div className="absolute inset-0 bg-white/[0.02]" />
-
-                    {/* Gradient border — visible by default, brighter on hover */}
-                    <div className="absolute inset-0 rounded-lg border border-white/[0.10] group-hover:border-cyan-200/30 transition-colors duration-300" />
-
-                    {/* Top glow accent on hover */}
-                    <div
-                      className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                      style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }}
-                    />
-
-                    {/* Lock Overlay */}
-                    {isLocked && (
-                      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-10 flex items-center justify-center">
-                        <div className="text-center">
-                          <LockClosedIcon className="h-8 w-8 text-white/70 mx-auto mb-1.5" />
-                          <div className="text-white/70 font-medium text-xs capitalize">{requiredTier} tier required</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Card content */}
-                    <div className="relative z-[1] h-full flex flex-col p-5">
-                      {/* Tags — top right */}
-                      {service.featureKey && (() => {
-                        const tagMap = {
-                          'chat_access':        ['AI Chat', 'LLM'],
-                          'search_enabled':     ['Search', 'AI'],
-                          'bolt_access':        ['IDE', 'Full-Stack'],
-                          'brigade_access':     ['AI Agents', 'Orchestration'],
-                          'tts_enabled':        ['TTS', 'Voice'],
-                          'stt_enabled':        ['STT', 'Voice'],
-                          'forgejo':            ['Git', 'CI/CD'],
-                          'presenton_access':   ['Presentations', 'AI'],
-                          'partnerpulse':       ['Dating', 'Relationships'],
-                          'project_ops_access': ['Project Mgmt', 'Ops'],
-                          'umami_access':       ['Analytics', 'Privacy'],
-                          'listmonk':           ['Email', 'Marketing'],
-                          'postiz':             ['Social', 'Scheduling'],
-                          'nda_internal':       ['Business', 'NDA'],
-                          'nda_visualization':  ['Business', 'Workflow'],
-                          'nda_proposal':       ['Business', 'NDA'],
-                        };
-                        const tags = tagMap[service.featureKey] || ['App'];
-                        return (
-                          <div className="absolute top-4 right-4 flex gap-1.5">
-                            {tags.map(tag => (
-                              <span key={tag} className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-white/10 text-white/50 border border-white/[0.08]">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Icon — large, prominent */}
-                      <div className="mb-4 transition-transform duration-300 group-hover:scale-105">
-                        {service.iconImage ? (
-                          <img
-                            src={service.iconImage}
-                            alt={service.title}
-                            className="w-[52px] h-[52px] object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.35)] rounded-lg"
-                          />
-                        ) : service.icon ? (
-                          <service.icon className="h-12 w-12 text-white/80 drop-shadow-lg" />
-                        ) : (
-                          <ServerIcon className="h-12 w-12 text-white/80 drop-shadow-lg" />
-                        )}
-                      </div>
-
-                      {/* App name */}
-                      <h3 className="text-white font-bold text-base leading-snug mb-2 tracking-tight">
-                        {service.title}
-                      </h3>
-
-                      {/* Description — readable, multi-line */}
-                      <p className="text-white/66 text-sm leading-relaxed flex-1 line-clamp-3">
-                        {service.description}
-                      </p>
-
-                      {/* Bottom row — launch hint */}
-                      <div className="mt-4 pt-3 border-t border-white/[0.08] flex items-center justify-between">
-                        <span className="text-white/38 text-xs font-medium group-hover:text-white/70 transition-colors duration-300">
-                          Launch app
-                        </span>
-                        <div className="w-7 h-7 rounded-lg bg-white/[0.07] group-hover:bg-white/[0.16] flex items-center justify-center transition-all duration-300">
-                          <ArrowRightIcon className="h-3.5 w-3.5 text-white/40 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all duration-300" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </a>
+                <EntitledAppCard app={app} index={index} />
               </motion.div>
-            );
-          })}
+            ))}
           </div>
         )}
       </motion.div>
@@ -1100,35 +831,37 @@ export default function PublicLanding() {
         </motion.div>
       )}
 
-      {/* Admin Dashboard Access */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.6 }}
-        className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-8"
-      >
-        <div className={`${styles.cardOverlay} rounded-lg p-6 text-center`}>
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <CogIcon className={`h-6 w-6 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`} />
-            <h3 className={`text-xl font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
-              System Administration
-            </h3>
+      {/* Admin console access */}
+      {isPlatformAdmin() && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.6 }}
+          className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-8"
+        >
+          <div className={`${styles.cardOverlay} rounded-lg p-6 text-center`}>
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <CogIcon className={`h-6 w-6 ${currentTheme === 'unicorn' ? 'text-purple-300' : theme.text.accent}`} />
+              <h3 className={`text-xl font-semibold ${currentTheme === 'unicorn' ? 'text-white' : theme.text.primary}`}>
+                Admin console
+              </h3>
+            </div>
+
+            <p className={`${styles.subText} mb-4`}>
+              Access the admin console to manage your Magic Unicorn services
+            </p>
+
+            <button
+              onClick={() => navigate('/admin')}
+              className={`px-8 py-3 rounded-lg transition-all duration-200 flex items-center gap-2 mx-auto text-white ${styles.searchButton}`}
+            >
+              <CpuChipIcon className="h-5 w-5" />
+              <span>Admin console</span>
+              <ArrowRightIcon className="h-4 w-4" />
+            </button>
           </div>
-
-          <p className={`${styles.subText} mb-4`}>
-            Access the admin dashboard to manage your Magic Unicorn services
-          </p>
-
-          <button
-            onClick={() => navigate('/admin')}
-            className={`px-8 py-3 rounded-lg transition-all duration-200 flex items-center gap-2 mx-auto text-white ${styles.searchButton}`}
-          >
-            <CpuChipIcon className="h-5 w-5" />
-            <span>Admin Dashboard</span>
-            <ArrowRightIcon className="h-4 w-4" />
-          </button>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
 
       {/* Footer */}
       <footer className={`${styles.footerBg} py-8 mt-16`}>

@@ -9,10 +9,12 @@ User sees an app IF: (tier includes feature) OR (org has explicit grant for feat
 """
 
 import os
+import json
 import sys
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
+from urllib.parse import urlparse, urlunparse
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 import asyncpg
 
 # Router configuration
@@ -23,9 +25,240 @@ router = APIRouter(prefix="/api/v1/my-apps", tags=["my-apps"])
 # Pydantic Models
 # =============================================================================
 
+AppState = Literal["ready", "needs_first_open", "not_entitled"]
+
+
+class CompanionLink(BaseModel):
+    """A safe, user-facing companion download link."""
+
+    label: str
+    url: str
+
+
+class PrimaryActionMetadata(BaseModel):
+    """Static metadata for an entitled app's primary action."""
+
+    label: str
+    route_id: Optional[str] = None
+
+
+class ReadinessMetadata(BaseModel):
+    """How an app's initial card state is determined."""
+
+    check: Literal["none", "first_open"] = "none"
+
+
+class CompanionMetadata(BaseModel):
+    """Catalogued MCP path and optional native companion links.
+
+    The catalog deliberately stores no host. ``launch_url`` is the ring-specific
+    source of truth used to build the user-facing absolute endpoint.
+    """
+
+    label: str = "Connect your AI"
+    mcp_path: str
+    host_source: Literal["launch_url"] = "launch_url"
+    desktop: List[CompanionLink] = Field(default_factory=list)
+    mobile: List[CompanionLink] = Field(default_factory=list)
+
+
+class DashboardMetadata(BaseModel):
+    """Typed dashboard metadata stored in an add-on's JSONB metadata."""
+
+    purpose: str
+    primary_action: PrimaryActionMetadata
+    readiness: ReadinessMetadata = Field(default_factory=ReadinessMetadata)
+    companion: Optional[CompanionMetadata] = None
+    internal_ring: bool = False
+
+
+class AppDashboardMetadata(BaseModel):
+    """Envelope for the dashboard metadata namespace."""
+
+    dashboard: DashboardMetadata
+
+
+class PrimaryAction(BaseModel):
+    label: str
+    url: str
+
+
+class CompanionResponse(BaseModel):
+    """Safe connect instructions. It never contains a token or credential."""
+
+    kind: Literal["mcp"] = "mcp"
+    label: str
+    mcp_url: str
+    claude_code_command: str
+    client_config: Dict[str, Any]
+    chatgpt_url: str
+    desktop: List[CompanionLink] = Field(default_factory=list)
+    mobile: List[CompanionLink] = Field(default_factory=list)
+
+
+def _model_dump(model: BaseModel) -> Dict[str, Any]:
+    """Support the Pydantic version used by the app and lightweight test doubles."""
+
+    if hasattr(model, "model_dump"):
+        return model.model_dump(mode="json")
+    return model.dict()
+
+
+_PLACEHOLDER_HOSTS = {
+    "example.com",
+    "www.example.com",
+    "invalid",
+    "localhost",
+}
+
+
+def _validate_catalog_url(value: str, field_name: str, *, require_path: bool = True) -> str:
+    """Reject unusable or credential-bearing catalog URLs before they reach users."""
+
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme not in {"http", "https"} or not host or (require_path and not parsed.path):
+        raise ValueError(f"{field_name} must be an absolute HTTP URL")
+    if parsed.username or parsed.password:
+        raise ValueError(f"{field_name} must not contain URL credentials")
+    if host in _PLACEHOLDER_HOSTS or host.endswith(".example.com"):
+        raise ValueError(f"{field_name} uses a placeholder host")
+    return value
+
+
+def _validate_mcp_path(value: str, field_name: str = "companion.mcp_path") -> str:
+    """Validate a path-only MCP endpoint and reject embedded hosts."""
+
+    parsed = urlparse(value)
+    path = parsed.path or ""
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or not path.startswith("/")
+    ):
+        raise ValueError(f"{field_name} must be an absolute app path without a host")
+    normalized = path.rstrip("/")
+    if not normalized.endswith("/mcp"):
+        raise ValueError(f"{field_name} must use the app's /mcp endpoint")
+    return normalized
+
+
+def _validate_companion(companion: CompanionMetadata) -> None:
+    """Validate the path-only MCP endpoint and every optional download URL."""
+
+    _validate_mcp_path(companion.mcp_path)
+    for link in [*companion.desktop, *companion.mobile]:
+        _validate_catalog_url(link.url, "companion download URL")
+
+
+def validate_dashboard_metadata(raw_metadata: Any, *, fallback_purpose: str = "") -> AppDashboardMetadata:
+    """Parse and validate only the safe dashboard metadata namespace.
+
+    The catalog stores other JSONB data for marketplace concerns. It is never copied
+    into the authorized-app response. A legacy row without metadata gets a typed,
+    launch-only card so a catalog migration can be rolled out independently.
+    """
+
+    if isinstance(raw_metadata, str):
+        try:
+            raw_metadata = json.loads(raw_metadata)
+        except json.JSONDecodeError as exc:
+            raise ValueError("metadata is not valid JSON") from exc
+
+    if not raw_metadata:
+        raw_metadata = {
+            "dashboard": {
+                "purpose": fallback_purpose or "Workspace access for this app.",
+                "primary_action": {"label": "Open app"},
+                "readiness": {"check": "none"},
+            }
+        }
+    elif isinstance(raw_metadata, dict) and "dashboard" not in raw_metadata:
+        raw_metadata = {"dashboard": raw_metadata}
+    elif not isinstance(raw_metadata, dict):
+        raise ValueError("metadata must be an object")
+
+    try:
+        metadata = (
+            AppDashboardMetadata.model_validate(raw_metadata)
+            if hasattr(AppDashboardMetadata, "model_validate")
+            else AppDashboardMetadata.parse_obj(raw_metadata)
+        )
+    except ValidationError as exc:
+        raise ValueError("dashboard metadata does not match the catalog schema") from exc
+
+    purpose = metadata.dashboard.purpose.strip()
+    if not purpose or "\n" in purpose or "\r" in purpose or len(purpose) > 180:
+        raise ValueError("dashboard.purpose must be a one-line sentence")
+    if metadata.dashboard.companion:
+        _validate_companion(metadata.dashboard.companion)
+    return metadata
+
+
+def app_state_from_metadata(metadata: DashboardMetadata, *, has_opened: bool = False) -> AppState:
+    """Resolve the card state without ever manufacturing a not-entitled card."""
+
+    if metadata.readiness.check == "first_open" and not has_opened:
+        return "needs_first_open"
+    return "ready"
+
+
+def _absolute_companion_url(launch_url: str, mcp_path: str) -> str:
+    """Build an MCP URL from the add-on's ring-specific launch URL."""
+
+    _validate_catalog_url(launch_url, "launch_url", require_path=False)
+    parsed_launch_url = urlparse(launch_url)
+    path = _validate_mcp_path(mcp_path)
+    composed = urlunparse(
+        (
+            parsed_launch_url.scheme,
+            parsed_launch_url.netloc,
+            path,
+            "",
+            "",
+            "",
+        )
+    )
+    return _validate_catalog_url(composed, "companion.mcp_url")
+
+
+def build_companion_response(
+    slug: str,
+    companion: Optional[CompanionMetadata],
+    launch_url: str,
+) -> Optional[CompanionResponse]:
+    """Build copyable client recipes from the row's ring-specific launch URL."""
+
+    if not companion:
+        return None
+    if companion.host_source != "launch_url":
+        raise ValueError("companion.host_source must use launch_url")
+    mcp_url = _absolute_companion_url(launch_url, companion.mcp_path)
+    return CompanionResponse(
+        label=companion.label,
+        mcp_url=mcp_url,
+        claude_code_command=(
+            f"claude mcp add --transport http {slug} {mcp_url}"
+        ),
+        client_config={
+            "mcpServers": {
+                slug: {
+                    "url": mcp_url,
+                }
+            }
+        },
+        chatgpt_url=mcp_url,
+        desktop=companion.desktop,
+        mobile=companion.mobile,
+    )
+
 class AppResponse(BaseModel):
     """App available to user"""
-    id: int
+    id: Union[int, str]
     name: str
     slug: str
     description: str
@@ -34,6 +267,11 @@ class AppResponse(BaseModel):
     category: str
     feature_key: Optional[str]
     access_type: str  # 'tier_included', 'org_granted', 'premium_purchased', 'upgrade_required'
+    purpose: str = ""
+    state: AppState = "ready"
+    primary_action: Optional[PrimaryAction] = None
+    companion: Optional[CompanionResponse] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     features: Optional[Any] = None
     price: Optional[float] = None
     billing_type: Optional[str] = None
@@ -57,6 +295,71 @@ async def get_db_connection():
 # =============================================================================
 # Authentication Dependency
 # =============================================================================
+
+def _session_data_from_request(request: Request) -> Optional[Dict[str, Any]]:
+    """Read the request session without exposing session contents to logs."""
+
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return None
+
+    try:
+        from redis_session import redis_session_manager
+
+        getter = getattr(redis_session_manager, "get", None)
+        if callable(getter):
+            return getter(session_token)
+        if session_token in redis_session_manager:
+            return redis_session_manager[session_token]
+    except Exception:
+        return None
+    return None
+
+
+def _session_subject(session_data: Dict[str, Any]) -> Optional[str]:
+    """Return the stable session subject used by organization memberships."""
+
+    user = session_data.get("user", {}) or {}
+    return (
+        session_data.get("sub")
+        or session_data.get("user_id")
+        or session_data.get("id")
+        or user.get("sub")
+        or user.get("user_id")
+        or user.get("id")
+    )
+
+
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
+    """Read a mapping or asyncpg.Record without assuming one concrete row type."""
+
+    if row is None:
+        return default
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
+def _set_request_org_context(
+    request: Request,
+    *,
+    tier: Optional[str] = None,
+    org_name: Optional[str] = None,
+    invalid: bool = False,
+) -> None:
+    """Keep the validated org decision available to the endpoint without a second lookup."""
+
+    try:
+        if tier:
+            request.state.current_org_tier = tier
+        if org_name:
+            request.state.current_org_name = org_name
+        if invalid:
+            request.state.current_org_invalid = True
+    except AttributeError:
+        # Small request doubles in unit tests need not implement Starlette state.
+        pass
 
 async def get_current_user_tier(request: Request) -> str:
     """
@@ -216,71 +519,90 @@ async def get_user_org_from_session(request: Request) -> Optional[str]:
     if '/app' not in sys.path:
         sys.path.insert(0, '/app')
 
-    import logging
-    logger = logging.getLogger(__name__)
-
     try:
-        from redis_session import redis_session_manager
-
-        # Get session token from cookie
-        session_token = request.cookies.get("session_token")
-        if not session_token:
+        session_data = _session_data_from_request(request)
+        if not session_data:
             return None
 
-        # Get Redis connection info
-        redis_host = os.getenv("REDIS_HOST", "unicorn-redis")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        user = session_data.get("user", {}) or {}
+        session_org_id = session_data.get("org_id") or user.get("org_id")
+        cookie_org_id = request.cookies.get("current_org_id")
+        requested_org_id = cookie_org_id or session_org_id
+        subject = _session_subject(session_data)
 
-        # Initialize session manager
-        sessions = redis_session_manager
-
-        # Get session data
-        if session_token not in sessions:
-            return None
-
-        session_data = sessions[session_token]
-
-        # Try to get org_id from session (set by auth flow)
-        org_id = session_data.get("org_id")
-        if org_id:
-            return org_id
-
-        # Try nested user structure
-        user = session_data.get("user", {})
-        org_id = user.get("org_id")
-        if org_id:
-            return org_id
-
-        # Database fallback: Look up user's org from organization_members
-        # Get Keycloak sub from session (could be in 'sub' or nested 'user.sub')
-        keycloak_sub = session_data.get("sub") or user.get("sub")
-
-        if keycloak_sub:
+        if requested_org_id and subject:
+            conn = await get_db_connection()
             try:
-                conn = await get_db_connection()
-                try:
-                    # First, look up our internal user_id from the Keycloak sub (zitadel_id)
-                    # Then find their organization
-                    org_row = await conn.fetchrow("""
-                        SELECT om.org_id
-                        FROM users u
-                        JOIN organization_members om ON u.id::text = om.user_id
-                        WHERE u.zitadel_id = $1
-                        LIMIT 1
-                    """, str(keycloak_sub))
-                    if org_row:
-                        org_id = str(org_row['org_id'])
-                        logger.info(f"[MY-APPS] Found org_id {org_id} for Keycloak sub {keycloak_sub} via database fallback")
-                        return org_id
-                finally:
-                    await conn.close()
-            except Exception as db_error:
-                logger.warning(f"Database org lookup failed for Keycloak sub {keycloak_sub}: {db_error}")
+                org_row = await conn.fetchrow(
+                    """
+                    SELECT om.org_id::text AS org_id, o.plan_tier, o.name AS org_name
+                    FROM organization_members om
+                    JOIN organizations o ON o.id = om.org_id
+                    LEFT JOIN users u ON u.id::text = om.user_id
+                    WHERE (om.user_id = $1 OR u.zitadel_id = $1)
+                      AND om.org_id::text = $2
+                      AND o.status = 'active'
+                    LIMIT 1
+                    """,
+                    str(subject),
+                    str(requested_org_id),
+                )
+            finally:
+                await conn.close()
+
+            if org_row:
+                _set_request_org_context(
+                    request,
+                    tier=_row_value(org_row, "plan_tier"),
+                    org_name=_row_value(org_row, "org_name"),
+                )
+                return str(_row_value(org_row, "org_id"))
+
+            # An explicit organization cookie must never fall back to another org.
+            if cookie_org_id:
+                _set_request_org_context(request, invalid=True)
+                return None
+
+        # An org ID in a session is a selection hint, not proof of membership.
+        # Without a stable subject we cannot validate it, so fail closed rather
+        # than allowing a stale or forged org context to read its grants.
+        if requested_org_id and not subject:
+            _set_request_org_context(request, invalid=True)
+            return None
+
+        if subject:
+            conn = await get_db_connection()
+            try:
+                org_row = await conn.fetchrow(
+                    """
+                    SELECT om.org_id::text AS org_id, o.plan_tier, o.name AS org_name
+                    FROM organization_members om
+                    JOIN organizations o ON o.id = om.org_id
+                    LEFT JOIN users u ON u.id::text = om.user_id
+                    WHERE (om.user_id = $1 OR u.zitadel_id = $1)
+                      AND o.status = 'active'
+                    ORDER BY om.is_default DESC, om.joined_at ASC, om.org_id::text ASC
+                    LIMIT 1
+                    """,
+                    str(subject),
+                )
+            finally:
+                await conn.close()
+            if org_row:
+                _set_request_org_context(
+                    request,
+                    tier=_row_value(org_row, "plan_tier"),
+                    org_name=_row_value(org_row, "org_name"),
+                )
+                return str(_row_value(org_row, "org_id"))
 
         return None
 
     except Exception as e:
-        logger.warning(f"Error getting org from session: {e}")
+        import logging
+        logging.getLogger(__name__).warning("Error getting current organization for my-apps: %s", e)
+        if request.cookies.get("current_org_id"):
+            _set_request_org_context(request, invalid=True)
         return None
 
 
@@ -391,122 +713,137 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
     """
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"[MY-APPS] User tier detected: {user_tier}")
 
-    # Check if user is admin — admin gets all apps
-    session_token = request.cookies.get("session_token")
-    is_admin = False
-    if session_token:
-        try:
-            from redis_session import redis_session_manager
-            if session_token in redis_session_manager:
-                session_data = redis_session_manager[session_token]
-                user_data = session_data.get("user", {})
-                if user_data.get("role") == "admin":
-                    is_admin = True
-                    logger.info(f"[MY-APPS] Admin user detected — granting all apps")
-        except Exception as e:
-            logger.debug(f"[MY-APPS] Admin check failed: {e}")
+    session_data = _session_data_from_request(request) or {}
+    user_data = session_data.get("user", {}) or {}
+    roles = set()
+    for role_source in (user_data.get("roles"), session_data.get("roles")):
+        if isinstance(role_source, str):
+            roles.update(role_source.split())
+        elif role_source:
+            roles.update(role_source)
+    for role_source in (user_data.get("role"), session_data.get("role")):
+        if isinstance(role_source, str):
+            roles.update(role_source.split())
+    is_admin = bool(
+        user_data.get("is_admin")
+        or session_data.get("is_admin")
+        or roles.intersection({"admin", "super_admin", "platform_admin"})
+    )
 
-    # Get user's current organization from session
+    # Resolve the selected org before opening the catalog. An invalid current-org
+    # cookie is fail-closed and must not fall back to the session's old org.
     org_id = await get_user_org_from_session(request)
-    logger.info(f"[MY-APPS] User org_id from session: {org_id}")
+    org_context_invalid = bool(getattr(getattr(request, "state", None), "current_org_invalid", False))
+    org_tier = getattr(getattr(request, "state", None), "current_org_tier", None)
 
     conn = await get_db_connection()
     try:
-        # User's tier is now extracted from session via dependency injection
-        # Valid tiers: 'vip_founder', 'byok', 'managed', 'founder_workspace'
-
-        # Get tier-based features for determining access_type
-        tier_features = await get_user_tier_features(user_tier, conn)
-        logger.info(f"[MY-APPS] Tier features for {user_tier}: {tier_features}")
-
-        # Get org-based features (if user has an org)
-        org_features_set = await get_org_features(org_id, conn)
-        if org_features_set:
-            logger.info(f"[MY-APPS] Org features for {org_id}: {org_features_set}")
-
-        # Admin users get ALL features
-        if is_admin:
-            all_features = await conn.fetch("SELECT feature_key FROM feature_definitions WHERE is_active = TRUE")
-            enabled_features = {row['feature_key'] for row in all_features}
-            # Also add any app-specific feature keys from add_ons
-            app_features = await conn.fetch("SELECT DISTINCT feature_key FROM add_ons WHERE feature_key IS NOT NULL AND is_active = TRUE")
-            enabled_features.update({row['feature_key'] for row in app_features})
-            logger.info(f"[MY-APPS] Admin override: {len(enabled_features)} features enabled")
+        if org_context_invalid:
+            tier_features = set()
+            org_features_set = set()
+            enabled_features = set()
         else:
-            # Combined features - user sees app if EITHER tier OR org grants access
+            effective_tier = org_tier or user_tier
+            try:
+                tier_features = await get_user_tier_features(effective_tier, conn)
+            except HTTPException:
+                # An unknown organization tier is not a reason to expose the
+                # session tier. Treat it as no tier entitlement.
+                tier_features = set()
+            org_features_set = await get_org_features(org_id, conn)
             enabled_features = tier_features.union(org_features_set)
 
-        logger.info(f"[MY-APPS] Combined enabled features: {enabled_features}")
-
-        # Get all active apps
+        # Admins are still allowed to inspect every active catalog entry, but the
+        # response uses the same safe metadata contract as ordinary users.
         apps_query = """
             SELECT id, name, slug, description, icon_url, launch_url,
-                   category, feature_key, base_price, features
+                   category, feature_key, base_price, metadata
             FROM add_ons
             WHERE is_active = TRUE
             ORDER BY sort_order, name
         """
         app_rows = await conn.fetch(apps_query)
-        logger.info(f"[MY-APPS] Fetched {len(app_rows)} apps from database")
 
-        # Filter apps based on user's tier and org grants
         authorized_apps = []
         for app in app_rows:
-            logger.info(f"[MY-APPS] Processing app: {dict(app).get('name')} (feature_key: {dict(app).get('feature_key')})")
             app_dict = dict(app)
-            feature_key = app_dict.get('feature_key')
+            feature_key = app_dict.get("feature_key")
 
-            # Skip apps without launch URLs
-            if not app_dict.get('launch_url'):
+            # A catalog row without a launch URL cannot become a primary card.
+            if not app_dict.get("launch_url"):
                 continue
-
-            # Check if user has access and determine access_type
-            access_type = None
 
             if feature_key:
-                # Check if access comes from admin, tier, or org
-                if is_admin or feature_key in enabled_features:
-                    access_type = 'tier_included' if feature_key in tier_features else 'org_granted'
-                else:
-                    # User has no access - skip
+                if (not is_admin or org_context_invalid) and feature_key not in enabled_features:
                     continue
-            elif app_dict['base_price'] == 0 and not feature_key:
-                # Free app with no feature restriction
-                access_type = 'tier_included'
+                access_type = "tier_included" if feature_key in tier_features else "org_granted"
+            elif app_dict.get("base_price") == 0:
+                if org_context_invalid:
+                    continue
+                access_type = "tier_included"
             else:
-                # App not included - skip it for now
-                # (Later: check if user purchased it separately)
                 continue
 
-            authorized_apps.append({
-                'id': app_dict['id'],
-                'name': app_dict['name'],
-                'slug': app_dict['slug'],
-                'description': app_dict['description'] or '',
-                'icon_url': app_dict['icon_url'],
-                'launch_url': app_dict['launch_url'],
-                'category': app_dict['category'] or 'general',
-                'feature_key': feature_key,
-                'access_type': access_type,
-                'features': app_dict.get('features') or {}
-            })
-            logger.info(f"[MY-APPS] Added app {app_dict['name']} to authorized list (access: {access_type})")
+            try:
+                _validate_catalog_url(app_dict["launch_url"], "launch_url", require_path=False)
+                metadata = validate_dashboard_metadata(
+                    app_dict.get("metadata"),
+                    fallback_purpose=app_dict.get("description") or "",
+                )
+                companion = build_companion_response(
+                    app_dict["slug"], metadata.dashboard.companion, app_dict["launch_url"]
+                )
+            except ValueError as exc:
+                logger.error("Invalid dashboard metadata for catalog app %s: %s", app_dict.get("slug"), exc)
+                raise HTTPException(
+                    status_code=500,
+                    detail="The app catalog needs attention before apps can be loaded.",
+                ) from exc
 
-        logger.info(f"[MY-APPS] Returning {len(authorized_apps)} authorized apps")
+            dashboard = metadata.dashboard
+            if dashboard.internal_ring and (
+                not feature_key or feature_key not in org_features_set
+            ):
+                # Internal cards require the explicit operator grant. This keeps
+                # the ring boundary independent of a seeded organization name,
+                # including for platform administrators.
+                continue
+            state = app_state_from_metadata(dashboard)
+
+            # Only the typed dashboard namespace is returned. In particular,
+            # add_ons.features and arbitrary marketplace metadata never cross the
+            # entitlement boundary.
+            authorized_apps.append({
+                "id": app_dict["id"],
+                "name": app_dict["name"],
+                "slug": app_dict["slug"],
+                "description": app_dict.get("description") or "",
+                "icon_url": app_dict.get("icon_url"),
+                "launch_url": app_dict["launch_url"],
+                "category": app_dict.get("category") or "general",
+                "feature_key": feature_key,
+                "access_type": access_type,
+                "purpose": dashboard.purpose,
+                "state": state,
+                "primary_action": {
+                    "label": dashboard.primary_action.label,
+                    "url": app_dict["launch_url"],
+                },
+                "companion": _model_dump(companion) if companion else None,
+                "metadata": _model_dump(metadata),
+            })
+
         return authorized_apps
 
     except asyncpg.PostgresError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database error: {str(e)}"
-        )
+        logger.error("my-apps catalog query failed: %s", e)
+        raise HTTPException(status_code=500, detail="Apps are temporarily unavailable.") from e
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error: {str(e)}"
-        )
+        logger.error("my-apps request failed: %s", e)
+        raise HTTPException(status_code=500, detail="Apps are temporarily unavailable.") from e
     finally:
         await conn.close()
 
