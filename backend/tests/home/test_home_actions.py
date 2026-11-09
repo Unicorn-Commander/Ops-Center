@@ -14,6 +14,7 @@ import asyncio
 import json
 import re
 import sys
+import time
 from dataclasses import replace
 from datetime import timedelta
 from types import ModuleType
@@ -48,6 +49,7 @@ PO_TASK = "c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e88"
 OTHER_ORG = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
 KEY = "rivergreen-action-0001"
 
+EO_ROW = f"/api/v1/workspaces/{ORG_ID}/agent-inbox/{EO_ITEM}"
 EO_APPROVE = f"/api/v1/workspaces/{ORG_ID}/agent-inbox/{EO_ITEM}/approve"
 EO_REJECT = f"/api/v1/workspaces/{ORG_ID}/agent-inbox/{EO_ITEM}/reject"
 AO_DECIDE = f"/api/workspaces/{ORG_ID}/approvals/{AO_ITEM}/decide"
@@ -162,6 +164,27 @@ def eo_answer(state: str, *, mail: bool = True, sends_at: Optional[str] = None):
     }
 
 
+def eo_row(kind: Optional[str] = "EMAIL", state: str = "pending", sends_at: Optional[str] = None):
+    """Email-Ops' GET agent-inbox/{id} answer, {item}: the list's view plus the
+    full message (2810e17 agent-inbox.controller.ts:399-421,
+    email.service.ts:5210-5237), with a recipient, subject and preview that
+    must never reach a receipt."""
+
+    return {"item": {
+        "id": EO_ITEM, "message_id": "c0ffee00-0000-4000-8000-000000000002", "kind": kind,
+        "approval_tier": "mailbox_owner", "approval_reason": None, "state": state,
+        "drafted_by": "Email-Ops drafter", "summary": "Draft reply confirming the January price sheet.",
+        "to_address": "dana@harbormarket.example", "to_addresses": ["dana@harbormarket.example"],
+        "cc": [], "bcc": [], "from_address": "orders@rivergreen.example", "subject": SUBJECT,
+        "body_preview": PREVIEW, "body_sha256": None, "thread_id": None, "kit_id": None,
+        "attachments": [], "sends_at": sends_at, "reviewed_by_uc_uid": None, "reviewed_at": None,
+        "review_note": None, "created_at": "2026-11-08T22:20:00.000Z", "payload": None,
+        "message": {"id": "c0ffee00-0000-4000-8000-000000000002", "subject": SUBJECT,
+                    "toAddress": "dana@harbormarket.example", "body": PREVIEW, "status": "draft",
+                    "mode": "draft", "sentAt": None, "createdAt": "2026-11-08T22:20:00.000Z"},
+    }}
+
+
 def ao_answer(request: httpx.Request):
     decision = json.loads(request.content)["decision"]
     return {"ok": True, "approval_id": AO_ITEM,
@@ -175,6 +198,8 @@ def action_routes() -> Dict[str, Any]:
         "/api/v1/auth/me/workspaces": load("eo_workspaces"),
         "/api/v1/auth/profile": load("po_profile"),
         f"/api/workspaces/{ORG_ID}": load("ao_workspace"),
+        # The row an Email-Ops approve reads first
+        EO_ROW: eo_row(),
         # Writes
         EO_APPROVE: eo_answer("approved"),
         EO_REJECT: eo_answer("rejected"),
@@ -373,8 +398,11 @@ def test_each_action_reaches_the_owning_apps_existing_route(
     assert receipt["source"] == source and receipt["item_id"] == item_id and receipt["action"] == action
     assert receipt["schema"] == "uc.home.action_receipt/1"
 
-    # One membership read, then exactly one write, both on the app's own host.
-    assert [r.url.path for r in suite.calls] == [probe, path]
+    # One membership read (and before an Email-Ops approve, the row itself),
+    # then exactly one write, all on the app's own host.
+    row_read = [EO_ROW] if (source, action) == ("email-ops", "approve") else []
+    assert [r.url.path for r in suite.calls] == [probe, *row_read, path]
+    assert {r.url.host for r in suite.calls} == {API_HOSTS[host_env].split("://")[1]}
     write = writes(suite)
     assert len(write) == 1
     request = write[0]
@@ -399,6 +427,7 @@ async def test_the_workspace_comes_from_the_org_link_when_the_org_id_is_not_a_wo
     linked = "1b2c3d4e-5f60-4718-9a0b-c1d2e3f4a5b6"
     routes = action_routes()
     routes["/api/v1/auth/me/workspaces"] = {"workspaces": [{"workspace_id": linked, "role": "member"}]}
+    routes[f"/api/v1/workspaces/{linked}/agent-inbox/{EO_ITEM}"] = eo_row()
     routes[f"/api/v1/workspaces/{linked}/agent-inbox/{EO_ITEM}/approve"] = eo_answer("approved")
     suite = FakeSuite(routes)
     db = ReceiptsDB()
@@ -407,6 +436,7 @@ async def test_the_workspace_comes_from_the_org_link_when_the_org_id_is_not_a_wo
         "email-ops", f"eo:draft:{EO_ITEM}", "approve", KEY,
     )
     assert reply.body["outcome"] == "done"
+    assert suite.paths()[1] == f"/api/v1/workspaces/{linked}/agent-inbox/{EO_ITEM}"  # the row, same workspace
     assert writes(suite)[0].url.path == f"/api/v1/workspaces/{linked}/agent-inbox/{EO_ITEM}/approve"
 
 
@@ -608,13 +638,20 @@ def test_email_ops_200_without_acting_is_not_reported_as_done(answer, outcome, m
     assert (receipt["outcome"], receipt["upstream_status"], receipt["message"]) == (outcome, 200, message)
 
 
-def test_reject_of_an_already_approved_draft_is_refused():
+@pytest.mark.parametrize(
+    "answer, message",
+    [
+        (eo_answer("approved"), "This item was already approved in Email-Ops, so nothing changed."),
+        (eo_answer("pending"), "Email-Ops did not change this item."),
+    ],
+)
+def test_a_reject_that_changed_nothing_is_refused_in_words_true_for_any_kind(answer, message):
+    # A reject can reach a cleanup request or a notice too, so it says "item".
     routes = action_routes()
-    routes[EO_REJECT] = eo_answer("approved")
+    routes[EO_REJECT] = answer
     client, _, _ = action_client(routes)
     receipt = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "reject").json()
-    assert receipt["outcome"] == "refused"
-    assert receipt["message"] == "This draft was already approved in Email-Ops, so nothing changed."
+    assert (receipt["outcome"], receipt["message"]) == ("refused", message)
 
 
 @pytest.mark.parametrize(
@@ -706,6 +743,216 @@ async def test_a_cookie_an_app_set_earlier_never_rides_along_on_the_write():
         status, body, failure = await actions._write(env, call, 1.0)
     assert (status, failure) == (200, None) and body["inbox"]["state"] == "approved"
     assert seen == [None]
+
+
+# --------------------------------------------------------------------------- #
+# Email-Ops approve: the row is read first, and anything but a pending email
+# draft with no send time ahead is never approved (fail closed)
+# --------------------------------------------------------------------------- #
+
+WORKSPACES = "/api/v1/auth/me/workspaces"
+NOT_A_DRAFT = (
+    "Email-Ops did not confirm this is an email draft, so nothing was sent. Open it in Email-Ops to decide it."
+)
+SCHEDULED = (
+    "Email-Ops already has a send time for this draft, so nothing was sent. Open it in Email-Ops to decide it."
+)
+NOTHING_SENT_PROBLEM = "Email-Ops had a problem, so nothing was sent. Try again in a moment."
+
+
+def calls_of(suite: FakeSuite) -> List[Tuple[str, str]]:
+    return [(request.method, request.url.path) for request in suite.calls]
+
+
+def without_kind() -> Dict[str, Any]:
+    row = eo_row()
+    del row["item"]["kind"]
+    return row
+
+
+def test_a_pending_email_draft_is_read_then_approved_once():
+    client, suite, db = action_client()
+    receipt = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve").json()
+    assert (receipt["outcome"], receipt["upstream_status"]) == ("done", 200)
+    assert receipt["message"] == "Approved. Email-Ops handed it to the mail server."
+    assert calls_of(suite) == [("GET", WORKSPACES), ("GET", EO_ROW), ("POST", EO_APPROVE)]
+    read = suite.calls[1]
+    assert f"https://{read.url.host}" == API_HOSTS["HOME_EMAIL_OPS_API_URL"]
+    assert read.headers["authorization"] == f"Bearer {VALID_TOKEN}" and not read.content and not read.url.query
+    assert db.only_row()["outcome"] == "done"
+
+
+def test_a_draft_whose_send_time_has_passed_is_approved():
+    routes = action_routes()
+    routes[EO_ROW] = eo_row(sends_at="2026-11-09T14:00:00.000Z")  # NOW is 15:00 UTC
+    client, suite, _ = action_client(routes)
+    assert post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve").json()["outcome"] == "done"
+    assert len(writes(suite)) == 1
+
+
+@pytest.mark.parametrize(
+    "row, message",
+    [
+        (eo_row(kind="CLEANUP"),
+         "This is a cleanup request, not an email draft, so nothing was sent. Open it in Email-Ops to decide it."),
+        (eo_row(kind="NOTICE"),
+         "This is a notice, not an email draft, so nothing was sent. Open it in Email-Ops to decide it."),
+        (eo_row(kind="CALENDAR_INVITE"), NOT_A_DRAFT),
+        (eo_row(kind=None), NOT_A_DRAFT),
+        (without_kind(), NOT_A_DRAFT),
+        (eo_row(state="approved"), "This draft was already approved in Email-Ops, so it was not sent again."),
+        (eo_row(state="rejected"), "This draft was already rejected in Email-Ops, so nothing was sent."),
+        (eo_row(state="queued"), "This draft is not waiting for approval in Email-Ops, so nothing was sent."),
+        (eo_row(state=""), "This draft is not waiting for approval in Email-Ops, so nothing was sent."),
+        (eo_row(sends_at="2026-11-09T18:00:00.000Z"), SCHEDULED),
+        (eo_row(sends_at="tomorrow morning"), SCHEDULED),  # an unreadable send time counts as ahead
+    ],
+)
+def test_approve_is_never_sent_for_anything_but_a_pending_email_draft(row, message):
+    routes = action_routes()
+    routes[EO_ROW] = row
+    client, suite, db = action_client(routes)
+    receipt = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve").json()
+    assert (receipt["outcome"], receipt["upstream_status"], receipt["message"]) == ("refused", None, message)
+    assert_plain(receipt["message"])
+    assert calls_of(suite) == [("GET", WORKSPACES), ("GET", EO_ROW)]
+    assert writes(suite) == []
+    assert db.only_row()["outcome"] == "refused"
+
+
+@pytest.mark.parametrize(
+    "answer, outcome, status, message",
+    [
+        ((401, {"detail": "expired"}), "reauth", 401, "Sign in again to finish this."),
+        ((403, {"detail": "no access"}), "refused", 403,
+         "Email-Ops did not allow this, so nothing was sent. Open it in Email-Ops to finish it."),
+        ((404, {"message": "Agent-inbox item not found in this workspace."}), "refused", 404,
+         "Email-Ops could not find this item, so nothing was sent. It may have been handled already."),
+        ((500, {"detail": "boom"}), "failed", 500, NOTHING_SENT_PROBLEM),
+        ((502, {"detail": "bad gateway"}), "failed", 502, NOTHING_SENT_PROBLEM),
+        ((503, {"detail": "maintenance"}), "failed", 503, NOTHING_SENT_PROBLEM),
+        ((400, {"message": "Validation failed"}), "failed", 400, NOTHING_SENT_PROBLEM),
+        (httpx.Response(302, headers={"location": "https://sso.example.com/login"}), "failed", 302,
+         NOTHING_SENT_PROBLEM),
+        (httpx.Response(200, text="<html>Sign in</html>"), "failed", 200, NOTHING_SENT_PROBLEM),
+        ({"unexpected": "shape"}, "failed", None,
+         "Email-Ops did not return this item, so nothing was sent. Check it in Email-Ops before trying again."),
+        (_raise(httpx.ReadTimeout("slow")), "failed", None,
+         "Email-Ops did not answer in time, so nothing was sent. Try again in a moment."),
+        (_raise(httpx.ConnectTimeout("slow")), "failed", None,
+         "Email-Ops did not answer in time, so nothing was sent. Try again in a moment."),
+        (_raise(httpx.ConnectError("refused")), "failed", None,
+         "Email-Ops could not be reached, so nothing was sent. Try again in a moment."),
+    ],
+)
+def test_a_row_read_that_fails_never_sends_the_approve(answer, outcome, status, message):
+    routes = action_routes()
+    routes[EO_ROW] = answer
+    client, suite, db = action_client(routes)
+    receipt = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve").json()
+    assert (receipt["outcome"], receipt["upstream_status"], receipt["message"]) == (outcome, status, message)
+    assert_plain(receipt["message"])
+    assert calls_of(suite) == [("GET", WORKSPACES), ("GET", EO_ROW)]
+    assert writes(suite) == []
+    assert db.only_row()["outcome"] == outcome
+
+
+def test_a_slow_row_read_is_cut_at_its_share_of_the_budget_and_nothing_is_sent(monkeypatch):
+    # Budget 1 s, read limit 5 s: the read may take only half the budget.
+    monkeypatch.setenv("HOME_ACTION_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("HOME_APP_TIMEOUT_SECONDS", "5")
+
+    async def slow(request):
+        await asyncio.sleep(3)
+        return httpx.Response(200, json=eo_row())
+
+    routes = action_routes()
+    routes[EO_ROW] = slow
+    client, suite, _ = action_client(routes)
+    started = time.monotonic()
+    receipt = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve").json()
+    elapsed = time.monotonic() - started
+    assert (receipt["outcome"], receipt["upstream_status"], receipt["message"]) == (
+        "failed", None, "Email-Ops did not answer in time, so nothing was sent. Try again in a moment.",
+    )
+    assert writes(suite) == []
+    assert 0.45 <= elapsed < 1.5, elapsed
+
+
+def test_the_approve_gets_what_the_row_read_left_of_the_budget(monkeypatch):
+    monkeypatch.setenv("HOME_ACTION_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("HOME_APP_TIMEOUT_SECONDS", "5")
+    seen: List[float] = []
+    real_write = actions._write
+
+    async def recording_write(env, call, timeout):
+        seen.append(timeout)
+        return await real_write(env, call, timeout)
+
+    async def takes_a_while(request):
+        await asyncio.sleep(0.3)
+        return httpx.Response(200, json=eo_row())
+
+    monkeypatch.setattr(actions, "_write", recording_write)
+    routes = action_routes()
+    routes[EO_ROW] = takes_a_while
+    client, _, _ = action_client(routes)
+    assert post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve").json()["outcome"] == "done"
+    assert 0.5 <= seen[0] <= 0.7, seen  # 1 s less the read, which may never take more than half
+    # An action with no read first keeps the whole budget.
+    assert post(client, "accounting-ops", f"ao:approval:{AO_ITEM}", "approve", key="rivergreen-action-0002",
+                ).json()["outcome"] == "done"
+    assert seen[1] == 1.0
+
+
+@pytest.mark.parametrize("row, outcome", [(eo_row(), "done"), (eo_row(kind="CLEANUP"), "refused")])
+def test_a_repeated_key_returns_the_receipt_without_reading_the_row_again(row, outcome):
+    routes = action_routes()
+    routes[EO_ROW] = row
+    client, suite, db = action_client(routes)
+    first = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve")
+    calls = calls_of(suite)
+    second = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "approve")
+    assert first.json()["outcome"] == outcome
+    assert calls.count(("GET", EO_ROW)) == 1
+    assert calls_of(suite) == calls  # no second read and no approve
+    assert second.json()["replayed"] is True and second.headers["idempotent-replayed"] == "true"
+    one, two = first.json(), second.json()
+    one.pop("replayed"), two.pop("replayed")
+    assert one == two and len(db.rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_cookie_an_app_set_earlier_never_rides_along_on_the_row_read():
+    seen: List[Optional[str]] = []
+
+    async def handler(request: httpx.Request):
+        seen.append(request.headers.get("cookie"))
+        return httpx.Response(200, json=eo_row())
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), cookies={"access_token": "fictional-app-cookie"}
+    ) as client:
+        env = AdapterEnv(
+            ctx=make_ctx(), client=client, app="email-ops", label="Email-Ops",
+            api_base=API_HOSTS["HOME_EMAIL_OPS_API_URL"], web_base=None, candidates=[], timeout=1.0,
+        )
+        stop = await actions._email_ops_approve_check(env, ORG_ID, EO_ITEM, 1.0, NOW)
+    assert stop is None and seen == [None]
+
+
+@pytest.mark.parametrize("kind", ["CLEANUP", "NOTICE", "EMAIL"])
+def test_reject_is_forwarded_as_before_without_reading_the_row(kind):
+    # Rejecting a cleanup request or a notice does what the label says.
+    routes = action_routes()
+    routes[EO_ROW] = eo_row(kind=kind)
+    routes[EO_REJECT] = {"inbox": {"id": EO_ITEM, "state": "rejected", "kind": kind},
+                         "message": None if kind != "EMAIL" else eo_answer("rejected")["message"]}
+    client, suite, _ = action_client(routes)
+    receipt = post(client, "email-ops", f"eo:draft:{EO_ITEM}", "reject").json()
+    assert receipt["outcome"] == "done"
+    assert receipt["message"] == ("Rejected. Email-Ops will not send it." if kind == "EMAIL" else "Rejected in Email-Ops.")
+    assert calls_of(suite) == [("GET", WORKSPACES), ("POST", EO_REJECT)]
 
 
 # --------------------------------------------------------------------------- #

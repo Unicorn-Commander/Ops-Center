@@ -100,7 +100,9 @@ def action_timeout_seconds() -> float:
     """Time limit for the one write a home action makes
     (``HOME_ACTION_TIMEOUT_SECONDS``, default 10 s). Longer than the read limit
     because an Email-Ops approve hands the mail to the mail server inside the
-    request."""
+    request. Where a read is made first (an Email-Ops approve reads the row),
+    the read and the write share this limit: the read takes at most the
+    per-app read limit and never more than half, the write gets the rest."""
 
     return _float_env("HOME_ACTION_TIMEOUT_SECONDS", DEFAULT_ACTION_TIMEOUT_SECONDS, 1.0, 30.0)
 

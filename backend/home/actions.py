@@ -35,6 +35,13 @@ Rules:
   acting when the draft was already decided or already has a send time
   (``email.service.ts:3859-3870,3950-3958``). The answer's ``inbox.state`` is
   read (and nothing else kept) and such a receipt says ``refused``.
+* Before an Email-Ops approve the row itself is read
+  (``_email_ops_approve_check``), and approve is sent only for a pending email
+  draft with no send time ahead. A cleanup request, a notice, a draft already
+  decided or scheduled, an answer without the row, and any failed read all end
+  in a receipt with nothing sent. The read and the approve share
+  ``HOME_ACTION_TIMEOUT_SECONDS``. Reject is forwarded as before, since it does
+  what it says for every kind of row.
 * A receipt stores no token, no request or response body and no email address.
 
 The state document offers these actions on its items when
@@ -52,7 +59,7 @@ import logging
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
@@ -64,6 +71,7 @@ from .adapters.base import (
     TIMEOUT,
     AdapterEnv,
     Forbidden,
+    NotFound,
     Reauth,
     UpstreamError,
     get_json,
@@ -117,6 +125,12 @@ class UpstreamCall:
 
 
 DoneReader = Callable[[Any, datetime], Tuple[str, str]]
+# A read made before the write: (env, workspace id, item uuid, its time limit,
+# now). None means go ahead; otherwise it is the receipt's (outcome, upstream
+# status, message) and the write is never sent.
+PreCheck = Callable[
+    [AdapterEnv, str, str, float, datetime], Awaitable[Optional[Tuple[str, Optional[int], str]]]
+]
 
 
 @dataclass(frozen=True)
@@ -133,6 +147,7 @@ class ActionSpec:
     # and, where the person should know something before the tap, a short note.
     label: str = ""
     note: Optional[str] = None
+    check: Optional[PreCheck] = None
 
 
 def _constant(message: str) -> DoneReader:
@@ -159,11 +174,14 @@ def _email_ops_call(verb: str) -> Callable[[str, str], UpstreamCall]:
 
 def _email_ops_done(action: str) -> DoneReader:
     """Read only ``inbox.state``, ``inbox.sends_at`` and whether a mail message
-    came back. Email-Ops answers 200 and changes nothing when the draft was
+    came back. Email-Ops answers 200 and changes nothing when the item was
     already decided (email.service.ts:3859-3870, :4380) or already has a send
-    time (:3950-3958); those receipts say refused."""
+    time (:3950-3958); those receipts say refused. An approve only ever reaches
+    a row checked to be an email draft; a reject can reach a cleanup request
+    or a notice too, so its messages say "item"."""
 
     expected = "approved" if action == "approve" else "rejected"
+    noun = "draft" if action == "approve" else "item"
 
     def read(body: Any, now: datetime) -> Tuple[str, str]:
         inbox = body.get("inbox") if isinstance(body, dict) else None
@@ -172,10 +190,10 @@ def _email_ops_done(action: str) -> DoneReader:
         is_mail = isinstance(body, dict) and isinstance(body.get("message"), dict)
         if state and state != expected:
             if state in ("approved", "rejected"):
-                return OUTCOME_REFUSED, f"This draft was already {state} in Email-Ops, so nothing changed."
+                return OUTCOME_REFUSED, f"This {noun} was already {state} in Email-Ops, so nothing changed."
             if action == "approve" and state == "pending":
                 return OUTCOME_REFUSED, "Email-Ops already has a send time for this draft, so nothing changed."
-            return OUTCOME_REFUSED, "Email-Ops did not change this draft."
+            return OUTCOME_REFUSED, f"Email-Ops did not change this {noun}."
         if action == "reject":
             return OUTCOME_DONE, "Rejected. Email-Ops will not send it." if is_mail else "Rejected in Email-Ops."
         sends_at = parse_iso(inbox.get("sends_at"))
@@ -186,6 +204,76 @@ def _email_ops_done(action: str) -> DoneReader:
         return OUTCOME_DONE, "Approved in Email-Ops."
 
     return read
+
+
+# Before an approve the row itself is read: GET workspaces/:ws/agent-inbox/:id
+# (Email-Ops 2810e17 agent-inbox.controller.ts:399-421, behind the same JWT and
+# workspace membership guards as approve, :181-182) answers {item} or 404. The
+# item is the list's own view (email.service.ts:5210-5237): kind is EMAIL,
+# CLEANUP or NOTICE and reads EMAIL when the row has none (:6371), state is
+# lowercased (:6376) and sends_at comes from the payload (:6401, :6462-6466).
+# Approve is sent only for a pending EMAIL draft whose send time, if it has
+# one, has passed. Approving a CLEANUP row trashes, archives or unsubscribes
+# (:4032-4096), approving a NOTICE adds a calendar event or acknowledges it
+# (:3886-3913), and approving a draft whose send time is still ahead changes
+# nothing (:3950-3958). Anything else, and any read that fails, sends nothing.
+EMAIL_OPS_OTHER_KINDS = {"CLEANUP": "a cleanup request", "NOTICE": "a notice"}
+
+
+async def _email_ops_approve_check(
+    env: AdapterEnv, workspace_id: str, item: str, limit: float, now: datetime
+) -> Optional[Tuple[str, Optional[int], str]]:
+    """Read the row before an approve: None to go ahead, else the receipt."""
+
+    label = env.label
+    path = f"{email_ops.inbox_route(workspace_id)}/{item}"
+    env.client.cookies.clear()  # as before the write: no cookie an app set rides along
+    try:
+        body = await asyncio.wait_for(get_json(replace(env, timeout=limit), path), limit)
+    except asyncio.TimeoutError:
+        return OUTCOME_FAILED, None, f"{label} did not answer in time, so nothing was sent. Try again in a moment."
+    except Reauth as exc:
+        return OUTCOME_REAUTH, exc.status_code, REAUTH_MESSAGE
+    except Forbidden as exc:
+        return (OUTCOME_REFUSED, exc.status_code,
+                f"{label} did not allow this, so nothing was sent. Open it in {label} to finish it.")
+    except NotFound as exc:
+        return (OUTCOME_REFUSED, exc.status_code,
+                f"{label} could not find this item, so nothing was sent. It may have been handled already.")
+    except UpstreamError as exc:
+        if exc.reason == TIMEOUT:
+            return OUTCOME_FAILED, None, f"{label} did not answer in time, so nothing was sent. Try again in a moment."
+        if exc.status_code is None:
+            return OUTCOME_FAILED, None, f"{label} could not be reached, so nothing was sent. Try again in a moment."
+        return OUTCOME_FAILED, exc.status_code, f"{label} had a problem, so nothing was sent. Try again in a moment."
+
+    row = body.get("item") if isinstance(body, dict) else None
+    if not isinstance(row, dict):
+        return (OUTCOME_FAILED, None,
+                f"{label} did not return this item, so nothing was sent. Check it in {label} before trying again.")
+    kind = str(row.get("kind") or "").strip().upper()
+    if kind != EMAIL_OPS_DRAFT_KIND:
+        what = EMAIL_OPS_OTHER_KINDS.get(kind)
+        if what:
+            return (OUTCOME_REFUSED, None,
+                    f"This is {what}, not an email draft, so nothing was sent. Open it in {label} to decide it.")
+        return (OUTCOME_REFUSED, None,
+                f"{label} did not confirm this is an email draft, so nothing was sent. "
+                f"Open it in {label} to decide it.")
+    state = str(row.get("state") or "").strip().lower()
+    if state == "approved":
+        return OUTCOME_REFUSED, None, f"This draft was already approved in {label}, so it was not sent again."
+    if state == "rejected":
+        return OUTCOME_REFUSED, None, f"This draft was already rejected in {label}, so nothing was sent."
+    if state != "pending":
+        return OUTCOME_REFUSED, None, f"This draft is not waiting for approval in {label}, so nothing was sent."
+    if row.get("sends_at"):
+        sends_at = parse_iso(row.get("sends_at"))
+        if sends_at is None or sends_at > now:  # an unreadable send time counts as ahead
+            return (OUTCOME_REFUSED, None,
+                    f"{label} already has a send time for this draft, so nothing was sent. "
+                    f"Open it in {label} to decide it.")
+    return None
 
 
 # Accounting-Ops ebd7796. POST /api/workspaces/{ws}/approvals/{id}/decide
@@ -234,8 +322,8 @@ ACTIONS: Tuple[ActionSpec, ...] = (
     ActionSpec(
         "email-ops", "eo", "draft", "approve", _email_ops_call("approve"), _email_ops_done("approve"),
         # A single approve sends inside the request: there is no hold window
-        # (email.service.ts:4273-4310).
-        label="Approve", note="Sends the email now",
+        # (email.service.ts:4273-4310). The row is read first.
+        label="Approve", note="Sends the email now", check=_email_ops_approve_check,
     ),
     ActionSpec(
         "email-ops", "eo", "draft", "reject", _email_ops_call("reject"), _email_ops_done("reject"),
@@ -792,6 +880,15 @@ async def forward(ctx: HomeContext, providers: ActionProviders, target: Target) 
         if workspace is None:
             return OUTCOME_REFUSED, None, link_note(label)
 
+        if spec.check is not None:
+            # The check read and the write share HOME_ACTION_TIMEOUT_SECONDS:
+            # the read gets at most the per-app read limit and never more than
+            # half of that budget (a hard cap), and the write gets the rest.
+            started = time.monotonic()
+            stop = await spec.check(env, workspace, target.item, min(read_timeout, write_timeout / 2), ctx.now)
+            if stop is not None:
+                return stop
+            write_timeout -= time.monotonic() - started
         status, body, failure = await _write(env, spec.request(workspace, target.item), write_timeout)
         if failure == "unreached":
             return OUTCOME_FAILED, None, f"{label} could not be reached, so nothing was changed. Try again in a moment."
