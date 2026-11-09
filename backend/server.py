@@ -1297,6 +1297,7 @@ logger.info("Extensions Catalog API endpoints registered at /api/v1/extensions (
 # My Apps API - Tier-filtered apps for authenticated users
 app.include_router(my_apps_router)
 app.include_router(entitlements_router)
+app.include_router(__import__("home_api").router)  # Signed-in home state, GET /api/v1/home/state (404 unless HOME_STATE_ENABLED)
 from trial_codes_api import admin_router as trial_codes_admin_router, user_router as trial_codes_user_router
 app.include_router(trial_codes_admin_router)
 app.include_router(trial_codes_user_router)
