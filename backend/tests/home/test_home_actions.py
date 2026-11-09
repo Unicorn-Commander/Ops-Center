@@ -942,3 +942,28 @@ def test_the_migration_is_idempotent_and_matches_what_the_store_writes():
         named = set(re.findall(r"\b([a-z_]+)\b", statement)) & (ReceiptsDB.COLUMNS | {"token", "body", "email"})
         assert named <= ReceiptsDB.COLUMNS, named
     assert "ON CONFLICT (org_id, person_subject, idempotency_key)" in actions.RESERVE_SQL
+
+
+@pytest.mark.parametrize("action, route", [("accept", PO_ACCEPT), ("reject", PO_REJECT)])
+def test_project_ops_triage_400_means_already_handled_not_a_failure(action, route):
+    # Project-Ops answers 400 for a proposal that was already ruled or has no
+    # project (ffc5bd5 backend/src/triage/triage.service.ts:739-743).
+    routes = action_routes()
+    routes[route] = (400, {"message": "Proposal is not pending"})
+    client, suite, db = action_client(routes)
+    response = post(client, "project-ops", f"po:triage:{PO_PROPOSAL}", action)
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert (receipt["outcome"], receipt["upstream_status"]) == ("refused", 400)
+    assert receipt["message"] == "Project-Ops says this was already handled, so nothing changed."
+    assert_plain(receipt["message"])
+
+
+def test_a_400_from_accounting_ops_is_still_a_failure():
+    # Only Project-Ops triage treats 400 as already handled; elsewhere a 400 means
+    # the request itself was wrong, which the person should not read as "done".
+    routes = action_routes()
+    routes[AO_DECIDE] = (400, {"detail": "decision must be 'approve' or 'reject'"})
+    client, suite, db = action_client(routes)
+    receipt = post(client, "accounting-ops", f"ao:approval:{AO_ITEM}", "approve").json()
+    assert (receipt["outcome"], receipt["upstream_status"]) == ("failed", 400)

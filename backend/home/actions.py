@@ -121,6 +121,8 @@ class ActionSpec:
     action: str
     request: Callable[[str, str], UpstreamCall]  # (workspace_id, item uuid) -> call
     done: DoneReader  # (2xx body or None, now) -> (outcome, message)
+    # Upstream answers that mean "already handled" for this action, not a failure.
+    already_handled: Tuple[int, ...] = ()
 
 
 def _constant(message: str) -> DoneReader:
@@ -232,10 +234,16 @@ ACTIONS: Tuple[ActionSpec, ...] = (
     ActionSpec(
         "project-ops", "po", "triage", "accept", _project_ops_triage_call("approve"),
         _constant("Accepted. Project-Ops created the task."),
+        # Project-Ops answers 400 when the proposal was already ruled or has no
+        # project (ffc5bd5 backend/src/triage/triage.service.ts:739-743).
+        already_handled=(400,),
     ),
     ActionSpec(
         "project-ops", "po", "triage", "reject", _project_ops_triage_call("reject"),
         _constant("Rejected. Project-Ops did not create a task."),
+        # Project-Ops answers 400 when the proposal was already ruled or has no
+        # project (ffc5bd5 backend/src/triage/triage.service.ts:739-743).
+        already_handled=(400,),
     ),
     ActionSpec(
         "project-ops", "po", "task", "done", _project_ops_task_done,
@@ -586,6 +594,8 @@ def classify(spec: ActionSpec, status: int, body: Any, label: str, ctx: HomeCont
         return OUTCOME_REFUSED, f"{label} did not allow this. Open it in {label} to finish it."
     if status == 404:
         return OUTCOME_REFUSED, f"{label} could not find this item. It may have been handled already."
+    if status in spec.already_handled:
+        return OUTCOME_REFUSED, f"{label} says this was already handled, so nothing changed."
     if status in (409, 422):
         reason = safe_reason(body, ctx.ring)
         if reason:
