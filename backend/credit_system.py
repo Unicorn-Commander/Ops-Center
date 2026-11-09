@@ -41,6 +41,16 @@ def _jsonb_dict(value):
     except (TypeError, ValueError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _row_value(row, key, default=None):
+    """Read an optional column from asyncpg records and test dictionaries."""
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 logger.setLevel(logging.INFO)
 
 # Email notification service
@@ -745,69 +755,124 @@ class CreditManager:
 
         return await self.get_balance(user_id)
 
-    async def get_transactions(
+    async def get_transaction_history(
         self,
         user_id: str,
+        org_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         transaction_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
-        Get credit transaction history for a user.
+        Get the live credit transaction history for the authenticated user.
 
         Args:
             user_id: Keycloak user ID
+            org_id: Current organization from the authenticated session
             limit: Maximum number of transactions to return
             offset: Pagination offset
             transaction_type: Filter by transaction type (optional)
 
         Returns:
-            List of transaction records
+            A paginated transaction list and its total matching row count.
         """
         if not self.db_pool:
             await self.initialize()
 
-        # Query the 'transactions' table with actual DB schema
+        filters = ["ct.user_id::text = $1"]
+        params: List[Any] = [str(user_id)]
+
+        if org_id:
+            current_org = str(org_id)
+            if current_org.startswith("org_"):
+                current_org = current_org[4:]
+            params.append(current_org)
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM organization_members AS om
+                    WHERE om.user_id::text = ct.user_id::text
+                      AND om.org_id::text = $2
+                )
+                AND (
+                    ct.metadata IS NULL
+                    OR NOT (ct.metadata ? 'org_id')
+                    OR ct.metadata->>'org_id' IN ($2, 'org_' || $2)
+                )
+                """
+            )
+
         if transaction_type:
-            query = """
-                SELECT id, user_id, type, amount_cents, balance_after_cents,
-                       description, metadata, created_at
-                FROM transactions
-                WHERE user_id::text = $1 AND type = $2
-                ORDER BY created_at DESC
-                LIMIT $3 OFFSET $4
-            """
-            params = [user_id, transaction_type, limit, offset]
-        else:
-            query = """
-                SELECT id, user_id, type, amount_cents, balance_after_cents,
-                       description, metadata, created_at
-                FROM transactions
-                WHERE user_id::text = $1
-                ORDER BY created_at DESC
-                LIMIT $2 OFFSET $3
-            """
-            params = [user_id, limit, offset]
+            params.append(transaction_type)
+            filters.append(f"ct.transaction_type = ${len(params)}")
+
+        limit_placeholder = len(params) + 1
+        offset_placeholder = len(params) + 2
+        params.extend([limit, offset])
+
+        query = f"""
+            SELECT ct.id, ct.user_id, ct.amount, ct.transaction_type,
+                   ct.provider, ct.model, ct.tokens_used, ct.cost,
+                   ct.metadata, ct.created_at,
+                   COUNT(*) OVER() AS total_count
+            FROM credit_transactions AS ct
+            WHERE {' AND '.join(filters)}
+            ORDER BY ct.created_at DESC, ct.id DESC
+            LIMIT ${limit_placeholder} OFFSET ${offset_placeholder}
+        """
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
 
-            return [
-                {
-                    "id": str(row["id"]),  # Convert UUID to string
-                    "user_id": str(row["user_id"]) if row["user_id"] else user_id,
-                    "amount": Decimal(row["amount_cents"]) / 100,  # Convert cents to decimal
-                    "balance_after": Decimal(row["balance_after_cents"]) / 100,
-                    "transaction_type": row["type"],
-                    "service": metadata.get("service"),
-                    "model": metadata.get("model"),
-                    "cost_breakdown": metadata.get("cost_breakdown"),
-                    "metadata": metadata,
-                    "created_at": row["created_at"]
-                }
-                for row in rows
-                for metadata in (_jsonb_dict(row["metadata"]),)
-            ]
+            total = int(_row_value(rows[0], "total_count", 0) or 0) if rows else 0
+            transactions = []
+            for row in rows:
+                metadata = _jsonb_dict(_row_value(row, "metadata"))
+                transaction_type_value = _row_value(row, "transaction_type")
+                raw_amount = _row_value(row, "amount", Decimal("0"))
+                amount = raw_amount if isinstance(raw_amount, Decimal) else Decimal(str(raw_amount or 0))
+                raw_balance = _row_value(row, "balance_after")
+                balance_after = (
+                    raw_balance
+                    if raw_balance is None or isinstance(raw_balance, Decimal)
+                    else Decimal(str(raw_balance))
+                )
+                transactions.append(
+                    {
+                        "id": str(_row_value(row, "id")),
+                        "user_id": str(_row_value(row, "user_id") or user_id),
+                        "amount": amount,
+                        "balance_after": balance_after,
+                        "transaction_type": transaction_type_value,
+                        "service": _row_value(row, "provider") or metadata.get("service"),
+                        "model": _row_value(row, "model") or metadata.get("model"),
+                        "cost_breakdown": metadata.get("cost_breakdown"),
+                        "metadata": metadata,
+                        "description": metadata.get("description") or transaction_type_value,
+                        "created_at": _row_value(row, "created_at")
+                    }
+                )
+
+            return {"transactions": transactions, "total": total}
+
+    async def get_transactions(
+        self,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        transaction_type: Optional[str] = None,
+        org_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Compatibility helper returning only the current user's history rows."""
+        history = await self.get_transaction_history(
+            user_id=user_id,
+            org_id=org_id,
+            limit=limit,
+            offset=offset,
+            transaction_type=transaction_type,
+        )
+        return history["transactions"]
 
     async def check_sufficient_balance(
         self,

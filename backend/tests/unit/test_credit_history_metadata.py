@@ -19,8 +19,9 @@ def test_jsonb_dict_accepts_dict_text_bytes_and_null():
 
 @pytest.mark.asyncio
 async def test_transaction_history_reads_text_metadata():
-    row = {"id": "11111111-1111-4111-8111-111111111111", "user_id": None, "type": "usage", "amount_cents": -125,
-           "balance_after_cents": 4875, "description": "usage | service=tts", "created_at": "2026-11-07T00:00:00Z",
+    row = {"id": "11111111-1111-4111-8111-111111111111", "user_id": "subject-a", "transaction_type": "usage",
+           "amount": "-1.25", "provider": "tts", "model": "kokoro", "cost": "1.25",
+           "created_at": "2026-11-07T00:00:00Z", "total_count": 1,
            "metadata": json.dumps({"service": "tts", "model": "kokoro", "cost_breakdown": {"chars": 10}})}
     conn = MagicMock(); conn.fetch = AsyncMock(return_value=[row])
     acquire = MagicMock(); acquire.__aenter__ = AsyncMock(return_value=conn); acquire.__aexit__ = AsyncMock(return_value=False)

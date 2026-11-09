@@ -65,6 +65,13 @@ async def get_current_user_from_request(request: Request):
     session = sessions[session_token]
     user_data = session.get("user", {})
 
+    # Organization context is stored alongside the authenticated user in the
+    # session. Keep the credits endpoints on the same current-org context as
+    # the balance endpoint without accepting an org or user from query params.
+    if session.get("org_id") and not user_data.get("org_id"):
+        user_data = dict(user_data)
+        user_data["org_id"] = session["org_id"]
+
     # Ensure user_id field exists (map from Keycloak 'sub' field)
     if "user_id" not in user_data:
         user_data["user_id"] = user_data.get("sub") or user_data.get("id", "unknown")
@@ -115,13 +122,22 @@ class CreditTransaction(BaseModel):
     id: str  # UUID in database
     user_id: str
     amount: Decimal
-    balance_after: Decimal
+    balance_after: Optional[Decimal] = None
     transaction_type: str
-    service: Optional[str]  # maps to 'provider' column
-    model: Optional[str]
-    cost_breakdown: Optional[Decimal]  # maps to 'cost' column
+    service: Optional[str] = None  # maps to 'provider' column
+    model: Optional[str] = None
+    cost_breakdown: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
     created_at: datetime
+
+
+class CreditTransactionHistory(BaseModel):
+    """Paginated credit history consumed by the credits table."""
+    transactions: List[CreditTransaction]
+    total: int
+    # Keep the older API spelling available for existing dashboard callers.
+    total_count: int
 
 
 class CreditAllocationRequest(BaseModel):
@@ -351,11 +367,12 @@ async def allocate_credits(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/transactions", response_model=List[CreditTransaction])
+@router.get("/transactions", response_model=CreditTransactionHistory)
 async def get_transactions(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    transaction_type: Optional[str] = Query(None),
+    transaction_type: Optional[str] = Query(None, alias="type"),
+    legacy_transaction_type: Optional[str] = Query(None, alias="transaction_type", include_in_schema=False),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -367,16 +384,23 @@ async def get_transactions(
         transaction_type: Filter by type (optional)
 
     Returns:
-        List[CreditTransaction]: Transaction history
+        CreditTransactionHistory: Paginated transaction history
     """
     try:
-        transactions = await credit_manager.get_transactions(
+        history = await credit_manager.get_transaction_history(
             user_id=current_user["user_id"],
+            org_id=current_user.get("org_id"),
             limit=limit,
             offset=offset,
-            transaction_type=transaction_type
+            transaction_type=transaction_type or legacy_transaction_type
         )
-        return [CreditTransaction(**tx) for tx in transactions]
+        transactions = [CreditTransaction(**tx) for tx in history["transactions"]]
+        total = int(history["total"])
+        return CreditTransactionHistory(
+            transactions=transactions,
+            total=total,
+            total_count=total,
+        )
     except Exception as e:
         logger.error(f"Failed to get transactions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
