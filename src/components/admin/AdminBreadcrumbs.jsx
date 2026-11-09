@@ -24,7 +24,7 @@ export default function AdminBreadcrumbs() {
   // Add home
   breadcrumbs.push({
     label: 'Dashboard',
-    path: '/admin',
+    path: '/admin/dashboard',
     icon: HomeIcon,
   });
 

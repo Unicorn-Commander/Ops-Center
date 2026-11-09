@@ -64,7 +64,7 @@ describe('AdminRedirect', () => {
     ['anonymous', {}, '/dashboard'],
     ['member', { role: 'user', org_role: 'member' }, '/dashboard'],
     ['organization owner', { role: 'user', org_role: 'owner' }, '/dashboard'],
-    ['platform admin', { role: 'platform_admin' }, '/admin/dashboard']
+    ['platform admin', { role: 'platform_admin' }, '/dashboard']
   ])('routes %s to the correct destination', async (_label, userInfo, destination) => {
     renderRedirect(userInfo);
 

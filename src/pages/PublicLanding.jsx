@@ -495,7 +495,7 @@ export default function PublicLanding() {
                         <button
                           onClick={() => {
                             setIsDropdownOpen(false);
-                            navigate('/admin');
+                            navigate('/admin/dashboard');
                           }}
                           className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
                             currentTheme === 'unicorn'
@@ -855,7 +855,7 @@ export default function PublicLanding() {
             </p>
 
             <button
-              onClick={() => navigate('/admin')}
+              onClick={() => navigate('/admin/dashboard')}
               className={`px-8 py-3 rounded-lg transition-all duration-200 flex items-center gap-2 mx-auto text-white ${styles.searchButton}`}
             >
               <CpuChipIcon className="h-5 w-5" />

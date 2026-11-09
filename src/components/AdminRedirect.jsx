@@ -6,8 +6,10 @@ import { isPlatformAdminRole } from '../config/routes';
 /**
  * AdminRedirect - Smart router for /admin/ landing
  *
- * /dashboard is the home for every signed-in role. /admin is only the
- * deliberate platform Admin Console entry; organization users return home.
+ * /dashboard is the home for every signed-in role, platform administrators
+ * included. A bare /admin (a bookmark, or the return URL after sign-in) goes
+ * home. The Admin console is entered on purpose, by its own links, which
+ * point at /admin/dashboard.
  */
 export default function AdminRedirect() {
   const [loading, setLoading] = useState(true);
@@ -29,11 +31,6 @@ export default function AdminRedirect() {
 
   if (loading) {
     return <LoadingScreen />;
-  }
-
-  // Platform administrators go to the infrastructure console.
-  if (isPlatformAdmin) {
-    return <Navigate to="/admin/dashboard" replace />;
   }
 
   return <Navigate to="/dashboard" replace />;
