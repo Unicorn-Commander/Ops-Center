@@ -9,9 +9,11 @@ with ``Accept: text/markdown``, as markdown with the same modules and items.
   exactly like a route that does not exist.
 * Read only. It never writes to any app.
 * The person's own Keycloak access token from the Ops-Center session
-  (``server.py:6122-6124,6411-6413``) is forwarded to each app as ``Authorization:
-  Bearer``, so every app applies the person's own role and scope. The token is
-  never logged and never returned. Sign-in code is not touched here.
+  (``server.py:6123-6126,6414-6417``) is forwarded to each app as ``Authorization:
+  Bearer``, so every app applies the person's own role and scope. When it has
+  60 s or less left it is first refreshed with the refresh token kept in the
+  same session (``home.session_tokens``); when that fails the home says "Sign in
+  again" as before. The token is never logged and never returned.
 * The current organization is resolved the same way the entitled app cards
   resolve it (``my_apps_api.get_user_org_from_session``: the
   ``current_org_id`` cookie or the session org, membership-checked).
@@ -30,7 +32,7 @@ The heavy lifting lives in the ``home`` package, which imports nothing from
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -38,6 +40,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from home import actions as home_actions
+from home import session_tokens
 from home import settings
 from home.aggregator import build_home_state
 from home.context import HomeContext, HomeProviders, utc_now
@@ -160,6 +163,7 @@ async def get_home_context(
         or user.get("email")
         or "you"
     )
+    now = utc_now()
     return HomeContext(
         person_id=str(subject),
         display_name=str(display_name),
@@ -170,10 +174,24 @@ async def get_home_context(
         ring=ring,
         tz=zone,
         tz_name=zone_name,
-        now=utc_now(),
+        now=now,
         ops_center_web=settings.ops_center_web_base(ring, host),
         email=user.get("email"),
-        access_token=session.get("access_token"),
+        access_token=await _access_token(request, session, now),
+    )
+
+
+async def _access_token(request: Request, session: Dict[str, Any], now: datetime) -> Optional[str]:
+    """The session's access token, refreshed first when it has 60 s or less
+    left. The Keycloak call, and any wait for a refresh another request is
+    making, take at most the per-app limit (``HOME_APP_TIMEOUT_SECONDS``)."""
+
+    return await session_tokens.usable_access_token(
+        request.cookies.get("session_token"),
+        session,
+        now=now.timestamp(),
+        timeout=settings.app_timeout_seconds(),
+        request_url=str(request.url),
     )
 
 

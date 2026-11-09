@@ -27,3 +27,14 @@ def clean_home_env(monkeypatch):
     monkeypatch.setenv("HOME_APP_TIMEOUT_SECONDS", "1.0")
     monkeypatch.setenv("HOME_TOTAL_BUDGET_SECONDS", "3.0")
     yield
+
+
+@pytest.fixture(autouse=True)
+def no_real_session_store(monkeypatch):
+    """A token refresh never reaches the real Redis session store (and so never
+    Keycloak): it finds no store unless a test installs its fake one."""
+
+    from home import session_tokens
+
+    monkeypatch.setattr(session_tokens, "default_store", lambda: None)
+    yield
