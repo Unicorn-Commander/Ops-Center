@@ -552,7 +552,7 @@ def _raise(exc: Exception):
          "Accounting-Ops did not do this right now. Open it in Accounting-Ops to see why."),
         ((409, {"detail": "ledger worker 10.20.0.7 refused the posting"}), "refused", 409,
          "Accounting-Ops did not do this right now. Open it in Accounting-Ops to see why."),
-        ((409, {"detail": "key aops_pat_0123456789abcdefghijklmnopqrstuvwxyzABCD rejected"}), "refused", 409,
+        ((409, {"detail": "key fictional0fictional0fictional0fictional0fictional rejected"}), "refused", 409,
          "Accounting-Ops did not do this right now. Open it in Accounting-Ops to see why."),
         ((422, {"detail": [{"loc": ["body", "decision"], "msg": "field required"}]}), "refused", 422,
          "Accounting-Ops did not do this right now. Open it in Accounting-Ops to see why."),
