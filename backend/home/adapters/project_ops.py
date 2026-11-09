@@ -12,7 +12,7 @@ an ``azp``/``aud`` in ``KEYCLOAK_EXPECTED_AUDIENCES`` (same file, :400-428).
   Used to confirm the mapped workspace. It is empty while
   ``PROJECT_OPS_TENANCY_ENABLED`` is off (``auth.service.ts:98-107``).
 * ``GET /api/v1/tasks/my-tasks`` (``backend/src/tasks/tasks.controller.ts:90-95``,
-  ``tasks.service.ts:1352-1399``): the caller's own tasks, every status, not
+  ``tasks.service.ts:1352-1400``): the caller's own tasks, every status, not
   paged. Rows carry ``id, title, status, priority, dueDate, completedAt``
   (``prisma/schema.prisma:693-723``) and ``project{id, projectNumber, title,
   status}``. ``dueDate`` uses the UTC-midnight date-only convention
@@ -20,7 +20,7 @@ an ``azp``/``aud`` in ``KEYCLOAK_EXPECTED_AUDIENCES`` (same file, :400-428).
   Project-Ops user id, so the caller's own list is used instead.
 * ``GET /api/v1/triage/proposals?status=PENDING&limit=N``
   (``backend/src/triage/triage.controller.ts:83-92``, ``triage.service.ts:674-689``,
-  ``dto/triage-proposals.dto.ts:76-99``): an array (no total) of pending
+  ``dto/triage-proposals.dto.ts:155-178``): an array (no total) of pending
   proposals with ``id, proposedTitle, proposedPriority, rawText, owner,
   sourceType, reasoning, createdAt, proposedProject{projectNumber, title}``
   (``schema.prisma:1063-1107``). Ruling needs ADMIN, MANAGER or STAFF

@@ -18,7 +18,7 @@ App hosts. Each app has two settings:
   Deep Research is not in either index.
 * ``HOME_<APP>_WEB_URL``: the public host of the app's screens, used for every
   ``source`` and item link. Default: the entitled app card's ``launch_url``
-  (the catalog's ring-specific source of truth, ``my_apps_api.py:51-53``), then
+  (the catalog's ring-specific source of truth, ``my_apps_api.py:50-55``), then
   the index entry. A web URL is only ever used after it passes the public,
   on-ring check in ``home.safety``.
 """

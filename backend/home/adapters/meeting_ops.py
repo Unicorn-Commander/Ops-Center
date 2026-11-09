@@ -17,7 +17,7 @@ Bearer whose ``azp``/``aud`` is in the accepted list (``backend/auth/dependencie
   session_title, text, owner, due_date, created_at``.
 
 Never calls ``/api/digests``: a plain GET there can queue an LLM job
-(``backend/api/digests.py:206-212``). Screens are hash routes
+(``backend/api/digests.py:206-222``). Screens are hash routes
 (``frontend/src/AppRouterSimplified.tsx:592-608``): ``#/sessions``,
 ``#/sessions/{id}``, ``#/action-items``. On the customer ring ``/api`` goes
 straight to the backend (``deploy/unicorncommander/docker-compose.unicorncommander.yml:335``);

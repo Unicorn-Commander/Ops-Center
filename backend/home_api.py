@@ -8,7 +8,7 @@ person in their CURRENT organization, as JSON (default) or, with
   exactly like a route that does not exist.
 * Read only. It never writes to any app.
 * The person's own Keycloak access token from the Ops-Center session
-  (``server.py:6410-6412``) is forwarded to each app as ``Authorization:
+  (``server.py:6122-6124,6411-6413``) is forwarded to each app as ``Authorization:
   Bearer``, so every app applies the person's own role and scope. The token is
   never logged and never returned. Sign-in code is not touched here.
 * The current organization is resolved the same way the entitled app cards

@@ -1,9 +1,9 @@
 """Ops-Center's own sources, called in process (never an HTTP self-call).
 
-* Entitled app cards: ``my_apps_api.get_my_apps`` (``backend/my_apps_api.py:703-837``),
+* Entitled app cards: ``my_apps_api.get_my_apps`` (``backend/my_apps_api.py:703-848``),
   the function behind ``GET /api/v1/my-apps/authorized``. It checks the
   selected org's entitlements and returns each card's ``launch_url`` and its
-  Connect your AI ``companion`` block (``my_apps_api.py:85-97,208-237``).
+  Connect your AI ``companion`` block (``my_apps_api.py:86-97,229-258``).
 * Visit cursor: ``org_api.get_dashboard_cursor`` (``backend/org_api.py:1619-1660``),
   ``{org_id, last_seen_at, server_now}`` from ``organization_audit_log``. The
   home only reads it; the page moves it forward after it renders, as today.
