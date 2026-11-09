@@ -117,6 +117,17 @@ afterEach(() => {
 });
 
 describe('the home renders the state document', () => {
+  test('modules come in the design order, and a module the document does not provide does not render', () => {
+    const { container } = renderHome(clone(golden));
+    const main = Array.from(container.querySelectorAll('.uh-main [data-module]')).map(el => el.getAttribute('data-module'));
+    const side = Array.from(container.querySelectorAll('.uh-side [data-module]')).map(el => el.getAttribute('data-module'));
+    expect(main).toEqual(['needs_you', 'today', 'recent_meetings', 'since_last_visit', 'apps', 'money']);
+    expect(side).toEqual(['watched_topics', 'usage']);
+    for (const absent of ['Email', 'Agents at work', 'Calls and texts', 'Team', 'Customers and pipeline', 'Walkthroughs']) {
+      expect(screen.queryByRole('heading', { name: new RegExp(`^${absent}`) })).not.toBeInTheDocument();
+    }
+  });
+
   test('a member sees no Money and no Usage when the document leaves them out', () => {
     const doc = clone(golden);
     doc.person.role = 'member';
@@ -150,6 +161,14 @@ describe('the home renders the state document', () => {
     expect(within(module).getByText('Nothing needs you.')).toBeInTheDocument();
   });
 
+  test('every module shows its own as-of; Money shows the bank feed time', () => {
+    const { container } = renderHome(clone(golden));
+    for (const id of ['needs_you', 'today', 'recent_meetings', 'apps', 'watched_topics', 'usage']) {
+      expect(container.querySelector(`[data-module="${id}"] .uh-asof`)).toHaveTextContent('as of 10:00');
+    }
+    expect(container.querySelector('[data-module="money"] .uh-meta')).toHaveTextContent('bank feed 09:59');
+  });
+
   test('rows link to their app in a new tab; with actions off there are no action buttons', () => {
     renderHome(clone(golden));
     const module = screen.getByRole('article', { name: /Needs you/ });
@@ -168,6 +187,36 @@ describe('the home renders the state document', () => {
 });
 
 describe('module states', () => {
+  test('empty, not set up, unavailable with a retry, and reauth each say so in one sentence', async () => {
+    const doc = clone(golden);
+    const today = doc.modules.find(mod => mod.id === 'today');
+    Object.assign(today, { status: 'empty', items: [] });
+    const meetings = doc.modules.find(mod => mod.id === 'recent_meetings');
+    Object.assign(meetings, { status: 'unavailable', reason: 'timeout' });
+    meetings.source.forEach(s => Object.assign(s, { status: 'unavailable', reason: 'timeout' }));
+    const topics = doc.modules.find(mod => mod.id === 'watched_topics');
+    topics.status = 'not_set_up';
+    topics.source.forEach(s => Object.assign(s, { status: 'not_set_up', note: 'Center Deep Research is not connected to the home on this ring yet.' }));
+    const money = doc.modules.find(mod => mod.id === 'money');
+    Object.assign(money, { status: 'unavailable', reason: 'reauth' });
+
+    routes.push(['/api/v1/home/state', () => new Promise(() => {})]);
+    renderHome(doc);
+    expect(within(screen.getByRole('article', { name: /^Today/ })).getByText('Nothing due today.')).toBeInTheDocument();
+    const meetingsBox = screen.getByRole('article', { name: /^Meetings/ });
+    expect(within(meetingsBox).getByText(/Meeting-Ops did not answer in time\./)).toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: /^Watched topics/ })).getByText(/not connected to the home on this ring yet/)).toBeInTheDocument();
+    const moneyBox = screen.getByRole('article', { name: /^Money/ });
+    expect(within(moneyBox).getByText(/Sign in again to refresh this\./)).toBeInTheDocument();
+    expect(within(moneyBox).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+
+    // Retry shows the loading state while the read is on its way.
+    fireEvent.click(within(meetingsBox).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(meetingsBox).toHaveAttribute('aria-busy', 'true'));
+    expect(within(meetingsBox).getByText('Loading Meetings')).toBeInTheDocument();
+    expect(calls.some(c => c.url.startsWith('/api/v1/home/state'))).toBe(true);
+  });
+
   test('a module whose sources partly answered says which app is missing', () => {
     const doc = clone(golden);
     const needs = doc.modules.find(mod => mod.id === 'needs_you');
@@ -248,6 +297,15 @@ describe('acting on an item', () => {
     expect(keys[2]).not.toBe(keys[0]);
   });
 
+  test('Mark done on a task due today goes to the action route the item names', async () => {
+    routes.push([/\/api\/v1\/home\/actions\//, () => json({ outcome: 'done', message: 'Marked done in Project-Ops.' })]);
+    renderHome(withActions(clone(golden)));
+    const today = screen.getByRole('article', { name: /^Today/ });
+    fireEvent.click(within(today).getByRole('button', { name: 'Mark done' }));
+    expect(await within(today).findByText('Marking done')).toBeInTheDocument();
+    expect(await within(today).findByText('Marked done in Project-Ops.')).toBeInTheDocument();
+    expect(calls.find(c => c.method === 'POST').url).toBe('/api/v1/home/actions/project-ops/po:task:c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e88/done');
+  });
 });
 
 describe('navigation', () => {
