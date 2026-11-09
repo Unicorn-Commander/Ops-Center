@@ -6,7 +6,9 @@ for the signed-in person in their CURRENT organization, as JSON (default) or,
 with ``Accept: text/markdown``, as markdown with the same modules and items.
 
 * Off unless ``HOME_STATE_ENABLED`` is true; when off the route answers 404,
-  exactly like a route that does not exist.
+  exactly like a route that does not exist. With ``HOME_ENABLED_ORG_IDS`` set,
+  both routes give that same 404 to a person whose current organization is not
+  listed (``settings.home_enabled_org_ids``).
 * Read only. It never writes to any app.
 * The person's own Keycloak access token from the Ops-Center session
   (``server.py:6123-6126,6414-6417``) is forwarded to each app as ``Authorization:
@@ -148,6 +150,9 @@ async def get_home_context(
         raise HTTPException(status_code=401, detail="Sign in to see your home.")
 
     org_id = await get_user_org_from_session(request)
+    if not settings.home_enabled_for_org(org_id):
+        # HOME_ENABLED_ORG_IDS is set and this org is not on it: the flag-off answer.
+        raise HTTPException(status_code=404, detail="Not Found")
     if not org_id:
         if getattr(getattr(request, "state", None), "current_org_invalid", False):
             raise HTTPException(status_code=403, detail="The selected organization is not available to you.")
