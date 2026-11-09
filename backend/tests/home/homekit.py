@@ -18,7 +18,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import httpx
-import pytest
 
 BACKEND = Path(__file__).resolve().parents[2]
 if str(BACKEND) not in sys.path:

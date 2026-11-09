@@ -12,14 +12,12 @@ import ipaddress
 import json
 import re
 
-import httpx
 import pytest
 
 from home.aggregator import build_home_state
 from home.adapters.base import REASONS, STATUSES
 
 from homekit import (
-    CURSOR,
     EXPIRED_TOKEN,
     ORG_ID,
     FakeSuite,

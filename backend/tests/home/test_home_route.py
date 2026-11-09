@@ -11,7 +11,6 @@ from __future__ import annotations
 import sys
 from types import ModuleType, SimpleNamespace
 
-import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 

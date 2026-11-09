@@ -14,7 +14,7 @@ are ``null``, never zero.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date, datetime, time, timezone, tzinfo
+from datetime import date, datetime, timezone, tzinfo
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .adapters.base import (
