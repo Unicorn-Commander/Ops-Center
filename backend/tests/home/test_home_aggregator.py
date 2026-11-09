@@ -340,6 +340,19 @@ async def test_nothing_needs_you_is_a_complete_state():
     assert document["status_line"]["needs_you_count"] == 0
 
 
+@pytest.mark.asyncio
+async def test_an_org_with_nothing_linked_says_so_plainly():
+    routes = suite_routes()
+    routes["/api/v1/auth/profile"] = dict(load("po_profile"), workspaces=[])
+    routes["/api/v1/auth/me/workspaces"] = {"workspaces": []}
+    routes[f"/api/workspaces/{ORG_ID}"] = (403, {"detail": "No active membership for this workspace"})
+    document, _ = await build(suite=FakeSuite(routes))
+    assert module_by_id(document, "needs_you")["status"] == "not_set_up"
+    assert module_by_id(document, "today")["status"] == "not_set_up"
+    assert document["status_line"]["text"] == "Your apps are not linked to this home yet."
+    assert document["status_line"]["needs_you_count"] is None
+
+
 # --------------------------------------------------------------------------- #
 # Address rules
 # --------------------------------------------------------------------------- #

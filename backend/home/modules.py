@@ -838,10 +838,14 @@ def build_status_line(modules: List[Dict[str, Any]], generated_at: str) -> Dict[
 
     sentences: List[str] = []
     if needs_count is None and due is None:
-        sentences.append(
-            "Sign in again to refresh your apps." if reauth_labels and not down_labels
-            else "Your apps could not be checked right now."
-        )
+        if down_labels:
+            sentences.append("Your apps could not be checked right now.")
+            if reauth_labels:
+                sentences.append(f"Sign in again to refresh {_join(reauth_labels)}.")
+        elif reauth_labels:
+            sentences.append("Sign in again to refresh your apps.")
+        else:
+            sentences.append("Your apps are not linked to this home yet.")
     else:
         if needs_count is None:
             sentences.append(
