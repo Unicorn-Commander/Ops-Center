@@ -68,7 +68,7 @@ function TierBadge({ tierCode, tierName, getTierColor }) {
   );
 }
 
-export default function OrganizationSelector() {
+export default function OrganizationSelector({ variant = 'default' }) {
   const {
     currentOrgId,
     organizations,
@@ -80,6 +80,7 @@ export default function OrganizationSelector() {
   } = useOrganization();
 
   const { currentTheme } = useTheme();
+  const isHomeVariant = variant === 'home';
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -140,6 +141,12 @@ export default function OrganizationSelector() {
     }
   };
 
+  // The home already names the current workspace. A switcher is only useful
+  // when this person belongs to more than one organization.
+  if (isHomeVariant && (loading || !organizations || organizations.length < 2)) {
+    return null;
+  }
+
   // Loading state
   if (loading) {
     return (
@@ -186,10 +193,14 @@ export default function OrganizationSelector() {
     <div ref={dropdownRef} className="relative">
       {/* Trigger Button */}
       <button
+        type="button"
+        aria-label="Switch organization"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
         onClick={() => setIsOpen(!isOpen)}
         aria-label={currentOrg ? `Switch organization, currently ${currentOrg.name}` : 'Select organization'}
         aria-expanded={isOpen}
-        className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 min-w-[200px] ${
+        className={`flex items-center gap-3 rounded-lg transition-all duration-200 ${isHomeVariant ? 'px-3 py-2 min-w-[180px] border border-white/10' : 'px-4 py-2 min-w-[200px]'} ${
           currentTheme === 'unicorn'
             ? 'bg-purple-600/20 text-purple-200 hover:bg-purple-600/30'
             : currentTheme === 'light'
@@ -215,7 +226,7 @@ export default function OrganizationSelector() {
           </div>
           {currentOrg && (
             <div className="text-xs opacity-70">
-              {currentOrg.role?.replace('_', ' ').toUpperCase()}
+              {(currentOrg.role || currentOrg.org_role)?.replace('_', ' ').toUpperCase()}
             </div>
           )}
         </div>
@@ -231,7 +242,7 @@ export default function OrganizationSelector() {
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className={`absolute top-full mt-2 w-[320px] rounded-lg shadow-2xl z-50 ${
+          className={`absolute top-full mt-2 w-[320px] rounded-lg shadow-2xl z-50 ${isHomeVariant ? 'right-0' : 'left-0'} ${
             currentTheme === 'unicorn'
               ? 'bg-gradient-to-br from-purple-900 to-pink-900 border border-purple-500/30'
               : currentTheme === 'light'
@@ -274,7 +285,7 @@ export default function OrganizationSelector() {
                   key={org.id}
                   onClick={() => handleSwitch(org.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-150 ${
-                    org.id === currentOrgId
+                    String(org.id) === String(currentOrgId)
                       ? currentTheme === 'unicorn'
                         ? 'bg-purple-600/30'
                         : currentTheme === 'light'
@@ -288,7 +299,7 @@ export default function OrganizationSelector() {
                   }`}
                 >
                   {/* Check Icon (current org) */}
-                  {org.id === currentOrgId && (
+                  {String(org.id) === String(currentOrgId) && (
                     <CheckIcon className="h-5 w-5 text-green-500 flex-shrink-0" />
                   )}
 

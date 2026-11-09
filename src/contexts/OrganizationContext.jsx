@@ -22,6 +22,13 @@ if (typeof window !== 'undefined' && window.BroadcastChannel) {
   orgChannel = new BroadcastChannel('org-switcher');
 }
 
+function getStoredOrganizationId() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+  return window.localStorage.getItem('currentOrgId') || null;
+}
+
 export function useOrganization() {
   const context = useContext(OrganizationContext);
   if (!context) {
@@ -34,7 +41,7 @@ export function OrganizationProvider({ children }) {
   const [organizations, setOrganizations] = useState([]);
   const [currentOrgId, setCurrentOrgId] = useState(() => {
     // Load from localStorage on init
-    return localStorage.getItem('currentOrgId') || null;
+    return getStoredOrganizationId();
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -64,16 +71,19 @@ export function OrganizationProvider({ children }) {
       setLoading(true);
       setError(null);
 
-      // Try new org-centric endpoint first, fall back to legacy
-      let response = await fetch('/api/v1/users/me/organizations', {
+      // The org API accepts pending invitations while returning this list.
+      // Prefer it so a newly signed-in invitee joins before the home chooses
+      // the active organization. Fall back to the newer response shape when
+      // an older deployment does not expose the org API route.
+      let response = await fetch('/api/v1/org/my-orgs', {
         method: 'GET',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' }
       });
 
-      // Fall back to legacy endpoint if new one not available
+      // Fall back to the org-centric endpoint if the legacy route is absent.
       if (response.status === 404) {
-        response = await fetch('/api/v1/org/my-orgs', {
+        response = await fetch('/api/v1/users/me/organizations', {
           method: 'GET',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' }
@@ -101,7 +111,8 @@ export function OrganizationProvider({ children }) {
       // If no current org is set, or the saved one is no longer in the user's list
       // (membership removed, org deactivated), use the API's current/default org.
       // Otherwise a stale saved id leaves the switcher on "Select Organization".
-      const savedOrgIsValid = !!currentOrgId && orgs.some(org => org.id === currentOrgId);
+      const savedOrgIsValid = !!currentOrgId
+        && orgs.some(org => String(org.id) === String(currentOrgId));
       if (!savedOrgIsValid && orgs.length > 0) {
         const orgId = data.current_org_id || data.default_org_id || orgs[0].id;
         setCurrentOrgId(orgId);
@@ -164,12 +175,12 @@ export function OrganizationProvider({ children }) {
     if (!currentOrgId || !organizations.length) {
       return null;
     }
-    return organizations.find(org => org.id === currentOrgId) || null;
+    return organizations.find(org => String(org.id) === String(currentOrgId)) || null;
   };
 
   const getCurrentOrgRole = () => {
     const currentOrg = getCurrentOrganization();
-    return currentOrg?.role || null;
+    return currentOrg?.role || currentOrg?.org_role || null;
   };
 
   const hasOrgRole = (allowedRoles) => {
@@ -225,6 +236,8 @@ export function OrganizationProvider({ children }) {
     return currentOrg?.apps || [];
   };
 
+  const canInviteTeammates = ['owner', 'admin'].includes(getCurrentOrgRole());
+
   const value = {
     organizations,
     currentOrg,
@@ -240,6 +253,7 @@ export function OrganizationProvider({ children }) {
     getCurrentOrgApps,
     getTierColor,
     hasOrgRole,
+    canInviteTeammates,
     refreshOrganizations,
     hasOrganization: currentOrg !== null,
     hasMultipleOrgs: organizations.length > 1
