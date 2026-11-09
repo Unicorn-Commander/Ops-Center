@@ -50,6 +50,10 @@ describe('HomeActivitySpine', () => {
     render(<HomeActivitySpine fetchImpl={fetchImpl} storage={{ getItem: () => null, setItem: () => {} }} />);
 
     expect(await screen.findByRole('heading', { name: 'Here is recent activity' })).toBeInTheDocument();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      '/api/v1/org/my-orgs',
+      expect.objectContaining({ credentials: 'include' })
+    );
     expect(screen.queryByRole('combobox', { name: 'Organization' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Invite a teammate' })).not.toBeInTheDocument();
   });

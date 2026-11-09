@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DashboardActivityFeed from './DashboardActivityFeed';
 import InviteTeammateAction from './InviteTeammateAction';
 
-const ORG_LIST_URLS = ['/api/v1/users/me/organizations', '/api/v1/org/my-orgs'];
+const ORG_LIST_URLS = ['/api/v1/org/my-orgs', '/api/v1/users/me/organizations'];
 
 export function organizationsFromPayload(payload) {
   if (Array.isArray(payload)) return { organizations: payload, payload: null };
