@@ -13,6 +13,11 @@ import { DeploymentProvider } from './contexts/DeploymentContext';
 import { OrganizationProvider } from './contexts/OrganizationContext';
 import { ToastProvider } from './components/Toast';
 import { BrandingProvider } from './contexts/BrandingContext';
+import {
+  getRouteByPath,
+  hasRouteAccess,
+  isPlatformAdminRole
+} from './config/routes';
 
 // Create QueryClient instance for React Query
 const queryClient = new QueryClient({
@@ -437,6 +442,67 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function readStoredUserInfo() {
+  try {
+    return JSON.parse(localStorage.getItem('userInfo') || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function getRouteForAdminAccess(pathname) {
+  const directRoute = getRouteByPath(pathname);
+  if (directRoute) return directRoute;
+
+  // These organization URLs predate the /admin/org namespace. They render the
+  // same pages in App.jsx, so apply the canonical route's policy before the
+  // alias can render anything.
+  const organizationAlias = pathname.match(/^\/admin\/organization\/(team|roles|settings|billing)$/);
+  if (organizationAlias) {
+    return getRouteByPath(`/admin/org/${organizationAlias[1]}`);
+  }
+
+  const organizationBillingAlias = pathname.match(/^\/admin\/organization\/([^/]+)\/billing$/);
+  if (organizationBillingAlias) {
+    return getRouteByPath(`/admin/people/organizations/${organizationBillingAlias[1]}/billing`);
+  }
+
+  return null;
+}
+
+/**
+ * Auth protects the shell. This guard protects each admin route inside it.
+ * Keeping the policy at the shell boundary prevents a hidden navigation item
+ * from becoming an authorization bypass through a hand-entered URL.
+ */
+export function AdminRouteGuard({ children }) {
+  const location = useLocation();
+  const userInfo = readStoredUserInfo();
+  const userRole = userInfo.role || 'viewer';
+  const userOrgRole = userInfo.org_role || null;
+  const isPlatformAdmin = isPlatformAdminRole(userRole);
+  const normalizedPath = location.pathname.replace(/\/+$/, '') || '/';
+
+  // /admin is the deliberate platform console entry. Organization users keep
+  // the canonical suite home instead of being sent into an admin shell.
+  if (normalizedPath === '/admin' && !isPlatformAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const route = getRouteForAdminAccess(location.pathname);
+  if (!route) {
+    // Platform admins may still see the shell's real 404. Other roles should
+    // never enter an unknown admin path while looking for a protected page.
+    return isPlatformAdmin ? children : <Navigate to="/dashboard" replace />;
+  }
+
+  if (!hasRouteAccess(route, userRole, userOrgRole)) {
+    return <Navigate to={isPlatformAdmin ? '/admin/dashboard' : '/dashboard'} replace />;
+  }
+
+  return children;
+}
+
 function ParamRedirect({ to }) {
   const params = useParams();
   const resolved = to.replace(/:([A-Za-z0-9_]+)/g, (_, key) => params[key] || '');
@@ -496,9 +562,8 @@ function AppRoutes() {
   const isAdminShellRoute = location.pathname.startsWith('/admin') && location.pathname !== '/admin/login';
   // Role (same source Layout uses) — the Help button/panel is an admin affordance;
   // end users get the floating Guide bubble instead.
-  let userRole = 'viewer';
-  try { userRole = JSON.parse(localStorage.getItem('userInfo') || '{}').role || 'viewer'; } catch (_) { userRole = 'viewer'; }
-  const isAdmin = userRole === 'admin';
+  const userRole = readStoredUserInfo().role || 'viewer';
+  const isAdmin = isPlatformAdminRole(userRole);
   
   // Keyboard shortcut for help (only on admin pages)
   useEffect(() => {
@@ -557,20 +622,23 @@ function AppRoutes() {
           <Route path="/admin/login" element={<Login />} />
 
           {/* Colonel Pop-out - Protected but NO Layout wrapper */}
-          <Route path="/admin/ai/colonel-popout" element={
-            <ProtectedRoute>
+        <Route path="/admin/ai/colonel-popout" element={
+          <ProtectedRoute>
+            <AdminRouteGuard>
               <AdminContent>
                 <ColonelChat popout={true} />
               </AdminContent>
-            </ProtectedRoute>
-          } />
+            </AdminRouteGuard>
+          </ProtectedRoute>
+        } />
 
         {/* Admin Dashboard - Protected Routes WITH SystemProvider */}
         <Route path="/admin/*" element={
           <ProtectedRoute>
-            <AdminContent>
-              <Layout>
-                <Routes>
+            <AdminRouteGuard>
+              <AdminContent>
+                <Layout>
+                  <Routes>
                   {/* Default Landing - Smart redirect based on role */}
                   <Route path="/" element={<AdminRedirect />} />
 
@@ -861,9 +929,10 @@ function AppRoutes() {
                   {/* Catch-all: unknown /admin/* URLs get a real 404 inside the shell */}
                   <Route path="*" element={<NotFound admin />} />
 
-                </Routes>
-              </Layout>
-            </AdminContent>
+                  </Routes>
+                </Layout>
+              </AdminContent>
+            </AdminRouteGuard>
           </ProtectedRoute>
         } />
 
