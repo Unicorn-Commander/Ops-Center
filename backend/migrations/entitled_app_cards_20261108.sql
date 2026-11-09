@@ -8,7 +8,8 @@ ALTER TABLE add_ons
     ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- The dashboard namespace is the only metadata consumed by /my-apps/authorized.
--- MCP URLs are the measured dogfood endpoints, not placeholders or credentials.
+-- Companion metadata stores only a path. The API derives the host from the
+-- add-on's ring-specific launch_url at request time.
 UPDATE add_ons SET metadata = '{
   "dashboard": {
     "purpose": "Record, transcribe, summarize, and track action items from meetings.",
@@ -16,8 +17,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://meetingops.magicunicorn.dev/mcp",
-      "chatgpt_url": "https://meetingops.magicunicorn.dev/mcp",
+      "mcp_path": "/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -31,8 +32,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://mcp.contacts.magicunicorn.dev/mcp",
-      "chatgpt_url": "https://mcp.contacts.magicunicorn.dev/mcp",
+      "mcp_path": "/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -46,8 +47,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://mcp.brand-ops.magicunicorn.dev/mcp",
-      "chatgpt_url": "https://mcp.brand-ops.magicunicorn.dev/mcp",
+      "mcp_path": "/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -61,8 +62,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://api.projectops.magicunicorn.dev/api/v1/mcp",
-      "chatgpt_url": "https://api.projectops.magicunicorn.dev/api/v1/mcp",
+      "mcp_path": "/api/v1/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -76,8 +77,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://customer-ops.magicunicorn.dev/api/v1/mcp",
-      "chatgpt_url": "https://customer-ops.magicunicorn.dev/api/v1/mcp",
+      "mcp_path": "/api/v1/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -91,8 +92,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://accounting-ops.magicunicorn.dev/mcp/",
-      "chatgpt_url": "https://accounting-ops.magicunicorn.dev/mcp/",
+      "mcp_path": "/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -106,8 +107,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://api.taxplanningops.magicunicorn.dev/api/v1/mcp",
-      "chatgpt_url": "https://api.taxplanningops.magicunicorn.dev/api/v1/mcp",
+      "mcp_path": "/api/v1/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -121,8 +122,8 @@ UPDATE add_ons SET metadata = '{
     "readiness": {"check": "none"},
     "companion": {
       "label": "Connect your AI",
-      "mcp_url": "https://email-ops.magicunicorn.dev/api/v1/mcp",
-      "chatgpt_url": "https://email-ops.magicunicorn.dev/api/v1/mcp",
+      "mcp_path": "/api/v1/mcp",
+      "host_source": "launch_url",
       "desktop": [],
       "mobile": []
     }
@@ -168,11 +169,11 @@ INSERT INTO add_ons (
     'Internal matter, document, and legal-program operations for the dogfood ring.',
     'productivity',
     'legal_ops_access',
-    'https://legal.magicunicorn.dev',
+    NULL,
     '/logos/legal-ops.png',
     0.00,
     'monthly',
-    TRUE,
+    FALSE,
     FALSE,
     FALSE,
     'org_granted',
@@ -187,8 +188,8 @@ INSERT INTO add_ons (
         "internal_ring": true,
         "companion": {
           "label": "Connect your AI",
-          "mcp_url": "https://legal.magicunicorn.dev/mcp",
-          "chatgpt_url": "https://legal.magicunicorn.dev/mcp",
+          "mcp_path": "/mcp",
+          "host_source": "launch_url",
           "desktop": [],
           "mobile": []
         }
@@ -203,7 +204,7 @@ ON CONFLICT (slug) DO UPDATE SET
     feature_key = EXCLUDED.feature_key,
     launch_url = EXCLUDED.launch_url,
     icon_url = EXCLUDED.icon_url,
-    is_active = TRUE,
+    is_active = FALSE,
     is_public = FALSE,
     access_type = EXCLUDED.access_type,
     min_org_role = EXCLUDED.min_org_role,
@@ -216,30 +217,22 @@ UPDATE tier_features
 SET enabled = FALSE
 WHERE feature_key = 'legal_ops_access';
 
--- Stable internal dogfood org used by the Legal-Ops ring. Customer orgs are
--- never matched by this name or granted this feature.
-INSERT INTO organizations (
-    id, name, display_name, plan_tier, max_seats, status
-) VALUES (
-    '00000000-0000-4000-8000-000000000042',
-    'ops-center-dogfood',
-    'Ops-Center internal dogfood',
-    'managed',
-    100,
-    'active'
-)
-ON CONFLICT (name) DO UPDATE SET
-    display_name = EXCLUDED.display_name,
-    status = 'active';
-
-INSERT INTO org_features (org_id, feature_key, enabled, granted_by, notes)
-SELECT id, 'legal_ops_access', TRUE, 'system',
-       'Internal dogfood ring only. Not a customer-tier entitlement.'
-FROM organizations
-WHERE name = 'ops-center-dogfood'
-ON CONFLICT (org_id, feature_key) DO UPDATE SET
-    enabled = TRUE,
-    granted_by = EXCLUDED.granted_by,
-    notes = EXCLUDED.notes;
-
 COMMIT;
+
+-- OPERATOR-ONLY INTERNAL-RING ACTIVATION. This block is documentation and is
+-- intentionally not executed by the migration. Run it by hand on the internal
+-- ring only, after supplying the existing internal organization's ID.
+-- \set internal_org_id 'replace-with-existing-internal-org-uuid'
+-- \set legal_ops_launch_url 'https://legalops.magicunicorn.dev'
+-- BEGIN;
+-- INSERT INTO org_features (org_id, feature_key, enabled, granted_by, notes)
+-- VALUES (:'internal_org_id'::uuid, 'legal_ops_access', TRUE, 'operator',
+--         'Internal dogfood ring only. Not a customer-tier entitlement.')
+-- ON CONFLICT (org_id, feature_key) DO UPDATE SET
+--     enabled = TRUE,
+--     granted_by = EXCLUDED.granted_by,
+--     notes = EXCLUDED.notes;
+-- UPDATE add_ons
+-- SET launch_url = :'legal_ops_launch_url', is_active = TRUE
+-- WHERE slug = 'legal-ops';
+-- COMMIT;

@@ -9,6 +9,7 @@ import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from urllib.parse import urlparse
 
 import pytest
 
@@ -26,7 +27,7 @@ if importlib.util.find_spec("asyncpg") is None:
 import my_apps_api  # noqa: E402
 
 
-def _metadata(*, companion=True, readiness="none", extra=None):
+def _metadata(*, companion=True, readiness="none", mcp_path="/mcp", extra=None):
     dashboard = {
         "purpose": "A focused workspace for a fictional team.",
         "primary_action": {"label": "Open app", "route_id": "home"},
@@ -35,8 +36,8 @@ def _metadata(*, companion=True, readiness="none", extra=None):
     if companion:
         dashboard["companion"] = {
             "label": "Connect your AI",
-            "mcp_url": "https://app.magicunicorn.dev/mcp",
-            "chatgpt_url": "https://app.magicunicorn.dev/mcp",
+            "mcp_path": mcp_path,
+            "host_source": "launch_url",
             "desktop": [],
             "mobile": [],
         }
@@ -209,10 +210,47 @@ async def test_cross_org_grant_cannot_be_read_from_another_org(monkeypatch):
     assert connection.requested_org_ids == ["org-b"]
 
 
+@pytest.mark.asyncio
+async def test_companion_urls_use_each_apps_ring_specific_launch_host(monkeypatch):
+    connection = FakeConnection(
+        [
+            _row(
+                "ring-a-app",
+                "ring_a_access",
+                launch_url="https://ring-a.test",
+                metadata=_metadata(mcp_path="/mcp"),
+            ),
+            _row(
+                "ring-b-app",
+                "ring_b_access",
+                launch_url="https://ring-b.test",
+                metadata=_metadata(mcp_path="/api/v1/mcp"),
+            ),
+        ],
+        tier_features={"ring_a_access", "ring_b_access"},
+    )
+
+    apps = await authorized(monkeypatch, connection)
+    by_slug = {app["slug"]: app for app in apps}
+
+    assert by_slug["ring-a-app"]["companion"]["mcp_url"] == "https://ring-a.test/mcp"
+    assert by_slug["ring-b-app"]["companion"]["mcp_url"] == "https://ring-b.test/api/v1/mcp"
+    assert by_slug["ring-a-app"]["companion"]["chatgpt_url"] == "https://ring-a.test/mcp"
+    assert by_slug["ring-b-app"]["companion"]["chatgpt_url"] == "https://ring-b.test/api/v1/mcp"
+
+    for app in apps:
+        launch_host = urlparse(app["launch_url"]).netloc
+        assert urlparse(app["companion"]["mcp_url"]).netloc == launch_host
+        assert urlparse(app["companion"]["chatgpt_url"]).netloc == launch_host
+        assert "mcp_url" not in app["metadata"]["dashboard"]["companion"]
+
+    assert "ring-b.test" not in json.dumps(by_slug["ring-a-app"])
+    assert "ring-a.test" not in json.dumps(by_slug["ring-b-app"])
+
+
 def test_metadata_schema_rejects_placeholder_host_and_preserves_first_open_state():
     valid = _metadata()
-    valid["dashboard"]["companion"]["mcp_url"] = "https://app.magicunicorn.dev/api/v1/mcp"
-    valid["dashboard"]["companion"]["chatgpt_url"] = "https://app.magicunicorn.dev/api/v1/mcp"
+    valid["dashboard"]["companion"]["mcp_path"] = "/api/v1/mcp"
     parsed = my_apps_api.validate_dashboard_metadata(valid)
     assert my_apps_api.app_state_from_metadata(parsed.dashboard) == "ready"
 
@@ -224,10 +262,9 @@ def test_metadata_schema_rejects_placeholder_host_and_preserves_first_open_state
     )
     assert my_apps_api.app_state_from_metadata(first_open.dashboard) == "needs_first_open"
 
-    invalid = _metadata()
-    invalid["dashboard"]["companion"]["mcp_url"] = "https://example.com/mcp"
+    invalid = "https://example.com"
     with pytest.raises(ValueError, match="placeholder"):
-        my_apps_api.validate_dashboard_metadata(invalid)
+        my_apps_api._validate_catalog_url(invalid, "launch_url", require_path=False)
 
 
 @pytest.mark.asyncio

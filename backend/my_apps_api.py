@@ -12,7 +12,7 @@ import os
 import json
 import sys
 from typing import Any, Dict, List, Literal, Optional, Union
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field, ValidationError
 import asyncpg
@@ -49,11 +49,15 @@ class ReadinessMetadata(BaseModel):
 
 
 class CompanionMetadata(BaseModel):
-    """Catalogued MCP endpoint and optional native companion links."""
+    """Catalogued MCP path and optional native companion links.
+
+    The catalog deliberately stores no host. ``launch_url`` is the ring-specific
+    source of truth used to build the user-facing absolute endpoint.
+    """
 
     label: str = "Connect your AI"
-    mcp_url: str
-    chatgpt_url: str
+    mcp_path: str
+    host_source: Literal["launch_url"] = "launch_url"
     desktop: List[CompanionLink] = Field(default_factory=list)
     mobile: List[CompanionLink] = Field(default_factory=list)
 
@@ -122,14 +126,31 @@ def _validate_catalog_url(value: str, field_name: str, *, require_path: bool = T
     return value
 
 
-def _validate_companion(companion: CompanionMetadata) -> None:
-    """Validate the actual MCP path and every optional download URL."""
+def _validate_mcp_path(value: str, field_name: str = "companion.mcp_path") -> str:
+    """Validate a path-only MCP endpoint and reject embedded hosts."""
 
-    _validate_catalog_url(companion.mcp_url, "companion.mcp_url")
-    _validate_catalog_url(companion.chatgpt_url, "companion.chatgpt_url")
-    mcp_path = (urlparse(companion.mcp_url).path or "").rstrip("/")
-    if not mcp_path.endswith("/mcp"):
-        raise ValueError("companion.mcp_url must use the app's /mcp endpoint")
+    parsed = urlparse(value)
+    path = parsed.path or ""
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or not path.startswith("/")
+    ):
+        raise ValueError(f"{field_name} must be an absolute app path without a host")
+    normalized = path.rstrip("/")
+    if not normalized.endswith("/mcp"):
+        raise ValueError(f"{field_name} must use the app's /mcp endpoint")
+    return normalized
+
+
+def _validate_companion(companion: CompanionMetadata) -> None:
+    """Validate the path-only MCP endpoint and every optional download URL."""
+
+    _validate_mcp_path(companion.mcp_path)
     for link in [*companion.desktop, *companion.mobile]:
         _validate_catalog_url(link.url, "companion download URL")
 
@@ -186,25 +207,51 @@ def app_state_from_metadata(metadata: DashboardMetadata, *, has_opened: bool = F
     return "ready"
 
 
-def build_companion_response(slug: str, companion: Optional[CompanionMetadata]) -> Optional[CompanionResponse]:
-    """Build copyable client recipes from the catalogued MCP URL."""
+def _absolute_companion_url(launch_url: str, mcp_path: str) -> str:
+    """Build an MCP URL from the add-on's ring-specific launch URL."""
+
+    _validate_catalog_url(launch_url, "launch_url", require_path=False)
+    parsed_launch_url = urlparse(launch_url)
+    path = _validate_mcp_path(mcp_path)
+    composed = urlunparse(
+        (
+            parsed_launch_url.scheme,
+            parsed_launch_url.netloc,
+            path,
+            "",
+            "",
+            "",
+        )
+    )
+    return _validate_catalog_url(composed, "companion.mcp_url")
+
+
+def build_companion_response(
+    slug: str,
+    companion: Optional[CompanionMetadata],
+    launch_url: str,
+) -> Optional[CompanionResponse]:
+    """Build copyable client recipes from the row's ring-specific launch URL."""
 
     if not companion:
         return None
+    if companion.host_source != "launch_url":
+        raise ValueError("companion.host_source must use launch_url")
+    mcp_url = _absolute_companion_url(launch_url, companion.mcp_path)
     return CompanionResponse(
         label=companion.label,
-        mcp_url=companion.mcp_url,
+        mcp_url=mcp_url,
         claude_code_command=(
-            f"claude mcp add --transport http {slug} {companion.mcp_url}"
+            f"claude mcp add --transport http {slug} {mcp_url}"
         ),
         client_config={
             "mcpServers": {
                 slug: {
-                    "url": companion.mcp_url,
+                    "url": mcp_url,
                 }
             }
         },
-        chatgpt_url=companion.chatgpt_url,
+        chatgpt_url=mcp_url,
         desktop=companion.desktop,
         mobile=companion.mobile,
     )
@@ -745,6 +792,9 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
                     app_dict.get("metadata"),
                     fallback_purpose=app_dict.get("description") or "",
                 )
+                companion = build_companion_response(
+                    app_dict["slug"], metadata.dashboard.companion, app_dict["launch_url"]
+                )
             except ValueError as exc:
                 logger.error("Invalid dashboard metadata for catalog app %s: %s", app_dict.get("slug"), exc)
                 raise HTTPException(
@@ -758,7 +808,6 @@ async def get_my_apps(request: Request, user_tier: str = Depends(get_current_use
                 # the ring boundary, including for platform administrators.
                 continue
             state = app_state_from_metadata(dashboard)
-            companion = build_companion_response(app_dict["slug"], dashboard.companion)
 
             # Only the typed dashboard namespace is returned. In particular,
             # add_ons.features and arbitrary marketplace metadata never cross the
