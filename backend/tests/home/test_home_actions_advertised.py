@@ -364,9 +364,10 @@ EARLIER = datetime(2026, 11, 9, 14, 0, tzinfo=timezone.utc)
 @pytest.mark.parametrize(
     "source, kind, row, offered",
     [
-        # Email-Ops 2810e17: only EMAIL rows are drafts (unset means EMAIL there).
+        # Email-Ops 2810e17: only EMAIL rows are drafts. A row without a kind is
+        # offered nothing, matching the approve route, which refuses it.
         ("email-ops", "draft", {"kind": "EMAIL"}, ["approve", "reject"]),
-        ("email-ops", "draft", {"kind": None}, ["approve", "reject"]),
+        ("email-ops", "draft", {"kind": None}, []),
         ("email-ops", "draft", {"kind": "email"}, ["approve", "reject"]),
         ("email-ops", "draft", {"kind": "CLEANUP"}, []),  # approve would trash or archive mail
         ("email-ops", "draft", {"kind": "NOTICE"}, []),  # approve would add a calendar event
@@ -374,7 +375,7 @@ EARLIER = datetime(2026, 11, 9, 14, 0, tzinfo=timezone.utc)
         ("email-ops", "draft", {"kind": "EMAIL", "sends_at": LATER}, ["reject"]),
         ("email-ops", "draft", {"kind": "EMAIL", "sends_at": EARLIER}, ["approve", "reject"]),
         ("email-ops", "draft", {"kind": "EMAIL", "sends_at": "2026-11-10T14:00:00Z"}, ["reject"]),
-        ("email-ops", "draft", {"kind": "EMAIL", "sends_at": "not a time"}, ["approve", "reject"]),
+        ("email-ops", "draft", {"kind": "EMAIL", "sends_at": "not a time"}, ["reject"]),  # the route refuses an unreadable send time
         # Accounting-Ops ebd7796: journal proposals need its own client's token.
         ("accounting-ops", "approval", {"subject_type": "journal_entry_post"}, []),
         ("accounting-ops", "approval", {"subject_type": "bank_transaction_import"}, ["approve", "reject"]),
@@ -544,3 +545,12 @@ def test_the_markdown_route_offers_the_same_requests_as_the_json(monkeypatch):
     assert (receipt["source"], receipt["item_id"], receipt["action"], receipt["outcome"]) == (
         "project-ops", f"po:task:{PO_TASK}", "done", "done",
     )
+
+
+@pytest.mark.parametrize("kind", [None, "", "  ", "SOMETHING_NEW"])
+def test_an_email_ops_row_without_a_known_kind_offers_no_approve_or_reject(kind):
+    # The approve route refuses a missing or unknown kind, so the home must not
+    # offer a button that would only come back refused.
+    row = {"kind": kind, "sends_at": None}
+    offered = actions.offered_actions(f"eo:draft:{ITEM_UUID}", row, NOW)
+    assert not {a["id"] for a in offered} & {"approve", "reject"}
