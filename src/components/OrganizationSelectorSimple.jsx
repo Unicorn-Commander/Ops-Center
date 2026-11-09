@@ -25,6 +25,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useOrganization } from '../contexts/OrganizationContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { isOrgManagerRole, isPlatformAdminRole } from '../config/routes';
 import CreateOrganizationModal from './CreateOrganizationModal';
 
 // Role badge component
@@ -36,11 +37,12 @@ function RoleBadge({ role }) {
     member: 'bg-gray-100 text-gray-700 border-gray-300'
   };
 
-  const style = badgeStyles[role] || badgeStyles.member;
+  const normalizedRole = role || 'member';
+  const style = badgeStyles[normalizedRole] || badgeStyles.member;
 
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${style}`}>
-      {role.replace('_', ' ').toUpperCase()}
+      {normalizedRole.replace('_', ' ').toUpperCase()}
     </span>
   );
 }
@@ -83,7 +85,17 @@ export default function OrganizationSelector() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  let userInfo = {};
+  try {
+    userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+  } catch (_) {
+    userInfo = {};
+  }
+
   const currentOrg = getCurrentOrganization();
+  const currentOrgRole = currentOrg?.role || userInfo.org_role || null;
+  const canCreateOrganization = isPlatformAdminRole(userInfo.role)
+    || isOrgManagerRole(currentOrgRole);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -133,16 +145,29 @@ export default function OrganizationSelector() {
     return (
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800">
         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-600"></div>
-        <span className="text-sm text-gray-600 dark:text-gray-300">Loading...</span>
+        <span className="text-sm text-gray-600 dark:text-gray-300">Loading organizations...</span>
       </div>
     );
   }
 
   // No organizations state
   if (!organizations || organizations.length === 0) {
+    if (!canCreateOrganization) {
+      return (
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800"
+          role="status"
+        >
+          <BuildingOfficeIcon className="h-5 w-5 text-gray-500" />
+          <span className="text-sm text-gray-600 dark:text-gray-300">No organization available</span>
+        </div>
+      );
+    }
+
     return (
       <button
         onClick={handleCreateOrg}
+        aria-label="Create organization"
         className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 ${
           currentTheme === 'unicorn'
             ? 'bg-purple-600/20 text-purple-200 hover:bg-purple-600/30'
@@ -152,7 +177,7 @@ export default function OrganizationSelector() {
         }`}
       >
         <PlusCircleIcon className="h-5 w-5" />
-        <span className="text-sm font-medium">Create Organization</span>
+        <span className="text-sm font-medium">Create organization</span>
       </button>
     );
   }
@@ -162,6 +187,8 @@ export default function OrganizationSelector() {
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={currentOrg ? `Switch organization, currently ${currentOrg.name}` : 'Select organization'}
+        aria-expanded={isOpen}
         className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 min-w-[200px] ${
           currentTheme === 'unicorn'
             ? 'bg-purple-600/20 text-purple-200 hover:bg-purple-600/30'
@@ -219,6 +246,7 @@ export default function OrganizationSelector() {
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
+                  aria-label="Search organizations"
                   placeholder="Search organizations..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -323,22 +351,23 @@ export default function OrganizationSelector() {
             )}
           </div>
 
-          {/* Create New Organization Button */}
-          <div className="border-t border-gray-200 dark:border-gray-700 p-2">
-            <button
-              onClick={handleCreateOrg}
-              className={`w-full flex items-center gap-2 px-4 py-3 rounded-lg transition-all duration-150 ${
-                currentTheme === 'unicorn'
-                  ? 'text-purple-200 hover:bg-purple-600/20'
-                  : currentTheme === 'light'
-                  ? 'text-gray-700 hover:bg-gray-100'
-                  : 'text-gray-300 hover:bg-gray-800'
-              }`}
-            >
-              <PlusCircleIcon className="h-5 w-5" />
-              <span className="text-sm font-medium">Create New Organization</span>
-            </button>
-          </div>
+          {canCreateOrganization && (
+            <div className="border-t border-gray-200 dark:border-gray-700 p-2">
+              <button
+                onClick={handleCreateOrg}
+                className={`w-full flex items-center gap-2 px-4 py-3 rounded-lg transition-all duration-150 ${
+                  currentTheme === 'unicorn'
+                    ? 'text-purple-200 hover:bg-purple-600/20'
+                    : currentTheme === 'light'
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-300 hover:bg-gray-800'
+                }`}
+              >
+                <PlusCircleIcon className="h-5 w-5" />
+                <span className="text-sm font-medium">Create organization</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

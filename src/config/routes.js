@@ -3,14 +3,15 @@
  *
  * Route Structure:
  * - Personal: Always visible to authenticated users
- * - Organization: Visible to org_role: admin, owner
- * - System/Admin: Visible to role: admin (platform administrators)
+ * - Organization: Visible to org_role: admin, manager, owner (with billing
+ *   controlled separately)
+ * - System/Admin: Visible to platform administrator roles only
  *
  * Each route includes:
  * - path: URL path
  * - component: Component name (imported in App.jsx)
- * - roles: Required user roles ['admin', 'power_user', 'user', 'viewer']
- * - orgRoles: Required organization roles ['owner', 'admin', 'member']
+ * - roles: Required user roles ['admin', 'super_admin', 'platform_admin', ...]
+ * - orgRoles: Required organization roles ['owner', 'admin', 'manager', ...]
  * - name: Display name for navigation/page title
  * - icon: Icon identifier (optional)
  * - section: Section grouping (optional)
@@ -24,25 +25,52 @@
  * - Infrastructure: Traefik → Reverse Proxy, Security promoted to visible
  */
 
+export const PLATFORM_ADMIN_ROLES = Object.freeze([
+  'admin',
+  'super_admin',
+  'platform_admin',
+  'system_admin'
+]);
+
+export const ORG_MANAGER_ROLES = Object.freeze([
+  'owner',
+  'admin',
+  'manager'
+]);
+
+/**
+ * Platform role checks live here so the desktop rail, mobile drawer, bottom
+ * navigation, and route guard cannot disagree about who may see the console.
+ */
+export function isPlatformAdminRole(role) {
+  const values = Array.isArray(role) ? role : [role];
+  return values.some(value => PLATFORM_ADMIN_ROLES.includes(String(value || '').toLowerCase()));
+}
+
+export function isOrgManagerRole(role) {
+  const normalized = String(role || '').toLowerCase();
+  return ORG_MANAGER_ROLES.includes(normalized);
+}
+
 export const routes = {
   // ==========================================================================
   // PERSONAL SECTION - Always visible to authenticated users
   // ==========================================================================
   personal: {
     dashboard: {
-      path: '/admin/',
-      component: 'AdminRedirect', // role-based: admins → /admin/dashboard, users → /admin/my-dashboard
+      path: '/dashboard',
+      component: 'PublicLanding',
       roles: ['admin', 'power_user', 'user', 'viewer'],
-      name: 'Dashboard',
+      name: 'Home',
       icon: 'HomeIcon',
-      description: 'Main dashboard with quick stats and service status'
+      description: 'Your apps and organization home'
     },
     adminDashboard: {
       path: '/admin/dashboard',
       component: 'AdminInfraDashboard',
-      roles: ['admin', 'power_user', 'user', 'viewer'],
-      name: 'Admin Dashboard',
-      nav: false
+      roles: ['admin'],
+      name: 'Admin Console',
+      description: 'Platform administration and infrastructure'
     },
     myDashboard: {
       path: '/admin/my-dashboard',
@@ -212,34 +240,36 @@ export const routes = {
   },
 
   // ==========================================================================
-  // ORGANIZATION SECTION - Visible to org_role: admin, owner
+  // ORGANIZATION SECTION - Visible to org_role: admin, manager, owner
   // ==========================================================================
   organization: {
     section: 'My Organization',
     icon: 'BuildingOfficeIcon',
-    orgRoles: ['admin', 'owner'],
+    orgRoles: ['admin', 'manager', 'owner', 'billing_admin'],
     children: {
       team: {
         path: '/admin/org/team',
         component: 'OrganizationTeam',
-        orgRoles: ['admin', 'owner'],
+        orgRoles: ['admin', 'manager', 'owner'],
         name: 'Team Members'
       },
       roles: {
         path: '/admin/org/roles',
         component: 'OrganizationRoles',
-        orgRoles: ['admin', 'owner'],
+        orgRoles: ['admin', 'manager', 'owner'],
         name: 'Roles & Permissions'
       },
       settings: {
         path: '/admin/org/settings',
         component: 'OrganizationSettings',
-        orgRoles: ['admin', 'owner'],
+        orgRoles: ['admin', 'manager', 'owner'],
         name: 'Organization Settings'
       },
       billing: {
         path: '/admin/org/billing',
         component: 'OrganizationBilling',
+        // The current page and API enforce owner-level billing access. Keep
+        // this hidden from managers until the page exposes billing entitlements.
         orgRoles: ['owner'],
         name: 'Organization Billing'
       }
@@ -247,7 +277,7 @@ export const routes = {
   },
 
   // ==========================================================================
-  // SYSTEM/ADMIN SECTION - Visible to role: admin (platform administrators only)
+  // SYSTEM/ADMIN SECTION - Visible to platform administrator roles only
   // ==========================================================================
   system: {
     section: 'Admin',
@@ -1085,11 +1115,20 @@ export function findRedirect(oldPath) {
  * Check if user has access to a route based on role
  */
 export function hasRouteAccess(route, userRole, userOrgRole = null) {
-  if (route.roles && !route.roles.includes(userRole)) {
+  if (!route) return false;
+
+  if (route.roles && !route.roles.some(requiredRole => {
+    if (requiredRole === 'admin') {
+      return isPlatformAdminRole(userRole);
+    }
+    return String(requiredRole).toLowerCase() === String(userRole || '').toLowerCase();
+  })) {
     return false;
   }
 
-  if (route.orgRoles && (!userOrgRole || !route.orgRoles.includes(userOrgRole))) {
+  if (route.orgRoles && (!userOrgRole || !route.orgRoles.some(requiredRole => {
+    return String(requiredRole).toLowerCase() === String(userOrgRole).toLowerCase();
+  }))) {
     return false;
   }
 

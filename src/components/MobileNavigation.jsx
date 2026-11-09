@@ -74,7 +74,12 @@ import {
 } from '@mui/icons-material';
 import { useTheme as useAppTheme } from '../contexts/ThemeContext';
 import { useSwipeDrawer } from '../hooks/useSwipeGestures';
-import { getNavigationStructure } from '../config/routes';
+import {
+  getNavigationStructure,
+  hasRouteAccess,
+  isOrgManagerRole,
+  isPlatformAdminRole
+} from '../config/routes';
 
 export default function MobileNavigation({ user, currentPath }) {
   const theme = useTheme();
@@ -103,8 +108,16 @@ export default function MobileNavigation({ user, currentPath }) {
   });
 
   // Get user info from props or localStorage
-  const userInfo = user || JSON.parse(localStorage.getItem('userInfo') || '{}');
+  let storedUserInfo = {};
+  try {
+    storedUserInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+  } catch (_) {
+    storedUserInfo = {};
+  }
+  const userInfo = user || storedUserInfo;
   const userRole = userInfo.role || 'viewer';
+  const userOrgRole = userInfo.org_role || null;
+  const isPlatformAdmin = isPlatformAdminRole(userRole);
   const currentRoute = currentPath || location.pathname;
 
   // Close drawer when route changes (mobile navigation completed)
@@ -217,11 +230,10 @@ export default function MobileNavigation({ user, currentPath }) {
   // sidebar) so mobile can never drift out of sync with the real menu again.
   // Section-level icons are mapped here; child items reuse a small default set.
   const navStructure = getNavigationStructure();
-  const userOrgRole = user?.org_role || null;
 
   const sectionChildren = (sectionCfg, defaultIcon) =>
     Object.values(sectionCfg?.children || {})
-      .filter(r => r.path && r.nav !== false)
+      .filter(r => r.path && r.nav !== false && hasRouteAccess(r, userRole, userOrgRole))
       .map(r => ({
         label: r.name,
         path: r.path,
@@ -252,11 +264,32 @@ export default function MobileNavigation({ user, currentPath }) {
   const navigationConfig = [
     {
       id: 'dashboard',
-      label: 'Dashboard',
+      label: 'Home',
       icon: <DashboardIcon />,
-      path: '/admin/',
+      path: '/dashboard',
       exact: true,
       visible: true
+    },
+    {
+      id: 'my-dashboard',
+      label: navStructure.personal.myDashboard?.name || 'My dashboard',
+      icon: <BarChartIcon />,
+      path: navStructure.personal.myDashboard?.path || '/admin/my-dashboard',
+      visible: hasRouteAccess(navStructure.personal.myDashboard, userRole, userOrgRole)
+    },
+    {
+      id: 'admin-console',
+      label: navStructure.personal.adminDashboard?.name || 'Admin console',
+      icon: <SettingsIcon />,
+      path: navStructure.personal.adminDashboard?.path || '/admin/dashboard',
+      visible: hasRouteAccess(navStructure.personal.adminDashboard, userRole, userOrgRole)
+    },
+    {
+      id: 'apps',
+      label: navStructure.personal.marketplace?.name || 'Apps',
+      icon: <ViewListIcon />,
+      path: navStructure.personal.marketplace?.path || '/admin/apps/marketplace',
+      visible: hasRouteAccess(navStructure.personal.marketplace, userRole, userOrgRole)
     },
     {
       id: 'account',
@@ -276,14 +309,14 @@ export default function MobileNavigation({ user, currentPath }) {
       id: 'organization',
       label: navStructure.organization?.section || 'My Organization',
       icon: <BusinessIcon />,
-      visible: userOrgRole === 'admin' || userOrgRole === 'owner',
+      visible: isOrgManagerRole(userOrgRole) || userOrgRole === 'billing_admin',
       children: sectionChildren(navStructure.organization, <BusinessIcon />)
     },
     ...Object.entries(navStructure.system?.children || {}).map(([key, sectionCfg]) => ({
       id: key,
       label: sectionCfg.section || key,
       icon: adminSectionIcons[key] || <SettingsIcon />,
-      visible: userRole === 'admin',
+      visible: isPlatformAdmin,
       children: sectionChildren(sectionCfg, adminChildIcons[key] || <SettingsIcon />)
     }))
   ];
@@ -398,7 +431,7 @@ export default function MobileNavigation({ user, currentPath }) {
               }}
             />
           )}
-          {userRole === 'admin' && (
+          {isPlatformAdmin && (
             <Chip
               label="Administrator"
               size="small"
@@ -526,8 +559,7 @@ export default function MobileNavigation({ user, currentPath }) {
         <List sx={{ pt: 1 }}>
           <ListItemButton
             onClick={() => {
-              const currentHost = window.location.hostname;
-              window.open(`http://${currentHost}:8086`, '_blank');
+              window.dispatchEvent(new CustomEvent('uc:open-help'));
               closeDrawer();
             }}
             sx={{
@@ -543,7 +575,7 @@ export default function MobileNavigation({ user, currentPath }) {
             <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
               <HelpIcon />
             </ListItemIcon>
-            <ListItemText primary="Help & Docs" />
+            <ListItemText primary="Help and documentation" />
           </ListItemButton>
 
           {/* Logout Button */}

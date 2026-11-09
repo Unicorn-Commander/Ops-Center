@@ -67,7 +67,13 @@ import { useBranding } from '../contexts/BrandingContext';
 import { ColonelLogo, MagicUnicornLogo, CenterDeepLogo } from './Logos';
 import NavigationSection from './NavigationSection';
 import NavigationItem from './NavigationItem';
-import { getNavigationStructure, getRouteByPath, hasRouteAccess } from '../config/routes';
+import {
+  getNavigationStructure,
+  getRouteByPath,
+  hasRouteAccess,
+  isOrgManagerRole,
+  isPlatformAdminRole
+} from '../config/routes';
 import NotificationBell from './NotificationBell';
 import OrganizationSelector from './OrganizationSelectorSimple';
 import MobileNavigation from './MobileNavigation';
@@ -126,9 +132,16 @@ export default function Layout({ children }) {
     unicorn: { name: 'Unicorn', icon: '🦄' }
   };
 
-  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+  let userInfo = {};
+  try {
+    userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+  } catch (_) {
+    userInfo = {};
+  }
   const userRole = userInfo.role || 'viewer';
   const userOrgRole = userInfo.org_role || null;
+  const isPlatformAdmin = isPlatformAdminRole(userRole);
+  const canManageOrganization = isOrgManagerRole(userOrgRole) || userOrgRole === 'billing_admin';
 
   // Collapsible section state management - Load from localStorage
   const loadSectionState = () => {
@@ -345,7 +358,7 @@ export default function Layout({ children }) {
             }`}>
               {/* Main Logo Area - Clickable to navigate to landing page */}
               <Link
-                to="/"
+                to="/dashboard"
                 className={`flex items-center ${sidebarCollapsed ? 'flex-col gap-1' : 'gap-3'} mb-3 cursor-pointer transition-all duration-200 rounded-lg p-2 ${
                   currentTheme === 'unicorn'
                     ? 'hover:bg-white/10'
@@ -430,16 +443,17 @@ export default function Layout({ children }) {
 
                 {renderNavItem(navStructure.personal.dashboard)}
                 {renderNavItem(navStructure.personal.myDashboard)}
+                {renderNavItem(navStructure.personal.adminDashboard)}
                 {renderNavItem(navStructure.personal.marketplace)}
 
                 {renderNavSection('account', navStructure.personal.account)}
                 {renderNavSection('subscription', navStructure.personal.subscription)}
 
-                {(userOrgRole === 'admin' || userOrgRole === 'owner') && (
+                {canManageOrganization && (
                   renderNavSection('organization', navStructure.organization)
                 )}
 
-                {userRole === 'admin' && (
+                {isPlatformAdmin && (
                   <>
                     {renderSectionHeader('Administration', true)}
 
@@ -462,9 +476,7 @@ export default function Layout({ children }) {
                 )}
               </nav>
               
-              {/* Help Button — opens the in-app Help panel (App.jsx listens for this event).
-                  Used to open http://<host>:8086, a legacy appliance docs port that is dead
-                  on cloud deployments. */}
+              {/* Help Button — opens the in-app Help panel (App.jsx listens for this event). */}
               <div className="px-2 mb-4">
                 <button
                   onClick={() => {
@@ -479,7 +491,7 @@ export default function Layout({ children }) {
                   }`}
                 >
                   <QuestionMarkCircleIcon className="h-5 w-5" />
-                  Help & Documentation
+                  Help and documentation
                 </button>
               </div>
               
@@ -592,7 +604,7 @@ export default function Layout({ children }) {
                 <OrganizationSelector />
 
                 {/* Notification Bell (Admin only) */}
-                {userInfo.role === 'admin' && (
+                {isPlatformAdmin && (
                   <div className={`${
                     currentTheme === 'unicorn'
                       ? 'text-purple-200'
@@ -660,7 +672,7 @@ export default function Layout({ children }) {
       <BottomNavBar currentPath={location.pathname} userRole={userInfo.role} />
 
       {/* Colonel Chat Bubble - Admin Only, hidden on Colonel page */}
-      {userRole === 'admin' && !location.pathname.startsWith('/admin/ai/colonel') && (
+      {isPlatformAdmin && !location.pathname.startsWith('/admin/ai/colonel') && (
         <Suspense fallback={null}>
           <ColonelChatBubble />
         </Suspense>
@@ -668,7 +680,7 @@ export default function Layout({ children }) {
 
       {/* The Guide - end-user assistant (read-only, no system access). Shown to
           non-admins as their floating help agent (Colonel is admin-only). */}
-      {userRole !== 'admin' && (
+      {!isPlatformAdmin && (
         <Suspense fallback={null}>
           <GuideChatBubble />
         </Suspense>

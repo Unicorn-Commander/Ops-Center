@@ -39,6 +39,7 @@ import {
   Business as BusinessIcon
 } from '@mui/icons-material';
 import { useTheme as useAppTheme } from '../contexts/ThemeContext';
+import { isOrgManagerRole, isPlatformAdminRole } from '../config/routes';
 
 export default function BottomNavBar({ currentPath, userRole }) {
   const theme = useTheme();
@@ -49,8 +50,15 @@ export default function BottomNavBar({ currentPath, userRole }) {
   const isVerySmallScreen = useMediaQuery('(max-width:375px)');
 
   // Get user info for role determination
-  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+  let userInfo = {};
+  try {
+    userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+  } catch (_) {
+    userInfo = {};
+  }
   const role = userRole || userInfo.role || 'viewer';
+  const orgRole = userInfo.org_role || null;
+  const isPlatformAdmin = isPlatformAdminRole(role);
   const currentRoute = currentPath || location.pathname;
 
   // Get theme colors
@@ -91,33 +99,33 @@ export default function BottomNavBar({ currentPath, userRole }) {
   const navigationItems = useMemo(() => {
     const baseItems = [
       {
-        label: 'Dashboard',
-        value: '/admin/',
+        label: 'Home',
+        value: '/dashboard',
         icon: <DashboardIcon />,
         visible: true
       }
     ];
 
-    // Admin-specific items
-    if (role === 'admin') {
+    // Platform administrator shortcuts stay inside the guarded admin console.
+    if (isPlatformAdmin) {
       return [
         ...baseItems,
+        {
+          label: 'Admin console',
+          value: '/admin/dashboard',
+          icon: <SettingsIcon />,
+          visible: true
+        },
+        {
+          label: 'My dashboard',
+          value: '/admin/my-dashboard',
+          icon: <AnalyticsIcon />,
+          visible: true
+        },
         {
           label: 'Users',
           value: '/admin/people/users',
           icon: <PeopleIcon />,
-          visible: true
-        },
-        {
-          label: 'Revenue',
-          value: '/admin/billing/revenue',
-          icon: <PaymentIcon />,
-          visible: true
-        },
-        {
-          label: 'AI',
-          value: '/admin/ai',
-          icon: <AnalyticsIcon />,
           visible: true
         },
         {
@@ -129,9 +137,23 @@ export default function BottomNavBar({ currentPath, userRole }) {
       ];
     }
 
-    // Regular user items
+    // Organization users get organization management only when their active
+    // membership grants it. Members never see a dead organization shortcut.
+    const organizationItem = {
+      label: 'Organization',
+      value: '/admin/org/team',
+      icon: <BusinessIcon />,
+      visible: isOrgManagerRole(orgRole) || orgRole === 'billing_admin'
+    };
+
     return [
       ...baseItems,
+      {
+        label: 'Apps',
+        value: '/admin/apps/marketplace',
+        icon: <DashboardIcon />,
+        visible: true
+      },
       {
         label: 'Account',
         value: '/admin/account/profile',
@@ -144,20 +166,9 @@ export default function BottomNavBar({ currentPath, userRole }) {
         icon: <CreditCardIcon />,
         visible: true
       },
-      {
-        label: 'Org',
-        value: '/admin/org/settings',
-        icon: <BusinessIcon />,
-        visible: true
-      },
-      {
-        label: 'Settings',
-        value: '/admin/account/security',
-        icon: <SettingsIcon />,
-        visible: true
-      }
+      organizationItem
     ];
-  }, [role]);
+  }, [isPlatformAdmin, orgRole]);
 
   // Filter visible items
   const visibleItems = navigationItems.filter(item => item.visible);
@@ -175,7 +186,7 @@ export default function BottomNavBar({ currentPath, userRole }) {
     if (partialMatch) return partialMatch.value;
 
     // Default to first item (Dashboard)
-    return visibleItems[0]?.value || '/admin/';
+    return visibleItems[0]?.value || '/dashboard';
   }, [currentRoute, visibleItems]);
 
   // Handle navigation change
