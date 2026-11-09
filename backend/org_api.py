@@ -296,9 +296,9 @@ def _session_role_names(user: Dict[str, Any]) -> set:
 def _is_platform_admin(user: Dict[str, Any]) -> bool:
     """Return whether this authenticated session is a platform operator.
 
-    Organization owners and admins use the pending-invitation path. A boolean
-    is_admin or platform_admin claim does not qualify, because power users are
-    stored with is_admin and must not create a Keycloak user from this route.
+    A boolean is_admin or platform_admin claim does not qualify, because power
+    users are stored with is_admin and must not create a Keycloak user from
+    this route.
     """
 
     user_ids = {
@@ -309,6 +309,17 @@ def _is_platform_admin(user: Dict[str, Any]) -> bool:
     if user_ids & _platform_admin_ids():
         return True
     return bool(_session_role_names(user) & _PLATFORM_ADMIN_ROLES)
+
+
+def _pending_invites_enabled() -> bool:
+    """Return whether the opt-in first-sign-in invitation flow is enabled."""
+
+    return (os.getenv("ORG_INVITES_PENDING") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _is_missing_relation(exc: BaseException) -> bool:
@@ -385,6 +396,9 @@ async def _org_has_seat_room(conn, org_id: str) -> bool:
 async def _pending_invitation_count(conn, org_id: str) -> int:
     """Count unexpired pending invitations that reserve organization seats."""
 
+    if not _pending_invites_enabled():
+        return 0
+
     count = await conn.fetchval(
         """
         SELECT COUNT(*)
@@ -405,6 +419,9 @@ async def _accept_pending_invitations(conn, user: Dict[str, Any]) -> int:
     home context, so accepting here binds the pending invite to the real
     Keycloak subject without creating an identity in the invite endpoint.
     """
+
+    if not _pending_invites_enabled():
+        return 0
 
     user_id = _session_user_id(user)
     email = _session_email(user)
@@ -500,19 +517,21 @@ async def get_my_organizations(request: Request):
     # member counts and the user's role in each.
     conn = await get_db_connection()
     try:
-        # The org list is loaded immediately after authentication by the home
-        # context. Accepting here makes a pending invitation take effect on
-        # first sign-in without putting membership creation in the invite path.
-        try:
-            await _accept_pending_invitations(conn, user)
-        except Exception as exc:
-            # Existing members can still load their organizations when the
-            # invitations table or one of its columns is not there yet.
-            if not _is_missing_relation(exc):
-                raise
-            logger.warning(
-                "Pending invitation storage is unavailable; organization list continues without it"
-            )
+        if _pending_invites_enabled():
+            # The org list is loaded immediately after authentication by the
+            # home context. Accepting here makes a pending invitation take
+            # effect on first sign-in without putting membership creation in
+            # the invite path.
+            try:
+                await _accept_pending_invitations(conn, user)
+            except Exception as exc:
+                # Existing members can still load their organizations when the
+                # invitations table or one of its columns is not there yet.
+                if not _is_missing_relation(exc):
+                    raise
+                logger.warning(
+                    "Pending invitation storage is unavailable; organization list continues without it"
+                )
         rows = await conn.fetch(
             """
             SELECT * FROM (
@@ -1200,17 +1219,18 @@ async def add_organization_member(
         Body: {"email": "member@example.com", "role": "member"}
         Response: {
             "success": true,
-            "message": "Invitation is pending. They join this organization the first time they sign in.",
+            "message": "We emailed member@example.com an invitation and added them to org_12345.",
             "email": "member@example.com",
             "role": "member"
         }
     """
     actor = await get_current_user(request)
     platform_admin = _is_platform_admin(actor)
+    pending_mode = _pending_invites_enabled() and not platform_admin
 
-    # Owners and organization admins may create pending invitations. Billing
-    # admins can manage billing, but cannot change membership. Platform admins
-    # retain the legacy immediate-membership path below.
+    # Owners and organization admins may invite. Billing admins can manage
+    # billing, but cannot change membership. Pending invitations are an
+    # explicit opt-in; platform admins retain their immediate path.
     if not platform_admin:
         await verify_org_access(request, org_id, required_role="admin")
 
@@ -1237,7 +1257,7 @@ async def add_organization_member(
 
         # Pending invitations reserve seats. A duplicate is reported before
         # the seat check so the person inviting gets an actionable message.
-        if requested_email and not platform_admin:
+        if requested_email and pending_mode:
             pending = await conn.fetchrow(
                 """
                 SELECT id
@@ -1274,11 +1294,7 @@ async def add_organization_member(
                 "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
                 org_id,
             )
-            pending_count = (
-                await _pending_invitation_count(conn, org_id)
-                if not platform_admin
-                else 0
-            )
+            pending_count = await _pending_invitation_count(conn, org_id) if pending_mode else 0
             try:
                 persisted_max_seats = int(org["max_seats"] or 1)
             except (KeyError, TypeError):
@@ -1323,9 +1339,10 @@ async def add_organization_member(
                 member_user_id = keycloak_user.get("id") or keycloak_user.get("sub")
                 if not member_user_id:
                     raise HTTPException(status_code=502, detail="Invited user identity unavailable")
-            elif platform_admin:
-                # Preserve the legacy platform-admin workflow. Organization
-                # owners/admins never create an identity from this endpoint.
+            elif platform_admin or not pending_mode:
+                # Preserve the immediate-membership workflow. The default
+                # owner/admin path creates the account when needed and sends
+                # the existing Keycloak account-action email.
                 attributes = {
                     "org_id": [str(org_id)],
                     "org_name": [str(org["name"])],
@@ -1365,7 +1382,7 @@ async def add_organization_member(
                     ),
                 )
 
-        if not platform_admin:
+        if pending_mode:
             invited_by = _session_user_id(actor)
             if not invited_by:
                 raise HTTPException(status_code=400, detail="Could not identify inviting user")
@@ -1423,7 +1440,12 @@ async def add_organization_member(
 
         return {
             "success": True,
-            "message": "Member added to organization" if requested_email else "User added to organization",
+            "message": (
+                f"We emailed {requested_email} an invitation and added them to {org['name']}."
+                if requested_email and not platform_admin
+                else "Invitation sent successfully" if requested_email
+                else "User added to organization"
+            ),
             "user_id": str(member_user_id),
             "email": requested_email,
             "role": member_data.role,

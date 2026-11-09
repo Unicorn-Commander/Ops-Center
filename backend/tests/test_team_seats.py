@@ -101,6 +101,16 @@ def owner_session(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def pending_invites_default_off(monkeypatch):
+    monkeypatch.delenv("ORG_INVITES_PENDING", raising=False)
+
+
+@pytest.fixture
+def pending_invites_enabled(monkeypatch):
+    monkeypatch.setenv("ORG_INVITES_PENDING", "true")
+
+
 def fake_module(monkeypatch, name, **attributes):
     module = ModuleType(name)
     module.__dict__.update(attributes)
@@ -160,6 +170,7 @@ def webhooks_module(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_invite_existing_keycloak_user_stays_pending(monkeypatch):
     connection = FakeOrgConnection()
     allow_org_write(monkeypatch)
@@ -188,6 +199,40 @@ async def test_invite_existing_keycloak_user_stays_pending(monkeypatch):
     create.assert_not_awaited()
     action_email.assert_not_awaited()
     assert connection.closed is True
+
+
+@pytest.mark.asyncio
+async def test_owner_new_user_is_created_emailed_and_added_by_default(monkeypatch):
+    connection = FakeOrgConnection()
+    allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
+    monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(org_api, "get_user_by_email", AsyncMock(return_value=None))
+    create = AsyncMock(return_value=INVITED_SUB)
+    action_email = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(org_api, "keycloak_create_user", create)
+    monkeypatch.setattr(org_api, "send_account_action_email", action_email)
+
+    result = await org_api.add_organization_member(
+        ORG_ID,
+        org_api.OrganizationMemberAdd(
+            email=NEW_EMAIL,
+            role="member",
+            firstName="Tomas",
+            lastName="Vale",
+        ),
+        object(),
+    )
+
+    assert result["message"] == (
+        "We emailed tomas@example.com an invitation and added them to Fictional Lantern Labs."
+    )
+    assert result["pending"] is False
+    assert result["membership_added"] is True
+    assert result["created"] is True
+    action_email.assert_awaited_once_with(INVITED_SUB, ["UPDATE_PASSWORD", "VERIFY_EMAIL"])
+    assert connection.inserted == (ORG_ID, INVITED_SUB, "member")
+    assert connection.invitation_inserted is None
 
 
 @pytest.mark.asyncio
@@ -295,6 +340,7 @@ async def test_invite_over_cap_returns_seat_details(monkeypatch):
         ("founder_friend", 1, 5),
     ],
 )
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_uncapped_tiers_allow_invites_past_persisted_seat_value(
     monkeypatch, plan_tier, max_seats, included_seats
 ):

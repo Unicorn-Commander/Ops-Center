@@ -116,7 +116,18 @@ def owner_actor(monkeypatch):
     return actor
 
 
+@pytest.fixture(autouse=True)
+def pending_invites_default_off(monkeypatch):
+    monkeypatch.delenv("ORG_INVITES_PENDING", raising=False)
+
+
+@pytest.fixture
+def pending_invites_enabled(monkeypatch):
+    monkeypatch.setenv("ORG_INVITES_PENDING", "true")
+
+
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_owner_invite_creates_pending_record_without_membership(monkeypatch, owner_actor):
     connection = FakeConnection()
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
@@ -144,6 +155,38 @@ async def test_owner_invite_creates_pending_record_without_membership(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_owner_invite_uses_immediate_membership_by_default(monkeypatch, owner_actor):
+    connection = FakeConnection()
+    monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(org_api, "get_user_by_email", AsyncMock(return_value=None))
+    create_user = AsyncMock(return_value=INVITED_ID)
+    action_email = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(org_api, "keycloak_create_user", create_user)
+    monkeypatch.setattr(org_api, "send_account_action_email", action_email)
+
+    result = await org_api.add_organization_member(
+        ORG_ID,
+        org_api.OrganizationMemberAdd(email="mira@example.com", role="member"),
+        FakeRequest(),
+    )
+
+    assert result == {
+        "success": True,
+        "message": "We emailed mira@example.com an invitation and added them to Fictional Lantern Labs.",
+        "user_id": INVITED_ID,
+        "email": "mira@example.com",
+        "role": "member",
+        "created": True,
+        "pending": False,
+        "membership_added": True,
+    }
+    assert connection.member_inserted == (ORG_ID, INVITED_ID, "member")
+    assert connection.invitation_inserted is None
+    action_email.assert_awaited_once_with(INVITED_ID, ["UPDATE_PASSWORD", "VERIFY_EMAIL"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_pending_invitation_is_accepted_on_first_sign_in():
     connection = FakeConnection()
     connection.pending_invitations = [{
@@ -164,6 +207,7 @@ async def test_pending_invitation_is_accepted_on_first_sign_in():
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_pending_invites_reserve_seats(monkeypatch, owner_actor):
     connection = FakeConnection(member_count=4, pending_count=1)
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
@@ -251,6 +295,7 @@ async def test_dashboard_cursor_is_user_and_org_scoped(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_accept_leaves_invite_pending_when_seats_are_full(caplog):
     connection = FakeConnection(member_count=1)
     connection.org = {
@@ -277,6 +322,7 @@ async def test_accept_leaves_invite_pending_when_seats_are_full(caplog):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_power_user_flag_does_not_create_a_membership(monkeypatch, owner_actor):
     actor = {
         "id": "power-user-fictional",
@@ -367,6 +413,7 @@ async def test_cursor_does_not_rewind_or_accept_a_future_time(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_my_orgs_continues_when_invitation_storage_is_missing(monkeypatch):
     class MissingInvitations(Exception):
         sqlstate = "42P01"
