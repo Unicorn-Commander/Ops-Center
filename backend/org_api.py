@@ -3,7 +3,7 @@ Organization Management API Endpoints
 Provides organization CRUD operations, member management, and settings
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
@@ -40,6 +40,10 @@ SEAT_CAPPED_PLAN_TIERS = frozenset({"founder_workspace", "byok"})
 VALID_ORG_ROLES = frozenset({"owner", "admin", "member", "billing_admin"})
 DASHBOARD_CURSOR_ACTION = "dashboard_last_seen"
 DASHBOARD_CURSOR_FUTURE_SKEW = timedelta(minutes=5)
+# GET /my-orgs names the organization the backend serves this request as, so
+# the page can show the same one. The body stays a plain list for every
+# existing consumer.
+CURRENT_ORG_HEADER = "X-Current-Org-Id"
 # Session role names for a platform operator. An organization admin is a
 # membership role, not one of these, and a bare is_admin flag is not enough:
 # power users are marked is_admin and must not take the immediate-membership path.
@@ -485,12 +489,19 @@ async def _accept_pending_invitations(conn, user: Dict[str, Any]) -> int:
 # ==================== API Endpoints ====================
 
 @router.get("/my-orgs")
-async def get_my_organizations(request: Request):
+async def get_my_organizations(request: Request, response: Response = None):
     """
     Get list of organizations the current user is a member of
 
     Returns:
         List of organizations with user's role in each
+
+    Headers:
+        X-Current-Org-Id: the organization this request is served as, by the
+        rule GET /api/v1/my-apps/authorized uses (the current_org_id cookie
+        when it names an active membership, else the session org or the
+        default membership). Absent when there is none, or when the cookie
+        names an organization this user does not belong to.
 
     Example:
         GET /api/v1/org/my-orgs
@@ -571,6 +582,16 @@ async def get_my_organizations(request: Request):
     ]
 
     logger.info(f"Found {len(user_orgs)} organizations for user {user_id}")
+
+    # FastAPI always passes the response for an HTTP request. Direct callers
+    # (unit tests, the Postgres regression script) pass only the request.
+    if response is not None:
+        # Resolved after the list so an invitation accepted above counts.
+        from my_apps_api import get_user_org_from_session
+
+        current_org_id = await get_user_org_from_session(request)
+        if current_org_id:
+            response.headers[CURRENT_ORG_HEADER] = str(current_org_id)
 
     return user_orgs
 
