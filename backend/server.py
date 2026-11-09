@@ -6119,9 +6119,11 @@ async def direct_login(request: Request, credentials: dict):
 
                     # Create session with org data
                     session_token = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
+                    from home.session_tokens import login_token_fields  # refresh token and expiries, so the home can refresh
                     sessions[session_token] = {
                         "user": user_info,
                         "access_token": access_token,
+                        **login_token_fields(tokens, "direct_login"),
                         "created": time.time(),
                         "org_id": org_context.get("org_id"),
                         "org_name": org_context.get("org_name"),
@@ -6408,9 +6410,11 @@ async def oauth_callback(request: Request, code: str, state: str = None):
 
                     # Create session with org data (store id_token for logout!)
                     session_token = secrets.token_urlsafe(32)
+                    from home.session_tokens import login_token_fields  # refresh token and expiries, so the home can refresh
                     sessions[session_token] = {
                         "user": user_info,
                         "access_token": access_token,
+                        **login_token_fields(tokens, "oauth_callback"),
                         "id_token": tokens.get("id_token"),  # Store id_token for proper logout
                         "created": time.time(),
                         "org_id": org_context.get("org_id"),

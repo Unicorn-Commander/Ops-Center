@@ -50,6 +50,7 @@ WEB_HOSTS = {
 }
 HOME_ENV = [
     "HOME_STATE_ENABLED",
+    "HOME_ENABLED_ORG_IDS",
     "HOME_ACTIONS_ENABLED",
     "HOME_ACTION_TIMEOUT_SECONDS",
     "HOME_RING",
@@ -80,7 +81,9 @@ def fake_jwt(exp: datetime) -> str:
     )
 
 
-VALID_TOKEN = fake_jwt(datetime(2026, 11, 9, 16, 0, tzinfo=timezone.utc))
+# Far past the wall clock: the real request binding (test_home_route,
+# test_home_actions) decides with the real clock whether the token is fresh.
+VALID_TOKEN = fake_jwt(datetime(2036, 11, 9, 16, 0, tzinfo=timezone.utc))
 EXPIRED_TOKEN = fake_jwt(datetime(2026, 11, 9, 14, 0, tzinfo=timezone.utc))
 
 

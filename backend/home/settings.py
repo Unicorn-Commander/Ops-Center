@@ -30,7 +30,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Tuple
 from urllib.parse import urlparse
 
 from .safety import public_origin
@@ -64,6 +64,34 @@ def home_state_enabled() -> bool:
     """``HOME_STATE_ENABLED`` (default false). Off means the route answers 404."""
 
     return _env("HOME_STATE_ENABLED").lower() in _TRUE
+
+
+def home_enabled_org_ids() -> Optional[FrozenSet[str]]:
+    """``HOME_ENABLED_ORG_IDS``: comma-separated organization ids that get the
+    home, for a staged rollout. Unset or empty (no id listed) means every
+    organization, as before. Ids are compared without case or surrounding
+    spaces.
+
+    When set, both home routes answer 404 ``{"detail": "Not Found"}``, the same
+    answer as the flag off, to a person whose current organization is not
+    listed, or who has none, so the page falls back to the old dashboard. It
+    narrows ``HOME_STATE_ENABLED`` and ``HOME_ACTIONS_ENABLED`` and never turns
+    either on. A request with no session is still a 401.
+    """
+
+    ids = frozenset(
+        part.strip().lower() for part in _env("HOME_ENABLED_ORG_IDS").split(",") if part.strip()
+    )
+    return ids or None
+
+
+def home_enabled_for_org(org_id: Optional[str]) -> bool:
+    """False only when ``HOME_ENABLED_ORG_IDS`` is set and ``org_id`` is not on it."""
+
+    allowed = home_enabled_org_ids()
+    if allowed is None:
+        return True
+    return bool(org_id) and str(org_id).strip().lower() in allowed
 
 
 def home_actions_enabled() -> bool:
