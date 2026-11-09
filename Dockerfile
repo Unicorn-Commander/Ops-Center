@@ -54,6 +54,7 @@ COPY backend/alembic.ini ./alembic.ini
 COPY backend/colonel ./colonel
 COPY backend/routers ./routers
 COPY backend/middleware ./middleware
+COPY backend/home ./home
 COPY backend/observability ./observability
 COPY backend/cache ./cache
 COPY backend/billing ./billing
