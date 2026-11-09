@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -32,8 +33,11 @@ class FakeOrgConnection:
         included_seats=5,
         plan_tier="founder_workspace",
         existing_role=None,
+        pending_count=0,
     ):
         self.member_count = member_count
+        self.pending_count = pending_count
+        self.invitation_inserted = None
         self.org = {
             "id": ORG_ID,
             "name": "Fictional Lantern Labs",
@@ -49,9 +53,19 @@ class FakeOrgConnection:
     async def fetchval(self, query, *params):
         assert "COUNT(*)" in query
         assert params == (ORG_ID,)
+        if "organization_invitations" in query:
+            return self.pending_count
         return self.member_count
 
     async def fetchrow(self, query, *params):
+        if "organization_invitations" in query and "SELECT id" in query:
+            return None
+        if "INSERT INTO organization_invitations" in query:
+            self.invitation_inserted = params
+            return {
+                "id": "invite-fictional",
+                "expires_at": datetime(2026, 11, 15, tzinfo=timezone.utc),
+            }
         if "SELECT role" in query:
             return {"role": self.existing_role} if self.existing_role else None
         if "FROM organizations" in query:
@@ -59,9 +73,10 @@ class FakeOrgConnection:
         raise AssertionError(f"unexpected query: {query}")
 
     async def execute(self, query, *params):
-        assert "INSERT INTO organization_members" in query
-        self.inserted = params
-        return "INSERT 0 1"
+        if "INSERT INTO organization_members" in query:
+            self.inserted = params
+            return "INSERT 0 1"
+        raise AssertionError(f"unexpected execute: {query}")
 
     async def close(self):
         self.closed = True
@@ -69,6 +84,31 @@ class FakeOrgConnection:
 
 def allow_org_write(monkeypatch):
     monkeypatch.setattr(org_api, "verify_org_access", AsyncMock())
+
+
+def owner_session(monkeypatch):
+    actor = {"id": OWNER_SUB, "email": "owner@example.com", "role": "user"}
+    monkeypatch.setattr(org_api, "get_current_user", AsyncMock(return_value=actor))
+    return actor
+    monkeypatch.setattr(
+        org_api,
+        "get_current_user",
+        AsyncMock(return_value={
+            "id": OWNER_SUB,
+            "email": "owner@example.com",
+            "role": "admin",
+        }),
+    )
+
+
+@pytest.fixture(autouse=True)
+def pending_invites_default_off(monkeypatch):
+    monkeypatch.delenv("ORG_INVITES_PENDING", raising=False)
+
+
+@pytest.fixture
+def pending_invites_enabled(monkeypatch):
+    monkeypatch.setenv("ORG_INVITES_PENDING", "true")
 
 
 def fake_module(monkeypatch, name, **attributes):
@@ -130,9 +170,11 @@ def webhooks_module(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_invite_existing_keycloak_user_inserts_subject(monkeypatch):
+@pytest.mark.usefixtures("pending_invites_enabled")
+async def test_invite_existing_keycloak_user_stays_pending(monkeypatch):
     connection = FakeOrgConnection()
     allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
     lookup = AsyncMock(return_value={"id": INVITED_SUB, "email": EXISTING_EMAIL})
     create = AsyncMock()
@@ -148,18 +190,63 @@ async def test_invite_existing_keycloak_user_inserts_subject(monkeypatch):
     )
 
     assert result["success"] is True
-    assert result["user_id"] == INVITED_SUB
+    assert result["pending"] is True
+    assert result["membership_added"] is False
     assert result["email"] == EXISTING_EMAIL
-    assert connection.inserted == (ORG_ID, INVITED_SUB, "member")
+    assert "sign in" in result["message"]
+    assert connection.inserted is None
+    assert connection.invitation_inserted[:3] == (ORG_ID, EXISTING_EMAIL, "member")
     create.assert_not_awaited()
     action_email.assert_not_awaited()
     assert connection.closed is True
 
 
 @pytest.mark.asyncio
-async def test_invite_new_user_is_passwordless_and_sends_actions(monkeypatch):
+async def test_owner_new_user_is_created_emailed_and_added_by_default(monkeypatch):
     connection = FakeOrgConnection()
     allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
+    monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
+    monkeypatch.setattr(org_api, "get_user_by_email", AsyncMock(return_value=None))
+    create = AsyncMock(return_value=INVITED_SUB)
+    action_email = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(org_api, "keycloak_create_user", create)
+    monkeypatch.setattr(org_api, "send_account_action_email", action_email)
+
+    result = await org_api.add_organization_member(
+        ORG_ID,
+        org_api.OrganizationMemberAdd(
+            email=NEW_EMAIL,
+            role="member",
+            firstName="Tomas",
+            lastName="Vale",
+        ),
+        object(),
+    )
+
+    assert result["message"] == (
+        "We emailed tomas@example.com an invitation and added them to Fictional Lantern Labs."
+    )
+    assert result["pending"] is False
+    assert result["membership_added"] is True
+    assert result["created"] is True
+    action_email.assert_awaited_once_with(INVITED_SUB, ["UPDATE_PASSWORD", "VERIFY_EMAIL"])
+    assert connection.inserted == (ORG_ID, INVITED_SUB, "member")
+    assert connection.invitation_inserted is None
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_new_user_is_passwordless_and_sends_actions(monkeypatch):
+    connection = FakeOrgConnection()
+    monkeypatch.setattr(
+        org_api,
+        "get_current_user",
+        AsyncMock(return_value={
+            "id": "platform-admin-fictional",
+            "email": "admin@example.com",
+            "role": "platform_admin",
+        }),
+    )
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
     monkeypatch.setattr(org_api, "get_user_by_email", AsyncMock(return_value=None))
     create = AsyncMock(return_value=INVITED_SUB)
@@ -180,6 +267,8 @@ async def test_invite_new_user_is_passwordless_and_sends_actions(monkeypatch):
 
     kwargs = create.await_args.kwargs
     assert result["created"] is True
+    assert result["pending"] is False
+    assert "pending" not in result["message"].lower()
     assert kwargs["email"] == NEW_EMAIL
     assert kwargs["email_verified"] is False
     assert kwargs["attributes"] == {
@@ -194,8 +283,14 @@ async def test_invite_new_user_is_passwordless_and_sends_actions(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_member_cannot_invite(monkeypatch):
+    owner_session(monkeypatch)
     denied = AsyncMock(side_effect=HTTPException(403, "Role 'admin' or higher required"))
     monkeypatch.setattr(org_api, "verify_org_access", denied)
+    monkeypatch.setattr(
+        org_api,
+        "get_current_user",
+        AsyncMock(return_value={"id": "kc-member-fictional", "email": "member@example.com", "role": "user"}),
+    )
     db = AsyncMock()
     monkeypatch.setattr(org_api, "get_db_connection", db)
 
@@ -214,6 +309,7 @@ async def test_member_cannot_invite(monkeypatch):
 async def test_invite_over_cap_returns_seat_details(monkeypatch):
     connection = FakeOrgConnection(member_count=5, max_seats=5)
     allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
     lookup = AsyncMock()
     monkeypatch.setattr(org_api, "get_user_by_email", lookup)
@@ -244,6 +340,7 @@ async def test_invite_over_cap_returns_seat_details(monkeypatch):
         ("founder_friend", 1, 5),
     ],
 )
+@pytest.mark.usefixtures("pending_invites_enabled")
 async def test_uncapped_tiers_allow_invites_past_persisted_seat_value(
     monkeypatch, plan_tier, max_seats, included_seats
 ):
@@ -254,6 +351,7 @@ async def test_uncapped_tiers_allow_invites_past_persisted_seat_value(
         plan_tier=plan_tier,
     )
     allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
     monkeypatch.setattr(
         org_api,
@@ -268,7 +366,9 @@ async def test_uncapped_tiers_allow_invites_past_persisted_seat_value(
     )
 
     assert result["success"] is True
-    assert connection.inserted == (ORG_ID, INVITED_SUB, "member")
+    assert result["pending"] is True
+    assert connection.inserted is None
+    assert connection.invitation_inserted[:3] == (ORG_ID, NEW_EMAIL, "member")
 
 
 @pytest.mark.asyncio
@@ -280,6 +380,7 @@ async def test_byok_cap_uses_solo_detail_without_add_seat_url(monkeypatch):
         plan_tier="byok",
     )
     allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
     lookup = AsyncMock()
     monkeypatch.setattr(org_api, "get_user_by_email", lookup)
@@ -314,6 +415,7 @@ async def test_founder_workspace_cap_uses_max_of_persisted_and_included_seats(
         plan_tier="founder_workspace",
     )
     allow_org_write(monkeypatch)
+    owner_session(monkeypatch)
     monkeypatch.setattr(org_api, "get_db_connection", AsyncMock(return_value=connection))
     lookup = AsyncMock()
     monkeypatch.setattr(org_api, "get_user_by_email", lookup)

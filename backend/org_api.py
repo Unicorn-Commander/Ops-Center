@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import sys
 import os
 import asyncpg
@@ -37,6 +37,18 @@ router = APIRouter(prefix="/api/v1/org", tags=["organizations"])
 # Only the paid self-serve tiers enforce a seat cap on the invite path. Free and
 # internally assigned tiers keep production's uncapped behavior.
 SEAT_CAPPED_PLAN_TIERS = frozenset({"founder_workspace", "byok"})
+VALID_ORG_ROLES = frozenset({"owner", "admin", "member", "billing_admin"})
+DASHBOARD_CURSOR_ACTION = "dashboard_last_seen"
+DASHBOARD_CURSOR_FUTURE_SKEW = timedelta(minutes=5)
+# Session role names for a platform operator. An organization admin is a
+# membership role, not one of these, and a bare is_admin flag is not enough:
+# power users are marked is_admin and must not take the immediate-membership path.
+_PLATFORM_ADMIN_ROLES = frozenset({
+    "admin",
+    "super_admin",
+    "platform_admin",
+    "system_admin",
+})
 
 
 # ==================== Database Connection ====================
@@ -117,6 +129,13 @@ class OrganizationMemberAdd(BaseModel):
     role: str = "member"
     firstName: Optional[str] = None
     lastName: Optional[str] = None
+
+
+class DashboardCursorUpdate(BaseModel):
+    """A rendered dashboard activity timestamp for the active user/org."""
+
+    last_seen_at: datetime
+    rendered: bool = False
 
 
 class OrganizationMemberRoleUpdate(BaseModel):
@@ -223,7 +242,7 @@ async def verify_org_access(request: Request, org_id: str, required_role: Option
 
     # Admins have access to all organizations
     if user.get("is_admin") or user.get("role") == "admin":
-        return
+        return user
 
     # Check if user is member of organization (Postgres source of truth)
     conn = await get_db_connection()
@@ -246,6 +265,221 @@ async def verify_org_access(request: Request, org_id: str, required_role: Option
                 status_code=403,
                 detail=f"Role '{required_role}' or higher required"
             )
+
+    return user
+
+
+def _platform_admin_ids() -> set:
+    """User ids from UUDA_PLATFORM_ADMINS. The value is server config, not a token claim."""
+
+    raw = os.getenv("UUDA_PLATFORM_ADMINS") or ""
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def _session_role_names(user: Dict[str, Any]) -> set:
+    names = set()
+    role = user.get("role")
+    if isinstance(role, str) and role.strip():
+        names.add(role.strip())
+    for key in ("roles",):
+        roles = user.get(key)
+        if isinstance(roles, (list, tuple, set)):
+            names.update(str(item).strip() for item in roles if str(item).strip())
+    realm = user.get("realm_access")
+    if isinstance(realm, dict):
+        realm_roles = realm.get("roles")
+        if isinstance(realm_roles, (list, tuple, set)):
+            names.update(str(item).strip() for item in realm_roles if str(item).strip())
+    return names
+
+
+def _is_platform_admin(user: Dict[str, Any]) -> bool:
+    """Return whether this authenticated session is a platform operator.
+
+    A boolean is_admin or platform_admin claim does not qualify, because power
+    users are stored with is_admin and must not create a Keycloak user from
+    this route.
+    """
+
+    user_ids = {
+        str(user.get(key)).strip()
+        for key in ("id", "sub", "user_id")
+        if user.get(key)
+    }
+    if user_ids & _platform_admin_ids():
+        return True
+    return bool(_session_role_names(user) & _PLATFORM_ADMIN_ROLES)
+
+
+def _pending_invites_enabled() -> bool:
+    """Return whether the opt-in first-sign-in invitation flow is enabled."""
+
+    return (os.getenv("ORG_INVITES_PENDING") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _is_missing_relation(exc: BaseException) -> bool:
+    """True when invitation or cursor storage has not been migrated yet."""
+
+    sqlstate = getattr(exc, "sqlstate", None)
+    if sqlstate in {"42P01", "42703"}:
+        return True
+    undefined = tuple(
+        err
+        for err in (
+            getattr(asyncpg, "UndefinedTableError", None),
+            getattr(asyncpg, "UndefinedColumnError", None),
+        )
+        if isinstance(err, type)
+    )
+    return bool(undefined) and isinstance(exc, undefined)
+
+
+def _session_user_id(user: Dict[str, Any]) -> Optional[str]:
+    return user.get("id") or user.get("sub") or user.get("user_id") or user.get("email")
+
+
+def _session_email(user: Dict[str, Any]) -> Optional[str]:
+    email = user.get("email") or user.get("preferred_username")
+    return email.strip().lower() if isinstance(email, str) and email.strip() else None
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize naive fixture timestamps and DB timestamps to UTC."""
+
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _seat_cap_from_org(org: Dict[str, Any]) -> Optional[int]:
+    """Return the seat cap for a capped plan, or None when the plan is uncapped."""
+
+    if org.get("plan_tier") not in SEAT_CAPPED_PLAN_TIERS:
+        return None
+    try:
+        persisted_max_seats = int(org["max_seats"] or 1)
+    except (KeyError, TypeError, ValueError):
+        persisted_max_seats = int(org.get("seat_cap") or 1)
+    try:
+        included_seats = int(org["included_seats"] or 1)
+    except (KeyError, TypeError, ValueError):
+        included_seats = 1
+    return max(persisted_max_seats, included_seats, 1)
+
+
+async def _org_has_seat_room(conn, org_id: str) -> bool:
+    """True when one more member fits. Pending invites are not counted here.
+
+    A pending invite already reserved a seat at creation. Accepting it swaps
+    that reservation for a membership. If members already fill the cap, another
+    member was added in the meantime and this invite stays pending.
+    """
+
+    org = await _get_org_row(conn, org_id)
+    if not org:
+        return False
+    seat_cap = _seat_cap_from_org(org)
+    if seat_cap is None:
+        return True
+    member_count = await conn.fetchval(
+        "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
+        org_id,
+    )
+    return int(member_count or 0) < seat_cap
+
+
+async def _pending_invitation_count(conn, org_id: str) -> int:
+    """Count unexpired pending invitations that reserve organization seats."""
+
+    if not _pending_invites_enabled():
+        return 0
+
+    count = await conn.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM organization_invitations
+        WHERE org_id::text = $1
+          AND accepted = FALSE
+          AND expires_at > CURRENT_TIMESTAMP
+        """,
+        org_id,
+    )
+    return int(count or 0)
+
+
+async def _accept_pending_invitations(conn, user: Dict[str, Any]) -> int:
+    """Accept active invitations matching the signed-in user's email.
+
+    The organization list is the first authenticated org request made by the
+    home context, so accepting here binds the pending invite to the real
+    Keycloak subject without creating an identity in the invite endpoint.
+    """
+
+    if not _pending_invites_enabled():
+        return 0
+
+    user_id = _session_user_id(user)
+    email = _session_email(user)
+    if not user_id or not email:
+        return 0
+
+    accepted_count = 0
+    async with conn.transaction():
+        invitations = await conn.fetch(
+            """
+            SELECT id, org_id::text AS org_id, role
+            FROM organization_invitations
+            WHERE LOWER(email) = LOWER($1)
+              AND accepted = FALSE
+              AND expires_at > CURRENT_TIMESTAMP
+            ORDER BY created_at
+            """,
+            email,
+        )
+        for invitation in invitations:
+            existing = await conn.fetchrow(
+                """
+                SELECT 1
+                FROM organization_members
+                WHERE org_id::text = $1 AND user_id = $2
+                """,
+                invitation["org_id"],
+                str(user_id),
+            )
+            if not existing:
+                # Leave the invite pending when the cap is already full so
+                # accept cannot add a member the invite endpoint would refuse.
+                if not await _org_has_seat_room(conn, invitation["org_id"]):
+                    continue
+                await conn.execute(
+                    """
+                    INSERT INTO organization_members (org_id, user_id, role)
+                    VALUES ($1::uuid, $2, $3)
+                    ON CONFLICT (org_id, user_id) DO NOTHING
+                    """,
+                    invitation["org_id"],
+                    str(user_id),
+                    invitation["role"],
+                )
+
+            await conn.execute(
+                """
+                UPDATE organization_invitations
+                SET accepted = TRUE, accepted_at = CURRENT_TIMESTAMP
+                WHERE id = $1 AND accepted = FALSE
+                """,
+                invitation["id"],
+            )
+            accepted_count += 1
+
+    if accepted_count:
+        logger.info("Accepted %d pending organization invitation(s)", accepted_count)
+    return accepted_count
 
 
 # ==================== API Endpoints ====================
@@ -283,6 +517,21 @@ async def get_my_organizations(request: Request):
     # member counts and the user's role in each.
     conn = await get_db_connection()
     try:
+        if _pending_invites_enabled():
+            # The org list is loaded immediately after authentication by the
+            # home context. Accepting here makes a pending invitation take
+            # effect on first sign-in without putting membership creation in
+            # the invite path.
+            try:
+                await _accept_pending_invitations(conn, user)
+            except Exception as exc:
+                # Existing members can still load their organizations when the
+                # invitations table or one of its columns is not there yet.
+                if not _is_missing_relation(exc):
+                    raise
+                logger.warning(
+                    "Pending invitation storage is unavailable; organization list continues without it"
+                )
         rows = await conn.fetch(
             """
             SELECT * FROM (
@@ -970,14 +1219,23 @@ async def add_organization_member(
         Body: {"email": "member@example.com", "role": "member"}
         Response: {
             "success": true,
-            "message": "Invitation sent successfully",
+            "message": "We emailed member@example.com an invitation and added them to org_12345.",
             "email": "member@example.com",
             "role": "member"
         }
     """
-    # Owners and organization admins may invite.  Billing admins can manage
-    # billing, but cannot change membership.
-    await verify_org_access(request, org_id, required_role="admin")
+    actor = await get_current_user(request)
+    platform_admin = _is_platform_admin(actor)
+    pending_mode = _pending_invites_enabled() and not platform_admin
+
+    # Owners and organization admins may invite. Billing admins can manage
+    # billing, but cannot change membership. Pending invitations are an
+    # explicit opt-in; platform admins retain their immediate path.
+    if not platform_admin:
+        await verify_org_access(request, org_id, required_role="admin")
+
+    if member_data.role not in VALID_ORG_ROLES:
+        raise HTTPException(status_code=422, detail="Invitation role is not valid")
 
     conn = await get_db_connection()
     try:
@@ -991,6 +1249,42 @@ async def add_organization_member(
         if not requested_email and not legacy_user_id:
             raise HTTPException(status_code=422, detail="email or user_id is required")
 
+        if not platform_admin and not requested_email:
+            raise HTTPException(
+                status_code=422,
+                detail="Team invitations require an email address.",
+            )
+
+        # Pending invitations reserve seats. A duplicate is reported before
+        # the seat check so the person inviting gets an actionable message.
+        if requested_email and pending_mode:
+            pending = await conn.fetchrow(
+                """
+                SELECT id
+                FROM organization_invitations
+                WHERE org_id::text = $1
+                  AND LOWER(email) = LOWER($2)
+                  AND accepted = FALSE
+                  AND expires_at > CURRENT_TIMESTAMP
+                LIMIT 1
+                """,
+                org_id,
+                requested_email,
+            )
+            if pending:
+                raise HTTPException(
+                    status_code=409,
+                    detail="An invitation for that email is already waiting. They join when they sign in.",
+                )
+
+        if requested_email:
+            email_member_role = await _get_user_role_in_org(conn, org_id, requested_email)
+            if email_member_role:
+                raise HTTPException(
+                    status_code=400,
+                    detail="That email is already a member of this organization.",
+                )
+
         # Cap only the paid self-serve tiers.  max_seats is updated by the
         # Stripe webhook when a Team workspace buys extra seats, but a stale
         # persisted value must never reduce the tier's included allowance.
@@ -1000,6 +1294,7 @@ async def add_organization_member(
                 "SELECT COUNT(*) FROM organization_members WHERE org_id::text = $1",
                 org_id,
             )
+            pending_count = await _pending_invitation_count(conn, org_id) if pending_mode else 0
             try:
                 persisted_max_seats = int(org["max_seats"] or 1)
             except (KeyError, TypeError):
@@ -1011,7 +1306,7 @@ async def add_organization_member(
             except (KeyError, TypeError):
                 included_seats = 1
             seat_cap = max(persisted_max_seats, included_seats, 1)
-            seats_used = int(member_count or 0)
+            seats_used = int(member_count or 0) + pending_count
             if seats_used >= seat_cap:
                 content = {
                     "detail": (
@@ -1032,12 +1327,22 @@ async def add_organization_member(
         member_user_id = legacy_user_id
         created_new_user = False
         if requested_email and not legacy_user_id:
-            keycloak_user = await get_user_by_email(requested_email)
+            try:
+                keycloak_user = await get_user_by_email(requested_email)
+            except Exception:
+                logger.error("Could not look up an invited email for org %s", org_id)
+                raise HTTPException(
+                    status_code=503,
+                    detail="We could not check that email. Try again.",
+                )
             if keycloak_user:
                 member_user_id = keycloak_user.get("id") or keycloak_user.get("sub")
                 if not member_user_id:
                     raise HTTPException(status_code=502, detail="Invited user identity unavailable")
-            else:
+            elif platform_admin or not pending_mode:
+                # Preserve the immediate-membership workflow. The default
+                # owner/admin path creates the account when needed and sends
+                # the existing Keycloak account-action email.
                 attributes = {
                     "org_id": [str(org_id)],
                     "org_name": [str(org["name"])],
@@ -1065,16 +1370,60 @@ async def add_organization_member(
                     raise HTTPException(status_code=502, detail="Unable to send invitation email")
                 created_new_user = True
 
+        if member_user_id:
+            existing_role = await _get_user_role_in_org(conn, org_id, str(member_user_id))
+            if existing_role:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "That email is already a member of this organization."
+                        if requested_email
+                        else f"User {member_user_id} already in organization {org_id}"
+                    ),
+                )
+
+        if pending_mode:
+            invited_by = _session_user_id(actor)
+            if not invited_by:
+                raise HTTPException(status_code=400, detail="Could not identify inviting user")
+
+            invitation = await conn.fetchrow(
+                """
+                INSERT INTO organization_invitations
+                    (org_id, email, role, invited_by, expires_at, accepted)
+                VALUES ($1::uuid, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '7 days', FALSE)
+                RETURNING id::text AS id, expires_at
+                """,
+                org_id,
+                requested_email,
+                member_data.role,
+                str(invited_by),
+            )
+
+            logger.info(
+                "Created pending invitation for org %s with role %s",
+                org_id,
+                member_data.role,
+            )
+            return {
+                "success": True,
+                "message": (
+                    "Invitation is pending. They join this organization the first time they sign in."
+                ),
+                "pending": True,
+                "membership_added": False,
+                "invitation_id": invitation["id"] if invitation else None,
+                "email": requested_email,
+                "role": member_data.role,
+                "expires_at": (
+                    invitation["expires_at"].isoformat()
+                    if invitation and invitation["expires_at"]
+                    else None
+                ),
+            }
+
         if not member_user_id:
             raise HTTPException(status_code=422, detail="Could not identify invited user")
-
-        # Reject if the resolved Keycloak subject is already a member.
-        existing_role = await _get_user_role_in_org(conn, org_id, str(member_user_id))
-        if existing_role:
-            raise HTTPException(
-                status_code=400,
-                detail=f"User {member_user_id} already in organization {org_id}",
-            )
 
         # Insert membership row
         await conn.execute(
@@ -1091,16 +1440,30 @@ async def add_organization_member(
 
         return {
             "success": True,
-            "message": "Invitation sent successfully" if requested_email else "User added to organization",
+            "message": (
+                f"We emailed {requested_email} an invitation and added them to {org['name']}."
+                if requested_email and not platform_admin
+                else "Invitation sent successfully" if requested_email
+                else "User added to organization"
+            ),
             "user_id": str(member_user_id),
             "email": requested_email,
             "role": member_data.role,
             "created": created_new_user,
+            "pending": False,
+            "membership_added": True,
         }
 
     except HTTPException:
         raise
     except asyncpg.PostgresError as e:
+        if _is_missing_relation(e):
+            # Fail closed. Do not fall back to inserting a membership.
+            logger.error("Invitation storage is unavailable for org %s", org_id)
+            raise HTTPException(
+                status_code=503,
+                detail="Team invitations are not ready yet.",
+            ) from e
         logger.error(f"Database error adding member to org {org_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add member: {str(e)}")
     except Exception as e:
@@ -1253,6 +1616,132 @@ async def remove_organization_member(
         await conn.close()
 
 
+@router.get("/{org_id}/dashboard-cursor")
+async def get_dashboard_cursor(org_id: str, request: Request):
+    """Read the active user's last rendered activity timestamp for an org."""
+
+    actor = await verify_org_access(request, org_id)
+    if not actor:
+        actor = await get_current_user(request)
+    user_id = _session_user_id(actor)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Could not identify user")
+
+    conn = await get_db_connection()
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT details->>'last_seen_at' AS last_seen_at
+            FROM organization_audit_log
+            WHERE org_id::text = $1
+              AND user_id = $2
+              AND action = $3
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            org_id,
+            str(user_id),
+            DASHBOARD_CURSOR_ACTION,
+        )
+        return {
+            "org_id": org_id,
+            "last_seen_at": row["last_seen_at"] if row else None,
+            "server_now": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        if not _is_missing_relation(exc):
+            raise
+        logger.error("Dashboard cursor storage is unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail="Dashboard activity tracking is not ready yet.",
+        ) from exc
+    finally:
+        await conn.close()
+
+
+@router.put("/{org_id}/dashboard-cursor")
+async def update_dashboard_cursor(
+    org_id: str,
+    cursor: DashboardCursorUpdate,
+    request: Request,
+):
+    """Advance the cursor only to a newer timestamp after the home renders."""
+
+    actor = await verify_org_access(request, org_id)
+    if not actor:
+        actor = await get_current_user(request)
+    user_id = _session_user_id(actor)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Could not identify user")
+
+    if cursor.rendered is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="The activity marker advances only after the home has rendered.",
+        )
+
+    incoming = _as_utc(cursor.last_seen_at)
+    if incoming > datetime.now(timezone.utc) + DASHBOARD_CURSOR_FUTURE_SKEW:
+        raise HTTPException(
+            status_code=400,
+            detail="The activity marker cannot be set in the future.",
+        )
+
+    conn = await get_db_connection()
+    try:
+        current = await conn.fetchrow(
+            """
+            SELECT details->>'last_seen_at' AS last_seen_at
+            FROM organization_audit_log
+            WHERE org_id::text = $1
+              AND user_id = $2
+              AND action = $3
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            org_id,
+            str(user_id),
+            DASHBOARD_CURSOR_ACTION,
+        )
+        current_value = current["last_seen_at"] if current else None
+        if current_value:
+            current_time = _as_utc(datetime.fromisoformat(str(current_value).replace("Z", "+00:00")))
+            if incoming <= current_time:
+                return {
+                    "org_id": org_id,
+                    "last_seen_at": current_time.isoformat(),
+                    "advanced": False,
+                }
+
+        await conn.execute(
+            """
+            INSERT INTO organization_audit_log
+                (org_id, user_id, action, resource_type, details)
+            VALUES ($1::uuid, $2, $3, 'dashboard', jsonb_build_object('last_seen_at', $4))
+            """,
+            org_id,
+            str(user_id),
+            DASHBOARD_CURSOR_ACTION,
+            incoming.isoformat(),
+        )
+        return {
+            "org_id": org_id,
+            "last_seen_at": incoming.isoformat(),
+            "advanced": True,
+        }
+    except Exception as exc:
+        if not _is_missing_relation(exc):
+            raise
+        logger.error("Dashboard cursor storage is unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail="Dashboard activity tracking is not ready yet.",
+        ) from exc
+    finally:
+        await conn.close()
+
+
 @router.get("/{org_id}/stats")
 async def get_organization_stats(org_id: str, request: Request):
     """
@@ -1288,6 +1777,13 @@ async def get_organization_stats(org_id: str, request: Request):
             raise HTTPException(status_code=404, detail="Organization not found")
 
         members = await _get_org_members(conn, org_id)
+        try:
+            pending_invites = await _pending_invitation_count(conn, org_id)
+        except Exception as exc:
+            if not _is_missing_relation(exc):
+                raise
+            logger.warning("Pending invitation count is unavailable for org %s", org_id)
+            pending_invites = 0
     finally:
         await conn.close()
 
@@ -1320,7 +1816,7 @@ async def get_organization_stats(org_id: str, request: Request):
         "totalMembers": len(members),
         "activeMembers": active_members,
         "admins": admins,
-        "pendingInvites": 0,  # TODO: Implement invitation system
+        "pendingInvites": pending_invites,
 
         # Additional legacy fields
         "total_members": len(members),
