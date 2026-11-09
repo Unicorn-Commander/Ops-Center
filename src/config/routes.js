@@ -28,7 +28,8 @@
 export const PLATFORM_ADMIN_ROLES = Object.freeze([
   'admin',
   'super_admin',
-  'platform_admin'
+  'platform_admin',
+  'system_admin'
 ]);
 
 export const ORG_MANAGER_ROLES = Object.freeze([

@@ -33,6 +33,7 @@ describe('canonical home and route access', () => {
     expect(isPlatformAdminRole('admin')).toBe(true);
     expect(isPlatformAdminRole('super_admin')).toBe(true);
     expect(isPlatformAdminRole('platform_admin')).toBe(true);
+    expect(isPlatformAdminRole('system_admin')).toBe(true);
     expect(isPlatformAdminRole('user')).toBe(false);
   });
 
