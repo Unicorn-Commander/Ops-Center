@@ -39,7 +39,12 @@ class _MemberConn:
     async def fetchval(self, query, *params):
         assert "COUNT(*)" in query
         assert params == ("00000000-0000-4000-8000-000000000001",)
+        if "organization_invitations" in query:
+            return 0
         return 5
+
+    async def fetchrow(self, query, *params):
+        return None
 
     async def execute(self, query, *params):
         if "INSERT INTO organization_members" in query:
@@ -72,17 +77,21 @@ async def test_founder_workspace_rejects_sixth_member(monkeypatch):
     async def no_existing_member(*args, **kwargs):
         return None
 
+    async def owner(*args, **kwargs):
+        return {"id": "fictional-owner", "email": "owner@example.com", "role": "user"}
+
     async def connection():
         return conn
 
     monkeypatch.setattr(org_api, "verify_org_access", allow_owner)
+    monkeypatch.setattr(org_api, "get_current_user", owner)
     monkeypatch.setattr(org_api, "_get_org_row", org_row)
     monkeypatch.setattr(org_api, "_get_user_role_in_org", no_existing_member)
     monkeypatch.setattr(org_api, "get_db_connection", connection)
 
     response = await org_api.add_organization_member(
         "00000000-0000-4000-8000-000000000001",
-        org_api.OrganizationMemberAdd(user_id="member-6@example.com"),
+        org_api.OrganizationMemberAdd(email="member-6@example.com"),
         object(),
     )
 
@@ -91,7 +100,7 @@ async def test_founder_workspace_rejects_sixth_member(monkeypatch):
         "detail": "Organization has reached its seat limit (5/5).",
         "seats_used": 5,
         "max_seats": 5,
-        "add_seat_url": "/api/v1/billing/seats/checkout",
+        "add_seat_url": "/api/v1/billing/seats",
     }
     assert conn.insert_count == 0
     assert conn.closed is True
