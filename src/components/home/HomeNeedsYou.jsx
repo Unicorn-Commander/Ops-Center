@@ -17,14 +17,22 @@ export function useItemActions({ fetchImpl, onDone, announce }) {
   const [states, setStates] = useState({});
   const statesRef = useRef(states);
   statesRef.current = states;
+  // Set synchronously, so a second fast click on the same row never mints a second key.
+  const inflight = useRef(new Set());
 
   const run = useCallback(async (item, action, { again = false } = {}) => {
     const previous = statesRef.current[item.id];
-    if (previous?.phase === 'pending') return;
+    if (previous?.phase === 'pending' || inflight.current.has(item.id)) return;
+    inflight.current.add(item.id);
     const key = again && previous?.key && previous.actionId === action.id ? previous.key : newIdempotencyKey();
     setStates(s => ({ ...s, [item.id]: { phase: 'pending', actionId: action.id, key, message: pendingText(item, action) } }));
     announce?.(`${pendingText(item, action)}: ${item.title}`);
-    const result = await sendAction(action.href, key, { fetchImpl });
+    let result;
+    try {
+      result = await sendAction(action.href, key, { fetchImpl });
+    } finally {
+      inflight.current.delete(item.id);
+    }
     announce?.(result.message || '');
     setStates(s => ({
       ...s,

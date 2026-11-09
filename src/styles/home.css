@@ -413,7 +413,7 @@
   .uh .uh-row .uh-what { grid-column: 1 / -1; }
   .uh .uh-row.is-compact .uh-what { grid-column: 2; grid-row: 1; }
   .uh .uh-row .uh-acts { grid-column: 1 / -1; justify-content: flex-start; }
-  .uh .uh-t, .uh .uh-s { white-space: normal; overflow-wrap: anywhere; }
+  .uh .uh-t, .uh .uh-s, .uh .uh-topic-name, .uh .uh-tile-name > span:last-child { white-space: normal; overflow-wrap: anywhere; }
   .uh .uh-receipt { text-align: left; max-width: none; }
   .uh .uh-apps { grid-template-columns: minmax(0, 1fr); }
   .uh .uh-tile { min-height: 0; }

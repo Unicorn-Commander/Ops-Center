@@ -306,7 +306,7 @@ export function Money({ mod, tz, onRetry, lastGood, loading }) {
                 <>
                   <div className="uh-kpi-v">{formatMoney(cash.net_total) || '–'}</div>
                   <div className="uh-kpi-k">cash, net of what you owe</div>
-                  {cash.headline?.text && <div className="uh-kpi-d">{cash.headline.text}</div>}
+                  {cash.headline?.text && !cash.headline.text.includes(formatMoney(cash.net_total) || '\u0000') && <div className="uh-kpi-d">{cash.headline.text}</div>}
                 </>
               )}
             </div>

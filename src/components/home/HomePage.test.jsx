@@ -332,6 +332,20 @@ describe('acting on an item', () => {
     expect(keys[2]).not.toBe(keys[0]);
   });
 
+  test('a double click sends one request', async () => {
+    let release;
+    routes.push([/\/api\/v1\/home\/actions\//, () => new Promise(resolve => { release = () => resolve(json({ outcome: 'done', message: 'Approved. Email-Ops handed it to the mail server.' })); })]);
+    const { container } = renderHome(withActions(clone(golden)));
+    const row = container.querySelector(`[data-item="${EMAIL_ID}"]`);
+    const approve = within(row).getByRole('button', { name: /^Approve/ });
+    fireEvent.click(approve);
+    fireEvent.click(approve);
+    await waitFor(() => expect(release).toBeDefined());
+    release();
+    expect(await within(row).findByText('Approved. Email-Ops handed it to the mail server.')).toBeInTheDocument();
+    expect(calls.filter(c => c.method === 'POST')).toHaveLength(1);
+  });
+
   test('Mark done on a task due today goes to the action route the item names', async () => {
     routes.push([/\/api\/v1\/home\/actions\//, () => json({ outcome: 'done', message: 'Marked done in Project-Ops.' })]);
     renderHome(withActions(clone(golden)));
