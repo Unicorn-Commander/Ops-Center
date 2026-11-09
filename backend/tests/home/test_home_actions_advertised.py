@@ -457,3 +457,90 @@ def test_every_offered_href_round_trips_through_the_real_action_route(monkeypatc
             assert receipt["outcome"] == "done", receipt
             assert len(writes(suite)) == written + 1
     assert len(db.rows) == len(offers)
+
+
+# --------------------------------------------------------------------------- #
+# Markdown: the same actions, method and path, so an agent can act
+# --------------------------------------------------------------------------- #
+
+HOW_TO_ACT = (
+    "To act on an item, send the request shown after it with an Idempotency-Key header "
+    "(a new random value for each action) and the X-CSRF-Token header from "
+    "/api/v1/auth/csrf-token. The answer is a receipt."
+)
+REQUEST = re.compile(r"`(POST /api/v1/home/actions/[^`]+)`")
+
+
+def line_of(markdown: str, item_id: str) -> str:
+    return next(line for line in markdown.splitlines() if f"`{item_id}`" in line)
+
+
+@pytest.mark.asyncio
+async def test_with_actions_on_each_items_line_lists_its_requests(monkeypatch):
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    document = frozen(await state_document())
+    markdown = render_markdown(document)
+
+    for _, item, action in offers_in(document):
+        line = line_of(markdown, item["id"])
+        assert f"{action['label']}: `POST {action['href']}`." in line, (item["id"], action["id"])
+        assert line.index("](https://") < line.index(f"`{item['id']}`") < line.index(action["href"])
+    assert line_of(markdown, f"eo:draft:{EO_ITEM}").endswith(
+        f"`eo:draft:{EO_ITEM}` "
+        f"Approve: `POST /api/v1/home/actions/email-ops/eo:draft:{EO_ITEM}/approve`. Sends the email now. "
+        f"Reject: `POST /api/v1/home/actions/email-ops/eo:draft:{EO_ITEM}/reject`."
+    )
+    # Open only: the line is as it was.
+    assert line_of(markdown, f"ao:approval:{AO_JOURNAL}").endswith(f"`ao:approval:{AO_JOURNAL}`")
+    assert markdown.count(HOW_TO_ACT) == 1
+    assert sorted(REQUEST.findall(markdown)) == sorted(f"POST {a['href']}" for _, _, a in offers_in(document))
+    assert "\u2014" not in markdown and "!" not in markdown.replace("](", "")
+    # Take the offers out of the document and the page is the flag-off page.
+    assert render_markdown(without_offers(document)) == GOLDEN_MD.read_text(encoding="utf-8")
+
+
+def test_markdown_keeps_a_crafted_action_inside_its_code_span():
+    document = {
+        "modules": [{
+            "id": "needs_you", "title": "Needs you", "status": "ok", "as_of": FROZEN, "source": [],
+            "items": [{
+                "id": "eo:draft:x", "app": "email-ops", "title": "Draft",
+                "actions": [
+                    {"id": "open", "label": "Review", "href": "https://mail-ops.example.com/agent-inbox"},
+                    {"id": "approve", "label": "Go [now](https://evil.example.com)", "method": "post",
+                     "href": "/api/v1/home/actions/email-ops/eo:draft:x/approve` [x](https://evil.example.com)",
+                     "note": "Sends\nthe email now"},
+                ],
+            }],
+        }],
+    }
+    markdown = render_markdown(document)
+    line = line_of(markdown, "eo:draft:x")
+    assert line.endswith(
+        "Go \\[now\\](https://evil.example.com): "
+        "`POST /api/v1/home/actions/email-ops/eo:draft:x/approve [x](https://evil.example.com)`. "
+        "Sends the email now."
+    )
+    assert line.count("`") == 4  # the id span and the request span, nothing else
+    assert HOW_TO_ACT in markdown
+
+
+def test_the_markdown_route_offers_the_same_requests_as_the_json(monkeypatch):
+    monkeypatch.setenv("HOME_STATE_ENABLED", "true")
+    monkeypatch.setenv("HOME_ACTIONS_ENABLED", "true")
+    suite = FakeSuite({**action_routes(), **actionable_routes()})
+    db = ReceiptsDB()
+    client = round_trip_client(suite, db)
+
+    as_json = client.get("/api/v1/home/state").json()
+    response = client.get("/api/v1/home/state", headers={"Accept": "text/markdown"})
+    assert response.headers["content-type"].startswith("text/markdown")
+    requests = REQUEST.findall(response.text)
+    assert sorted(requests) == sorted(f"{a['method']} {a['href']}" for _, _, a in offers_in(as_json))
+
+    # One request read from the markdown, sent as written.
+    method, path = next(r for r in requests if r.endswith(f"po:task:{PO_TASK}/done")).split(" ", 1)
+    receipt = client.request(method, path, headers={"Idempotency-Key": "markdown-0001"}).json()
+    assert (receipt["source"], receipt["item_id"], receipt["action"], receipt["outcome"]) == (
+        "project-ops", f"po:task:{PO_TASK}", "done", "done",
+    )
