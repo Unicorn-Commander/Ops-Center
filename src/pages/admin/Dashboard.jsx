@@ -3,8 +3,9 @@
  *
  * Redesigned to show real-time status indicators for:
  * - Critical services health (PostgreSQL, Redis, Keycloak, vLLM, Traefik)
- * - GPU status (Tesla P40 detection and memory)
- * - Local inference providers (Ollama, vLLM, llama.cpp)
+ * - GPUs: every GPU in the fleet (fleet map snapshot), plus this server's own when it has them
+ * - Local inference: the private inference the fleet runs, and the providers this server manages
+ *   (both cards fetch and refresh their own data)
  * - Billing & credits overview
  * - Hosted websites via Traefik
  * - Service health grid
@@ -125,13 +126,6 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
 
   // State
-  const [gpuInfo, setGpuInfo] = useState(null);
-  const [gpuLoading, setGpuLoading] = useState(true);
-  const [gpuError, setGpuError] = useState(null);
-
-  const [localInference, setLocalInference] = useState(null);
-  const [localInferenceLoading, setLocalInferenceLoading] = useState(true);
-
   const [billingData, setBillingData] = useState(null);
   const [billingLoading, setBillingLoading] = useState(true);
 
@@ -145,44 +139,6 @@ export default function AdminDashboard() {
 
   // Glassmorphism styles
   const glassStyles = getGlassmorphismStyles(currentTheme);
-
-  // Fetch GPU info
-  const fetchGPUInfo = useCallback(async () => {
-    try {
-      const response = await fetch('/api/v1/gpu-services/status', {
-        credentials: 'include'
-      });
-      if (!response.ok) {
-        throw new Error('GPU info not available');
-      }
-      const data = await response.json();
-      // Extract gpu_info from the response (contains gpus array, total_memory_mb, etc.)
-      setGpuInfo(data.gpu_info || null);
-      setGpuError(null);
-    } catch (error) {
-      console.debug('GPU info fetch error:', error.message);
-      setGpuError('No GPU detected');
-    } finally {
-      setGpuLoading(false);
-    }
-  }, []);
-
-  // Fetch local inference status
-  const fetchLocalInference = useCallback(async () => {
-    try {
-      const response = await fetch('/api/v1/local-inference/status', {
-        credentials: 'include'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setLocalInference(data);
-      }
-    } catch (error) {
-      console.debug('Local inference status not available');
-    } finally {
-      setLocalInferenceLoading(false);
-    }
-  }, []);
 
   // Fetch billing dashboard
   const fetchBillingData = useCallback(async () => {
@@ -298,14 +254,12 @@ export default function AdminDashboard() {
     await Promise.all([
       fetchSystemStatus(),
       fetchServices(),
-      fetchGPUInfo(),
-      fetchLocalInference(),
       fetchBillingData(),
       fetchTraefikRoutes(),
       fetchWebsiteStatus(),
       fetchRecentActivity()
     ]);
-  }, [fetchSystemStatus, fetchServices, fetchGPUInfo, fetchLocalInference, fetchBillingData, fetchTraefikRoutes, fetchWebsiteStatus, fetchRecentActivity]);
+  }, [fetchSystemStatus, fetchServices, fetchBillingData, fetchTraefikRoutes, fetchWebsiteStatus, fetchRecentActivity]);
 
   // Initial fetch
   useEffect(() => {
@@ -321,12 +275,8 @@ export default function AdminDashboard() {
       fetchServices();
     }, 10000);
 
-    // GPU: 5s
-    const gpuInterval = setInterval(fetchGPUInfo, 5000);
-
-    // Other data: 30s
+    // Other data: 30s (the GPU and Local Inference cards poll their own endpoints)
     const otherInterval = setInterval(() => {
-      fetchLocalInference();
       fetchBillingData();
       fetchTraefikRoutes();
       fetchWebsiteStatus();
@@ -335,10 +285,9 @@ export default function AdminDashboard() {
 
     return () => {
       clearInterval(criticalInterval);
-      clearInterval(gpuInterval);
       clearInterval(otherInterval);
     };
-  }, [fetchSystemStatus, fetchServices, fetchGPUInfo, fetchLocalInference, fetchBillingData, fetchTraefikRoutes, fetchWebsiteStatus, fetchRecentActivity]);
+  }, [fetchSystemStatus, fetchServices, fetchBillingData, fetchTraefikRoutes, fetchWebsiteStatus, fetchRecentActivity]);
 
   // Calculate system status
   const criticalServiceNames = ['vllm', 'open-webui', 'redis', 'postgresql', 'keycloak', 'traefik'];
@@ -438,19 +387,10 @@ export default function AdminDashboard() {
       {/* GPU Status + Local Inference - Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div variants={itemVariants}>
-          <GPUStatusCard
-            gpuInfo={gpuInfo}
-            loading={gpuLoading}
-            error={gpuError}
-            glassStyles={glassStyles}
-          />
+          <GPUStatusCard glassStyles={glassStyles} />
         </motion.div>
         <motion.div variants={itemVariants}>
-          <LocalInferenceCard
-            status={localInference}
-            loading={localInferenceLoading}
-            glassStyles={glassStyles}
-          />
+          <LocalInferenceCard glassStyles={glassStyles} />
         </motion.div>
       </div>
 

@@ -1,0 +1,428 @@
+{
+  "gpus": {
+    "available": true,
+    "state": "ok",
+    "stale_after_seconds": 1200,
+    "ingest_configured": true,
+    "generated_at": "2030-01-15T12:00:00+00:00",
+    "received_at": "2030-01-15T12:00:00+00:00",
+    "source": "push",
+    "age_seconds": 240,
+    "stale": false,
+    "schema": "uc.fleet.gpus/1",
+    "busy_threshold_pct": 10,
+    "totals": {
+      "gpus": 5,
+      "hosts_with_gpus": 3,
+      "integrated_gpus": 1,
+      "discrete_gpus": 4,
+      "vram_total_mib": 87020,
+      "vram_used_mib": null,
+      "vram_used_reported_gpus": 0,
+      "gpus_busy": null,
+      "utilization_reported_gpus": 0,
+      "stale_hosts": 0
+    },
+    "reported": {
+      "vram_used": false,
+      "utilization": false,
+      "temperature": false,
+      "processes": false
+    },
+    "hosts": [
+      {
+        "id": "gpu-b",
+        "name": "gpu-b.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "memory_gib": 62,
+        "notes": [
+          "imaging workers for the demo lab"
+        ],
+        "gpus": [
+          {
+            "index": 0,
+            "model": "Tesla P40",
+            "vendor": "NVIDIA",
+            "kind": "discrete",
+            "vram_total_mib": 23040,
+            "vram_used_mib": null,
+            "utilization_pct": null,
+            "temperature_c": null,
+            "busy": null,
+            "processes": null,
+            "shared_memory": false,
+            "shared_memory_gib": null,
+            "notes": [
+              "Tesla P40 #0: overnight batch jobs"
+            ]
+          },
+          {
+            "index": 1,
+            "model": "Tesla P40",
+            "vendor": "NVIDIA",
+            "kind": "discrete",
+            "vram_total_mib": 23040,
+            "vram_used_mib": null,
+            "utilization_pct": null,
+            "temperature_c": null,
+            "busy": null,
+            "processes": null,
+            "shared_memory": false,
+            "shared_memory_gib": null,
+            "notes": [
+              "Tesla P40 #1: speaker labels for recordings"
+            ]
+          }
+        ],
+        "vram_total_mib": 46080
+      },
+      {
+        "id": "gpu-a",
+        "name": "gpu-a.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "memory_gib": 96,
+        "notes": [
+          "edge-gateway :8080 routes chat here"
+        ],
+        "gpus": [
+          {
+            "index": 0,
+            "model": "NVIDIA GeForce RTX 4090",
+            "vendor": "NVIDIA",
+            "kind": "discrete",
+            "vram_total_mib": 24564,
+            "vram_used_mib": null,
+            "utilization_pct": null,
+            "temperature_c": null,
+            "busy": null,
+            "processes": null,
+            "shared_memory": false,
+            "shared_memory_gib": null,
+            "notes": [
+              "RTX 4090 (24G): chat model, 64k context"
+            ]
+          },
+          {
+            "index": 1,
+            "model": "NVIDIA RTX A4000",
+            "vendor": "NVIDIA",
+            "kind": "discrete",
+            "vram_total_mib": 16376,
+            "vram_used_mib": null,
+            "utilization_pct": null,
+            "temperature_c": null,
+            "busy": null,
+            "processes": null,
+            "shared_memory": false,
+            "shared_memory_gib": null,
+            "notes": [
+              "RTX A4000: speech to text lane"
+            ]
+          }
+        ],
+        "vram_total_mib": 40940
+      },
+      {
+        "id": "apu-1",
+        "name": "apu-1.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "memory_gib": 110,
+        "notes": [],
+        "gpus": [
+          {
+            "index": 0,
+            "model": "Strix",
+            "vendor": "AMD",
+            "kind": "integrated",
+            "vram_total_mib": null,
+            "vram_used_mib": null,
+            "utilization_pct": null,
+            "temperature_c": null,
+            "busy": null,
+            "processes": null,
+            "shared_memory": true,
+            "shared_memory_gib": 110,
+            "notes": [
+              "Radeon 8060S gfx1151 (ROCm): long-context chat"
+            ]
+          }
+        ],
+        "vram_total_mib": null
+      }
+    ],
+    "hosts_total": 6,
+    "hosts_inventoried": 5
+  },
+  "inference": {
+    "available": true,
+    "state": "ok",
+    "stale_after_seconds": 1200,
+    "ingest_configured": true,
+    "generated_at": "2030-01-15T12:00:00+00:00",
+    "received_at": "2030-01-15T12:00:00+00:00",
+    "source": "push",
+    "age_seconds": 240,
+    "stale": false,
+    "schema": "uc.fleet.inference/1",
+    "totals": {
+      "services": 9,
+      "hosts": 5,
+      "by_kind": {
+        "Language model": 3,
+        "Embeddings / rerank": 1,
+        "Speech to text": 2,
+        "Diarization": 1,
+        "Text to speech": 2
+      },
+      "by_label": {
+        "Private (Owned)": 8,
+        "Private (Leased)": 1
+      },
+      "healthy": 3,
+      "unhealthy": 1,
+      "stale_hosts": 0
+    },
+    "hosts": [
+      {
+        "id": "gpu-a",
+        "name": "gpu-a.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "gpus": 2,
+        "services": [
+          {
+            "name": "chat-llama",
+            "source": "container",
+            "kind": "Language model",
+            "engine": "llama.cpp",
+            "basis": "image",
+            "health": "healthy",
+            "health_checked": true
+          },
+          {
+            "name": "stt-whisper",
+            "source": "container",
+            "kind": "Speech to text",
+            "engine": "faster-whisper",
+            "basis": "image",
+            "health": "running",
+            "health_checked": false
+          },
+          {
+            "name": "demo-tts.service",
+            "source": "unit",
+            "kind": "Text to speech",
+            "engine": null,
+            "basis": "name",
+            "health": "active",
+            "health_checked": false
+          }
+        ]
+      },
+      {
+        "id": "gpu-b",
+        "name": "gpu-b.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "gpus": 2,
+        "services": [
+          {
+            "name": "batch-vllm",
+            "source": "container",
+            "kind": "Language model",
+            "engine": "vLLM",
+            "basis": "image",
+            "health": "running",
+            "health_checked": false
+          },
+          {
+            "name": "demo-rerank",
+            "source": "container",
+            "kind": "Embeddings / rerank",
+            "engine": null,
+            "basis": "name",
+            "health": "unhealthy",
+            "health_checked": true
+          },
+          {
+            "name": "demo-speaker-id",
+            "source": "container",
+            "kind": "Diarization",
+            "engine": null,
+            "basis": "name",
+            "health": "healthy",
+            "health_checked": true
+          }
+        ]
+      },
+      {
+        "id": "apu-1",
+        "name": "apu-1.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "gpus": 1,
+        "services": [
+          {
+            "name": "long-chat",
+            "source": "container",
+            "kind": "Language model",
+            "engine": "Ollama",
+            "basis": "image",
+            "health": "running",
+            "health_checked": false
+          }
+        ]
+      },
+      {
+        "id": "vps-1",
+        "name": "vps-1.example",
+        "site": "cloud",
+        "site_label": "Example Cloud",
+        "ownership": "Leased",
+        "ownership_basis": "site",
+        "inference_label": "Private (Leased)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "gpus": 0,
+        "services": [
+          {
+            "name": "cpu-parakeet-stt",
+            "source": "container",
+            "kind": "Speech to text",
+            "engine": null,
+            "basis": "name",
+            "health": "starting",
+            "health_checked": true
+          }
+        ]
+      },
+      {
+        "id": "web-1",
+        "name": "web-1.example",
+        "site": "lab",
+        "site_label": "Springfield lab",
+        "ownership": "Owned",
+        "ownership_basis": "default",
+        "inference_label": "Private (Owned)",
+        "online": true,
+        "inventoried": true,
+        "last_seen": "2030-01-15T12:00:00+00:00",
+        "last_seen_source": "inventory",
+        "age_seconds": 240,
+        "stale": false,
+        "gpus": 0,
+        "services": [
+          {
+            "name": "voice-kokoro",
+            "source": "container",
+            "kind": "Text to speech",
+            "engine": "Kokoro",
+            "basis": "image",
+            "health": "healthy",
+            "health_checked": true
+          }
+        ]
+      }
+    ],
+    "not_counted": {
+      "exporter": 1,
+      "firewall": 1,
+      "gateway": 1,
+      "proxy": 2
+    }
+  },
+  "not_connected": {
+    "available": false,
+    "state": "not_connected",
+    "stale_after_seconds": 1200,
+    "ingest_configured": false,
+    "generated_at": null,
+    "received_at": null,
+    "source": null,
+    "age_seconds": null,
+    "stale": null,
+    "schema": "uc.fleet.gpus/1",
+    "busy_threshold_pct": 10,
+    "totals": null,
+    "hosts": [],
+    "hosts_total": null,
+    "hosts_inventoried": null,
+    "reported": null
+  },
+  "inference_not_connected": {
+    "available": false,
+    "state": "not_connected",
+    "stale_after_seconds": 1200,
+    "ingest_configured": false,
+    "generated_at": null,
+    "received_at": null,
+    "source": null,
+    "age_seconds": null,
+    "stale": null,
+    "schema": "uc.fleet.inference/1",
+    "totals": null,
+    "hosts": [],
+    "not_counted": {}
+  }
+}
